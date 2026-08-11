@@ -9,8 +9,8 @@
 
 `trade-krono-cli` 是一个命令行工具，接受 N 个 A 股股票代码，**同步并行**调用：
 
-1. **TradingAgents-astock** — 多 Agent 深度分析（市场/情绪/基本面/政策/资金/风险辩论）
-2. **Kronos** — K 线序列预测（基于深度学习的未来价格走势预测，含不确定性量化）
+1. **TradingAgents-astock** — [https://github.com/simonlin1212/TradingAgents-astock](https://github.com/simonlin1212/TradingAgents-astock) 多 Agent 深度分析（市场/情绪/基本面/政策/资金/风险辩论）
+2. **Kronos** — K 线序列预测 [https://github.com/shiyu-coder/Kronos](https://github.com/shiyu-coder/Kronos)（基于深度学习的未来价格走势预测，含不确定性量化）
 
 两者完成后自动合并，输出综合排名报告。
 
@@ -333,23 +333,58 @@ trade-krono-cli clear-cache
 ```
 trade-krono-cli
 ├── trade_krono_cli/
-│   ├── cli.py              # Typer CLI 入口
+│   ├── cli.py              # Typer CLI 入口（run / ta / kronos / status / history）
 │   ├── config.py           # 配置管理（.env → Settings 单例）
 │   ├── data.py             # K 线获取（baostock）
 │   ├── security.py         # 密钥校验 + 输入校验 + 重试 + 限流
-│   ├── cache.py            # SQLite 缓存层
+│   ├── cache.py            # Cache（TTL 性能缓存）+ ResearchDatabase（永久研究记录）
 │   ├── logger.py           # 日志配置
 │   ├── ta_decision.py      # 投资决断标准化（Signal / InvestmentDecision / DecisionAdapter）
 │   ├── ta_runner.py        # TradingAgents 封装（含 save_raw_reports 三层存储）
 │   ├── kronos_runner.py    # Kronos 预测封装（含 prediction_uncertainty 模块）
 │   ├── merge.py            # 结果合并 + 综合打分
 │   ├── report.py           # JSON/HTML/控制台报告
-│   └── pipeline.py         # 并行流水线编排（自动触发原始报告保存）
+│   └── pipeline.py         # 并行流水线编排（自动触发原始报告保存 + 研究数据库写入）
 ├── scripts/
 │   └── install.sh          # 一键安装脚本
-├── tests/                  # 测试套件（74 项全部通过）
-├── outputs/                # 运行时输出（.gitignore 忽略）
-└── pyproject.toml          # 项目配置
+├── tests/                  # 测试套件（90 项全部通过）
+```
+
+### 缓存 vs 研究数据库
+
+系统使用同一个 SQLite 文件，但概念上分为两层：
+
+**Cache（性能优化，TTL 驱动）**
+
+| 表 | 用途 | TTL |
+|----|------|-----|
+| `kline_cache` | K 线数据（Pickle 序列化） | 1h（分时）/ 24h（日线） |
+| `ta_cache` | TA 分析结果（JSON） | 24h |
+| `kronos_cache` | Kronos 预测结果（JSON） | 24h |
+
+这些表用于**加速重复查询**——同一只股票同一日期再次分析时直接返回缓存。TTL 过期后数据可被丢弃。
+
+**ResearchDatabase（永久存储，无 TTL）**
+
+| 表 | 用途 |
+|----|------|
+| `jobs` | 每次分析作业的元数据（唯一 job_id、日期、股票列表、耗时） |
+| `ta_analysis` | TA 分析的结构化摘要（信号、置信度、论点、风险） |
+| `kronos_forecast` | Kronos 预测的结构化摘要（方向、预期收益、不确定性） |
+| `signals` | 合并后的综合信号（排名、综合分、双源数据） |
+| `decisions` | 完整的 `InvestmentDecision` JSON（含 thesis + risks） |
+| `raw_reports` | 原始报告文件的磁盘路径索引 |
+| `backtest_results` | 策略回测结果（预留） |
+| `strategy_runs` | 策略运行记录（预留） |
+
+这些表用于**历史回溯**——回答"上次分析了哪些股票？""某只股票的历史信号是什么？"等问题。数据不会被自动清理。
+
+```
+# CLI 命令
+trade-krono-cli status        # 查看缓存 + 研究数据库统计 + 最近作业
+trade-krono-cli history       # 查看所有历史分析作业
+trade-krono-cli history -t sh.600519  # 查看某只股票的历史记录
+trade-krono-cli clear-cache   # 仅清除缓存表（不影响研究数据）
 ```
 
 ### 并行策略
@@ -359,6 +394,7 @@ trade-krono-cli
 - Kronos 预测串行（GPU 模式下避免显存竞争，CPU 模式可考虑并行）
 - TA 与 Kronos **异步**执行：两者并行启动，完成后合并打分
 - 单只股票失败不影响整体（错误隔离）
+- 每次运行自动创建 `jobs` 记录，结果写入 `ta_analysis` / `kronos_forecast` / `signals` / `decisions` 表
 
 ## 预测不确定性量化模块
 
@@ -450,17 +486,18 @@ score = TA_confidence * 0.4
 pytest tests/ -v
 ```
 
-测试结果：**74/74 全部通过**
+测试结果：**90/90 全部通过**
 
 | 文件 | 覆盖模块 |
 |------|----------|
 | `test_cli.py` | CLI 入口、参数解析、股票列表加载 |
-| `test_data.py` | K 线数据获取、缓存读写 |
+| `test_data.py` | K 线数据获取、缓存读写、TTL 过期 |
 | `test_merge.py` | 结果合并逻辑、打分公式、过滤池 |
 | `test_pipeline.py` | 流水线编排、错误隔离 |
 | `test_report.py` | JSON/HTML/控制台报告生成 |
 | `test_security.py` | 密钥校验、输入校验、重试、限流 |
 | `test_ta_decision.py` | DecisionAdapter 结构化解析、InvestmentDecision 数据类、raw 报告存储 |
+| `test_research_db.py` | ResearchDatabase 全表 CRUD、jobs 生命周期、cache/research 隔离 |
 
 ## TA 决策提取逻辑
 

@@ -10,9 +10,9 @@ def test_cache_creation():
     assert cache._db_path.exists()
     stats = cache.stats()
     assert isinstance(stats, dict)
-    assert "kline_cache" in stats
-    assert "ta_cache" in stats
-    assert "kronos_cache" in stats
+    assert "cache_kline_cache" in stats
+    assert "cache_ta_cache" in stats
+    assert "cache_kronos_cache" in stats
 
 
 def test_cache_get_set_kline():

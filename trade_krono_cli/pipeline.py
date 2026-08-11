@@ -15,6 +15,7 @@ from trade_krono_cli.ta_runner import TradingAgentsRunner, StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosRunner, KronosForecastResult
 from trade_krono_cli.merge import merge_results, filter_pool, default_scorer
 from trade_krono_cli.report import save_json, save_html, print_table, print_summary
+from trade_krono_cli.cache import get_research
 
 
 class QuantPipeline:
@@ -79,6 +80,10 @@ class QuantPipeline:
             f"🚀 流水线启动（并行）| {len(tickers)} 只候选 | date={date}"
         )
 
+        # ── 创建研究作业记录 ─────────────────────────────
+        research = get_research()
+        job_id = research.create_job(date, tickers)
+
         if progress_cb:
             progress_cb("启动", 0, 2)
 
@@ -109,11 +114,37 @@ class QuantPipeline:
             save_html(merged, output_html, date)
 
         # 保存完整原始报告（永不截断，用于 RAG / 回测 / 历史研究）
-        self.ta.save_raw_reports(ta_results, date)
+        raw_paths = self.ta.save_raw_reports(ta_results, date)
+
+        # ── 写入研究数据库 ───────────────────────────────
+        for r in ta_results:
+            research.insert_ta(job_id, r)
+            if r.investment_decision:
+                research.insert_decision(
+                    job_id, r.ticker, r.investment_decision,
+                    r.investment_decision.thesis, r.investment_decision.risks,
+                )
+                # 索引原始报告文件
+                report_path = raw_paths.get(r.ticker)
+                if report_path:
+                    from pathlib import Path as _P
+                    raw_file = _P(report_path)
+                    if raw_file.exists():
+                        import json as _json
+                        file_data = _json.loads(raw_file.read_text(encoding="utf-8"))
+                        lengths = {k: len(v) for k, v in file_data.get("reports_raw", {}).items()}
+                        research.index_raw_report(job_id, r.ticker, str(report_path), lengths)
+
+        for r in kronos_results:
+            research.insert_kronos(job_id, r)
+
+        research.insert_signals(job_id, merged)
 
         elapsed = time.time() - t0
+        research.complete_job(job_id, n_success=len(merged), elapsed=elapsed)
         logger.info(
-            f"🏁 流水线完成（并行）| 耗时 {elapsed:.1f}s | 结果 {len(merged)} 条"
+            f"📊 研究作业完成: job={job_id} | 耗时 {elapsed:.1f}s | "
+            f"结果 {len(merged)} 条 → 已记录到研究数据库"
         )
 
         if progress_cb:
@@ -129,12 +160,40 @@ class QuantPipeline:
         progress_cb: Optional[Callable[[int, int, StockAnalysisResult], None]] = None,
     ) -> list[StockAnalysisResult]:
         """仅运行 TA 分析。"""
+        t0 = time.time()
         logger.info(f"🚀 TA 分析启动 | {len(tickers)} 只 | date={date}")
+
+        research = get_research()
+        job_id = research.create_job(date, tickers)
+
         results = self.ta.analyze_batch(tickers, date, progress_cb=progress_cb)
         if output:
             self.ta.save_results(results, output)
         # 同时保存完整原始报告
-        self.ta.save_raw_reports(results, date)
+        raw_paths = self.ta.save_raw_reports(results, date)
+
+        # 写入研究数据库
+        for r in results:
+            research.insert_ta(job_id, r)
+            if r.investment_decision:
+                research.insert_decision(
+                    job_id, r.ticker, r.investment_decision,
+                    r.investment_decision.thesis, r.investment_decision.risks,
+                )
+                report_path = raw_paths.get(r.ticker)
+                if report_path:
+                    from pathlib import Path as _P
+                    raw_file = _P(report_path)
+                    if raw_file.exists():
+                        import json as _json
+                        file_data = _json.loads(raw_file.read_text(encoding="utf-8"))
+                        lengths = {k: len(v) for k, v in file_data.get("reports_raw", {}).items()}
+                        research.index_raw_report(job_id, r.ticker, str(report_path), lengths)
+
+        elapsed = time.time() - t0
+        research.complete_job(job_id, n_success=sum(1 for r in results if r.error is None), elapsed=elapsed)
+        logger.info(f"📊 TA 研究作业完成: job={job_id}")
+
         return results
 
     def run_kronos_only(

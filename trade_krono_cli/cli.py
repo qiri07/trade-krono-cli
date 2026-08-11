@@ -6,6 +6,7 @@ trade-krono-cli CLI 入口 — Typer 实现。
   ta         仅 TradingAgents 分析
   kronos     仅 Kronos 预测
   status     查看系统状态
+  history    查看历史分析记录
   clear-cache  清除缓存
 """
 from __future__ import annotations
@@ -254,10 +255,28 @@ def status():
 
     # 缓存统计
     try:
-        stats = get_cache().stats()
-        console.print(f"[dim]缓存: {stats}[/dim]")
+        cache_stats = get_cache().stats()
+        console.print(f"[dim]缓存: {cache_stats}[/dim]")
     except Exception as e:
         console.print(f"[dim]缓存统计不可用: {e}[/dim]")
+
+    # 研究数据库统计
+    try:
+        from trade_krono_cli.cache import get_research
+        res_stats = get_research().stats()
+        console.print(f"[dim]研究数据库: {res_stats}[/dim]")
+        # 最近作业
+        jobs = get_research().list_jobs(limit=5)
+        if jobs:
+            console.print("[bold]最近分析作业:[/bold]")
+            for j in jobs:
+                console.print(
+                    f"  • [{j['date']}] job={j['job_id']} "
+                    f"n={j['n_tickers']} ok={j['n_success']} "
+                    f"t={j['elapsed']:.1f}s"
+                )
+    except Exception as e:
+        console.print(f"[dim]研究数据库统计不可用: {e}[/dim]")
 
 
 # ═══════════════════════════════════════════════════════
@@ -266,12 +285,70 @@ def status():
 
 @app.command()
 def clear_cache():
-    """清除所有缓存（K线/TA/Kronos）。"""
+    """清除所有缓存（K线/TA/Kronos），不影响研究数据库。"""
     _load_env()
 
     from trade_krono_cli.cache import get_cache
     n = get_cache().clear_all()
     console.print(f"[yellow]🧹 已清除 {n} 条缓存[/yellow]")
+
+
+# ═══════════════════════════════════════════════════════
+# history — 查看历史分析记录
+# ═══════════════════════════════════════════════════════
+
+@app.command()
+def history(
+    ticker: Optional[str] = typer.Option(
+        None, "--ticker", "-t",
+        help="指定股票代码，查看该股票的历史分析记录"
+    ),
+    limit: int = typer.Option(10, "--limit", "-l", help="最多显示条数"),
+):
+    """查看历史分析记录（研究数据库）。"""
+    _load_env()
+
+    from trade_krono_cli.cache import get_research
+    research = get_research()
+
+    if ticker:
+        ticker = ticker.strip().lower()
+        records = research.query_history(ticker, limit=limit)
+        if not records:
+            console.print(f"[yellow]⚠️  未找到 {ticker} 的历史记录[/yellow]")
+            return
+        table = Table(title=f"📈 {ticker} 历史分析记录")
+        for col in ("日期", "排名", "综合分", "TA信号", "TA置信", "Kronos方向", "预期%"):
+            table.add_column(col, justify="right" if col not in ("日期",) else "left")
+        for r in records:
+            change = f"{r['kronos_change']:.2f}" if r.get("kronos_change") else "-"
+            table.add_row(
+                str(r["date"]),
+                str(r["rank"] or "-"),
+                f"{r['composite_score']:.1f}" if r.get("composite_score") else "-",
+                str(r["ta_signal"] or "-"),
+                f"{r['ta_confidence']:.0f}" if r.get("ta_confidence") else "-",
+                str(r["kronos_direction"] or "-"),
+                change,
+            )
+        console.print(table)
+    else:
+        jobs = research.list_jobs(limit=limit)
+        if not jobs:
+            console.print("[dim]研究数据库中暂无分析记录[/dim]")
+            return
+        table = Table(title="📋 最近分析作业")
+        for col in ("作业ID", "日期", "股票数", "成功数", "耗时(s)"):
+            table.add_column(col, justify="right")
+        for j in jobs:
+            table.add_row(
+                j["job_id"],
+                j["date"],
+                str(j["n_tickers"]),
+                str(j["n_success"]),
+                f"{j['elapsed']:.1f}",
+            )
+        console.print(table)
 
 
 # ═══════════════════════════════════════════════════════
