@@ -270,8 +270,11 @@ def status():
         if jobs:
             console.print("[bold]最近分析作业:[/bold]")
             for j in jobs:
+                run_id_str = f" run={j.get('run_id', '-')}" if j.get("run_id") else ""
+                dv_str = f" data={j.get('data_version', '-')}" if j.get("data_version") else ""
+                ch_str = f" hash={j.get('config_hash', '-')[:8]}…" if j.get("config_hash") else ""
                 console.print(
-                    f"  • [{j['date']}] job={j['job_id']} "
+                    f"  • [{j['date']}] job={j['job_id']}{run_id_str}{dv_str}{ch_str} "
                     f"n={j['n_tickers']} ok={j['n_success']} "
                     f"t={j['elapsed']:.1f}s"
                 )
@@ -318,12 +321,14 @@ def history(
             console.print(f"[yellow]⚠️  未找到 {ticker} 的历史记录[/yellow]")
             return
         table = Table(title=f"📈 {ticker} 历史分析记录")
-        for col in ("日期", "排名", "综合分", "TA信号", "TA置信", "Kronos方向", "预期%"):
-            table.add_column(col, justify="right" if col not in ("日期",) else "left")
+        for col in ("日期", "RunID", "数据版本", "排名", "综合分", "TA信号", "TA置信", "Kronos方向", "预期%"):
+            table.add_column(col, justify="right" if col not in ("日期", "RunID", "数据版本") else "left")
         for r in records:
             change = f"{r['kronos_change']:.2f}" if r.get("kronos_change") else "-"
             table.add_row(
                 str(r["date"]),
+                str(r.get("run_id") or "-"),
+                str(r.get("data_version") or "-"),
                 str(r["rank"] or "-"),
                 f"{r['composite_score']:.1f}" if r.get("composite_score") else "-",
                 str(r["ta_signal"] or "-"),
@@ -338,14 +343,18 @@ def history(
             console.print("[dim]研究数据库中暂无分析记录[/dim]")
             return
         table = Table(title="📋 最近分析作业")
-        for col in ("作业ID", "日期", "股票数", "成功数", "耗时(s)"):
-            table.add_column(col, justify="right")
+        for col in ("作业ID", "RunID", "日期", "股票数", "成功数", "数据版本", "耗时(s)"):
+            table.add_column(col, justify="right" if col not in ("作业ID", "RunID") else "left")
         for j in jobs:
+            run_id = j.get("run_id", "-") or "-"
+            dv = j.get("data_version", "-") or "-"
             table.add_row(
                 j["job_id"],
+                run_id,
                 j["date"],
                 str(j["n_tickers"]),
                 str(j["n_success"]),
+                dv,
                 f"{j['elapsed']:.1f}",
             )
         console.print(table)

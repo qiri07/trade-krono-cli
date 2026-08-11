@@ -80,9 +80,9 @@ class QuantPipeline:
             f"🚀 流水线启动（并行）| {len(tickers)} 只候选 | date={date}"
         )
 
-        # ── 创建研究作业记录 ─────────────────────────────
+        # ── 创建研究作业记录（含版本快照）─────────────────
         research = get_research()
-        job_id = research.create_job(date, tickers)
+        job_id = research.create_job(date, tickers, settings=self._settings)
 
         if progress_cb:
             progress_cb("启动", 0, 2)
@@ -116,9 +116,17 @@ class QuantPipeline:
         # 保存完整原始报告（永不截断，用于 RAG / 回测 / 历史研究）
         raw_paths = self.ta.save_raw_reports(ta_results, date)
 
-        # ── 写入研究数据库 ───────────────────────────────
+        # ── 写入研究数据库（含版本快照）────────────────────
+        # 从 jobs 表获取本次运行的版本信息
+        job_info = research.get_job(job_id)
+        version_snapshot = {
+            "run_id": job_info["run_id"] if job_info else None,
+            "data_version": job_info["data_version"] if job_info else None,
+            "model_versions": job_info["model_versions"] if job_info else {},
+        }
+
         for r in ta_results:
-            research.insert_ta(job_id, r)
+            research.insert_ta(job_id, r, version_snapshot=version_snapshot)
             if r.investment_decision:
                 research.insert_decision(
                     job_id, r.ticker, r.investment_decision,
@@ -136,15 +144,15 @@ class QuantPipeline:
                         research.index_raw_report(job_id, r.ticker, str(report_path), lengths)
 
         for r in kronos_results:
-            research.insert_kronos(job_id, r)
+            research.insert_kronos(job_id, r, version_snapshot=version_snapshot)
 
-        research.insert_signals(job_id, merged)
+        research.insert_signals(job_id, merged, version_snapshot=version_snapshot)
 
         elapsed = time.time() - t0
         research.complete_job(job_id, n_success=len(merged), elapsed=elapsed)
         logger.info(
-            f"📊 研究作业完成: job={job_id} | 耗时 {elapsed:.1f}s | "
-            f"结果 {len(merged)} 条 → 已记录到研究数据库"
+            f"📊 研究作业完成: job={job_id} run_id={version_snapshot['run_id']} "
+            f"| 耗时 {elapsed:.1f}s | 结果 {len(merged)} 条 → 已记录到研究数据库"
         )
 
         if progress_cb:
@@ -164,7 +172,7 @@ class QuantPipeline:
         logger.info(f"🚀 TA 分析启动 | {len(tickers)} 只 | date={date}")
 
         research = get_research()
-        job_id = research.create_job(date, tickers)
+        job_id = research.create_job(date, tickers, settings=self._settings)
 
         results = self.ta.analyze_batch(tickers, date, progress_cb=progress_cb)
         if output:
@@ -172,9 +180,17 @@ class QuantPipeline:
         # 同时保存完整原始报告
         raw_paths = self.ta.save_raw_reports(results, date)
 
+        # 获取版本快照
+        job_info = research.get_job(job_id)
+        version_snapshot = {
+            "run_id": job_info["run_id"] if job_info else None,
+            "data_version": job_info["data_version"] if job_info else None,
+            "model_versions": job_info["model_versions"] if job_info else {},
+        }
+
         # 写入研究数据库
         for r in results:
-            research.insert_ta(job_id, r)
+            research.insert_ta(job_id, r, version_snapshot=version_snapshot)
             if r.investment_decision:
                 research.insert_decision(
                     job_id, r.ticker, r.investment_decision,
@@ -192,7 +208,7 @@ class QuantPipeline:
 
         elapsed = time.time() - t0
         research.complete_job(job_id, n_success=sum(1 for r in results if r.error is None), elapsed=elapsed)
-        logger.info(f"📊 TA 研究作业完成: job={job_id}")
+        logger.info(f"📊 TA 研究作业完成: job={job_id} run_id={version_snapshot['run_id']}")
 
         return results
 

@@ -328,6 +328,49 @@ trade-krono-cli clear-cache
 - 流水线日志：`outputs/pipeline.log`
 - 内存日志：`outputs/memory_log.jsonl`（每次运行的性能指标）
 
+## 版本追踪
+
+量化系统的核心问题：**半年后重跑，结果不同，但不知道是数据变了、模型变了、还是配置变了。**
+
+每个分析作业自动记录完整的版本快照：
+
+```json
+{
+  "run_id": "20260811-143022-001",
+  "data_version": "baostock-2026-08-11",
+  "model_versions": {
+    "kronos": "kronos-kronos-base-kronos-Tokenizer-base-cpu",
+    "llm": "deepseek/deepseek-chat+deepseek-chat"
+  },
+  "prompt_version": "ta-v1r1-chinese",
+  "strategy_version": "0.1.0",
+  "config_hash": "a3f8c2d1e5b79046"
+}
+```
+
+| 字段 | 含义 | 何时变化 |
+|------|------|---------|
+| `run_id` | 唯一运行标识（格式 `YYYYMMDD-HHMMSS-NNN`） | 每次运行自动生成 |
+| `data_version` | 数据源快照版本 | 数据源更新或日期变化 |
+| `model_versions.kronos` | Kronos 模型 + Tokenizer + 设备 | 更换模型/设备 |
+| `model_versions.llm` | LLM 供应商 + 模型 | 切换供应商或模型 |
+| `prompt_version` | TA 提示词参数版本 | 辩论轮次/语言配置变化 |
+| `strategy_version` | 项目版本（= pyproject.toml version） | 版本升级 |
+| `config_hash` | 策略配置 SHA256 前16位 | 任何策略参数变化 |
+
+### 回现示例
+
+```bash
+# 查看某只股票的历史信号轨迹（含每次运行的版本信息）
+trade-krono-cli history -t sh.600519
+
+# 查看最近所有分析作业（含 run_id 和数据版本）
+trade-krono-cli history
+
+# 查看系统状态（含各表的记录数和最近作业的版本摘要）
+trade-krono-cli status
+```
+
 ## 架构设计
 
 ```
@@ -486,7 +529,7 @@ score = TA_confidence * 0.4
 pytest tests/ -v
 ```
 
-测试结果：**90/90 全部通过**
+测试结果：**106/106 全部通过**
 
 | 文件 | 覆盖模块 |
 |------|----------|
@@ -497,6 +540,8 @@ pytest tests/ -v
 | `test_report.py` | JSON/HTML/控制台报告生成 |
 | `test_security.py` | 密钥校验、输入校验、重试、限流 |
 | `test_ta_decision.py` | DecisionAdapter 结构化解析、InvestmentDecision 数据类、raw 报告存储 |
+| `test_research_db.py` | ResearchDatabase 全表 CRUD、jobs 生命周期、schema 迁移、cache/research 隔离 |
+| `test_version.py` | run_id 生成、版本快照构建、config_hash、向后兼容迁移 |
 | `test_research_db.py` | ResearchDatabase 全表 CRUD、jobs 生命周期、cache/research 隔离 |
 
 ## TA 决策提取逻辑

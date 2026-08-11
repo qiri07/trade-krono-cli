@@ -8,6 +8,9 @@
   └─ jobs | ta_analysis | kronos_forecast
      │ signals | decisions | raw_reports
      └─ backtest_results | strategy_runs（预留）
+
+每笔记录携带完整版本快照（data_version / model_version / config_hash / run_id），
+支持历史结果复现和回测对比。
 """
 from __future__ import annotations
 
@@ -23,6 +26,10 @@ import pandas as pd
 
 from loguru import logger
 from trade_krono_cli.config import get_settings
+from trade_krono_cli.version import (
+    build_run_snapshot,
+    get_project_version,
+)
 
 
 # ═══════════════════════════════════════════════════════
@@ -228,58 +235,72 @@ class ResearchDatabase:
         "backtest_results", "strategy_runs",
     )
 
+    # 版本追踪列（jobs 表）
+    _VERSION_COLS = (
+        "run_id", "data_version", "model_versions",
+        "prompt_version", "strategy_version", "config_hash",
+    )
+
     def __init__(self, db_path: Optional[Path] = None):
         self._db_path = db_path or (
             get_settings().cache_dir / "pipeline_cache.db"
         )
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+        self._migrate_schema()
 
     def _init_db(self) -> None:
+        """创建所有表（幂等，IF NOT EXISTS）。"""
         with sqlite3.connect(self._db_path) as conn:
             conn.executescript("""
-                -- 每次运行作业
+                -- 每次运行作业（含版本快照）
                 CREATE TABLE IF NOT EXISTS jobs (
-                    job_id    TEXT PRIMARY KEY,
-                    run_at    REAL NOT NULL,
-                    date      TEXT NOT NULL,
-                    tickers   TEXT NOT NULL,    -- JSON 列表
-                    n_tickers INTEGER NOT NULL,
-                    n_success INTEGER NOT NULL,
-                    elapsed   REAL NOT NULL,
-                    notes     TEXT
+                    job_id         TEXT PRIMARY KEY,
+                    run_id         TEXT,             -- 可读运行 ID (YYYYMMDD-HHMMSS-NNN)
+                    run_at         REAL NOT NULL,
+                    date           TEXT NOT NULL,
+                    tickers        TEXT NOT NULL,
+                    n_tickers      INTEGER NOT NULL,
+                    n_success      INTEGER NOT NULL,
+                    elapsed        REAL NOT NULL,
+                    data_version   TEXT,             -- baostock-YYYYMM-DD
+                    model_versions TEXT,             -- JSON: {kronos, llm}
+                    prompt_version TEXT,             -- TA prompt 版本
+                    strategy_version TEXT,           -- 项目版本
+                    config_hash    TEXT,             -- 配置 SHA256 前16位
+                    notes          TEXT
                 );
 
                 -- TA 分析结构化摘要
                 CREATE TABLE IF NOT EXISTS ta_analysis (
-                    job_id    TEXT NOT NULL,
-                    ticker    TEXT NOT NULL,
-                    signal    TEXT,
-                    confidence REAL,
-                    thesis    TEXT,
-                    risks     TEXT,            -- JSON 列表
-                    error     TEXT,
-                    elapsed   REAL,
+                    job_id         TEXT NOT NULL,
+                    ticker         TEXT NOT NULL,
+                    signal         TEXT,
+                    confidence     REAL,
+                    thesis         TEXT,
+                    risks          TEXT,
+                    error          TEXT,
+                    elapsed        REAL,
                     PRIMARY KEY (job_id, ticker),
                     FOREIGN KEY (job_id) REFERENCES jobs(job_id)
                 );
 
                 -- Kronos 预测结构化摘要
                 CREATE TABLE IF NOT EXISTS kronos_forecast (
-                    job_id            TEXT NOT NULL,
-                    ticker            TEXT NOT NULL,
-                    direction         TEXT,
-                    expected_change   REAL,
-                    predicted_close   REAL,
-                    confidence_band   TEXT,    -- JSON {"low": x, "high": y}
-                    uncertainty       TEXT,    -- JSON prediction_uncertainty
-                    error             TEXT,
-                    elapsed           REAL,
+                    job_id          TEXT NOT NULL,
+                    ticker          TEXT NOT NULL,
+                    direction       TEXT,
+                    expected_change REAL,
+                    predicted_close REAL,
+                    confidence_band TEXT,
+                    uncertainty     TEXT,
+                    error           TEXT,
+                    elapsed         REAL,
                     PRIMARY KEY (job_id, ticker),
                     FOREIGN KEY (job_id) REFERENCES jobs(job_id)
                 );
 
-                -- 合并后的综合信号（最终排名结果）
+                -- 合并后的综合信号
                 CREATE TABLE IF NOT EXISTS signals (
                     job_id            TEXT NOT NULL,
                     ticker            TEXT NOT NULL,
@@ -290,20 +311,20 @@ class ResearchDatabase:
                     ta_reasoning      TEXT,
                     kronos_direction  TEXT,
                     kronos_change     REAL,
-                    uncertainty       TEXT,    -- JSON
+                    uncertainty       TEXT,
                     ta_error          TEXT,
                     kronos_error      TEXT,
                     PRIMARY KEY (job_id, ticker),
                     FOREIGN KEY (job_id) REFERENCES jobs(job_id)
                 );
 
-                -- 结构化 InvestmentDecision 完整记录
+                -- 结构化 InvestmentDecision
                 CREATE TABLE IF NOT EXISTS decisions (
                     job_id        TEXT NOT NULL,
                     ticker        TEXT NOT NULL,
-                    decision_json TEXT NOT NULL,  -- JSON: InvestmentDecision.to_dict()
+                    decision_json TEXT NOT NULL,
                     thesis        TEXT,
-                    risks         TEXT,           -- JSON 列表
+                    risks         TEXT,
                     PRIMARY KEY (job_id, ticker),
                     FOREIGN KEY (job_id) REFERENCES jobs(job_id)
                 );
@@ -312,54 +333,122 @@ class ResearchDatabase:
                 CREATE TABLE IF NOT EXISTS raw_reports (
                     job_id   TEXT NOT NULL,
                     ticker   TEXT NOT NULL,
-                    path     TEXT NOT NULL,       -- 磁盘路径
-                    reports  TEXT,                -- JSON: {alias: length}
+                    path     TEXT NOT NULL,
+                    reports  TEXT,
                     PRIMARY KEY (job_id, ticker),
                     FOREIGN KEY (job_id) REFERENCES jobs(job_id)
                 );
 
                 -- 预留表
                 CREATE TABLE IF NOT EXISTS backtest_results (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    job_id      TEXT NOT NULL,
-                    strategy    TEXT NOT NULL,
-                    symbols     TEXT,              -- JSON 列表
-                    start_date  TEXT,
-                    end_date    TEXT,
-                    results     TEXT,              -- JSON
-                    created_at  REAL NOT NULL
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id     TEXT NOT NULL,
+                    strategy   TEXT NOT NULL,
+                    symbols    TEXT,
+                    start_date TEXT,
+                    end_date   TEXT,
+                    results    TEXT,
+                    created_at REAL NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS strategy_runs (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_at      REAL NOT NULL,
-                    strategy    TEXT NOT NULL,
-                    params      TEXT,              -- JSON
-                    tickers     TEXT,              -- JSON 列表
-                    results     TEXT,              -- JSON
-                    notes       TEXT
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_at     REAL NOT NULL,
+                    strategy   TEXT NOT NULL,
+                    params     TEXT,
+                    tickers    TEXT,
+                    results    TEXT,
+                    notes      TEXT
                 );
             """)
+
+    def _migrate_schema(self) -> None:
+        """
+        向后兼容：为已有表动态添加新版本列。
+        不破坏任何现有数据。
+        """
+        with sqlite3.connect(self._db_path) as conn:
+            # 检查 jobs 表是否有 run_id 列
+            info = conn.execute(
+                "PRAGMA table_info(jobs)"
+            ).fetchall()
+            existing_cols = {row[1] for row in info}
+
+            if "run_id" not in existing_cols:
+                for col in self._VERSION_COLS:
+                    try:
+                        conn.execute(
+                            f"ALTER TABLE jobs ADD COLUMN {col} TEXT"
+                        )
+                        logger.debug(f"📐 Schema 迁移: jobs.{col}")
+                    except sqlite3.OperationalError:
+                        pass  # 列已存在
+
+            # 确保其他表存在
+            for table in ("ta_analysis", "kronos_forecast", "signals",
+                          "decisions", "raw_reports",
+                          "backtest_results", "strategy_runs"):
+                try:
+                    conn.execute(f"SELECT 1 FROM {table} LIMIT 0")
+                except sqlite3.OperationalError:
+                    pass  # CREATE TABLE IF NOT EXISTS 已在 _init_db 中处理
+
+            conn.commit()
 
     # ── Jobs ──────────────────────────────────────────
 
     def create_job(
         self, date: str, tickers: list[str],
+        settings=None,
         notes: Optional[str] = None,
     ) -> str:
-        """创建新分析作业，返回 job_id。"""
+        """
+        创建新分析作业，返回 job_id。
+
+        Parameters
+        ----------
+        settings : Settings 对象（可选）
+            传入后自动填充 run_id / data_version / model_versions /
+            prompt_version / strategy_version / config_hash
+        """
+        from trade_krono_cli.version import build_run_snapshot
+
         job_id = str(uuid4())[:12]
         run_at = time.time()
+
+        # 版本快照
+        snapshot: dict = {}
+        if settings is not None:
+            snapshot = build_run_snapshot(date, settings)
+
         with sqlite3.connect(self._db_path) as conn:
             conn.execute(
-                "INSERT INTO jobs (job_id, run_at, date, tickers, n_tickers, "
-                "n_success, elapsed, notes) VALUES (?,?,?,?,?,?,?,?)",
-                (job_id, run_at, date,
-                 json.dumps(tickers, ensure_ascii=False),
-                 len(tickers), 0, 0.0, notes),
+                "INSERT INTO jobs "
+                "(job_id, run_id, run_at, date, tickers, n_tickers, "
+                " n_success, elapsed, data_version, model_versions, "
+                " prompt_version, strategy_version, config_hash, notes) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    job_id,
+                    snapshot.get("run_id"),
+                    run_at, date,
+                    json.dumps(tickers, ensure_ascii=False),
+                    len(tickers), 0, 0.0,
+                    snapshot.get("data_version"),
+                    json.dumps(snapshot.get("model_versions", {}),
+                               ensure_ascii=False),
+                    snapshot.get("prompt_version"),
+                    snapshot.get("strategy_version"),
+                    snapshot.get("config_hash"),
+                    notes,
+                ),
             )
             conn.commit()
-        logger.info(f"📋 研究作业创建: job={job_id} date={date} n={len(tickers)}")
+
+        logger.info(
+            f"📋 研究作业创建: job={job_id} run_id={snapshot.get('run_id')} "
+            f"date={date} n={len(tickers)}"
+        )
         return job_id
 
     def complete_job(
@@ -374,43 +463,74 @@ class ResearchDatabase:
             conn.commit()
 
     def get_job(self, job_id: str) -> Optional[dict]:
+        """获取作业详情，包含版本快照信息。"""
         with sqlite3.connect(self._db_path) as conn:
             row = conn.execute(
-                "SELECT job_id, run_at, date, tickers, n_tickers, "
-                "n_success, elapsed, notes FROM jobs WHERE job_id=?",
+                "SELECT job_id, run_id, run_at, date, tickers, n_tickers, "
+                " n_success, elapsed, data_version, model_versions, "
+                " prompt_version, strategy_version, config_hash, notes "
+                "FROM jobs WHERE job_id=?",
                 (job_id,),
             ).fetchone()
         if not row:
             return None
         return {
             "job_id": row[0],
-            "run_at": row[1],
-            "date": row[2],
-            "tickers": json.loads(row[3]),
-            "n_tickers": row[4],
-            "n_success": row[5],
-            "elapsed": row[6],
-            "notes": row[7],
+            "run_id": row[1],
+            "run_at": row[2],
+            "date": row[3],
+            "tickers": json.loads(row[4]),
+            "n_tickers": row[5],
+            "n_success": row[6],
+            "elapsed": row[7],
+            "data_version": row[8],
+            "model_versions": json.loads(row[9]) if row[9] else {},
+            "prompt_version": row[10],
+            "strategy_version": row[11],
+            "config_hash": row[12],
+            "notes": row[13],
         }
 
     def list_jobs(self, limit: int = 20) -> list[dict]:
+        """列出最近作业，含版本摘要。"""
         with sqlite3.connect(self._db_path) as conn:
             rows = conn.execute(
-                "SELECT job_id, run_at, date, n_tickers, n_success, elapsed "
+                "SELECT job_id, run_id, date, n_tickers, n_success, elapsed, "
+                " data_version, strategy_version, config_hash "
                 "FROM jobs ORDER BY run_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [
             {
-                "job_id": r[0], "run_at": r[1], "date": r[2],
+                "job_id": r[0], "run_id": r[1], "date": r[2],
                 "n_tickers": r[3], "n_success": r[4], "elapsed": r[5],
+                "data_version": r[6], "strategy_version": r[7],
+                "config_hash": r[8],
             }
             for r in rows
         ]
 
+    def get_run_snapshot(self, job_id: str) -> Optional[dict]:
+        """获取某次运行的完整版本快照。"""
+        job = self.get_job(job_id)
+        if not job:
+            return None
+        return {
+            "run_id": job["run_id"],
+            "data_version": job["data_version"],
+            "model_versions": job["model_versions"],
+            "prompt_version": job["prompt_version"],
+            "strategy_version": job["strategy_version"],
+            "config_hash": job["config_hash"],
+        }
+
     # ── TA Analysis ───────────────────────────────────
 
-    def insert_ta(self, job_id: str, result: "StockAnalysisResult") -> None:
+    def insert_ta(
+        self, job_id: str, result: "StockAnalysisResult",
+        version_snapshot: Optional[dict] = None,
+    ) -> None:
+        """写入 TA 分析记录（含版本信息）。"""
         from trade_krono_cli.ta_runner import StockAnalysisResult  # 延迟避免循环
         risks = (
             json.dumps(result.investment_decision.risks, ensure_ascii=False)
@@ -420,6 +540,9 @@ class ResearchDatabase:
             result.investment_decision.thesis
             if result.investment_decision else (result.reasoning or "")[:500]
         )
+        run_id = version_snapshot.get("run_id") if version_snapshot else None
+        data_version = version_snapshot.get("data_version") if version_snapshot else None
+        model_versions = json.dumps(version_snapshot.get("model_versions", {})) if version_snapshot else None
         with sqlite3.connect(self._db_path) as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO ta_analysis "
@@ -449,7 +572,11 @@ class ResearchDatabase:
 
     # ── Kronos Forecast ───────────────────────────────
 
-    def insert_kronos(self, job_id: str, result) -> None:
+    def insert_kronos(
+        self, job_id: str, result,
+        version_snapshot: Optional[dict] = None,
+    ) -> None:
+        """写入 Kronos 预测记录。"""
         uncertainty = (
             json.dumps(result.prediction_uncertainty.to_dict())
             if result.prediction_uncertainty else None
@@ -484,14 +611,17 @@ class ResearchDatabase:
             for r in rows
         ]
 
-    # ── Signals（合并后的综合信号）─────────────────────
+    # ── Signals ───────────────────────────────────────
 
-    def insert_signals(self, job_id: str, merged_items: list[dict]) -> None:
+    def insert_signals(
+        self, job_id: str, merged_items: list[dict],
+        version_snapshot: Optional[dict] = None,
+    ) -> None:
+        """写入合并信号记录（含版本信息）。"""
+        run_id = version_snapshot.get("run_id") if version_snapshot else None
         for item in merged_items:
             pu = item.get("kronos_prediction_uncertainty")
-            uncertainty = (
-                json.dumps(pu) if pu else None
-            )
+            uncertainty = json.dumps(pu) if pu else None
             with sqlite3.connect(self._db_path) as conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO signals "
@@ -596,11 +726,12 @@ class ResearchDatabase:
     def query_history(
         self, ticker: str, limit: int = 20,
     ) -> list[dict]:
-        """查询某只股票的历史分析记录（合并 signals + decisions）。"""
+        """查询某只股票的历史分析记录（合并 signals + decisions + 版本信息）。"""
         with sqlite3.connect(self._db_path) as conn:
             rows = conn.execute(
                 """
-                SELECT j.date, s.rank, s.composite_score,
+                SELECT j.date, j.run_id, j.data_version, j.config_hash,
+                       s.rank, s.composite_score,
                        s.ta_signal, s.ta_confidence,
                        s.kronos_direction, s.kronos_change,
                        d.decision_json
@@ -615,11 +746,12 @@ class ResearchDatabase:
             ).fetchall()
         return [
             {
-                "date": r[0], "rank": r[1],
-                "composite_score": r[2],
-                "ta_signal": r[3], "ta_confidence": r[4],
-                "kronos_direction": r[5], "kronos_change": r[6],
-                "decision": json.loads(r[7]) if r[7] else None,
+                "date": r[0], "run_id": r[1],
+                "data_version": r[2], "config_hash": r[3],
+                "rank": r[4], "composite_score": r[5],
+                "ta_signal": r[6], "ta_confidence": r[7],
+                "kronos_direction": r[8], "kronos_change": r[9],
+                "decision": json.loads(r[10]) if r[10] else None,
             }
             for r in rows
         ]
