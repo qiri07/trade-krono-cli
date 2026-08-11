@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=71.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trade-krono-cli"
+version = "0.1.0"
+description = "A股投研+预测一体化流水线 — TradingAgents + Kronos 并行分析"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "trade-krono-cli"}
+]
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "loguru>=0.7.0",
+    "python-dotenv>=1.0.0",
+    "pandas>=2.0.0",
+    "baostock>=0.8.8",
+    "torch>=2.0.0",
+    "cli-anything-tradingagents>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+trade-krono-cli = "trade_krono_cli.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["trade_krono_cli*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

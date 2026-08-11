@@ -1,0 +1,355 @@
+"""
+TradingAgents-Astock 封装层：
+  • 安全初始化（密钥校验 + 配置隔离）
+  • 批量分析（失败隔离、进度回调）
+  • checkpoint 自动管理
+  • 结构化输出（StockAnalysisResult）
+"""
+from __future__ import annotations
+
+import json
+import sys
+import time
+from dataclasses import dataclass, asdict, field
+from pathlib import Path
+from typing import Optional, Callable, Any
+
+from loguru import logger
+
+from trade_krono_cli.config import get_settings
+from trade_krono_cli.security import validate_ticker, validate_date, retry
+from trade_krono_cli.cache import get_cache
+
+# 懒加载：首次调用时才 import，避免无密钥时直接报错
+_TRAIDINGAGENTS_IMPORTED = False
+
+
+def _ensure_tradingagents_import() -> None:
+    """将 TradingAgents-astock 加入 sys.path 并导入核心模块。"""
+    global _TRAIDINGAGENTS_IMPORTED
+    if _TRAIDINGAGENTS_IMPORTED:
+        return
+    s = get_settings()
+    ta_root = s.tradingagents_root
+    if str(ta_root) not in sys.path:
+        sys.path.insert(0, str(ta_root))
+    _TRAIDINGAGENTS_IMPORTED = True
+    logger.debug(f"TradingAgents-astock 路径已加入: {ta_root}")
+
+
+_REPORT_KEYS = [
+    "market_report",
+    "sentiment_report",
+    "news_report",
+    "fundamentals_report",
+    "policy_report",
+    "hot_money_report",
+    "lockup_report",
+]
+_REPORT_ALIAS = {
+    "market_report": "market",
+    "sentiment_report": "sentiment",
+    "news_report": "news",
+    "fundamentals_report": "fundamentals",
+    "policy_report": "policy",
+    "hot_money_report": "hot_money",
+    "lockup_report": "lockup",
+}
+
+
+@dataclass
+class StockAnalysisResult:
+    """单只股票的分析结果。"""
+    ticker: str
+    date: str
+    signal: Optional[str] = None
+    confidence: Optional[float] = None
+    position_size: Optional[float] = None
+    reasoning: Optional[str] = None
+    reports: dict[str, str] = field(default_factory=dict)
+    risk_assessment: Optional[str] = None
+    decision_raw: Optional[dict] = None
+    error: Optional[str] = None
+    elapsed_sec: float = 0.0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    def is_buy(self, min_confidence: float = 55.0) -> bool:
+        return (
+            self.signal in ("BUY", "OVERWEIGHT")
+            and (self.confidence or 0) >= min_confidence
+            and self.error is None
+        )
+
+
+class TradingAgentsRunner:
+    """
+    生产级 TradingAgents 封装。
+
+    设计要点：
+    - 懒加载 TradingAgentsGraph（首次调用才 import）
+    - 复用同一 graph 实例，多只股票顺序跑
+    - 单只失败不影响整体
+    """
+
+    def __init__(
+        self,
+        llm_provider: Optional[str] = None,
+        deep_think_llm: Optional[str] = None,
+        quick_think_llm: Optional[str] = None,
+        backend_url: Optional[str] = None,
+        max_debate_rounds: Optional[int] = None,
+        checkpoint_enabled: Optional[bool] = None,
+        output_language: str = "Chinese",
+        safe_mode: bool = True,
+    ):
+        self._settings = get_settings()
+        self._cache = get_cache()
+
+        # 配置合并：显式参数 > settings 默认值
+        self.llm_provider = llm_provider or self._settings.llm_provider
+        self.deep_think_llm = deep_think_llm or self._settings.deep_think_llm
+        self.quick_think_llm = quick_think_llm or self._settings.quick_think_llm
+        self.backend_url = backend_url or self._settings.backend_url
+        self.max_debate_rounds = max_debate_rounds or self._settings.max_debate_rounds
+        self.checkpoint_enabled = (
+            checkpoint_enabled
+            if checkpoint_enabled is not None
+            else self._settings.checkpoint_enabled
+        )
+        self.output_language = output_language
+
+        if safe_mode:
+            self._validate_provider()
+
+        self._graph = None
+        logger.info(
+            f"🤖 TradingAgentsRunner 就绪 | provider={self.llm_provider} "
+            f"deep={self.deep_think_llm}"
+        )
+
+    def _validate_provider(self) -> None:
+        """检查 LLM 密钥是否可用。"""
+        from trade_krono_cli.security import KeyVault
+        vault = KeyVault()
+        available = vault.available_providers()
+        if not available:
+            raise RuntimeError(
+                "❌ 未检测到任何 LLM API 密钥。请在 .env 中设置 "
+                "DEEPSEEK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY 之一"
+            )
+        if self.llm_provider not in available:
+            logger.warning(
+                f"⚠️  选定 provider '{self.llm_provider}' 无可用密钥，"
+                f"回退到: {available[0]}"
+            )
+            self.llm_provider = available[0]
+
+    def _build_config(self) -> dict:
+        s = self._settings
+        cfg = {
+            "llm_provider": self.llm_provider,
+            "deep_think_llm": self.deep_think_llm,
+            "quick_think_llm": self.quick_think_llm,
+            "output_language": self.output_language,
+            "max_debate_rounds": self.max_debate_rounds,
+            "max_risk_discuss_rounds": self.max_debate_rounds,
+            "checkpoint_enabled": self.checkpoint_enabled,
+            "data_cache_dir": str(s.cache_dir / "tradingagents"),
+            "results_dir": str(s.results_dir),
+            "memory_log_path": str(s.memory_log_path),
+            "data_vendors": {
+                "core_stock_apis": "a_stock",
+                "technical_indicators": "a_stock",
+                "fundamental_data": "a_stock",
+                "news_data": "a_stock",
+            },
+        }
+        if self.backend_url:
+            cfg["backend_url"] = self.backend_url
+        return cfg
+
+    def _get_graph(self):
+        """懒加载 TradingAgentsGraph。"""
+        if self._graph is not None:
+            return self._graph
+        _ensure_tradingagents_import()
+
+        try:
+            from cli_anything.tradingagents.core.analysis import (
+                run_analysis,
+                build_config,
+            )
+        except ImportError as e:
+            raise RuntimeError(
+                f"无法导入 TradingAgents 核心模块：{e}。"
+                f"请确认已安装 tradingagents（pip install -e {self._settings.tradingagents_root}）"
+            ) from e
+
+        self._graph = {
+            "run_analysis": run_analysis,
+            "build_config": build_config,
+        }
+        logger.info("✅ TradingAgentsGraph 核心模块加载完成")
+        return self._graph
+
+    def _extract_reports(self, state: dict) -> dict[str, str]:
+        out = {}
+        for key in _REPORT_KEYS:
+            val = state.get(key)
+            if not val:
+                continue
+            text = val if isinstance(val, str) else json.dumps(val, ensure_ascii=False)
+            alias = _REPORT_ALIAS.get(key, key)
+            out[alias] = text[:500]
+        return out
+
+    def _extract_decision(self, final_state: dict) -> dict:
+        """从 final_state 提取决策字段。"""
+        # 尝试多种可能的字段名
+        decision_text = (
+            final_state.get("final_trade_decision", "")
+            or final_state.get("trader_investment_plan", "")
+            or final_state.get("investment_plan", "")
+            or ""
+        )
+
+        # 尝试从 debate state 中提取
+        debate_state = final_state.get("investment_debate_state", {})
+        if isinstance(debate_state, dict):
+            decision_text = debate_state.get("final_decision", decision_text)
+
+        # 解析信号
+        signal = None
+        confidence = None
+        reasoning = ""
+
+        # 简单启发式：从文本中提取 BUY/SELL/HOLD
+        upper_text = decision_text.upper()
+        if "BUY" in upper_text or "OVERWEIGHT" in upper_text:
+            signal = "BUY"
+        elif "SELL" in upper_text or "UNDERWEIGHT" in upper_text:
+            signal = "SELL"
+        elif "HOLD" in upper_text or "NEUTRAL" in upper_text:
+            signal = "HOLD"
+
+        return {
+            "signal": signal,
+            "confidence": confidence,
+            "position_size": None,
+            "reasoning": decision_text[:500],
+        }
+
+    @retry(max_attempts=3, base_delay=5.0, exceptions=(Exception,))
+    def analyze_one(self, ticker: str, date: str) -> StockAnalysisResult:
+        ticker = validate_ticker(ticker)
+        date = validate_date(date)
+        result = StockAnalysisResult(ticker=ticker, date=date)
+        t0 = time.time()
+
+        # 缓存检查
+        if self._cache:
+            cached = self._cache.get_ta(ticker, date)
+            if cached:
+                logger.debug(f"📦 TA 缓存命中: {ticker}")
+                for k, v in cached.items():
+                    setattr(result, k, v)
+                result.elapsed_sec = 0.0
+                return result
+
+        try:
+            graphs = self._get_graph()
+            run_analysis = graphs["run_analysis"]
+            build_config = graphs["build_config"]
+
+            config = build_config(
+                ticker=ticker,
+                trade_date=date,
+                provider=self.llm_provider,
+                model=self.deep_think_llm,
+                quick_model=self.quick_think_llm,
+                depth=self.max_debate_rounds,
+                output_language=self.output_language,
+                backend_url=self.backend_url,
+                checkpoint=self.checkpoint_enabled,
+            )
+
+            logger.info(f"🔍 TA 分析 {ticker} @ {date}")
+            analysis_result = run_analysis(
+                ticker, date, config,
+                analysts=["market", "social", "news", "fundamentals", "policy", "hot_money", "lockup"],
+            )
+
+            if not analysis_result.get("success"):
+                raise RuntimeError(
+                    analysis_result.get("error", "Analysis failed")
+                )
+
+            final_state = analysis_result.get("final_state", {})
+            dec = self._extract_decision(final_state)
+
+            result.signal = dec.get("signal")
+            result.confidence = dec.get("confidence")
+            result.position_size = dec.get("position_size")
+            result.reasoning = dec.get("reasoning")
+            result.reports = self._extract_reports(final_state)
+            result.risk_assessment = final_state.get(
+                "risk_debate_state", {}
+            )
+            if isinstance(result.risk_assessment, (dict, list)):
+                result.risk_assessment = json.dumps(
+                    result.risk_assessment, ensure_ascii=False
+                )[:500]
+
+            result.decision_raw = dec
+
+            logger.info(
+                f"✅ {ticker}: signal={result.signal} "
+                f"({time.time()-t0:.0f}s)"
+            )
+
+            # 写缓存
+            if self._cache:
+                self._cache.set_ta(ticker, date, result.to_dict())
+
+        except Exception as e:
+            result.error = f"{type(e).__name__}: {e}"
+            logger.error(f"❌ {ticker} TA 分析失败: {result.error}")
+
+        finally:
+            result.elapsed_sec = round(time.time() - t0, 2)
+
+        return result
+
+    def analyze_batch(
+        self,
+        tickers: list[str],
+        date: str,
+        progress_cb: Optional[Callable[[int, int, StockAnalysisResult], None]] = None,
+    ) -> list[StockAnalysisResult]:
+        date = validate_date(date)
+        tickers = [validate_ticker(t) for t in tickers]
+        total = len(tickers)
+        results: list[StockAnalysisResult] = []
+
+        logger.info(f"🚀 TA 批量分析启动: {total} 只, date={date}")
+        for idx, tk in enumerate(tickers, 1):
+            res = self.analyze_one(tk, date)
+            results.append(res)
+            if progress_cb:
+                try:
+                    progress_cb(idx, total, res)
+                except Exception:
+                    pass
+        success = sum(1 for r in results if r.error is None)
+        logger.info(f"📊 TA 批量分析完成: 成功 {success}/{total}")
+        return results
+
+    def save_results(self, results: list[StockAnalysisResult], path: str) -> str:
+        data = [r.to_dict() for r in results]
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info(f"💾 TA 结果已保存: {path}")
+        return path
