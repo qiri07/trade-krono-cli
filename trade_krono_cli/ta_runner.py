@@ -11,6 +11,7 @@ import json
 import sys
 import time
 from dataclasses import dataclass, asdict, field
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable, Any
 
@@ -68,6 +69,8 @@ class StockAnalysisResult:
     position_size: Optional[float] = None
     reasoning: Optional[str] = None
     reports: dict[str, str] = field(default_factory=dict)
+    # 完整原始报告（永不截断，用于 RAG / 回测 / Agent memory）
+    reports_raw: dict[str, str] = field(default_factory=dict)
     risk_assessment: Optional[str] = None
     decision_raw: Optional[dict] = None
     error: Optional[str] = None
@@ -215,16 +218,27 @@ class TradingAgentsRunner:
         logger.info("✅ TradingAgentsGraph 核心模块加载完成")
         return self._graph
 
-    def _extract_reports(self, state: dict) -> dict[str, str]:
-        out = {}
+    def _extract_reports(self, state: dict) -> tuple[dict[str, str], dict[str, str]]:
+        """
+        从 final_state 提取报告。
+
+        Returns
+        -------
+        (raw_reports, summary_reports)
+          raw_reports   — 完整文本（永不截断）
+          summary_reports — 每份报告前 500 字符（用于展示和缓存）
+        """
+        raw: dict[str, str] = {}
+        summary: dict[str, str] = {}
         for key in _REPORT_KEYS:
             val = state.get(key)
             if not val:
                 continue
             text = val if isinstance(val, str) else json.dumps(val, ensure_ascii=False)
             alias = _REPORT_ALIAS.get(key, key)
-            out[alias] = text[:500]
-        return out
+            raw[alias] = text
+            summary[alias] = text[:500]
+        return raw, summary
 
     def _extract_decision(self, final_state: dict) -> tuple[dict, Optional[InvestmentDecision]]:
         """
@@ -249,12 +263,12 @@ class TradingAgentsRunner:
         adapter = DecisionAdapter()
         inv_decision = adapter.parse(decision_text)
 
-        # 构建 legacy dict（保持向后兼容）
+        # 构建 legacy dict（reasoning 保留完整文本，展示时再截断）
         legacy = {
             "signal": inv_decision.signal.value,
             "confidence": inv_decision.confidence,
             "position_size": inv_decision.position_size,
-            "reasoning": decision_text[:500],
+            "reasoning": decision_text,  # 完整保留，不截断
         }
         return legacy, inv_decision
 
@@ -309,15 +323,17 @@ class TradingAgentsRunner:
             result.signal = legacy["signal"]
             result.confidence = legacy["confidence"]
             result.position_size = legacy["position_size"]
-            result.reasoning = legacy["reasoning"]
-            result.reports = self._extract_reports(final_state)
+            result.reasoning = legacy["reasoning"]  # 完整 reasoning
+            raw_reports, summary_reports = self._extract_reports(final_state)
+            result.reports = summary_reports      # 展示用：500字摘要
+            result.reports_raw = raw_reports      # 存储用：完整报告
             result.risk_assessment = final_state.get(
                 "risk_debate_state", {}
             )
             if isinstance(result.risk_assessment, (dict, list)):
                 result.risk_assessment = json.dumps(
                     result.risk_assessment, ensure_ascii=False
-                )[:500]
+                )
 
             result.decision_raw = legacy
             result.investment_decision = inv_decision
@@ -371,3 +387,62 @@ class TradingAgentsRunner:
             json.dump(data, f, ensure_ascii=False, indent=2)
         logger.info(f"💾 TA 结果已保存: {path}")
         return path
+
+    def save_raw_reports(
+        self, results: list[StockAnalysisResult], date: str,
+        results_dir: Optional[Path] = None,
+    ) -> dict[str, str]:
+        """
+        将每只股票的完整原始报告写入磁盘。
+
+        路径格式：{results_dir}/raw/{date}/{ticker}.json
+
+        每个文件包含：
+          - reports_raw: 完整 TA 各维度报告（市场/情绪/新闻/基本面/政策等）
+          - decision_text: 完整决策文本（含 Debate 过程）
+          - risk_assessment: 完整风险评估
+          - investment_decision: 结构化决策（Signal + Confidence + Thesis + Risks）
+          - metadata: 分析时间戳、耗时等
+
+        用途：AI 复盘、策略回测、历史研究、RAG、Agent memory
+        """
+        base_dir = results_dir or self._settings.results_dir
+        raw_dir = base_dir / "raw" / date
+        raw_dir.mkdir(parents=True, exist_ok=True)
+
+        written: dict[str, str] = {}  # ticker → file_path
+        for r in results:
+            if r.error:
+                continue
+            file_data: dict = {
+                "ticker": r.ticker,
+                "date": r.date,
+                "analyzed_at": datetime.now().isoformat(),
+                "elapsed_sec": r.elapsed_sec,
+                "reports_raw": r.reports_raw,
+                "decision_text": r.reasoning or "",
+                "risk_assessment": r.risk_assessment or "",
+                "investment_decision": (
+                    r.investment_decision.to_dict()
+                    if r.investment_decision else None
+                ),
+            }
+            path = raw_dir / f"{r.ticker}.json"
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(file_data, f, ensure_ascii=False, indent=2)
+            written[r.ticker] = str(path)
+
+        logger.info(
+            f"💾 原始报告已写入: {raw_dir} ({len(written)} 只)"
+        )
+        return written
+
+    @staticmethod
+    def load_raw_report(ticker: str, date: str, results_dir: Optional[Path] = None) -> Optional[dict]:
+        """从磁盘加载某只股票的原始报告。"""
+        rd = results_dir or get_settings().results_dir
+        path = rd / "raw" / date / f"{ticker}.json"
+        if not path.exists():
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)

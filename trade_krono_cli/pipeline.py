@@ -102,10 +102,14 @@ class QuantPipeline:
         merged = merge_results(ta_results, kronos_results, scorer=self.scorer)
 
         # ── 落盘 ───────────────────────────────────────────
+        # 保存结构化结果 JSON（含摘要报告，用于展示和后续分析）
         if output_json:
             save_json(merged, output_json)
         if output_html:
             save_html(merged, output_html, date)
+
+        # 保存完整原始报告（永不截断，用于 RAG / 回测 / 历史研究）
+        self.ta.save_raw_reports(ta_results, date)
 
         elapsed = time.time() - t0
         logger.info(
@@ -129,6 +133,8 @@ class QuantPipeline:
         results = self.ta.analyze_batch(tickers, date, progress_cb=progress_cb)
         if output:
             self.ta.save_results(results, output)
+        # 同时保存完整原始报告
+        self.ta.save_raw_reports(results, date)
         return results
 
     def run_kronos_only(
