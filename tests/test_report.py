@@ -18,6 +18,15 @@ def sample_merged():
             "kronos_change_pct": 3.2,
             "kronos_last_close": 1780.5,
             "kronos_pred_close": 1837.73,
+            "kronos_prediction_uncertainty": {
+                "expected_return": 3.2,
+                "direction": "UP",
+                "direction_confidence": 0.72,
+                "volatility": 12.5,
+                "path_dispersion": None,
+                "confidence_score": 72.0,
+                "sample_count_used": 1,
+            },
             "composite_score": 82.1,
             "forecast_dict": {"timestamps": [], "close": []},
         },
@@ -31,6 +40,15 @@ def sample_merged():
             "kronos_change_pct": -1.5,
             "kronos_last_close": 25.3,
             "kronos_pred_close": 24.92,
+            "kronos_prediction_uncertainty": {
+                "expected_return": -1.5,
+                "direction": "DOWN",
+                "direction_confidence": 0.55,
+                "volatility": 0.8,
+                "path_dispersion": None,
+                "confidence_score": 55.0,
+                "sample_count_used": 1,
+            },
             "composite_score": 45.0,
             "forecast_dict": {"timestamps": [], "close": []},
         },
@@ -60,8 +78,9 @@ def test_save_html(sample_merged, tmp_path):
 def test_print_table(sample_merged, capsys):
     print_table(sample_merged)
     captured = capsys.readouterr()
-    assert "600519" in captured.out
+    # rich table truncates ticker; check for score and confidence which are full-width
     assert "82.1" in captured.out
+    assert "72.0" in captured.out   # Kronos confidence
 
 
 def test_print_summary(sample_merged, capsys):

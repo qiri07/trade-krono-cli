@@ -9,25 +9,32 @@ def test_pipeline_run_parallel():
     """测试并行流水线（mock TA 和 Kronos）。"""
     from trade_krono_cli.pipeline import QuantPipeline
     from trade_krono_cli.ta_runner import StockAnalysisResult
-    from trade_krono_cli.kronos_runner import KronosForecastResult
+    from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
 
-    # Mock TA runner
     mock_ta = MagicMock()
     mock_ta.analyze_batch.return_value = [
         StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0),
         StockAnalysisResult(ticker="sz.000858", date="2026-08-11", signal="HOLD", confidence=60.0),
     ]
 
-    # Mock Kronos runner
+    pu = PredictionUncertainty(
+        expected_return=3.2, direction="UP", direction_confidence=0.8,
+        confidence_score=75.0, sample_count_used=1,
+    )
     mock_kr = MagicMock()
     mock_kr.predict_batch.return_value = [
         KronosForecastResult(
             ticker="sh.600519", eval_date="2026-08-11", horizon=30,
             direction="UP", expected_change_pct=3.2, last_close=1780.5,
+            prediction_uncertainty=pu,
         ),
         KronosForecastResult(
             ticker="sz.000858", eval_date="2026-08-11", horizon=30,
             direction="DOWN", expected_change_pct=-1.5, last_close=25.3,
+            prediction_uncertainty=PredictionUncertainty(
+                expected_return=-1.5, direction="DOWN", direction_confidence=0.6,
+                confidence_score=60.0, sample_count_used=1,
+            ),
         ),
     ]
 
@@ -48,8 +55,8 @@ def test_pipeline_run_parallel():
     assert merged[0]["ticker"] == "sh.600519"
     assert merged[0]["ta_signal"] == "BUY"
     assert merged[0]["kronos_direction"] == "UP"
+    assert merged[0]["kronos_prediction_uncertainty"]["confidence_score"] == 75.0
 
-    # 验证 JSON 已保存
     assert Path("/tmp/test_merged.json").exists()
 
 
@@ -132,9 +139,7 @@ def test_pipeline_with_errors():
     )
 
     assert len(merged) == 2
-    # 即使有错误，也应该有结果
     assert merged[0]["ticker"] == "sh.600519"
     assert merged[1]["ticker"] == "sz.000858"
     assert merged[1]["ta_error"] == "Network error"
-    # Kronos 错误结果被过滤，不进入 kronos_map，所以 kronos_error 为 None
     assert merged[1]["kronos_error"] is None

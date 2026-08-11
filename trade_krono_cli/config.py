@@ -90,6 +90,9 @@ class Settings:
     kronos_top_p: float = field(
         default_factory=lambda: float(os.getenv("KRONOS_TOP_P", "0.9"))
     )
+    kronos_use_sample_confidence: bool = field(
+        default_factory=lambda: os.getenv("KRONOS_USE_SAMPLE_CONFIDENCE", "false").lower() == "true"
+    )
 
     # ── 过滤配置 ──────────────────────────────────────────
     default_min_confidence: float = field(

@@ -19,6 +19,7 @@ from loguru import logger
 from trade_krono_cli.config import get_settings
 from trade_krono_cli.security import validate_ticker, validate_date, retry
 from trade_krono_cli.cache import get_cache
+from trade_krono_cli.ta_decision import InvestmentDecision, Signal, DecisionAdapter
 
 # 懒加载：首次调用时才 import，避免无密钥时直接报错
 _TRAIDINGAGENTS_IMPORTED = False
@@ -72,13 +73,33 @@ class StockAnalysisResult:
     error: Optional[str] = None
     elapsed_sec: float = 0.0
 
+    # 新增：标准化投资决断（由 DecisionAdapter 解析生成）
+    investment_decision: Optional[InvestmentDecision] = None
+
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        if self.investment_decision is not None:
+            d["investment_decision"] = self.investment_decision.to_dict()
+        return d
+
+    @property
+    def decision(self) -> InvestmentDecision:
+        """便捷访问：优先返回结构化 decision，fallback 到 legacy 字段。"""
+        if self.investment_decision is not None:
+            return self.investment_decision
+        # fallback：从 legacy 字段构造
+        sig = Signal(self.signal) if self.signal else Signal.HOLD
+        return InvestmentDecision(
+            signal=sig,
+            confidence=self.confidence or 50.0,
+            thesis=self.reasoning or "",
+        )
 
     def is_buy(self, min_confidence: float = 55.0) -> bool:
+        d = self.decision
         return (
-            self.signal in ("BUY", "OVERWEIGHT")
-            and (self.confidence or 0) >= min_confidence
+            d.signal in (Signal.BUY,)
+            and d.confidence >= min_confidence
             and self.error is None
         )
 
@@ -154,7 +175,7 @@ class TradingAgentsRunner:
             "quick_think_llm": self.quick_think_llm,
             "output_language": self.output_language,
             "max_debate_rounds": self.max_debate_rounds,
-            "max_risk_discuss_rounds": self.max_debate_rounds,
+            "max_risk_discuss_rounds": self._settings.max_risk_discuss_rounds,
             "checkpoint_enabled": self.checkpoint_enabled,
             "data_cache_dir": str(s.cache_dir / "tradingagents"),
             "results_dir": str(s.results_dir),
@@ -205,41 +226,37 @@ class TradingAgentsRunner:
             out[alias] = text[:500]
         return out
 
-    def _extract_decision(self, final_state: dict) -> dict:
-        """从 final_state 提取决策字段。"""
-        # 尝试多种可能的字段名
+    def _extract_decision(self, final_state: dict) -> tuple[dict, Optional[InvestmentDecision]]:
+        """
+        从 final_state 提取决策。
+
+        返回：(legacy_dict, investment_decision)
+        legacy_dict 保持向后兼容，investment_decision 为结构化对象（可能为 None）。
+        """
         decision_text = (
             final_state.get("final_trade_decision", "")
             or final_state.get("trader_investment_plan", "")
             or final_state.get("investment_plan", "")
             or ""
         )
-
-        # 尝试从 debate state 中提取
         debate_state = final_state.get("investment_debate_state", {})
         if isinstance(debate_state, dict):
-            decision_text = debate_state.get("final_decision", decision_text)
+            debate_decision = debate_state.get("final_decision", "")
+            if debate_decision:
+                decision_text = debate_decision
 
-        # 解析信号
-        signal = None
-        confidence = None
-        reasoning = ""
+        # 使用 DecisionAdapter 解析为结构化决策
+        adapter = DecisionAdapter()
+        inv_decision = adapter.parse(decision_text)
 
-        # 简单启发式：从文本中提取 BUY/SELL/HOLD
-        upper_text = decision_text.upper()
-        if "BUY" in upper_text or "OVERWEIGHT" in upper_text:
-            signal = "BUY"
-        elif "SELL" in upper_text or "UNDERWEIGHT" in upper_text:
-            signal = "SELL"
-        elif "HOLD" in upper_text or "NEUTRAL" in upper_text:
-            signal = "HOLD"
-
-        return {
-            "signal": signal,
-            "confidence": confidence,
-            "position_size": None,
+        # 构建 legacy dict（保持向后兼容）
+        legacy = {
+            "signal": inv_decision.signal.value,
+            "confidence": inv_decision.confidence,
+            "position_size": inv_decision.position_size,
             "reasoning": decision_text[:500],
         }
+        return legacy, inv_decision
 
     @retry(max_attempts=3, base_delay=5.0, exceptions=(Exception,))
     def analyze_one(self, ticker: str, date: str) -> StockAnalysisResult:
@@ -287,12 +304,12 @@ class TradingAgentsRunner:
                 )
 
             final_state = analysis_result.get("final_state", {})
-            dec = self._extract_decision(final_state)
+            legacy, inv_decision = self._extract_decision(final_state)
 
-            result.signal = dec.get("signal")
-            result.confidence = dec.get("confidence")
-            result.position_size = dec.get("position_size")
-            result.reasoning = dec.get("reasoning")
+            result.signal = legacy["signal"]
+            result.confidence = legacy["confidence"]
+            result.position_size = legacy["position_size"]
+            result.reasoning = legacy["reasoning"]
             result.reports = self._extract_reports(final_state)
             result.risk_assessment = final_state.get(
                 "risk_debate_state", {}
@@ -302,7 +319,8 @@ class TradingAgentsRunner:
                     result.risk_assessment, ensure_ascii=False
                 )[:500]
 
-            result.decision_raw = dec
+            result.decision_raw = legacy
+            result.investment_decision = inv_decision
 
             logger.info(
                 f"✅ {ticker}: signal={result.signal} "

@@ -17,7 +17,12 @@ from trade_krono_cli.kronos_runner import KronosForecastResult
 def default_scorer(merged: dict) -> float:
     """
     综合打分（满分 100）。
-    权重：TA 置信度 40% + Kronos 涨跌幅 40% + 方向加成 20%
+
+    权重：
+      TA 置信度        40%
+      预期涨跌幅       30%   （从 40% 下调，因不确定性量化更精细）
+      方向加成         10%   （从 20% 下调）
+      预测不确定性     10%   （新增：confidence_score）
     """
     score = 0.0
 
@@ -25,16 +30,22 @@ def default_scorer(merged: dict) -> float:
     ta_conf = merged.get("ta_confidence") or 0
     score += 0.4 * max(0, min(100, ta_conf))
 
-    # Kronos 部分（0-40，涨跌幅映射到 0-100）
+    # 预期涨跌幅（0-30，-50%~+50% → 0~100 → 0~30）
     chg = merged.get("kronos_change_pct") or 0
-    score += 0.4 * max(0, min(100, chg + 50))  # -50%~+50% → 0~100
+    score += 0.3 * max(0, min(100, chg + 50))
 
-    # 方向加成（-20 ~ +20）
+    # 方向加成（-5 ~ +5）
     direction = merged.get("kronos_direction")
     if direction == "UP":
-        score += 0.2 * 20  # +4
+        score += 0.1 * 10   # +1
     elif direction == "DOWN":
-        score += 0.2 * (-20)  # -4
+        score += 0.1 * (-10)  # -1
+
+    # 预测不确定性加成（0-10）
+    pu = merged.get("kronos_prediction_uncertainty")
+    if pu:
+        cs = pu.get("confidence_score") or 0
+        score += 0.1 * max(0, min(100, cs))
 
     return round(max(0, min(100, score)), 2)
 
@@ -48,6 +59,10 @@ def _make_empty_merged(
     ta: Optional[StockAnalysisResult],
     kronos: Optional[KronosForecastResult],
 ) -> dict:
+    pu = None
+    if kronos and kronos.prediction_uncertainty:
+        pu = kronos.prediction_uncertainty.to_dict()
+
     return {
         "ticker": ticker,
         "ta_signal": ta.signal if ta else None,
@@ -61,6 +76,7 @@ def _make_empty_merged(
         "kronos_last_close": kronos.last_close if kronos else None,
         "kronos_pred_close": kronos.predicted_close_final if kronos else None,
         "kronos_confidence_band": kronos.confidence_band if kronos else None,
+        "kronos_prediction_uncertainty": pu,
         "kronos_error": kronos.error if kronos else None,
         "composite_score": None,
         "forecast_dict": kronos.forecast_dict if kronos else None,
@@ -88,7 +104,6 @@ def merge_results(
     if scorer is None:
         scorer = default_scorer
 
-    # 构建 Kronos 查找表
     kronos_map = {r.ticker: r for r in kronos_results if r.error is None}
 
     merged = []
@@ -98,10 +113,8 @@ def merge_results(
         item["composite_score"] = scorer(item)
         merged.append(item)
 
-    # 按综合分降序
     merged.sort(key=lambda x: (x.get("composite_score") or 0), reverse=True)
 
-    # 添加排名
     for i, item in enumerate(merged, 1):
         item["rank"] = i
 
