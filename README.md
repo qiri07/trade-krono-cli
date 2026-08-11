@@ -339,14 +339,15 @@ trade-krono-cli
 │   ├── security.py         # 密钥校验 + 输入校验 + 重试 + 限流
 │   ├── cache.py            # SQLite 缓存层
 │   ├── logger.py           # 日志配置
-│   ├── ta_runner.py        # TradingAgents 封装
+│   ├── ta_decision.py      # 投资决断标准化（Signal / InvestmentDecision / DecisionAdapter）
+│   ├── ta_runner.py        # TradingAgents 封装（含 save_raw_reports 三层存储）
 │   ├── kronos_runner.py    # Kronos 预测封装（含 prediction_uncertainty 模块）
 │   ├── merge.py            # 结果合并 + 综合打分
 │   ├── report.py           # JSON/HTML/控制台报告
-│   └── pipeline.py         # 并行流水线编排
+│   └── pipeline.py         # 并行流水线编排（自动触发原始报告保存）
 ├── scripts/
 │   └── install.sh          # 一键安装脚本
-├── tests/                  # 测试套件（40 项全部通过）
+├── tests/                  # 测试套件（74 项全部通过）
 ├── outputs/                # 运行时输出（.gitignore 忽略）
 └── pyproject.toml          # 项目配置
 ```
@@ -449,7 +450,7 @@ score = TA_confidence * 0.4
 pytest tests/ -v
 ```
 
-测试结果：**40/40 全部通过**
+测试结果：**74/74 全部通过**
 
 | 文件 | 覆盖模块 |
 |------|----------|
@@ -459,6 +460,7 @@ pytest tests/ -v
 | `test_pipeline.py` | 流水线编排、错误隔离 |
 | `test_report.py` | JSON/HTML/控制台报告生成 |
 | `test_security.py` | 密钥校验、输入校验、重试、限流 |
+| `test_ta_decision.py` | DecisionAdapter 结构化解析、InvestmentDecision 数据类、raw 报告存储 |
 
 ## TA 决策提取逻辑
 
@@ -491,6 +493,99 @@ TA 分析结果中的 `signal` 和 `confidence` 由 `_extract_decision()` 从 `f
 | Sell | SELL | 30 |
 | Strong Sell | SELL | 15 |
 
+## 原始报告三层存储
+
+为解决 LLM 报告被截断导致历史信息永久丢失的问题，系统采用三层存储架构：
+
+```
+outputs/results/raw/{date}/{ticker}.json    ← raw: 完整原始报告（永不截断）
+outputs/results/results.json                 ← structured: 核心字段 + 摘要（SQLite 缓存）
+outputs/report.html                          ← summary: 500字展示层
+```
+
+| 层级 | 路径 | 内容 | 用途 |
+|------|------|------|------|
+| **raw** | `results/raw/{date}/{ticker}.json` | `reports_raw` 完整7维度报告 + 完整 reasoning + 完整风险评估 + 结构化 InvestmentDecision | RAG / AI复盘 / 策略回测 / Agent memory |
+| **structured** | SQLite 缓存 + `results.json` | 信号、置信度、综合分、500字摘要 | 快速查询、排序、展示 |
+| **summary** | HTML / 控制台 | 前500字摘要 | 终端展示、网页浏览 |
+
+每份 raw JSON 文件结构：
+
+```json
+{
+  "ticker": "sh.600519",
+  "date": "2026-08-11",
+  "analyzed_at": "2026-08-11T20:30:00",
+  "elapsed_sec": 12.3,
+  "reports_raw": {
+    "market": "完整市场报告（无截断）",
+    "sentiment": "完整情绪报告",
+    "news": "完整新闻报告",
+    "fundamentals": "完整基本面报告",
+    "policy": "完整政策报告",
+    "hot_money": "完整资金报告",
+    "lockup": "完整限售报告"
+  },
+  "decision_text": "完整辩论决策文本（含 Debate 过程）",
+  "risk_assessment": "完整风险评估",
+  "investment_decision": {
+    "signal": "BUY",
+    "confidence": 82.0,
+    "expected_return": 12.5,
+    "thesis": "核心论点摘要",
+    "risks": ["估值风险", "政策风险"]
+  }
+}
+```
+
+通过 `TradingAgentsRunner.load_raw_report()` 可从磁盘加载原始报告：
+
+```python
+from trade_krono_cli.ta_runner import TradingAgentsRunner
+runner = TradingAgentsRunner()
+raw = runner.load_raw_report("sh.600519", "2026-08-11")
+# raw["reports_raw"]["market"] → 完整报告原文
+```
+
+## 投资决断标准化（InvestmentDecision）
+
+TradingAgents 的 LLM 输出（自由文本）通过 `DecisionAdapter` 解析为结构化 `InvestmentDecision`：
+
+```
+LLM 自由文本
+    ↓
+DecisionAdapter.parse(text)
+    ↓
+InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
+```
+
+### 解析优先级
+
+| 优先级 | 策略 | 说明 |
+|--------|------|------|
+| 1 | **Rating** 字段 | 匹配 `**Rating**: Buy` 等结构化字段，直接映射信号和基础置信度 |
+| 2 | 负上下文感知关键词 | 检查目标词前 10 词内是否有 NOT/NO/FAIL 等否定词，避免误判 |
+| 3 | fallback | signal=HOLD, confidence=50 |
+
+### Rating → Signal 映射表
+
+| Rating | Signal | 基础置信度 |
+|--------|--------|-----------|
+| Strong Buy | BUY | 95 |
+| Buy | BUY | 80 |
+| Overweight | BUY | 70 |
+| Neutral / Hold | HOLD | 50 |
+| Underweight | SELL | 40 |
+| Sell | SELL | 30 |
+| Strong Sell | SELL | 15 |
+
+### 额外提取字段
+
+- `thesis`：从 `**Investment Thesis**:` 或 `**Executive Summary**:` 提取核心论点
+- `risks`：从风险关键词附近提取 bullet-list 条目（中英文支持）
+- `expected_return`：从百分比数字中解析预期收益率（排除 PE/PEG 等财务比率行）
+- `position_size`：从 "仓位: xx%" 等模式提取建议仓位
+
 ## 安全说明
 
 | 层面 | 措施 | 位置 |
@@ -501,6 +596,7 @@ TA 分析结果中的 `signal` 和 `confidence` 由 `_extract_decision()` 从 `f
 | API 限流 | 令牌桶算法控制 baostock 请求频率（默认 1次/秒） | `security.py::TokenBucket` |
 | 路径隔离 | 外部项目通过 `sys.path` 注入，不修改其源码 | `kronos_runner.py`, `ta_runner.py` |
 | 缓存安全 | SQLite 本地存储，不上传任何数据；缓存 TTL 过期自动清理 | `cache.py` |
+| baostock 登录 | 全局单例登录 + 令牌桶限流，避免并发冲突；不支持多线程并发登录 | `data.py::_ensure_bs_login` |
 
 ## 注意事项
 
