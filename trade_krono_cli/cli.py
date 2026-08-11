@@ -361,6 +361,46 @@ def history(
 
 
 # ═══════════════════════════════════════════════════════
+# eval — 预测评估
+# ═══════════════════════════════════════════════════════
+
+@app.command()
+def eval_prediction(
+    from_date: Optional[str] = typer.Option(
+        None, "--from", "-f",
+        help="起始分析日期 YYYY-MM-DD"
+    ),
+    to_date: Optional[str] = typer.Option(
+        None, "--to", "-t",
+        help="截止分析日期 YYYY-MM-DD"
+    ),
+    tickers: Optional[str] = typer.Option(
+        None, "--tickers", "-i",
+        help="只评估指定股票（逗号分隔）"
+    ),
+    latest: bool = typer.Option(
+        False, "--latest", "-l",
+        help="查看最新评估结果（不重新计算）"
+    ),
+):
+    """预测评估：验证历史预测的准确性。"""
+    _load_env()
+
+    from trade_krono_cli.prediction_eval import run_evaluation
+
+    ticker_list = None
+    if tickers:
+        ticker_list = [x.strip() for x in tickers.split(",") if x.strip()]
+
+    run_evaluation(
+        from_date=from_date,
+        to_date=to_date,
+        tickers=ticker_list,
+        latest=latest,
+    )
+
+
+# ═══════════════════════════════════════════════════════
 # 入口
 # ═══════════════════════════════════════════════════════
 

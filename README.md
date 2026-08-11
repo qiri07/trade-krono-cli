@@ -371,6 +371,37 @@ trade-krono-cli history
 trade-krono-cli status
 ```
 
+## 预测评估（Prediction Evaluation）
+
+量化系统的核心：验证预测是否真的有 Alpha。
+
+```bash
+# 对历史数据进行预测验证
+trade-krono-cli eval-prediction
+
+# 指定日期范围
+trade-krono-cli eval-prediction --from 2026-01-01 --to 2026-08-11
+
+# 只评估特定股票
+trade-krono-cli eval-prediction -i sh.600519,sz.000858
+
+# 查看已存储的评估结果（不重新计算）
+trade-krono-cli eval-prediction --latest
+```
+
+评估指标：
+
+| 模块 | 指标 | 说明 |
+|------|------|------|
+| **Kronos** | 5D/10D/20D 方向准确率 | 预测方向 vs 实际方向（>50% = 超越随机） |
+| **Kronos** | MAE / RMSE | 预测涨跌幅 vs 实际涨跌幅的平均误差 |
+| **TA BUY** | 胜率 + 平均收益 | 所有 BUY 信号持有 N 天的表现 |
+| **TA HOLD** | 平均收益 | 持有基准收益（对照用） |
+| **综合信号** | TA BUY + Kronos UP 胜率 | 双重确认信号的表现 |
+| **高置信** | 综合分 ≥ 70 的胜率 | 高置信信号是否真的更可靠 |
+
+基准：随机方向准确率 50%，胜率为 50%。
+
 ## 架构设计
 
 ```
