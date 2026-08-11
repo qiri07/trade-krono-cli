@@ -7,6 +7,7 @@ trade-krono-cli CLI 入口 — Typer 实现。
   kronos     仅 Kronos 预测
   status     查看系统状态
   history    查看历史分析记录
+  repo       外部项目管理（status / doctor / update / pin）
   clear-cache  清除缓存
 """
 from __future__ import annotations
@@ -28,6 +29,130 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
+
+
+# ═══════════════════════════════════════════════════════
+# repo — 外部项目管理子命令组
+# ═══════════════════════════════════════════════════════
+
+repo_app = typer.Typer(
+    help="📦 外部项目管理：TradingAgents-astock、Kronos 等下游依赖",
+)
+app.add_typer(repo_app, name="repo")
+
+
+@repo_app.command()
+def repo_status():
+    """查看所有外部 repo 的状态（分支、commit、dirty、pinned、lock 漂移）。"""
+    from trade_krono_cli.external import status
+    entries = status()
+    if not entries:
+        console.print("[yellow]⚠️  未检测到外部 repo 配置[/yellow]")
+        return
+
+    table = Table(title="📦 外部 Repo 状态", header_style="bold cyan")
+    for col in ("Repo", "路径", "分支", "Commit", "Pinned", "Locked", "Dirty", "状态"):
+        table.add_column(col, justify="left" if col in ("Repo", "路径", "状态") else "center")
+    for e in entries:
+        path_str = str(e.path_exists)
+        branch = e.branch or "?"
+        commit = e.commit_short or (e.commit[:12] if e.commit else "?")
+        pinned = "✅" if e.is_pinned else "—"
+        locked = "📌" if e.is_locked else "—"
+        dirty = "⚠️" if e.is_dirty else "—"
+        if not e.path_exists:
+            state = "[red]不存在[/red]"
+        elif not e.is_git_repo:
+            state = "[yellow]非 git[/yellow]"
+        elif e.lock_mismatch:
+            state = f"[red]lock漂移[/red]"
+        elif e.error:
+            state = f"[red]{e.error}[/red]"
+        elif e.is_up_to_date is True:
+            state = "[green]最新[/green]"
+        elif e.is_up_to_date is False:
+            state = "[yellow]落后[/yellow]"
+        else:
+            state = "—"
+        table.add_row(e.name, path_str, branch, commit, pinned, locked, dirty, state)
+    console.print(table)
+
+
+@repo_app.command()
+def repo_doctor():
+    """诊断外部 repo 问题，列出所有需要关注的项。"""
+    from trade_krono_cli.external import doctor, status, load_lock
+    issues = doctor()
+    entries = status()
+    lock = load_lock()
+
+    if not issues and entries:
+        console.print("[green]✅ 所有外部 repo 状态正常[/green]")
+        # 显示当前 pin/lock 状态
+        for e in entries:
+            if e.is_pinned and e.commit:
+                console.print(f"  📌 [{e.name}] pinned → {e.commit[:12]}")
+            elif e.is_locked and e.lock_commit:
+                console.print(f"  🔒 [{e.name}] locked  → {e.lock_commit}（未 pinned，跟踪 branch）")
+            elif e.branch:
+                console.print(f"  🌿 [{e.name}] tracking → {e.branch}")
+        # 显示 lock 文件时间戳
+        if lock.get("generated_at"):
+            console.print(f"\n  [dim]repo.lock 最后更新: {lock['generated_at']}[/dim]")
+        return
+
+    if not entries:
+        console.print("[yellow]⚠️  未检测到外部 repo 配置[/yellow]")
+        console.print("  建议：创建 external/repos.yaml 或使用默认路径")
+        raise typer.Exit(1)
+
+    console.print("[bold red]❌ 检测到以下问题：[/bold red]")
+    for issue in issues:
+        console.print(f"  {issue}")
+
+    console.print("\n[dim]💡 修复建议：[/dim]")
+    console.print("  • 路径不存在  → 将项目 clone 到指定路径，或编辑 external/repos.yaml")
+    console.print("  • 非 git repo → 初始化 git：git init")
+    console.print("  • dirty       → git stash 或 git checkout -- .")
+    console.print("  • lock 漂移   → 运行 repo pin <name> <commit> 重新锁定")
+    console.print("  • 落后于远程  → 运行 repo update")
+    raise typer.Exit(1)
+
+
+@repo_app.command()
+def repo_update():
+    """拉取所有外部 repo 的最新代码（仅 unpinned repos），并刷新 repo.lock。"""
+    from trade_krono_cli.external import update, get_repos
+    repos = get_repos()
+    pinned = [r.name for r in repos if r.commit]
+    if pinned:
+        console.print(f"[yellow]⚠️  以下 repo 已 pinned，跳过 update：{', '.join(pinned)}[/yellow]")
+        console.print("  （pinned repo 需手动 git checkout 后再 update）")
+
+    results = update()
+    for name, msg in results.items():
+        console.print(f"  {msg}")
+
+
+@repo_app.command()
+def repo_pin(
+    name: str = typer.Argument(..., help="repo 名称：tradingagents / kronos"),
+    commit: str = typer.Argument(..., help="commit SHA（长或短均可）"),
+):
+    """将外部 repo pin 到指定 commit，同时更新 repos.yaml 和 repo.lock。
+
+    示例：
+      trade-krono-cli repo pin tradingagents abc1234
+      trade-krono-cli repo pin kronos def5678
+    """
+    from trade_krono_cli.external import pin
+    try:
+        pin(name, commit)
+        console.print(f"[green]✅ [{name}] 已 pin 到 {commit[:12]}[/green]")
+        console.print(f"   配置文件已更新：external/repos.yaml + external/repo.lock")
+    except ValueError as e:
+        console.print(f"[red]❌ {e}[/red]")
+        raise typer.Exit(1)
 
 
 def _load_env() -> None:

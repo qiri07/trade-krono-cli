@@ -1,0 +1,39 @@
+# 外部依赖项目管理配置
+#
+# 每个 repo 支持以下字段：
+#   path    : 相对项目根目录的路径（必填）
+#   branch  : 默认跟踪分支（默认 main）
+#   url     : 远程 git 地址（可选，用于 doctor 提示信息）
+#   commit  : 锁定到指定 commit SHA（默认 null = 跟踪 branch）
+#             非 null 时，系统将强制检查当前 HEAD 是否与此 commit 一致
+#
+# 示例：
+#   repos:
+#     tradingagents:
+#       path: external/TradingAgents-astock
+#       branch: main
+#       url:  https://github.com/simonlin1212/TradingAgents-astock
+#       commit: null          # null = unpinned，跟踪 branch
+#     kronos:
+#       path: external/Kronos
+#       branch: main
+#       url:  https://github.com/shiyu-coder/Kronos
+#       commit: null          # null = unpinned，跟踪 branch
+#
+# 使用命令：
+#   trade-krono-cli repo status   # 查看各 repo 状态
+#   trade-krono-cli repo doctor   # 诊断问题
+#   trade-krono-cli repo update   # 拉取最新代码
+#   trade-krono-cli repo pin tradingagents abc123def456  # 锁定到指定 commit
+
+repos:
+  tradingagents:
+    path: external/TradingAgents-astock
+    branch: main
+    url: https://github.com/simonlin1212/TradingAgents-astock
+    commit: null
+  kronos:
+    path: external/Kronos
+    branch: main
+    url: https://github.com/shiyu-coder/Kronos
+    commit: null

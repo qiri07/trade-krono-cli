@@ -132,16 +132,8 @@ class QuantPipeline:
                     job_id, r.ticker, r.investment_decision,
                     r.investment_decision.thesis, r.investment_decision.risks,
                 )
-                # 索引原始报告文件
-                report_path = raw_paths.get(r.ticker)
-                if report_path:
-                    from pathlib import Path as _P
-                    raw_file = _P(report_path)
-                    if raw_file.exists():
-                        import json as _json
-                        file_data = _json.loads(raw_file.read_text(encoding="utf-8"))
-                        lengths = {k: len(v) for k, v in file_data.get("reports_raw", {}).items()}
-                        research.index_raw_report(job_id, r.ticker, str(report_path), lengths)
+
+        self._index_ta_raw_reports(research, job_id, ta_results, raw_paths)
 
         for r in kronos_results:
             research.insert_kronos(job_id, r, version_snapshot=version_snapshot)
@@ -196,21 +188,37 @@ class QuantPipeline:
                     job_id, r.ticker, r.investment_decision,
                     r.investment_decision.thesis, r.investment_decision.risks,
                 )
-                report_path = raw_paths.get(r.ticker)
-                if report_path:
-                    from pathlib import Path as _P
-                    raw_file = _P(report_path)
-                    if raw_file.exists():
-                        import json as _json
-                        file_data = _json.loads(raw_file.read_text(encoding="utf-8"))
-                        lengths = {k: len(v) for k, v in file_data.get("reports_raw", {}).items()}
-                        research.index_raw_report(job_id, r.ticker, str(report_path), lengths)
+
+        self._index_ta_raw_reports(research, job_id, results, raw_paths)
 
         elapsed = time.time() - t0
         research.complete_job(job_id, n_success=sum(1 for r in results if r.error is None), elapsed=elapsed)
         logger.info(f"📊 TA 研究作业完成: job={job_id} run_id={version_snapshot['run_id']}")
 
         return results
+
+    @staticmethod
+    def _index_ta_raw_reports(
+        research, job_id: str, ta_results: list, raw_paths: dict,
+    ) -> None:
+        """索引 TA 原始报告文件到 research database。"""
+        from pathlib import Path as _P
+        import json as _json
+        for r in ta_results:
+            if not r.investment_decision:
+                continue
+            report_path = raw_paths.get(r.ticker)
+            if not report_path:
+                continue
+            raw_file = _P(report_path)
+            if not raw_file.exists():
+                continue
+            try:
+                file_data = _json.loads(raw_file.read_text(encoding="utf-8"))
+                lengths = {k: len(v) for k, v in file_data.get("reports_raw", {}).items()}
+                research.index_raw_report(job_id, r.ticker, str(report_path), lengths)
+            except Exception as e:
+                logger.warning(f"⚠️  索引原始报告失败 {r.ticker}: {e}")
 
     def run_kronos_only(
         self,

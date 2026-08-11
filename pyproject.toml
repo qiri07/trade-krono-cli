@@ -17,10 +17,12 @@ dependencies = [
     "rich>=13.0.0",
     "loguru>=0.7.0",
     "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
     "pandas>=2.0.0",
     "baostock>=0.8.8",
     "torch>=2.0.0",
-    "cli-anything-tradingagents>=1.0.0",
+    # cli-anything-tradingagents 已移至外部项目管理（external/repos.yaml + repo.lock）
+    # 不再作为 PyPI 依赖引入，避免与 TradingAgents-astock 产生包级耦合
 ]
 
 [project.optional-dependencies]

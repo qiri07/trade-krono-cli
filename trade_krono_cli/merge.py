@@ -3,16 +3,21 @@
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
+import pandas as pd
 from loguru import logger
 from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosForecastResult
+from trade_krono_cli.risk.risk_engine import RiskEngine, RiskScore
 
 
 # ═══════════════════════════════════════════════════════
 # 综合打分
 # ═══════════════════════════════════════════════════════
+
+_RISK_PENALTY_WEIGHT = 0.15  # 风险惩罚在总分中的最大占比（15%）
+
 
 def default_scorer(merged: dict) -> float:
     """
@@ -20,9 +25,14 @@ def default_scorer(merged: dict) -> float:
 
     权重：
       TA 置信度        40%
-      预期涨跌幅       30%   （从 40% 下调，因不确定性量化更精细）
-      方向加成         10%   （从 20% 下调）
-      预测不确定性     10%   （新增：confidence_score）
+      预期涨跌幅       30%
+      方向加成         10%
+      预测不确定性     10%
+      风险惩罚        15%   （新增：高风险股票扣分）
+
+    风险惩罚逻辑：
+      总风险分 0-100 → 惩罚力度 0~15 分（线性映射）
+      即：高风险股票的综合得分最多被扣 15 分
     """
     score = 0.0
 
@@ -46,6 +56,11 @@ def default_scorer(merged: dict) -> float:
     if pu:
         cs = pu.get("confidence_score") or 0
         score += 0.1 * max(0, min(100, cs))
+
+    # 风险惩罚（0~15，高风险 → 扣分多）
+    total_risk = merged.get("risk_score_total", 0) or 0
+    risk_penalty = (total_risk / 100.0) * _RISK_PENALTY_WEIGHT * 100
+    score -= risk_penalty
 
     return round(max(0, min(100, score)), 2)
 
@@ -80,22 +95,65 @@ def _make_empty_merged(
         "kronos_error": kronos.error if kronos else None,
         "composite_score": None,
         "forecast_dict": kronos.forecast_dict if kronos else None,
+        # Risk Engine 字段
+        "risk_score_total": None,
+        "risk_scores": None,
     }
+
+
+def run_risk_assessment(
+    ticker: str,
+    date: str,
+    kline_df: pd.DataFrame,
+    quote_data: Optional[dict] = None,
+    ta_result: Optional[StockAnalysisResult] = None,
+) -> tuple[float, dict]:
+    """
+    对单只股票运行风险引擎，返回 (total_risk, risk_scores_dict)。
+
+    Parameters
+    ----------
+    ticker      : 股票代码
+    date        : 评估日期
+    kline_df    : K 线 DataFrame
+    quote_data  : 实时估值数据（可选）
+    ta_result   : TA 分析结果（可选）
+
+    Returns
+    -------
+    (total_risk, risk_scores)
+      total_risk : 综合风险分 0-100
+      risk_scores : {volatility, drawdown, liquidity, concentration, market_regime}
+    """
+    engine = RiskEngine()
+    risk = engine.assess(ticker, date, kline_df, quote_data, ta_result)
+    scores = {
+        "volatility": risk.volatility_score,
+        "drawdown": risk.drawdown_score,
+        "liquidity": risk.liquidity_score,
+        "concentration": risk.concentration_score,
+        "market_regime": risk.market_regime_score,
+    }
+    return risk.total_risk, scores
 
 
 def merge_results(
     ta_results: list[StockAnalysisResult],
     kronos_results: list[KronosForecastResult],
-    scorer: Optional[callable] = None,
+    scorer: Optional[Callable[..., float]] = None,
+    kline_data: Optional[dict[str, pd.DataFrame]] = None,
+    quote_data: Optional[dict[str, dict]] = None,
 ) -> list[dict]:
     """
     将 TA 分析结果和 Kronos 预测结果合并。
 
     Parameters
     ----------
-    ta_results : TA 分析结果列表
+    ta_results     : TA 分析结果列表
     kronos_results : Kronos 预测结果列表
-    scorer : 自定义打分函数，默认为 default_scorer
+    scorer         : 自定义打分函数，默认为 default_scorer
+    kline_data     : {ticker: kline_df} 字典（可选，用于风险引擎）
+    quote_data     : {ticker: quote_dict} 字典（可选，用于流动性风险计算）
 
     Returns
     -------
@@ -105,11 +163,35 @@ def merge_results(
         scorer = default_scorer
 
     kronos_map = {r.ticker: r for r in kronos_results if r.error is None}
+    kline_map = kline_data or {}
+    quote_map = quote_data or {}
 
     merged = []
     for ta in ta_results:
         kr = kronos_map.get(ta.ticker)
         item = _make_empty_merged(ta.ticker, ta, kr)
+
+        # 运行风险引擎（若有 K 线数据）
+        tk = ta.ticker
+        if tk in kline_map:
+            try:
+                total_risk, risk_scores = run_risk_assessment(
+                    ticker=tk,
+                    date=ta.date,
+                    kline_df=kline_map[tk],
+                    quote_data=quote_map.get(tk),
+                    ta_result=ta,
+                )
+                item["risk_score_total"] = total_risk
+                item["risk_scores"] = risk_scores
+            except Exception as e:
+                logger.warning(f"⚠️  风险评估失败 {tk}: {e}")
+                item["risk_score_total"] = 50.0
+                item["risk_scores"] = {}
+        else:
+            item["risk_score_total"] = None
+            item["risk_scores"] = None
+
         item["composite_score"] = scorer(item)
         merged.append(item)
 

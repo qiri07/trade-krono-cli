@@ -233,12 +233,14 @@ class ResearchDatabase:
         "jobs", "ta_analysis", "kronos_forecast",
         "signals", "decisions", "raw_reports",
         "backtest_results", "strategy_runs",
+        "evaluation_results",
     )
 
     # 版本追踪列（jobs 表）
     _VERSION_COLS = (
         "run_id", "data_version", "model_versions",
         "prompt_version", "strategy_version", "config_hash",
+        "external_repos",
     )
 
     def __init__(self, db_path: Optional[Path] = None):
@@ -268,6 +270,7 @@ class ResearchDatabase:
                     prompt_version TEXT,             -- TA prompt 版本
                     strategy_version TEXT,           -- 项目版本
                     config_hash    TEXT,             -- 配置 SHA256 前16位
+                    external_repos TEXT,             -- JSON: {tradingagents, kronos} 复现信息
                     notes          TEXT
                 );
 
@@ -368,12 +371,12 @@ class ResearchDatabase:
         不破坏任何现有数据。
         """
         with sqlite3.connect(self._db_path) as conn:
-            # 检查 jobs 表是否有 run_id 列
             info = conn.execute(
                 "PRAGMA table_info(jobs)"
             ).fetchall()
             existing_cols = {row[1] for row in info}
 
+            # 批量迁移旧版本缺失的列（run_id 不存在时全部加）
             if "run_id" not in existing_cols:
                 for col in self._VERSION_COLS:
                     try:
@@ -383,6 +386,17 @@ class ResearchDatabase:
                         logger.debug(f"📐 Schema 迁移: jobs.{col}")
                     except sqlite3.OperationalError:
                         pass  # 列已存在
+
+            # 增量迁移：逐个检查新版本列是否存在
+            for col in ("external_repos",):
+                if col not in existing_cols:
+                    try:
+                        conn.execute(
+                            f"ALTER TABLE jobs ADD COLUMN {col} TEXT"
+                        )
+                        logger.debug(f"📐 Schema 迁移: jobs.{col}")
+                    except sqlite3.OperationalError:
+                        pass
 
             # 确保其他表存在
             for table in ("ta_analysis", "kronos_forecast", "signals",
@@ -426,8 +440,9 @@ class ResearchDatabase:
                 "INSERT INTO jobs "
                 "(job_id, run_id, run_at, date, tickers, n_tickers, "
                 " n_success, elapsed, data_version, model_versions, "
-                " prompt_version, strategy_version, config_hash, notes) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " prompt_version, strategy_version, config_hash, "
+                " external_repos, notes) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     job_id,
                     snapshot.get("run_id"),
@@ -440,6 +455,8 @@ class ResearchDatabase:
                     snapshot.get("prompt_version"),
                     snapshot.get("strategy_version"),
                     snapshot.get("config_hash"),
+                    json.dumps(snapshot.get("external_repos", {}),
+                               ensure_ascii=False),
                     notes,
                 ),
             )
@@ -468,7 +485,8 @@ class ResearchDatabase:
             row = conn.execute(
                 "SELECT job_id, run_id, run_at, date, tickers, n_tickers, "
                 " n_success, elapsed, data_version, model_versions, "
-                " prompt_version, strategy_version, config_hash, notes "
+                " prompt_version, strategy_version, config_hash, "
+                " external_repos, notes "
                 "FROM jobs WHERE job_id=?",
                 (job_id,),
             ).fetchone()
@@ -488,7 +506,8 @@ class ResearchDatabase:
             "prompt_version": row[10],
             "strategy_version": row[11],
             "config_hash": row[12],
-            "notes": row[13],
+            "external_repos": json.loads(row[13]) if len(row) > 13 and row[13] else {},
+            "notes": row[14] if len(row) > 14 else None,
         }
 
     def list_jobs(self, limit: int = 20) -> list[dict]:

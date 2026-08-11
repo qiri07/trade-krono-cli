@@ -1,0 +1,6 @@
+{
+  "_comment": "外部依赖锁定文件 — 每次 repo pin / repo update 后自动更新",
+  "_schema": "1.0",
+  "generated_at": null,
+  "repos": {}
+}

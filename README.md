@@ -24,8 +24,12 @@
 - [架构设计](#架构设计)
 - [预测不确定性量化模块](#预测不确定性量化模块)
 - [综合打分公式](#综合打分公式)
-- [依赖](#依赖)
+- [风险引擎（Risk Engine）](#风险引擎risk-engine)
+- [外部项目管理（External Repo Manager）](#外部项目管理external-repo-manager)
 - [测试](#测试)
+- [TA 决策提取逻辑](#ta-决策提取逻辑)
+- [原始报告三层存储](#原始报告三层存储)
+- [投资决断标准化（InvestmentDecision）](#投资决断标准化investmentdecision)
 - [安全说明](#安全说明)
 - [注意事项](#注意事项)
 
@@ -39,6 +43,25 @@ pip install -e .
 
 # 配置（复制并编辑 .env）
 cp .env.example .env
+
+# 克隆外部依赖项目（按需选择，可手动修改路径后 clone）
+git clone https://github.com/simonlin1212/TradingAgents-astock external/TradingAgents-astock
+git clone https://github.com/shiyu-coder/Kronos external/Kronos
+
+# 创建外部项目配置文件
+cat > external/repos.yaml << 'EOF'
+repos:
+  tradingagents:
+    path: external/TradingAgents-astock
+    branch: main
+    url: https://github.com/simonlin1212/TradingAgents-astock
+    commit: null
+  kronos:
+    path: external/Kronos
+    branch: main
+    url: https://github.com/shiyu-coder/Kronos
+    commit: null
+EOF
 
 # 一键运行（TA + Kronos 并行）
 trade-krono-cli run --tickers "600519,000858,600036" --date 2026-08-11
@@ -168,10 +191,10 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock 请求间隔（秒）
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `TRADINGAGENTS_ROOT` | `/run/media/onai/MyDisk/Work/TradingAgents-astock` | TradingAgents-astock 项目根目录 |
-| `KRONOS_ROOT` | `/run/media/onai/MyDisk/Work/Kronos` | Kronos 项目根目录 |
+| `TRADINGAGENTS_ROOT` | — | TradingAgents-astock 项目根目录（可通过 `external/repos.yaml` 替代） |
+| `KRONOS_ROOT` | — | Kronos 项目根目录（可通过 `external/repos.yaml` 替代） |
 
-> **注意**：路径配置使用绝对路径，若项目位置不同请修改 `TRADINGAGENTS_ROOT` 和 `KRONOS_ROOT`。
+> **提示**：推荐使用 `external/repos.yaml` 管理外部项目路径（见[外部项目管理](#外部项目管理external-repo-manager)），环境变量仅作为后备方案。
 
 ### 通过环境变量覆盖
 
@@ -416,12 +439,15 @@ trade-krono-cli
 │   ├── ta_decision.py      # 投资决断标准化（Signal / InvestmentDecision / DecisionAdapter）
 │   ├── ta_runner.py        # TradingAgents 封装（含 save_raw_reports 三层存储）
 │   ├── kronos_runner.py    # Kronos 预测封装（含 prediction_uncertainty 模块）
-│   ├── merge.py            # 结果合并 + 综合打分
+│   ├── merge.py            # 结果合并 + 综合打分（含风险惩罚）
 │   ├── report.py           # JSON/HTML/控制台报告
-│   └── pipeline.py         # 并行流水线编排（自动触发原始报告保存 + 研究数据库写入）
+│   ├── prediction_eval.py  # 预测评估（Kronos/TA/综合信号胜率验证）
+│   ├── pipeline.py         # 并行流水线编排（自动触发原始报告保存 + 研究数据库写入）
+│   ├── external.py         # 外部项目管理（repo status/doctor/update/pin）
+│   └── risk/               # 风险引擎（波动率/回撤/流动性/集中度/市场环境）
 ├── scripts/
 │   └── install.sh          # 一键安装脚本
-├── tests/                  # 测试套件（90 项全部通过）
+├── tests/                  # 测试套件（156 项全部通过）
 ```
 
 ### 缓存 vs 研究数据库
@@ -452,14 +478,6 @@ trade-krono-cli
 | `strategy_runs` | 策略运行记录（预留） |
 
 这些表用于**历史回溯**——回答"上次分析了哪些股票？""某只股票的历史信号是什么？"等问题。数据不会被自动清理。
-
-```
-# CLI 命令
-trade-krono-cli status        # 查看缓存 + 研究数据库统计 + 最近作业
-trade-krono-cli history       # 查看所有历史分析作业
-trade-krono-cli history -t sh.600519  # 查看某只股票的历史记录
-trade-krono-cli clear-cache   # 仅清除缓存表（不影响研究数据）
-```
 
 ### 并行策略
 
@@ -532,6 +550,244 @@ score = TA_confidence * 0.4
 
 综合得分最高者排名最前。相比旧版公式（40%/40%/20%），新版降低了对涨跌幅的权重（40%→30%），引入了不确定性量化加成（10%），使排名更加稳健。
 
+## 风险引擎（Risk Engine）
+
+对每只候选股票进行多维度风险量化，输出 0-100 风险分，并作为综合打分的惩罚因子。
+
+### 风险维度
+
+| 维度 | 计算来源 | 逻辑 | 权重 |
+|------|----------|------|------|
+| **波动率风险** | K 线日收益率 20 日年化标准差 | 波动率越高，风险越大（0%→0分，60%→100分） | 30% |
+| **回撤风险** | 60 日滚动最高价 → 最大回撤 | 回撤越大，风险越大（5%→20分，40%→100分） | 25% |
+| **流动性风险** | 20 日平均成交量 + 市值 | 成交量越小，风险越大（分段映射） | 20% |
+| **集中度风险** | 占位实现（预留组合权重接口） | 当前默认 10 分 | 10% |
+| **市场环境风险** | 20 日 + 60 日动量 | 下跌趋势风险高，上涨趋势风险低 | 15% |
+
+### 输出示例
+
+```
+====================================
+  Risk Score for sh.600519 (2026-08-11)
+====================================
+  流动性风险       8
+  波动率风险      12
+  回撤风险        15
+  集中度风险       5
+  市场环境风险    10
+------------------------------------
+  Total Risk     50.0
+====================================
+```
+
+### 与综合打分的关系
+
+风险分进入 `default_scorer` 作为**惩罚因子**：
+
+```
+risk_penalty = total_risk / 100 × 15   （最高扣 15 分）
+final_score  = base_score - risk_penalty
+```
+
+高风险股票（如总风险 80）的综合得分最多被扣 12 分（80% × 15），从而在排名中自然降权。
+
+### 模块结构
+
+```
+trade_krono_cli/risk/
+├── volatility.py    # 波动率风险
+├── drawdown.py      # 回撤风险
+├── liquidity.py     # 流动性风险
+├── concentration.py # 集中度风险（预留接口）
+├── market_regime.py # 市场环境风险
+└── risk_engine.py   # 聚合引擎 + RiskScore 数据类
+```
+
+### 使用方式
+
+```python
+from trade_krono_cli.risk import RiskEngine, assess_risk
+import pandas as pd
+
+# 方式一：便捷函数
+engine = RiskEngine()
+risk = engine.assess(ticker, date, kline_df, quote_data={"market_cap": 200.0})
+print(risk.print_report())
+
+# 方式二：直接调用子模块
+from trade_krono_cli.risk.volatility import calc_volatility_risk
+score, ann_vol = calc_volatility_risk(close_series)
+```
+
+## 外部项目管理（External Repo Manager）
+
+管理依赖的下游项目（TradingAgents-astock、Kronos），确保结果可复现。
+
+### 为什么需要？
+
+直接引用外部路径（`TRADINGAGENTS_ROOT=/path/to/...`）存在以下问题：
+
+| 问题 | 说明 |
+|------|------|
+| 路径依赖 | 换机器/目录后配置失效 |
+| 版本不可追踪 | 不知道历史结果用的是什么 commit |
+| dirty 状态未知 | 本地修改可能导致结果漂移 |
+| PyPI 耦合 | `cli-anything-tradingagents` 作为 PyPI 依赖引入，破坏了外部项目的独立性 |
+
+### 文件分工
+
+```
+external/
+├── repos.yaml    ← 人类可编辑：路径、分支、URL（手动维护）
+└── repo.lock     ← 机器维护：锁定的 commit SHA + 时间戳（自动写入）
+```
+
+**`repo.lock` 是复现的权威来源。** 每次 `repo pin` 或 `repo update` 后自动写入。
+建议将 `repo.lock` 提交到 git（跟踪变更），而 `repos.yaml` 可以只保留路径信息。
+
+### 配置文件示例
+
+```yaml
+# external/repos.yaml
+repos:
+  tradingagents:
+    path: external/TradingAgents-astock
+    branch: main
+    url: https://github.com/simonlin1212/TradingAgents-astock
+    commit: null          # null = 跟踪 branch；非 null = pinned 到该 commit
+  kronos:
+    path: external/Kronos
+    branch: main
+    url: https://github.com/shiyu-coder/Kronos
+    commit: null
+```
+
+### repo.lock 示例
+
+```json
+{
+  "generated_at": "2026-08-11T21:30:00",
+  "repos": {
+    "tradingagents": {
+      "commit": "abc123def456789...",
+      "commit_short": "abc123def456",
+      "pinned_at": "2026-08-11T21:30:00",
+      "branch": "main",
+      "dirty": false
+    },
+    "kronos": {
+      "commit": "def789ghi012345...",
+      "commit_short": "def789ghi012",
+      "pinned_at": "2026-08-11T21:30:00",
+      "branch": "main",
+      "dirty": false
+    }
+  }
+}
+```
+
+### CLI 命令
+
+```bash
+# 查看所有外部 repo 状态（分支 / commit / locked / dirty / lock 漂移）
+trade-krono-cli repo status
+
+# 诊断问题（路径不存在、dirty、lock 漂移、branch mismatch）
+trade-krono-cli repo doctor
+
+# 拉取最新代码，自动刷新 repo.lock（仅 unpinned repos）
+trade-krono-cli repo update
+
+# 锁定到指定 commit（同时写入 repos.yaml + repo.lock）
+trade-krono-cli repo pin tradingagents abc123def456
+trade-krono-cli repo pin kronos def789ghi012
+```
+
+### 与 PyPI 解耦
+
+`trade-krono-cli` **不再将 `cli-anything-tradingagents` 作为 PyPI 依赖**。
+
+```
+旧架构（有耦合）：                    新架构（完全解耦）：
+trade-krono-cli                       trade-krono-cli
+  ├─ pip install cli-anything-         ├─ external/repos.yaml  （路径+分支）
+       tradingagents                   ├─ external/repo.lock   （commit 锁定）
+  └─ import tradingagents              └─ sys.path.insert(external/)
+```
+
+这样：
+- 固定某个 TradingAgents commit 只需用 `repo pin`，无需重新发布 PyPI 包
+- 外部项目可以自由修改，不受 `pyproject.toml` 约束
+- `repo doctor` 会检测 lock 漂移（代码被更新但 lock 未刷新）
+
+### Pin 的作用
+
+当 `commit` 非 null 时：
+1. 每次运行自动检查当前 HEAD 是否与 repo.lock 中记录的一致
+2. 不一致时 `repo doctor` 会报 `lock 漂移` 错误
+3. 历史分析的 `external_repos` 快照中记录当时使用的 commit
+4. 半年后重跑同一脚本，结果完全可复现
+
+### 在版本快照中的体现
+
+每次分析作业的 `external_repos` 字段自动记录：
+
+```json
+{
+  "external_repos": {
+    "tradingagents": {
+      "commit": "abc123def456",
+      "branch": "main",
+      "pinned": true,
+      "locked": true,
+      "dirty": false,
+      "lock_mismatch": false
+    },
+    "kronos": {
+      "commit": "def789ghi012",
+      "branch": "main",
+      "pinned": false,
+      "locked": true,
+      "dirty": false,
+      "lock_mismatch": false
+    }
+  }
+}
+```
+
+可通过 `trade-krono-cli history -t sh.600519` 查看某只股票历次分析的 external repos 信息。
+
+### 迁移指南
+
+如果当前使用 `TRADINGAGENTS_ROOT` / `KRONOS_ROOT` 环境变量：
+
+```bash
+# 1. 将外部项目移到 external/ 目录下（或创建符号链接）
+# 示例路径请替换为实际位置
+ln -s /你的/路径/TradingAgents-astock external/TradingAgents-astock
+ln -s /你的/路径/Kronos external/Kronos
+
+# 2. 创建配置文件
+cat > external/repos.yaml << 'EOF'
+repos:
+  tradingagents:
+    path: external/TradingAgents-astock
+    branch: main
+    url: https://github.com/simonlin1212/TradingAgents-astock
+    commit: null
+  kronos:
+    path: external/Kronos
+    branch: main
+    url: https://github.com/shiyu-coder/Kronos
+    commit: null
+EOF
+
+# 3. 初始化 lock 文件并验证
+trade-krono-cli repo update   # 自动写入 repo.lock
+trade-krono-cli repo status
+trade-krono-cli repo doctor
+```
+
 ## 依赖
 
 ### Python 依赖（pyproject.toml）
@@ -542,15 +798,17 @@ score = TA_confidence * 0.4
 | `rich` | 终端美化输出 |
 | `loguru` | 日志 |
 | `python-dotenv` | .env 加载 |
+| `pyyaml` | YAML 配置文件读写 |
 | `pandas` + `baostock` | A 股数据获取 |
 | `torch` | Kronos 模型推理 |
+| `pytest` | 测试框架（开发依赖） |
 
 ### 外部项目（只读调用，不修改源码）
 
-| 项目 | 路径 | 用途 |
-|------|------|------|
-| `TradingAgents-astock` | `TRADINGAGENTS_ROOT` | TA 多 Agent 分析 |
-| `Kronos` | `KRONOS_ROOT` | K 线序列预测 |
+| 项目 | GitHub | 用途 |
+|------|--------|------|
+| `TradingAgents-astock` | [simonlin1212/TradingAgents-astock](https://github.com/simonlin1212/TradingAgents-astock) | TA 多 Agent 深度分析 |
+| `Kronos` | [shiyu-coder/Kronos](https://github.com/shiyu-coder/Kronos) | K 线序列预测 |
 
 通过 `sys.path` 注入方式调用，不修改原始项目代码。
 
@@ -560,11 +818,11 @@ score = TA_confidence * 0.4
 pytest tests/ -v
 ```
 
-测试结果：**106/106 全部通过**
+测试结果：**156/156 全部通过**
 
 | 文件 | 覆盖模块 |
 |------|----------|
-| `test_cli.py` | CLI 入口、参数解析、股票列表加载 |
+| `test_cli.py` | CLI 入口、参数解析、股票列表加载、eval-prediction 命令 |
 | `test_data.py` | K 线数据获取、缓存读写、TTL 过期 |
 | `test_merge.py` | 结果合并逻辑、打分公式、过滤池 |
 | `test_pipeline.py` | 流水线编排、错误隔离 |
@@ -573,7 +831,9 @@ pytest tests/ -v
 | `test_ta_decision.py` | DecisionAdapter 结构化解析、InvestmentDecision 数据类、raw 报告存储 |
 | `test_research_db.py` | ResearchDatabase 全表 CRUD、jobs 生命周期、schema 迁移、cache/research 隔离 |
 | `test_version.py` | run_id 生成、版本快照构建、config_hash、向后兼容迁移 |
-| `test_research_db.py` | ResearchDatabase 全表 CRUD、jobs 生命周期、cache/research 隔离 |
+| `test_prediction_eval.py` | EvalRecord、EvaluationSummary、统计计算逻辑 |
+| `test_risk.py` | 风险引擎（波动率/回撤/流动性/集中度/市场环境）全维度测试 |
+| `test_external.py` | 外部项目管理（config I/O、status、pin、lock 漂移检测） |
 
 ## TA 决策提取逻辑
 

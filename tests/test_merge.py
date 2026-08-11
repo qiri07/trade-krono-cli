@@ -148,3 +148,88 @@ def test_merge_with_confidence():
     assert merged[0]["ta_confidence"] == 80.0
     # 置信度 80 × 0.4 = 32 分，不应再是 0
     assert merged[0]["composite_score"] > 30
+
+
+# ── Risk Engine 集成测试 ─────────────────────────────────────────────────────
+
+def test_merge_with_risk_data():
+    """有 K 线数据时应计算风险分并影响综合得分。"""
+    import pandas as pd
+    import numpy as np
+    from trade_krono_cli.merge import merge_results
+
+    ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0)
+    kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=3.2)
+
+    np.random.seed(42)
+    close_vals = 100 * (1 + np.random.randn(60) * 0.04)
+    kline_df = pd.DataFrame({
+        "open": close_vals * 0.99, "high": close_vals * 1.01,
+        "low": close_vals * 0.98, "close": close_vals,
+        "volume": pd.Series([1e7] * 60),
+    })
+
+    merged = merge_results([ta], [kronos], kline_data={"sh.600519": kline_df})
+    assert len(merged) == 1
+    assert merged[0]["risk_score_total"] is not None
+    assert 0 <= merged[0]["risk_score_total"] <= 100
+    assert merged[0]["risk_scores"] is not None
+    for dim in ("volatility", "drawdown", "liquidity", "concentration", "market_regime"):
+        assert dim in merged[0]["risk_scores"]
+
+
+def test_risk_penalty_reduces_score():
+    """高风险应降低综合得分。"""
+    import pandas as pd
+    import numpy as np
+    from trade_krono_cli.merge import merge_results
+
+    ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0)
+    kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=3.2)
+
+    # 无风险数据
+    merged_no_risk = merge_results([ta], [kronos])
+    score_no_risk = merged_no_risk[0]["composite_score"]
+
+    # 高波动数据（高风险）
+    np.random.seed(99)
+    close_high_vol = 100 * (1 + np.random.randn(60) * 0.06)
+    kline_high_vol = pd.DataFrame({
+        "open": close_high_vol * 0.99, "high": close_high_vol * 1.01,
+        "low": close_high_vol * 0.98, "close": close_high_vol,
+        "volume": pd.Series([5e6] * 60),
+    })
+    merged_with_risk = merge_results([ta], [kronos], kline_data={"sh.600519": kline_high_vol})
+    score_with_risk = merged_with_risk[0]["composite_score"]
+
+    # 无风险时 risk_score_total 为 None，不扣分
+    assert merged_no_risk[0]["risk_score_total"] is None
+    # 有高风险时分数应更低
+    assert merged_with_risk[0]["risk_score_total"] > 0
+    assert score_with_risk < score_no_risk
+
+
+def test_merge_with_quote_data():
+    """提供 quote_data 时应计算换手率。"""
+    import pandas as pd
+    from trade_krono_cli.merge import merge_results
+
+    ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=70.0)
+    kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=2.0)
+
+    close_vals = [100 + i * 0.1 for i in range(60)]
+    kline_df = pd.DataFrame({
+        "open": [c * 0.99 for c in close_vals],
+        "high": [c * 1.01 for c in close_vals],
+        "low": [c * 0.98 for c in close_vals],
+        "close": close_vals,
+        "volume": [1e7] * 60,
+    })
+
+    merged = merge_results(
+        [ta], [kronos],
+        kline_data={"sh.600519": kline_df},
+        quote_data={"sh.600519": {"market_cap": 200.0}},
+    )
+    assert merged[0]["risk_score_total"] is not None
+    assert merged[0]["risk_scores"] is not None

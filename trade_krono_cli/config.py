@@ -21,10 +21,10 @@ class Settings:
 
     # ── 路径配置（可从 .env 覆盖）────────────────────────────────
     tradingagents_root: Path = field(
-        default_factory=lambda: _PROJECT_ROOT.parent / "TradingAgents-astock"
+        default_factory=lambda: _PROJECT_ROOT / "external" / "TradingAgents-astock"
     )
     kronos_root: Path = field(
-        default_factory=lambda: _PROJECT_ROOT.parent / "Kronos"
+        default_factory=lambda: _PROJECT_ROOT / "external" / "Kronos"
     )
     project_root: Path = field(
         default_factory=lambda: _PROJECT_ROOT

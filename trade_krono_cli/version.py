@@ -230,6 +230,7 @@ def build_run_snapshot(
       prompt_version   TA 提示词版本
       strategy_version 策略版本（= 项目版本）
       config_hash      配置哈希
+      external_repos   外部依赖 repo 复现信息
     """
     run_id = generate_run_id(date)
     timestamp = datetime.now().isoformat()
@@ -257,6 +258,10 @@ def build_run_snapshot(
     # 配置哈希
     config_hash = compute_config_hash(settings, extra=extra)
 
+    # 外部 repo 复现信息
+    from trade_krono_cli.external import get_repro_info
+    external_repos = get_repro_info()
+
     return {
         "run_id": run_id,
         "timestamp": timestamp,
@@ -265,6 +270,7 @@ def build_run_snapshot(
         "prompt_version": prompt_version,
         "strategy_version": get_project_version(),
         "config_hash": config_hash,
+        "external_repos": external_repos,
     }
 
 

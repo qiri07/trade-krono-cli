@@ -566,7 +566,8 @@ def run_evaluation(
 
         # TA BUY
         print("┌─ TA BUY 信号表现 ───────────────────────────────────┐")
-        print(f"│  样本数: {summary.get('ta_buy_win_rate', {}).get('5d', 0) and 0 or 0}                             │")
+        ta_buy_n = sum(1 for r in summary.records if r.ta_signal == "BUY")
+        print(f"│  样本数: {ta_buy_n}                             │")
         for h in [5, 10, 20]:
             wr = summary.get("ta_buy_win_rate", {}).get(f"{h}d", 0)
             avg_ret = summary.get("ta_buy_avg_return", {}).get(f"{h}d", 0)
@@ -578,7 +579,8 @@ def run_evaluation(
 
         # Combined
         print("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
-        print(f"│  样本数: {summary.get('combined_buy_up_win_rate', {}).get('5d', 0) and 0 or 0}                          │")
+        combined_n = sum(1 for r in summary.records if r.ta_signal == "BUY" and r.pred_direction == "UP")
+        print(f"│  样本数: {combined_n}                          │")
         for h in [5, 10, 20]:
             wr = summary.get("combined_buy_up_win_rate", {}).get(f"{h}d", 0)
             avg_ret = summary.get("combined_buy_up_avg_return", {}).get(f"{h}d", 0)
