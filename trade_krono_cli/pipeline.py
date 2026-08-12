@@ -18,6 +18,8 @@ from trade_krono_cli.report import save_json, save_html, print_table, print_summ
 from trade_krono_cli.cache import get_research
 from trade_krono_cli.trading_constraints import T1Tracker
 from trade_krono_cli.constraints_config import ConstraintConfig
+from trade_krono_cli.pipeline_config import PipelineConfig
+from trade_krono_cli.errors import ModuleResult, safe_run
 
 
 class QuantPipeline:
@@ -39,8 +41,20 @@ class QuantPipeline:
         no_cache: bool = False,
         constraints_config: Optional[ConstraintConfig] = None,
         sample_count: Optional[int] = None,
+        config: Optional[PipelineConfig] = None,
     ):
         self._settings = get_settings()
+        self._config = config or PipelineConfig.default()
+
+        # 参数优先级：显式参数 > config > settings
+        self.constraints_config = constraints_config or self._config.constraints
+        self._sample_count = sample_count
+        self.scorer = scorer or default_scorer
+        self.min_confidence = min_confidence or self._config.min_confidence
+        signals = allowed_signals or self._config.allowed_signals
+        self.allowed_signals = signals
+        self.no_cache = no_cache
+
         self.ta = ta_runner or TradingAgentsRunner(no_cache=no_cache)
         if kronos_runner is not None:
             self.kronos = None if skip_kronos else kronos_runner
@@ -51,14 +65,6 @@ class QuantPipeline:
                 no_cache=no_cache,
                 sample_count=self._sample_count,
             )
-        self.scorer = scorer or default_scorer
-        self.min_confidence = min_confidence or self._settings.default_min_confidence
-        signals = allowed_signals or tuple(
-            s.upper() for s in self._settings.default_allowed_signals
-        )
-        self.allowed_signals = signals
-        self.constraints_config = constraints_config or ConstraintConfig()
-        self._sample_count = sample_count
 
         logger.info(
             f"🏭 QuantPipeline 就绪 | "
@@ -104,7 +110,7 @@ class QuantPipeline:
         if progress_cb:
             progress_cb("启动", 0, 2)
 
-        # ── 并行执行 TA + Kronos ───────────────────────────
+        # ── 并行执行 TA + Kronos（错误隔离）──────────────────
         with ThreadPoolExecutor(max_workers=2) as executor:
             ta_future = executor.submit(
                 self.ta.analyze_batch, tickers, date
@@ -113,10 +119,14 @@ class QuantPipeline:
                 self.kronos.predict_batch, tickers, date
             ) if self.kronos else None
 
-            # 等待两者完成
+            # 等待两者完成（任一失败不中断整体）
             ta_results = ta_future.result()
             if kronos_future:
-                kronos_results = kronos_future.result()
+                try:
+                    kronos_results = kronos_future.result()
+                except Exception as e:
+                    logger.error(f"⚠️  Kronos 批量预测线程异常: {e}")
+                    kronos_results = []
             else:
                 kronos_results = []
 

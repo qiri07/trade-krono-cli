@@ -265,11 +265,16 @@ def run(
         None, "--sample-count",
         help="Kronos 采样次数（默认 5，设 1 为快速模式）"
     ),
+    config_file: Optional[str] = typer.Option(
+        None, "--config", "-c",
+        help="Pipeline 配置文件路径（YAML/JSON，覆盖默认配置）"
+    ),
 ):
     """🔥 一键运行完整流水线（TA 与 Kronos 并行）。"""
     _load_env()
 
     from trade_krono_cli.pipeline import QuantPipeline
+    from trade_krono_cli.pipeline_config import PipelineConfig
 
     tk_list = _load_tickers(tickers, config)
     if not tk_list:
@@ -295,6 +300,7 @@ def run(
         allowed_signals=signals_tuple,
         no_cache=no_cache,
         sample_count=sample_count,
+        config=PipelineConfig.load(config_file) if config_file else None,
     )
 
     merged = pipeline.run_parallel(
@@ -358,12 +364,17 @@ def kronos(
         None, "--sample-count",
         help="Kronos 采样次数（默认 5，设 1 为快速模式）"
     ),
+    config_file: Optional[str] = typer.Option(
+        None, "--config", "-c",
+        help="Pipeline 配置文件路径（YAML/JSON，覆盖默认配置）"
+    ),
     output: str = typer.Option("outputs/kronos_result.json", "--output", "-o"),
 ):
     """仅运行 Kronos 批量预测。"""
     _load_env()
 
     from trade_krono_cli.pipeline import QuantPipeline
+    from trade_krono_cli.pipeline_config import PipelineConfig
 
     tk_list = _load_tickers(tickers, config)
     if not tk_list:
@@ -373,7 +384,10 @@ def kronos(
     project_root = Path(__file__).resolve().parent.parent
     output_p = _sanitize_path(output, "Kronos输出", project_root)
 
-    pipeline = QuantPipeline(sample_count=sample_count)
+    pipeline = QuantPipeline(
+        sample_count=sample_count,
+        config=PipelineConfig.load(config_file) if config_file else None,
+    )
     results = pipeline.run_kronos_only(tk_list, date, output=str(output_p))
 
     console.print(f"[green]✅ Kronos 预测完成 → {output}[/green]")
