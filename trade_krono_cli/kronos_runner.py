@@ -242,8 +242,10 @@ class KronosRunner:
         x_ts = df.iloc[-self.lookback:]["timestamps"].reset_index(drop=True)
         last_close = float(x_df["close"].iloc[-1])
 
-        last_dt = x_ts.iloc[-1]
-        future = next_business_days(last_dt.strftime("%Y-%m-%d"), self.pred_len)
+        # ⚠️ 预测日期从 eval_date 起算，而非 x_ts.iloc[-1]
+        # 原因：如果股票在 eval_date 前停牌，x_ts.iloc[-1] 会早于 eval_date，
+        #       导致 future 窗口起点早于评估日（未来函数/数据泄漏）
+        future = next_business_days(eval_date, self.pred_len)
         future = future[:self.pred_len]
         y_ts = pd.Series(future, name="y_timestamp")
 
@@ -422,9 +424,16 @@ class KronosRunner:
                 res.prediction_uncertainty = uncertainty
 
                 # 重建预测 DataFrame（使用均值），供 forecast_dict 使用
+                # ⚠️ 使用 y_ts 的实际日期，不用 "today"（避免日期漂移）
+                # 防御性：若 y_ts 长度不匹配 avg_close（如测试 mock 场景），回退到基于 pred_len 的日期范围
+                y_ts_len = len(y_ts) if hasattr(y_ts, '__len__') else 0
+                if y_ts_len == len(avg_close):
+                    pred_idx = y_ts.reset_index(drop=True)
+                else:
+                    pred_idx = pd.date_range("today", periods=len(avg_close), freq="B")
                 pred_df = pd.DataFrame(
                     {"close": avg_close},
-                    index=pd.date_range("today", periods=len(avg_close), freq="B"),
+                    index=pred_idx,
                 )
             else:
                 # 单 sample

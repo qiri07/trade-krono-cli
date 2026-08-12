@@ -174,6 +174,8 @@ def fetch_lookback(
         raise RuntimeError(
             f"数据不足: {ticker} 仅 {len(df)} 行 < lookback {lookback}（检查停牌/新上市）"
         )
+    # 校验数据末尾与评估日期的间隔，防止停牌期间数据过时
+    validate_data_freshness(df, end_date, ticker)
     return df
 
 
@@ -182,6 +184,49 @@ def next_business_days(last_date: str, n: int) -> list[pd.Timestamp]:
     from pandas.tseries.offsets import BDay
     start = pd.Timestamp(last_date) + BDay(1)
     return [start + BDay(i) for i in range(n)]
+
+
+def validate_data_freshness(
+    df: pd.DataFrame,
+    eval_date: str,
+    ticker: str,
+    max_gap_trading_days: int = 10,
+) -> None:
+    """
+    校验 K 线数据的最后交易日与评估日期的间隔。
+
+    如果数据末尾距离评估日期超过 max_gap_trading_days 个交易日，
+    说明股票在评估日前长时间停牌，不应参与预测。
+
+    Raises
+    ------
+    RuntimeError : 数据过旧或不存在
+    """
+    if "timestamps" not in df.columns:
+        raise RuntimeError(f"数据格式异常，缺少 timestamps 列: {ticker}")
+
+    last_ts = pd.to_datetime(df["timestamps"].iloc[-1])
+    eval_ts = pd.to_datetime(eval_date)
+
+    if last_ts > eval_ts:
+        raise RuntimeError(
+            f"数据未来化: {ticker} 数据截止 {last_ts.date()} 晚于评估日期 {eval_ts.date()}"
+        )
+
+    # 计算两个日期之间的实际交易日数
+    trading_days_gap = len(pd.bdate_range(start=last_ts, end=eval_ts)) - 1
+
+    if trading_days_gap > max_gap_trading_days:
+        raise RuntimeError(
+            f"数据过旧: {ticker} 最后交易日 {last_ts.date()} 与评估日 {eval_ts.date()} "
+            f"相差 {trading_days_gap} 个交易日（阈值 {max_gap_trading_days}），"
+            f"疑似停牌或退市"
+        )
+
+    logger.debug(
+        f"✅ 数据新鲜度校验通过: {ticker} 最后交易日={last_ts.date()}, "
+        f"与评估日间隔 {trading_days_gap} 个交易日"
+    )
 
 
 def fetch_realtime_quote(ticker: str) -> dict:

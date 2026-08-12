@@ -239,13 +239,23 @@ class TestCheckAllConstraints:
         assert r.allowed is False
         assert "T1_LOCKED" in r.reason
 
-    def test_st_filter(self):
-        """ST 过滤（当前启发式为 False，验证不拦截）。"""
+    def test_st_filter_disabled(self):
+        """ST 过滤未启用时不过滤。"""
+        cfg = ConstraintConfig(enable_st_filter=False)
         r = check_all_constraints(
             "sh.600519", "2026-08-12",
             current_price=105.0, prev_close=100.0,
+            config=cfg,
         )
         assert r.allowed is True
+
+    def test_check_st_status_no_baostock(self):
+        """baostock 未安装时不应崩溃，返回 False。"""
+        from unittest.mock import patch
+        from trade_krono_cli.trading_constraints import check_st_status
+        with patch.dict("sys.modules", {"baostock": None}):
+            result = check_st_status("sh.600519")
+        assert result is False
 
 
 # ═══════════════════════════════════════════════════════

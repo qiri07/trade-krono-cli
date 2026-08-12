@@ -45,6 +45,9 @@ class TradingConstraintResult:
 # baostock ST 股票名称中常见的标记（实际需查询属性字段）
 _ST_PATTERNS = re.compile(r"^(ST|\*ST|SST|N ST)", re.IGNORECASE)
 
+# 模块级 ST 缓存：{ticker: is_st_bool}，进程生命周期内有效
+_st_cache: dict[str, bool] = {}
+
 
 def _is_st_by_name(ticker: str, name_hint: Optional[str] = None) -> bool:
     """
@@ -66,14 +69,13 @@ def check_st_status(
     """
     检查是否为 ST/*ST 标的。
 
-    注意：当前实现为启发式（基于代码规则）。baostock 可通过
-    `bs.query_stock_basic()` 获取 ST 状态，但需要网络连接。
-    生产环境中建议在 fetch_lookback 后批量查询一次并缓存。
+    实现方式：通过 baostock 的 query_stock_basic() 获取 ST 状态，
+    缓存结果避免重复网络请求。
 
     Parameters
     ----------
     ticker : 股票代码（如 sh.600519）
-    config : 约束配置（unused，预留扩展）
+    config : 约束配置
 
     Returns
     -------
@@ -82,10 +84,43 @@ def check_st_status(
     if config is None or not config.enable_st_filter:
         return False
 
-    # TODO: 接入 baostock query_stock_basic 获取准确 ST 状态
-    # 当前返回 False（不过滤），避免误伤正常股票
-    logger.debug(f"ST 检测跳过（启发式未启用）: {ticker}")
-    return False
+    if ticker in _st_cache:
+        return _st_cache[ticker]
+
+    try:
+        import baostock as bs  # type: ignore
+        lg = bs.login()
+        if lg.error_code != "0":
+            logger.debug(f"baostock 登录失败，跳过 ST 检测: {lg.error_msg}")
+            result = False
+        else:
+            rs = bs.query_stock_basic(code=ticker)  # type: ignore
+            if rs.error_code != "0":
+                logger.debug(f"ST 查询失败 {ticker}: {rs.error_msg}")
+                result = False
+            else:
+                rows = []
+                while rs.next():
+                    rows.append(rs.get_row_data())
+                if not rows:
+                    result = False
+                else:
+                    # baostock stock_basic 返回字段：code, code_name, ipoDate, outDate, ...
+                    # ST 标记在 code_name 字段中以 "ST" 或 "*ST" 开头
+                    name = rows[0][1] if len(rows[0]) > 1 else ""
+                    result = bool(_ST_PATTERNS.match(name.strip()))
+                    if result:
+                        logger.info(f"🚫 {ticker} 被识别为 ST 标的，已过滤")
+            bs.logout()  # type: ignore
+    except ImportError:
+        logger.debug("baostock 未安装，ST 检测跳过")
+        result = False
+    except Exception as e:
+        logger.debug(f"ST 检测异常 {ticker}: {e}")
+        result = False
+
+    _st_cache[ticker] = result
+    return result
 
 
 # ═══════════════════════════════════════════════════════

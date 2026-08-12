@@ -99,3 +99,65 @@ def test_cache_ttl_expiration():
 
     result = cache.get_ta(ticker, date)
     assert result is None
+
+
+# ── validate_data_freshness ──────────────────────────────────────────────────
+
+class TestValidateDataFreshness:
+    """数据新鲜度校验测试。"""
+
+    def _make_df(self, dates):
+        """创建最小化 K 线 DataFrame。"""
+        import pandas as pd
+        return pd.DataFrame({
+            "timestamps": pd.to_datetime(dates),
+            "open": [100.0] * len(dates),
+            "high": [101.0] * len(dates),
+            "low": [99.0] * len(dates),
+            "close": [100.0] * len(dates),
+            "volume": [1e6] * len(dates),
+            "amount": [1e8] * len(dates),
+        })
+
+    def test_fresh_data_passes(self):
+        """数据最后一天是评估日期当天 → 通过。"""
+        from trade_krono_cli.data import validate_data_freshness
+        df = self._make_df(["2026-08-10", "2026-08-11"])
+        # 不应抛异常
+        validate_data_freshness(df, "2026-08-11", "sh.600519")
+
+    def test_one_day_gap_passes(self):
+        """数据最后一天是评估日期前一天 → 通过。"""
+        from trade_krono_cli.data import validate_data_freshness
+        df = self._make_df(["2026-08-08", "2026-08-11"])  # 周五→周一，间隔1天
+        validate_data_freshness(df, "2026-08-11", "sh.600519")
+
+    def test_suspension_raises(self):
+        """数据最后一天距评估日超过 10 个交易日 → 抛异常（疑似停牌）。"""
+        from trade_krono_cli.data import validate_data_freshness
+        df = self._make_df(["2026-06-01", "2026-06-02"])  # 早于评估日约 2 个月
+        with pytest.raises(RuntimeError, match="数据过旧|疑似停牌"):
+            validate_data_freshness(df, "2026-08-11", "sh.600519")
+
+    def test_future_data_raises(self):
+        """数据最后一天晚于评估日期 → 抛异常（数据未来化）。"""
+        from trade_krono_cli.data import validate_data_freshness
+        df = self._make_df(["2026-08-11", "2026-08-12"])  # 含未来日期
+        with pytest.raises(RuntimeError, match="数据未来化"):
+            validate_data_freshness(df, "2026-08-11", "sh.600519")
+
+    def test_missing_timestamps_column_raises(self):
+        """缺少 timestamps 列 → 抛异常。"""
+        import pandas as pd
+        from trade_krono_cli.data import validate_data_freshness
+        df = pd.DataFrame({"close": [100.0]})
+        with pytest.raises(RuntimeError, match="timestamps"):
+            validate_data_freshness(df, "2026-08-11", "sh.600519")
+
+    def test_custom_max_gap(self):
+        """自定义 max_gap_trading_days 时阈值更严格。"""
+        from trade_krono_cli.data import validate_data_freshness
+        df = self._make_df(["2026-07-01", "2026-07-02"])  # 距评估日约 40 天
+        # 默认 max_gap=10 会报错
+        with pytest.raises(RuntimeError):
+            validate_data_freshness(df, "2026-08-11", "sh.600519", max_gap_trading_days=5)

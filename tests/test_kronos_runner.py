@@ -434,6 +434,77 @@ class TestKronosRunnerResolveDevice:
         assert runner.model_name == "kronos-base"
 
 
+    def test_prepare_uses_eval_date_not_last_data_date(self):
+        """
+        _prepare 的 future 日期应从 eval_date 起算，而非数据末尾日期。
+        这是修复：当股票在 eval_date 前停牌时，last_dt 会早于 eval_date，
+        导致预测窗口起点早于评估日（未来函数/数据泄漏）。
+        """
+        from trade_krono_cli.kronos_runner import KronosRunner
+        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
+            s = mock_settings.return_value
+            s.kronos_model = "kronos-base"
+            s.kronos_tokenizer = "kronos-base"
+            s.kronos_device = "cpu"
+            s.kronos_lookback = 5
+            s.kronos_pred_len = 3
+            s.kronos_sample_count = 1
+            s.kronos_T = 1.0
+            s.kronos_top_p = 0.9
+            s.kronos_use_sample_confidence = False
+            runner = KronosRunner(no_cache=True, lookback=5, pred_len=3)
+
+        # 模拟数据：最后一行是 2026-08-05（停牌两周后的评估日）
+        import pandas as pd
+        mock_df = pd.DataFrame({
+            "timestamps": pd.to_datetime([
+                "2026-07-27", "2026-07-28", "2026-07-29",
+                "2026-07-30", "2026-07-31",
+            ]),
+            "open":   [100.0] * 5,
+            "high":   [101.0] * 5,
+            "low":    [99.0]  * 5,
+            "close":  [100.0] * 5,
+            "volume": [1e6]   * 5,
+            "amount": [1e8]   * 5,
+        })
+        with patch("trade_krono_cli.kronos_runner.fetch_lookback", return_value=mock_df):
+            x_df, x_ts, y_ts, last_close = runner._prepare("sh.600519", "2026-08-11")
+
+        # future 日期应从 eval_date=2026-08-11 起算，不是从 last_dt=2026-07-31
+        assert str(y_ts.iloc[0]) == "2026-08-12 00:00:00"
+        assert len(y_ts) == 3
+        assert last_close == 100.0
+
+    def test_prepare_raises_on_suspended_stock(self):
+        """
+        当 fetch_lookback 抛出数据过旧异常（停牌超过阈值），
+        _prepare 应将异常传播出去，阻止预测。
+        """
+        from trade_krono_cli.kronos_runner import KronosRunner
+        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
+            s = mock_settings.return_value
+            s.kronos_model = "kronos-base"
+            s.kronos_tokenizer = "kronos-base"
+            s.kronos_device = "cpu"
+            s.kronos_lookback = 5
+            s.kronos_pred_len = 3
+            s.kronos_sample_count = 1
+            s.kronos_T = 1.0
+            s.kronos_top_p = 0.9
+            s.kronos_use_sample_confidence = False
+            runner = KronosRunner(no_cache=True, lookback=5, pred_len=3)
+
+        # 模拟 fetch_lookback 因数据过旧（停牌）而抛异常
+        with patch("trade_krono_cli.kronos_runner.fetch_lookback") as mock_fetch:
+            mock_fetch.side_effect = RuntimeError(
+                "数据过旧: sh.600519 最后交易日 2026-06-05 与评估日 2026-08-11 "
+                "相差 34 个交易日（阈值 10），疑似停牌或退市"
+            )
+            with pytest.raises(RuntimeError, match="数据过旧|疑似停牌"):
+                runner._prepare("sh.600519", "2026-08-11")
+
+
 class TestKronosRunnerSaveResults:
     """save_results 测试。"""
 
