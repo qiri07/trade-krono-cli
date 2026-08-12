@@ -162,7 +162,9 @@ def compute_limit_prices(
     (limit_up_price, limit_down_price)
       任意一个为 None 表示未启用检测
     """
-    if config is None or not config.enable_limit_check:
+    if config is None:
+        config = ConstraintConfig()
+    if not config.enable_limit_check:
         return None, None
 
     if prev_close <= 0:

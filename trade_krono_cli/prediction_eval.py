@@ -23,6 +23,8 @@ from loguru import logger
 from trade_krono_cli.cache import get_research
 from trade_krono_cli.data import fetch_kline
 from trade_krono_cli.security import validate_ticker, validate_date
+from trade_krono_cli.constraints_config import ConstraintConfig
+from trade_krono_cli.trading_constraints import compute_limit_prices, detect_exchange
 
 
 # ═══════════════════════════════════════════════════════
@@ -60,6 +62,51 @@ def _calc_return(entry_price: float, exit_price: float) -> float:
     return (exit_price - entry_price) / entry_price * 100.0
 
 
+def _is_price_at_limit(
+    ticker: str, price: float, prev_close: float, direction: str,
+) -> bool:
+    """判断价格是否触及涨跌停。
+
+    Parameters
+    ----------
+    ticker : 股票代码
+    price  : 当日收盘价
+    prev_close : 前一日收盘价
+    direction : "up" | "down"
+
+    Returns
+    -------
+    True 表示触及对应方向的涨停/跌停
+    """
+    if prev_close is None or prev_close <= 0:
+        return False
+    limit_up, limit_down = compute_limit_prices(prev_close, ticker)
+    if limit_up is None:
+        return False
+    if direction == "up":
+        # 涨停容差 0.1%
+        return price >= limit_up * 0.999
+    else:
+        # 跌停容差 0.1%（用相对误差防止浮点精度问题）
+        return limit_down is not None and price / limit_down <= 1.001
+
+
+def _get_kline_window(
+    ticker: str, start_date: str, end_date: str,
+) -> Optional[pd.DataFrame]:
+    """拉取指定区间的 K 线，失败时返回 None。"""
+    try:
+        return fetch_kline(ticker, start_date, end_date, frequency="d", use_cache=True)
+    except Exception as e:
+        logger.debug(f"K 线拉取失败 {ticker} {start_date}~{end_date}: {e}")
+        return None
+
+
+def _apply_roundtrip_cost(gross_return_pct: float, cost_bps: float = 17.0) -> float:
+    """扣减双边交易成本后的净收益率（%）。"""
+    return round(gross_return_pct - cost_bps / 100.0, 4)
+
+
 # ═══════════════════════════════════════════════════════
 # 预测评估结果
 # ═══════════════════════════════════════════════════════
@@ -79,6 +126,10 @@ class EvalRecord:
     # 附加上下文（用于分组统计）
     ta_signal: Optional[str] = None
     composite_score: Optional[float] = None
+    # ── 交易约束标记（由约束感知评估写入）──────────────────────
+    entry_blocked_limit_up: bool = False   # 买入日涨停，实际无法建仓
+    exit_blocked_limit_down: bool = False  # 退出日跌停，实际无法平仓
+    cost_bps_applied: float = 0.0          # 本次扣减的交易成本（bps）
 
 
 @dataclass
@@ -103,6 +154,10 @@ class EvaluationSummary:
     ta_hold_n: int = 0
     combined_buy_up_n: int = 0
     high_conf_n: int = 0
+    # 约束拦截计数
+    entry_limit_up_blocked: int = 0    # 买入日涨停导致无法建仓
+    exit_limit_down_blocked: int = 0   # 退出日跌停导致无法平仓
+    cost_applied_n: int = 0            # 扣减过交易成本的记录数
     # 按 horizon 分组的指标
     horizons: dict[int, HorizonMetrics] = field(default_factory=dict)
     records: list[EvalRecord] = field(default_factory=list)
@@ -197,8 +252,11 @@ class PredictionEvaluator:
 
         logger.info(f"📋 共 {len(records_to_eval)} 条信号待评估")
 
-        # 3. 逐条获取实际价格并计算 realized return
+        # 3. 逐条获取实际价格并计算 realized return（含交易约束）
+        cfg = ConstraintConfig()
         eval_records: list[EvalRecord] = []
+        # 预初始化 summary 用于在循环内累加约束计数
+        summary = EvaluationSummary()
         for i, (job_id, ticker, eval_date, ta_signal,
                 kronos_dir, comp_score, kronos_chg, ta_conf) in enumerate(
                 records_to_eval, 1):
@@ -206,6 +264,16 @@ class PredictionEvaluator:
             if entry_price is None or entry_price <= 0:
                 logger.debug(f"  ⏭️ 跳过 {ticker} @ {eval_date}: 无入口价格")
                 continue
+
+            # 拉取 eval_date 前 10 天至 eval_date 的 K 线，用于判断涨停/获取 prev_close
+            entry_start = (
+                datetime.strptime(eval_date, "%Y-%m-%d") - timedelta(days=15)
+            ).strftime("%Y-%m-%d")
+            entry_kline = _get_kline_window(ticker, entry_start, eval_date)
+            entry_prev_close: Optional[float] = None
+            if entry_kline is not None and len(entry_kline) >= 2:
+                # 最后一天是 eval_date，倒数第二天是 prev_close
+                entry_prev_close = float(entry_kline["close"].iloc[-2])
 
             for horizon in self.HORIZONS:
                 eval_date_h = (
@@ -217,8 +285,39 @@ class PredictionEvaluator:
                 if exit_price is None or exit_price <= 0:
                     continue
 
-                actual_return = _calc_return(entry_price, exit_price)
-                actual_dir = "UP" if actual_return > 1.0 else ("DOWN" if actual_return < -1.0 else "FLAT")
+                # ── 约束检查 1：买入日是否涨停（无法建仓）──────────────
+                entry_blocked = False
+                if entry_prev_close and entry_prev_close > 0:
+                    entry_blocked = _is_price_at_limit(
+                        ticker, entry_price, entry_prev_close, direction="up"
+                    )
+                if entry_blocked:
+                    summary.entry_limit_up_blocked += 1
+                    continue  # 涨停买不进，该信号不可执行
+
+                # ── 约束检查 2：退出日是否跌停（无法平仓）──────────────
+                exit_blocked = False
+                exit_start = (
+                    datetime.strptime(eval_date_h, "%Y-%m-%d") - timedelta(days=5)
+                ).strftime("%Y-%m-%d")
+                exit_prev_kline = _get_kline_window(ticker, exit_start, eval_date_h)
+                if exit_prev_kline is not None and len(exit_prev_kline) >= 2:
+                    exit_prev_close = float(exit_prev_kline["close"].iloc[-2])
+                    exit_blocked = _is_price_at_limit(
+                        ticker, exit_price, exit_prev_close, direction="down"
+                    )
+
+                if exit_blocked:
+                    summary.exit_limit_down_blocked += 1
+                    continue  # 跌停卖不出，该信号退出受阻
+
+                # ── 计算净收益（扣减交易成本）─────────────────────────
+                gross_return = _calc_return(entry_price, exit_price)
+                cost_bps = cfg.total_roundtrip_bps()
+                net_return = _apply_roundtrip_cost(gross_return, cost_bps)
+                summary.cost_applied_n += 1
+
+                actual_dir = "UP" if net_return > 1.0 else ("DOWN" if net_return < -1.0 else "FLAT")
 
                 pred_dir = str(kronos_dir) if kronos_dir is not None else None  # type: ignore[arg-type]
                 pred_ret = kronos_chg  # Kronos 预测涨跌幅
@@ -227,7 +326,7 @@ class PredictionEvaluator:
                 if pred_dir and pred_dir != "FLAT":
                     is_dir_correct = (pred_dir == actual_dir)
 
-                error = (pred_ret - actual_return) if pred_ret is not None else 0.0
+                error = (pred_ret - gross_return) if pred_ret is not None else 0.0
 
                 eval_records.append(EvalRecord(
                     ticker=ticker,
@@ -235,26 +334,43 @@ class PredictionEvaluator:
                     horizon_days=horizon,
                     pred_direction=pred_dir,
                     pred_return_pct=pred_ret,
-                    actual_return_pct=round(actual_return, 4),
+                    actual_return_pct=round(net_return, 4),
                     actual_direction=actual_dir,
                     is_direction_correct=is_dir_correct,
                     error_pct=round(error, 4),
+                    ta_signal=ta_signal,
+                    composite_score=float(comp_score) if comp_score is not None else None,
+                    entry_blocked_limit_up=False,
+                    exit_blocked_limit_down=False,
+                    cost_bps_applied=cost_bps,
                 ))
 
             if i % 20 == 0:
                 logger.info(f"  进度: {i}/{len(records_to_eval)}")
 
         elapsed = time.time() - t0
-        logger.info(f"✅ 评估完成: {len(eval_records)} 条记录, 耗时 {elapsed:.1f}s")
+        blocked_str = (
+            f"，约束拦截 {summary.entry_limit_up_blocked}涨停买入+{summary.exit_limit_down_blocked}跌停卖出"
+            if summary.entry_limit_up_blocked or summary.exit_limit_down_blocked
+            else ""
+        )
+        logger.info(
+            f"✅ 评估完成: {len(eval_records)} 条记录, "
+            f"扣成本 {summary.cost_applied_n} 条{blocked_str}, 耗时 {elapsed:.1f}s"
+        )
 
         # 4. 计算统计
-        summary = self._compute_summary(eval_records)
+        full_summary = self._compute_summary(eval_records)
+        # 合并约束计数
+        full_summary.entry_limit_up_blocked = summary.entry_limit_up_blocked
+        full_summary.exit_limit_down_blocked = summary.exit_limit_down_blocked
+        full_summary.cost_applied_n = summary.cost_applied_n
 
         # 5. 存储到 research DB
         if store:
-            self._store_summary(summary, jobs[0]["date"] if jobs else None)
+            self._store_summary(full_summary, jobs[0]["date"] if jobs else None)
 
-        return summary
+        return full_summary
 
     def _compute_summary(self, records: list[EvalRecord]) -> EvaluationSummary:
         """根据评估记录计算汇总统计。"""
@@ -486,6 +602,17 @@ class PredictionEvaluator:
                   f"平均收益: {avg_ret:+.2f}%                    │")
         print("└" + "─" * 58 + "┘")
         print()
+
+        # ── 交易约束统计 ───────────────────────────────────────
+        if summary.entry_limit_up_blocked or summary.exit_limit_down_blocked or summary.cost_applied_n:
+            print("┌─ 交易约束统计 ──────────────────────────────────────┐")
+            print(f"│  交易成本已扣减: {summary.cost_applied_n} 条记录                 │")
+            if summary.entry_limit_up_blocked:
+                print(f"│  🚫 买入日涨停拦截: {summary.entry_limit_up_blocked} 条                  │")
+            if summary.exit_limit_down_blocked:
+                print(f"│  🚫 退出日跌停拦截: {summary.exit_limit_down_blocked} 条                  │")
+            print("└" + "─" * 58 + "┘")
+            print()
 
         # ── 基准：随机基准 ────────────────────────────────────
         print("┌─ 基准对比（50% 随机基准）───────────────────────────┐")
