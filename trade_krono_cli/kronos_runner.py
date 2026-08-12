@@ -35,11 +35,16 @@ def _ensure_kronos_import() -> None:
     if _KRONOS_IMPORTED:
         return
     s = get_settings()
+    # 优先注入 agent-harness（包含 cli_anything.kronos）
+    harness_root = s.kronos_root / "agent-harness"
+    if harness_root.exists() and str(harness_root) not in sys.path:
+        sys.path.insert(0, str(harness_root))
+    # 后备：根目录（保留以支持直接 from model import ...）
     kronos_root = s.kronos_root
     if str(kronos_root) not in sys.path:
         sys.path.insert(0, str(kronos_root))
     _KRONOS_IMPORTED = True
-    logger.debug(f"Kronos 路径已加入: {kronos_root}")
+    logger.debug(f"Kronos 路径已加入: {harness_root} + {kronos_root}")
 
 
 # ── 预测不确定性量化子模块 ───────────────────────────────────────────────────
@@ -177,7 +182,7 @@ class KronosRunner:
         return "cpu"
 
     def _load(self) -> None:
-        """懒加载 Kronos 模型。"""
+        """懒加载 Kronos 模型（通过 cli_anything.kronos）。"""
         if self._predictor is not None:
             return
 
@@ -189,49 +194,23 @@ class KronosRunner:
         t0 = time.time()
 
         try:
-            import torch
-            from model import Kronos, KronosTokenizer, KronosPredictor
-            import json
-            import os
+            from cli_anything.kronos.utils.kronos_backend import load_model
 
-            models_dir = self._settings.kronos_root / "models"
-
-            tokenizer_cfg_path = models_dir / self.tokenizer_name / "config.json"
-            with open(tokenizer_cfg_path, "r") as f:
-                tokenizer_cfg = json.load(f)
-            self._tokenizer = KronosTokenizer(**tokenizer_cfg)
-            weight_path = models_dir / self.tokenizer_name / "model.safetensors"
-            self._tokenizer.load_state_dict(
-                torch.load(weight_path, map_location="cpu", weights_only=True)
+            predictor, meta = load_model(
+                name=self.model_name.lower(),
+                device=device,
             )
-
-            model_cfg_path = models_dir / self.model_name / "config.json"
-            with open(model_cfg_path, "r") as f:
-                model_cfg = json.load(f)
-            self._model = Kronos(**model_cfg)
-            weight_path = models_dir / self.model_name / "model.safetensors"
-            self._model.load_state_dict(
-                torch.load(weight_path, map_location="cpu", weights_only=True)
-            )
-
-            name = self.model_name.lower()
-            if "mini" in name:
-                self._max_context = 2048
-            else:
-                self._max_context = 512
-
-            self._predictor = KronosPredictor(
-                self._model, self._tokenizer,
-                device=device, max_context=self._max_context,
-            )
+            self._predictor = predictor
+            self._max_context = meta.get("max_context", 512)
             logger.info(
                 f"✅ Kronos 模型加载完成 ({time.time()-t0:.1f}s, device={device})"
             )
 
         except ImportError as e:
             raise RuntimeError(
-                f"无法导入 Kronos 模块：{e}。"
-                f"请确认已安装 Kronos（pip install -e {self._settings.kronos_root}）"
+                f"无法导入 cli_anything.kronos：{e}。"
+                f"请确认已安装 Kronos agent-harness "
+                f"（pip install -e {self._settings.kronos_root / 'agent-harness'}）"
             ) from e
 
     @property
