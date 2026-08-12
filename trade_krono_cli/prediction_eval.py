@@ -82,51 +82,30 @@ class EvalRecord:
 
 
 @dataclass
+@dataclass
+class HorizonMetrics:
+    """指标汇总按单一 horizon（天）分组。"""
+    kronos_dir_accuracy: float = 0.0
+    ta_buy_win_rate: float = 0.0
+    ta_buy_avg_return: float = 0.0
+    ta_hold_avg_return: float = 0.0
+    combined_buy_up_win_rate: float = 0.0
+    combined_buy_up_avg_return: float = 0.0
+    high_conf_win_rate: float = 0.0
+    high_conf_avg_return: float = 0.0
+
+
+@dataclass
 class EvaluationSummary:
     """评估汇总统计。"""
-    # Kronos 方向准确率
-    kronos_dir_accuracy_5d: float = 0.0
-    kronos_dir_accuracy_10d: float = 0.0
-    kronos_dir_accuracy_20d: float = 0.0
-    kronos_mae_5d: float = 0.0
-    kronos_mae_10d: float = 0.0
-    kronos_mae_20d: float = 0.0
-    kronos_rmse_5d: float = 0.0
-    kronos_rmse_10d: float = 0.0
-    kronos_rmse_20d: float = 0.0
+    # 聚合计数
     kronos_n: int = 0
-
-    # TA BUY 胜率
-    ta_buy_win_rate_5d: float = 0.0
-    ta_buy_win_rate_10d: float = 0.0
-    ta_buy_win_rate_20d: float = 0.0
-    ta_buy_avg_return_5d: float = 0.0
-    ta_buy_avg_return_10d: float = 0.0
-    ta_buy_avg_return_20d: float = 0.0
     ta_buy_n: int = 0
-
-    # TA HOLD 表现
-    ta_hold_avg_return_5d: float = 0.0
-    ta_hold_avg_return_10d: float = 0.0
-    ta_hold_avg_return_20d: float = 0.0
     ta_hold_n: int = 0
-
-    # 综合信号（TA BUY + Kronos UP）胜率
-    combined_buy_up_win_rate_5d: float = 0.0
-    combined_buy_up_win_rate_10d: float = 0.0
-    combined_buy_up_win_rate_20d: float = 0.0
-    combined_buy_up_avg_return_5d: float = 0.0
-    combined_buy_up_avg_return_10d: float = 0.0
-    combined_buy_up_avg_return_20d: float = 0.0
     combined_buy_up_n: int = 0
-
-    # 综合高置信信号（score >= 70）胜率
-    high_conf_win_rate_5d: float = 0.0
-    high_conf_win_rate_10d: float = 0.0
-    high_conf_avg_return_5d: float = 0.0
-    high_conf_avg_return_10d: float = 0.0
     high_conf_n: int = 0
-
+    # 按 horizon 分组的指标
+    horizons: dict[int, HorizonMetrics] = field(default_factory=dict)
     records: list[EvalRecord] = field(default_factory=list)
 
 
@@ -287,14 +266,15 @@ class PredictionEvaluator:
             if not h_records:
                 continue
 
+            metrics = HorizonMetrics()
+
             # ── Kronos 方向准确率 ──────────────────────────────
             kronos_records = [r for r in h_records
                               if r.pred_direction is not None]
             if kronos_records:
                 correct = sum(1 for r in kronos_records if r.is_direction_correct)
                 acc = correct / len(kronos_records) * 100
-                setattr(summary, f"kronos_dir_accuracy_{horizon}d",
-                        round(acc, 1))
+                metrics.kronos_dir_accuracy = round(acc, 1)
                 summary.kronos_n += len(kronos_records)
 
             # ── TA BUY 胜率 ────────────────────────────────────
@@ -302,18 +282,15 @@ class PredictionEvaluator:
             if buy_records:
                 wins = sum(1 for r in buy_records if r.actual_return_pct > 0)
                 avg_ret = sum(r.actual_return_pct for r in buy_records) / len(buy_records)
-                setattr(summary, f"ta_buy_win_rate_{horizon}d",
-                        round(wins / len(buy_records) * 100, 1))
-                setattr(summary, f"ta_buy_avg_return_{horizon}d",
-                        round(avg_ret, 2))
+                metrics.ta_buy_win_rate = round(wins / len(buy_records) * 100, 1)
+                metrics.ta_buy_avg_return = round(avg_ret, 2)
                 summary.ta_buy_n += len(buy_records)
 
             # ── TA HOLD 平均收益 ───────────────────────────────
             hold_records = [r for r in h_records if r.ta_signal == "HOLD"]
             if hold_records:
                 avg_ret = sum(r.actual_return_pct for r in hold_records) / len(hold_records)
-                setattr(summary, f"ta_hold_avg_return_{horizon}d",
-                        round(avg_ret, 2))
+                metrics.ta_hold_avg_return = round(avg_ret, 2)
                 summary.ta_hold_n += len(hold_records)
 
             # ── 综合信号（TA BUY + Kronos UP）──────────────────
@@ -323,10 +300,8 @@ class PredictionEvaluator:
             if combined_records:
                 wins = sum(1 for r in combined_records if r.actual_return_pct > 0)
                 avg_ret = sum(r.actual_return_pct for r in combined_records) / len(combined_records)
-                setattr(summary, f"combined_buy_up_win_rate_{horizon}d",
-                        round(wins / len(combined_records) * 100, 1))
-                setattr(summary, f"combined_buy_up_avg_return_{horizon}d",
-                        round(avg_ret, 2))
+                metrics.combined_buy_up_win_rate = round(wins / len(combined_records) * 100, 1)
+                metrics.combined_buy_up_avg_return = round(avg_ret, 2)
                 summary.combined_buy_up_n += len(combined_records)
 
             # ── 高置信信号（composite_score >= 70）─────────────
@@ -336,11 +311,11 @@ class PredictionEvaluator:
             if high_conf_records:
                 wins = sum(1 for r in high_conf_records if r.actual_return_pct > 0)
                 avg_ret = sum(r.actual_return_pct for r in high_conf_records) / len(high_conf_records)
-                setattr(summary, f"high_conf_win_rate_{horizon}d",
-                        round(wins / len(high_conf_records) * 100, 1))
-                setattr(summary, f"high_conf_avg_return_{horizon}d",
-                        round(avg_ret, 2))
+                metrics.high_conf_win_rate = round(wins / len(high_conf_records) * 100, 1)
+                metrics.high_conf_avg_return = round(avg_ret, 2)
                 summary.high_conf_n += len(high_conf_records)
+
+            summary.horizons[horizon] = metrics
 
         return summary
 
@@ -376,36 +351,32 @@ class PredictionEvaluator:
             summary_json = json.dumps({
                 "kronos_n": summary.kronos_n,
                 "kronos_dir_accuracy": {
-                    f"{h}d": getattr(summary, f"kronos_dir_accuracy_{h}d")
-                    for h in self.HORIZONS
-                },
-                "kronos_mae": {
-                    f"{h}d": getattr(summary, f"kronos_mae_{h}d")
-                    for h in self.HORIZONS
+                    str(h): m.kronos_dir_accuracy
+                    for h, m in summary.horizons.items()
                 },
                 "ta_buy_win_rate": {
-                    f"{h}d": getattr(summary, f"ta_buy_win_rate_{h}d")
-                    for h in self.HORIZONS
+                    str(h): m.ta_buy_win_rate
+                    for h, m in summary.horizons.items()
                 },
                 "ta_buy_avg_return": {
-                    f"{h}d": getattr(summary, f"ta_buy_avg_return_{h}d")
-                    for h in self.HORIZONS
+                    str(h): m.ta_buy_avg_return
+                    for h, m in summary.horizons.items()
                 },
                 "combined_buy_up_win_rate": {
-                    f"{h}d": getattr(summary, f"combined_buy_up_win_rate_{h}d")
-                    for h in self.HORIZONS
+                    str(h): m.combined_buy_up_win_rate
+                    for h, m in summary.horizons.items()
                 },
                 "combined_buy_up_avg_return": {
-                    f"{h}d": getattr(summary, f"combined_buy_up_avg_return_{h}d")
-                    for h in self.HORIZONS
+                    str(h): m.combined_buy_up_avg_return
+                    for h, m in summary.horizons.items()
                 },
                 "high_conf_win_rate": {
-                    f"{h}d": getattr(summary, f"high_conf_win_rate_{h}d")
-                    for h in self.HORIZONS
+                    str(h): m.high_conf_win_rate
+                    for h, m in summary.horizons.items()
                 },
                 "high_conf_avg_return": {
-                    f"{h}d": getattr(summary, f"high_conf_avg_return_{h}d")
-                    for h in self.HORIZONS
+                    str(h): m.high_conf_avg_return
+                    for h, m in summary.horizons.items()
                 },
             }, ensure_ascii=False)
 
@@ -471,12 +442,10 @@ class PredictionEvaluator:
         print("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
         print(f"│  样本数: {summary.kronos_n}                              │")
         for h in self.HORIZONS:
-            acc = getattr(summary, f"kronos_dir_accuracy_{h}d")
-            mae = getattr(summary, f"kronos_mae_{h}d")
-            rmse = getattr(summary, f"kronos_rmse_{h}d")
+            m = summary.horizons.get(h)
+            acc = m.kronos_dir_accuracy if m else 0.0
             marker = "✅" if acc > 55 else "⚠️" if acc > 50 else "❌"
-            print(f"│  {marker} {h}D 准确率: {acc:5.1f}%  "
-                  f"MAE: {mae:6.2f}%  RMSE: {rmse:6.2f}%            │")
+            print(f"│  {marker} {h}D 准确率: {acc:5.1f}%                       │")
         print("└" + "─" * 58 + "┘")
         print()
 
@@ -484,8 +453,9 @@ class PredictionEvaluator:
         print("┌─ TA BUY 信号表现 ───────────────────────────────────┐")
         print(f"│  样本数: {summary.ta_buy_n}                              │")
         for h in self.HORIZONS:
-            wr = getattr(summary, f"ta_buy_win_rate_{h}d")
-            avg_ret = getattr(summary, f"ta_buy_avg_return_{h}d")
+            m = summary.horizons.get(h)
+            wr = m.ta_buy_win_rate if m else 0.0
+            avg_ret = m.ta_buy_avg_return if m else 0.0
             marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
             print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
                   f"平均收益: {avg_ret:+.2f}%                    │")
@@ -496,8 +466,9 @@ class PredictionEvaluator:
         print("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
         print(f"│  样本数: {summary.combined_buy_up_n}                          │")
         for h in self.HORIZONS:
-            wr = getattr(summary, f"combined_buy_up_win_rate_{h}d")
-            avg_ret = getattr(summary, f"combined_buy_up_avg_return_{h}d")
+            m = summary.horizons.get(h)
+            wr = m.combined_buy_up_win_rate if m else 0.0
+            avg_ret = m.combined_buy_up_avg_return if m else 0.0
             marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
             print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
                   f"平均收益: {avg_ret:+.2f}%                    │")
@@ -508,8 +479,9 @@ class PredictionEvaluator:
         print("┌─ 高置信信号（综合分 ≥ 70）──────────────────────────┐")
         print(f"│  样本数: {summary.high_conf_n}                              │")
         for h in self.HORIZONS:
-            wr = getattr(summary, f"high_conf_win_rate_{h}d")
-            avg_ret = getattr(summary, f"high_conf_avg_return_{h}d")
+            m = summary.horizons.get(h)
+            wr = m.high_conf_win_rate if m else 0.0
+            avg_ret = m.high_conf_avg_return if m else 0.0
             marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
             print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
                   f"平均收益: {avg_ret:+.2f}%                    │")
@@ -556,11 +528,9 @@ def run_evaluation(
         print("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
         print(f"│  样本数: {summary.get('kronos_n', 0)}                              │")
         for h in [5, 10, 20]:
-            acc = summary.get("kronos_dir_accuracy", {}).get(f"{h}d", 0)
-            mae = summary.get("kronos_mae", {}).get(f"{h}d", 0)
+            acc = summary.get("kronos_dir_accuracy", {}).get(str(h), 0)
             marker = "✅" if acc > 55 else "⚠️" if acc > 50 else "❌"
-            print(f"│  {marker} {h}D 准确率: {acc:5.1f}%  "
-                  f"MAE: {mae:6.2f}%                           │")
+            print(f"│  {marker} {h}D 准确率: {acc:5.1f}%                       │")
         print("└" + "─" * 58 + "┘")
         print()
 
@@ -569,8 +539,8 @@ def run_evaluation(
         ta_buy_n = sum(1 for r in summary.records if r.ta_signal == "BUY")
         print(f"│  样本数: {ta_buy_n}                             │")
         for h in [5, 10, 20]:
-            wr = summary.get("ta_buy_win_rate", {}).get(f"{h}d", 0)
-            avg_ret = summary.get("ta_buy_avg_return", {}).get(f"{h}d", 0)
+            wr = summary.get("ta_buy_win_rate", {}).get(str(h), 0)
+            avg_ret = summary.get("ta_buy_avg_return", {}).get(str(h), 0)
             marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
             print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
                   f"平均收益: {avg_ret:+.2f}%                    │")
@@ -582,8 +552,8 @@ def run_evaluation(
         combined_n = sum(1 for r in summary.records if r.ta_signal == "BUY" and r.pred_direction == "UP")
         print(f"│  样本数: {combined_n}                          │")
         for h in [5, 10, 20]:
-            wr = summary.get("combined_buy_up_win_rate", {}).get(f"{h}d", 0)
-            avg_ret = summary.get("combined_buy_up_avg_return", {}).get(f"{h}d", 0)
+            wr = summary.get("combined_buy_up_win_rate", {}).get(str(h), 0)
+            avg_ret = summary.get("combined_buy_up_avg_return", {}).get(str(h), 0)
             marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
             print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
                   f"平均收益: {avg_ret:+.2f}%                    │")

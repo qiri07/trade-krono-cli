@@ -41,8 +41,10 @@ def test_evaluation_summary_defaults():
     assert s.ta_buy_n == 0
     assert s.combined_buy_up_n == 0
     assert s.high_conf_n == 0
+    assert s.ta_hold_n == 0
     # 默认值都是 0，不会引起 division by zero
-    assert s.kronos_dir_accuracy_5d == 0.0
+    assert 5 not in s.horizons
+    assert isinstance(s.records, list)
 
 
 def test_prediction_evaluator_init(tmp_path):
@@ -99,25 +101,27 @@ def test_compute_summary_with_mock_records():
 
     summary = evaluator._compute_summary(records)
 
+    m5 = summary.horizons[5]
+
     # TA BUY 5D: 3 win / 5 total = 60%
-    assert summary.ta_buy_win_rate_5d == pytest.approx(60.0, abs=0.1)
+    assert m5.ta_buy_win_rate == pytest.approx(60.0, abs=0.1)
     # 平均收益: (2+2+2-1.5-1.5)/5 = 0.6
-    assert summary.ta_buy_avg_return_5d == pytest.approx(0.6, abs=0.1)
+    assert m5.ta_buy_avg_return == pytest.approx(0.6, abs=0.1)
     assert summary.ta_buy_n == 5
 
     # 综合信号（TA BUY + Kronos UP）: 只有前3条
-    assert summary.combined_buy_up_win_rate_5d == pytest.approx(
+    assert m5.combined_buy_up_win_rate == pytest.approx(
         100.0, abs=0.1
     )
-    assert summary.combined_buy_up_avg_return_5d == pytest.approx(2.0, abs=0.1)
+    assert m5.combined_buy_up_avg_return == pytest.approx(2.0, abs=0.1)
     assert summary.combined_buy_up_n == 3
 
     # 高置信（score >= 70）: 前3条 score=80
-    assert summary.high_conf_win_rate_5d == pytest.approx(
+    assert m5.high_conf_win_rate == pytest.approx(
         100.0, abs=0.1
     )
     assert summary.high_conf_n == 3
 
     # Kronos 方向准确率 5D: 3/5 = 60%
-    assert summary.kronos_dir_accuracy_5d == pytest.approx(60.0, abs=0.1)
+    assert m5.kronos_dir_accuracy == pytest.approx(60.0, abs=0.1)
     assert summary.kronos_n == 5

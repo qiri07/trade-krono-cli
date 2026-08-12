@@ -10,7 +10,6 @@ Kronos 金融时序预测封装层：
 """
 from __future__ import annotations
 
-import sys
 import time
 import json
 from dataclasses import dataclass, asdict, field
@@ -22,7 +21,13 @@ import pandas as pd
 
 from loguru import logger
 from trade_krono_cli.config import get_settings
-from trade_krono_cli.security import validate_ticker, validate_date, retry
+from trade_krono_cli.security import (
+    validate_ticker,
+    validate_date,
+    retry,
+    sanitize_for_log,
+    ensure_import_path,
+)
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.data import fetch_lookback, next_business_days
 
@@ -37,12 +42,8 @@ def _ensure_kronos_import() -> None:
     s = get_settings()
     # 优先注入 agent-harness（包含 cli_anything.kronos）
     harness_root = s.kronos_root / "agent-harness"
-    if harness_root.exists() and str(harness_root) not in sys.path:
-        sys.path.insert(0, str(harness_root))
-    # 后备：根目录（保留以支持直接 from model import ...）
     kronos_root = s.kronos_root
-    if str(kronos_root) not in sys.path:
-        sys.path.insert(0, str(kronos_root))
+    ensure_import_path(harness_root, kronos_root)
     _KRONOS_IMPORTED = True
     logger.debug(f"Kronos 路径已加入: {harness_root} + {kronos_root}")
 
@@ -436,12 +437,7 @@ class KronosRunner:
 
         except Exception as e:
             res.error = f"{type(e).__name__}: {e}"
-            import re
-            safe_msg = re.sub(
-                r"(sk-[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9._\-]+)",
-                "[REDACTED_KEY]",
-                str(e),
-            )
+            safe_msg = sanitize_for_log(str(e))
             logger.error(f"❌ Kronos 预测失败 {ticker}: {safe_msg}")
         finally:
             res.elapsed_sec = round(time.time() - t0, 2)

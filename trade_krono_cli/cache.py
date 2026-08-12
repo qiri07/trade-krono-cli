@@ -31,6 +31,24 @@ from trade_krono_cli.version import (
     get_project_version,
 )
 
+# Truncation length for thesis stored in research db
+REASONING_TRUNCATE_LEN = 500
+
+# Whitelist of allowed cache table names — prevents SQL injection via f-strings
+_CACHE_TABLES: frozenset[str] = frozenset({"kline_cache", "ta_cache", "kronos_cache"})
+_RESEARCH_TABLES: frozenset[str] = frozenset({
+    "jobs", "ta_analysis", "kronos_forecast",
+    "signals", "decisions", "raw_reports",
+    "backtest_results", "strategy_runs", "evaluation_results",
+})
+
+
+def _validate_table_name(table: str, allowed: frozenset[str]) -> str:
+    """Validate a table name against an allowed set. Raises ValueError if invalid."""
+    if table not in allowed:
+        raise ValueError(f"Unauthorized table: {table}")
+    return table
+
 
 # ═══════════════════════════════════════════════════════
 # Cache — TTL 驱动，性能优化
@@ -188,8 +206,9 @@ class Cache:
         """清除所有缓存表（不影响 research 表）。"""
         with sqlite3.connect(self._db_path) as conn:
             count = 0
-            for table in ("kline_cache", "ta_cache", "kronos_cache"):
-                r = conn.execute(f"DELETE FROM {table}").rowcount
+            for table in _CACHE_TABLES:
+                validated = _validate_table_name(table, _CACHE_TABLES)
+                r = conn.execute(f"DELETE FROM {validated}").rowcount
                 count += r
             conn.commit()
         logger.info(f"🧹 清除缓存 {count} 条（research 数据不受影响）")
@@ -200,9 +219,9 @@ class Cache:
         with sqlite3.connect(self._db_path) as conn:
             return {
                 f"cache_{t}": conn.execute(
-                    f"SELECT COUNT(*) FROM {t}"
+                    f"SELECT COUNT(*) FROM {_validate_table_name(t, _CACHE_TABLES)}"
                 ).fetchone()[0]
-                for t in ("kline_cache", "ta_cache", "kronos_cache")
+                for t in _CACHE_TABLES
             }
 
 
@@ -557,7 +576,7 @@ class ResearchDatabase:
         )
         thesis = (
             result.investment_decision.thesis
-            if result.investment_decision else (result.reasoning or "")[:500]
+            if result.investment_decision else (result.reasoning or "")[:REASONING_TRUNCATE_LEN]
         )
         run_id = version_snapshot.get("run_id") if version_snapshot else None
         data_version = version_snapshot.get("data_version") if version_snapshot else None
@@ -652,7 +671,7 @@ class ResearchDatabase:
                         job_id, item["ticker"], item.get("rank"),
                         item.get("composite_score"),
                         item.get("ta_signal"), item.get("ta_confidence"),
-                        item.get("ta_reasoning", "")[:500],
+                        item.get("ta_reasoning", "")[:REASONING_TRUNCATE_LEN],
                         item.get("kronos_direction"),
                         item.get("kronos_change_pct"),
                         uncertainty,
@@ -733,9 +752,10 @@ class ResearchDatabase:
         with sqlite3.connect(self._db_path) as conn:
             result = {}
             for table in self._RESEARCH_TABLES:
+                validated = _validate_table_name(table, _RESEARCH_TABLES)
                 try:
                     count = conn.execute(
-                        f"SELECT COUNT(*) FROM {table}"
+                        f"SELECT COUNT(*) FROM {validated}"
                     ).fetchone()[0]
                     result[f"research_{table}"] = count
                 except sqlite3.OperationalError:

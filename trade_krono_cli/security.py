@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import time
 import hashlib
 from datetime import datetime
 from functools import wraps
+from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
 
 from loguru import logger
@@ -16,6 +18,9 @@ from loguru import logger
 from trade_krono_cli.config import get_settings
 
 F = TypeVar("F", bound=Callable[..., Any])
+
+# Key-redaction regex — matches API keys and Bearer tokens
+_KEY_REDACT_RE = re.compile(r"(sk-[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9._\-]+)")
 
 
 # ═══════════════════════════════════════════════════════
@@ -163,3 +168,28 @@ class TokenBucket:
 def ticker_hash(ticker: str) -> str:
     """为 ticker 生成短哈希，用于缓存键。"""
     return hashlib.md5(ticker.encode()).hexdigest()[:12]
+
+
+def sanitize_for_log(message: str) -> str:
+    """Redact API keys and Bearer tokens from log messages.
+
+    Replaces patterns like ``sk-<20+ chars>`` and ``Bearer <token>`` with
+    ``[REDACTED_KEY]`` so secrets never leak into logs or error output.
+    """
+    return _KEY_REDACT_RE.sub("[REDACTED_KEY]", message)
+
+
+def ensure_import_path(*paths: Path) -> None:
+    """Insert paths into sys.path (harness-first, then root), skipping
+    duplicates and non-existent directories.
+
+    Parameters
+    ----------
+    *paths : Path
+        Directories to insert; inserted in order at the front of sys.path.
+        Non-existent paths are silently skipped.
+    """
+    for p in paths:
+        sp = str(p)
+        if p.exists() and sp not in sys.path:
+            sys.path.insert(0, sp)

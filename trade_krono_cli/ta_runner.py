@@ -18,29 +18,34 @@ from typing import Optional, Callable, Any
 from loguru import logger
 
 from trade_krono_cli.config import get_settings
-from trade_krono_cli.security import validate_ticker, validate_date, retry
+from trade_krono_cli.security import (
+    validate_ticker,
+    validate_date,
+    retry,
+    sanitize_for_log,
+    ensure_import_path,
+)
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.ta_decision import InvestmentDecision, Signal, DecisionAdapter
 
+# Truncation lengths for summary output
+SUMMARY_TRUNCATE_LEN = 500
+
 # 懒加载：首次调用时才 import，避免无密钥时直接报错
-_TRAIDINGAGENTS_IMPORTED = False
+_TRADINGAGENTS_IMPORTED = False
 
 
 def _ensure_tradingagents_import() -> None:
     """将 TradingAgents-astock/agent-harness 加入 sys.path 并导入核心模块。"""
-    global _TRAIDINGAGENTS_IMPORTED
-    if _TRAIDINGAGENTS_IMPORTED:
+    global _TRADINGAGENTS_IMPORTED
+    if _TRADINGAGENTS_IMPORTED:
         return
     s = get_settings()
     # 优先注入 agent-harness（包含 cli_anything.tradingagents）
     harness_root = s.tradingagents_root / "agent-harness"
-    if harness_root.exists() and str(harness_root) not in sys.path:
-        sys.path.insert(0, str(harness_root))
-    # 后备：根目录（保留以支持直接 from tradingagents 导入）
     ta_root = s.tradingagents_root
-    if str(ta_root) not in sys.path:
-        sys.path.insert(0, str(ta_root))
-    _TRAIDINGAGENTS_IMPORTED = True
+    ensure_import_path(harness_root, ta_root)
+    _TRADINGAGENTS_IMPORTED = True
     logger.debug(f"TradingAgents-astock 路径已加入: {harness_root} + {ta_root}")
 
 
@@ -247,7 +252,7 @@ class TradingAgentsRunner:
             text = val if isinstance(val, str) else json.dumps(val, ensure_ascii=False)
             alias = _REPORT_ALIAS.get(key, key)
             raw[alias] = text
-            summary[alias] = text[:500]
+            summary[alias] = text[:SUMMARY_TRUNCATE_LEN]
         return raw, summary
 
     def _extract_decision(self, final_state: dict) -> tuple[dict, Optional[InvestmentDecision]]:
@@ -363,12 +368,7 @@ class TradingAgentsRunner:
         except Exception as e:
             result.error = f"{type(e).__name__}: {e}"
             # 脱敏：移除可能的 API key 片段
-            import re
-            safe_msg = re.sub(
-                r"(sk-[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9._\-]+)",
-                "[REDACTED_KEY]",
-                str(e),
-            )
+            safe_msg = sanitize_for_log(str(e))
             logger.error(f"❌ {ticker} TA 分析失败: {safe_msg}")
 
         finally:

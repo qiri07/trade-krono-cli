@@ -95,3 +95,47 @@ def test_key_vault():
     assert isinstance(result, dict)
     # 至少有一个 key 字段
     assert len(result) > 0
+
+
+def test_sanitize_for_log_no_secrets():
+    from trade_krono_cli.security import sanitize_for_log
+    assert sanitize_for_log("some normal message") == "some normal message"
+    assert sanitize_for_log("no secrets here") == "no secrets here"
+
+
+def test_sanitize_for_log_redacts_sk_key():
+    from trade_krono_cli.security import sanitize_for_log
+    msg = "Error: sk-abc123def456ghi789jkl012mno345pqr678stu failed"
+    result = sanitize_for_log(msg)
+    assert "sk-" not in result
+    assert "[REDACTED_KEY]" in result
+    # original message length preserved minus the redacted part
+    assert "Error:" in result
+    assert "failed" in result
+
+
+def test_sanitize_for_log_redacts_bearer():
+    from trade_krono_cli.security import sanitize_for_log
+    msg = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test"
+    result = sanitize_for_log(msg)
+    assert "Bearer" not in result
+    assert "[REDACTED_KEY]" in result
+
+
+def test_ensure_import_path():
+    from pathlib import Path
+    from trade_krono_cli.security import ensure_import_path
+    import sys
+    # Use a path that definitely exists (/tmp)
+    before = sys.path.copy()
+    ensure_import_path(Path("/tmp"))
+    assert str(Path("/tmp")) in sys.path
+    # Calling again should not duplicate
+    ensure_import_path(Path("/tmp"))
+    count = sum(1 for p in sys.path if p == "/tmp")
+    assert count == 1
+    # Non-existent path should be skipped silently
+    ensure_import_path(Path("/nonexistent_path_xyz"))
+    assert "/nonexistent_path_xyz" not in sys.path
+    # Restore
+    sys.path[:] = before

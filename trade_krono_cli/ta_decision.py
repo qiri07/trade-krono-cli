@@ -16,6 +16,9 @@ class Signal(str, Enum):
     HOLD = "HOLD"
     SELL = "SELL"
 
+# Truncation length for thesis/summary extraction
+THESIS_TRUNCATE_LEN = 300
+
 
 # ── Rating 字符串 → (Signal, base_confidence) ─────────────────────────────────
 _RATING_MAP: dict[str, tuple[Signal, float]] = {
@@ -168,10 +171,10 @@ class DecisionAdapter:
         """提取 Investment Thesis 或 Executive Summary 作为 thesis。"""
         m = self._RE_THESIS.search(text)
         if m:
-            return m.group(1).strip()[:300]
+            return m.group(1).strip()[:THESIS_TRUNCATE_LEN]
         m = self._RE_SUMMARY.search(text)
         if m:
-            return m.group(1).strip()[:300]
+            return m.group(1).strip()[:THESIS_TRUNCATE_LEN]
         # fallback: 取第一句话
         first_sentence = re.split(r"[。！？\n]", text.strip())
         return first_sentence[0][:200] if first_sentence else ""

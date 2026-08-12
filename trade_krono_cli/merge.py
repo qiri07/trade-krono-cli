@@ -11,6 +11,10 @@ from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.risk.risk_engine import RiskEngine, RiskScore
 
+# Truncation lengths for summary output
+REASONING_TRUNCATE_LEN = 500
+POOL_REASONING_TRUNCATE_LEN = 300
+
 
 # ═══════════════════════════════════════════════════════
 # 综合打分
@@ -86,7 +90,7 @@ def _make_empty_merged(
         "ticker": ticker,
         "ta_signal": ta.signal if ta else None,
         "ta_confidence": ta.confidence if ta else None,
-        "ta_reasoning": (ta.reasoning or "")[:500] if ta else "",
+        "ta_reasoning": (ta.reasoning or "")[:REASONING_TRUNCATE_LEN] if ta else "",
         "ta_reports": (ta.reports or {}) if ta else {},
         "ta_error": ta.error if ta else None,
         "kronos_direction": kronos.direction if kronos else None,
@@ -230,7 +234,7 @@ def filter_pool(
                 "ticker": r.ticker,
                 "ta_signal": r.signal,
                 "ta_confidence": r.confidence,
-                "ta_reasoning": (r.reasoning or "")[:300],
+                "ta_reasoning": (r.reasoning or "")[:POOL_REASONING_TRUNCATE_LEN],
                 "ta_reports": r.reports,
                 "ta_result": r,
             })
