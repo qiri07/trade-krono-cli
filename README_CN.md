@@ -96,7 +96,7 @@ pip install -e .
 pip install -e ".[dev]"
 ```
 
-### 方式二：一键安装脚本
+### 方式三：一键安装脚本
 
 ```bash
 bash scripts/install.sh
@@ -136,7 +136,7 @@ DEEPSEEK_API_KEY=sk-xxx
 LLM_PROVIDER=deepseek          # 默认 LLM 供应商
 DEEP_THINK_LLM=deepseek-chat   # 深度思考模型
 QUICK_THINK_LLM=deepseek-chat  # 快速思考模型
-BACKEND_URL=https://apihub.agnes-ai.cn/v1  # 后端 API 地址（可选）
+BACKEND_URL=https://api.example.com/v1  # 后端 API 地址（可选）
 MAX_DEBATE_ROUNDS=1            # 辩论最大轮次
 MAX_RISK_DISCUSS_ROUNDS=1      # 风险分析最大轮次
 CHECKPOINT_ENABLED=true        # 启用检查点（跳过已完成分析）
@@ -819,35 +819,35 @@ trade-krono-cli repo doctor
 
 ### 外部项目调用路径
 
-两个外部项目均通过统一的 `cli_anything` 命名空间包进行调用，该包将各自的 `agent-harness` 代码整合到一个 import 路径下：
+两个外部项目均**仅被调用**（源代码从不修改）。它们通过统一的 `cli_anything` 命名空间包进行调用，该包将各自的 `agent-harness` 代码整合到一个 import 路径下：
 
 ```
 调用链路：
   ta_runner.py  →  from cli_anything.tradingagents.core.analysis import run_analysis, build_config
                    ↑
   源码位置: external/TradingAgents-astock/agent-harness/cli_anything/tradingagents/
-           (与 .venv/lib/python3.12/site-packages/cli_anything/tradingagents/ 字节相同)
+           (亦可在 .venv/lib/python3.12/site-packages/cli_anything/tradingagents/ 中找到)
 
   kronos_runner.py → from cli_anything.kronos.utils.kronos_backend import load_model
                      ↑
   源码位置: external/Kronos/agent-harness/cli_anything/kronos/
-           (与 .venv/lib/python3.12/site-packages/cli_anything/kronos/ 字节相同)
+           (亦可在 .venv/lib/python3.12/site-packages/cli_anything/kronos/ 中找到)
 ```
 
 **为何使用 `agent-harness/`？** 每个外部项目包含两份代码：
 - 根目录级（`tradingagents/`、`model/`）— 原始项目发行版
 - `agent-harness/cli_anything/` — CLI 面向的接口层
 
-trade-krono-cli 仅调用 `cli_anything.*` 路径，不修改也不直接导入原始源码。`sys.path` 注入 `agent-harness/` 作为 site-packages 副本不存在时的后备方案。
+trade-krono-cli 仅通过 `sys.path` 注入调用 `cli_anything.*` 路径；TradingAgents-astock 和 Kronos 的原始源代码**不会被读取、写入或修改**。`agent-harness/` 仅在 site-packages 副本不可用时作为后备方案。
 
-### 外部项目（只读调用，不修改源码）
+### 外部项目（仅调用，从不修改源码）
 
 | 项目 | GitHub | 用途 |
 |------|--------|------|
 | `TradingAgents-astock` | [simonlin1212/TradingAgents-astock](https://github.com/simonlin1212/TradingAgents-astock) | TA 多 Agent 深度分析 |
 | `Kronos` | [shiyu-coder/Kronos](https://github.com/shiyu-coder/Kronos) | K 线序列预测 |
 
-通过 `cli_anything.*` 命名空间导入调用（来自 `agent-harness/` 子目录）；不修改也不直接导入原始项目代码。
+仅通过 `cli_anything.*` 命名空间导入调用（来自 `agent-harness/` 子目录）；**两个项目的源代码均不被修改或直接导入**。
 
 ## 测试
 
@@ -1015,7 +1015,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 2. **K 线数据**：使用 baostock 免费获取，每日最多约 100 只股票
 3. **TA 分析**：需要配置 LLM API key（DeepSeek / OpenAI / Anthropic / MiniMax / Agnes 任一）
 4. **GPU 推理**：设置 `KRONOS_DEVICE=cuda:0` 可启用 GPU 加速，需 NVIDIA 显卡 + CUDA
-5. **不修改原始项目**：通过 `sys.path` 注入方式调用，不修改 TradingAgents-astock 和 Kronos 代码
+5. **不修改原始项目**：TradingAgents-astock 和 Kronos 仅通过 `sys.path` 注入至 `cli_anything.*` 命名空间进行调用，源代码从不被读取、写入或修改
 6. **缓存**：K 线数据、TA 结果、Kronos 预测均会缓存到 SQLite，重复分析同日期股票时大幅加速；使用 `--no-cache` 可强制禁用缓存（全新分析）
 7. **股票代码格式**：支持 `600519`、`sh.600519`、`SZ.000858` 等格式，自动归一化
 8. **多供应商切换**：`.env` 中 `LLM_PROVIDER` 切换供应商，同时确保对应 API key 已配置

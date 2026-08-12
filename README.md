@@ -138,7 +138,7 @@ DEEPSEEK_API_KEY=sk-xxx
 LLM_PROVIDER=deepseek          # Default LLM provider
 DEEP_THINK_LLM=deepseek-chat   # Deep thinking model
 QUICK_THINK_LLM=deepseek-chat  # Quick thinking model
-BACKEND_URL=https://apihub.agnes-ai.cn/v1  # Backend API URL (optional)
+BACKEND_URL=https://api.example.com/v1  # Backend API URL (optional)
 MAX_DEBATE_ROUNDS=1            # Max debate rounds
 MAX_RISK_DISCUSS_ROUNDS=1      # Max risk discussion rounds
 CHECKPOINT_ENABLED=true        # Enable checkpoint (skip completed analysis)
@@ -177,7 +177,7 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock request interval (seconds)
 | `DEEP_THINK_LLM` | `deepseek-chat` | Model used by deep analysis Agent |
 | `QUICK_THINK_LLM` | `deepseek-chat` | Model used by quick analysis Agent |
 | `BACKEND_URL` | — | LLM backend API URL, required by some providers |
-| `MAX_DEBATE_ROUNDS` | `1` | Max多空 debate rounds, 0 = no debate |
+| `MAX_DEBATE_ROUNDS` | `1` | Max long-short debate rounds, 0 = no debate |
 | `MAX_RISK_DISCUSS_ROUNDS` | `1` | Max risk discussion rounds |
 | `CHECKPOINT_ENABLED` | `true` | Skip cached TA analysis results when enabled |
 | `OUTPUT_LANGUAGE` | `Chinese` | Report language: Chinese / English |
@@ -493,7 +493,7 @@ These tables are used to **accelerate repeat queries** — re-analyzing the same
 | `backtest_results` | Strategy backtest results (reserved) |
 | `strategy_runs` | Strategy run records (reserved) |
 
-These tables are used for **historical回溯** — answering "which stocks were analyzed last time?" or "what's the historical signal for a given stock?". Data is never auto-cleaned.
+These tables are used for **historical lookback** — answering "which stocks were analyzed last time?" or "what's the historical signal for a given stock?". Data is never auto-cleaned.
 
 ### Parallel Strategy
 
@@ -576,7 +576,7 @@ Multi-dimensional risk quantification for each candidate stock, outputting a 0-1
 |------|----------|------|------|
 | **Volatility Risk** | 20-day annualized std of K-line daily returns | Higher volatility = higher risk (0%→0, 60%→100) | 30% |
 | **Drawdown Risk** | 60-day rolling max → max drawdown | Larger drawdown = higher risk (5%→20, 40%→100) | 25% |
-| **Liquidity Risk** | 20-day avg volume + market cap | Lower volume = higher risk (分段映射) | 20% |
+| **Liquidity Risk** | 20-day avg volume + market cap | Lower volume = higher risk (segmented mapping) | 20% |
 | **Concentration Risk** | Placeholder (reserved portfolio weight interface) | Default 10 points | 10% |
 | **Market Regime Risk** | 20-day + 60-day momentum | Downtrend = high risk, uptrend = low risk | 15% |
 
@@ -821,35 +821,35 @@ EOF
 
 ### External Project Call Path
 
-Both external projects are called through the unified `cli_anything` namespace package, which consolidates each project's agent-harness code under one import path:
+Both external projects are **called only** (source code is never modified). They are invoked through the unified `cli_anything` namespace package, which consolidates each project's `agent-harness` code under one import path:
 
 ```
 call chain:
   ta_runner.py  →  from cli_anything.tradingagents.core.analysis import run_analysis, build_config
                    ↑
   source: external/TradingAgents-astock/agent-harness/cli_anything/tradingagents/
-           (byte-identical copy in .venv/lib/python3.12/site-packages/cli_anything/tradingagents/)
+           (also available in .venv/lib/python3.12/site-packages/cli_anything/tradingagents/)
 
   kronos_runner.py → from cli_anything.kronos.utils.kronos_backend import load_model
                      ↑
   source: external/Kronos/agent-harness/cli_anything/kronos/
-           (byte-identical copy in .venv/lib/python3.12/site-packages/cli_anything/kronos/)
+           (also available in .venv/lib/python3.12/site-packages/cli_anything/kronos/)
 ```
 
 **Why `agent-harness/`?** Each external project ships two copies of its code:
 - Root-level (`tradingagents/`, `model/`) — the original project distribution
 - `agent-harness/cli_anything/` — the CLI-facing interface used by trade-krono-cli
 
-trade-krono-cli calls only the `cli_anything.*` paths, leaving original source untouched. `sys.path` injection of `agent-harness/` serves as a fallback for environments without the site-packages copy.
+trade-krono-cli calls only the `cli_anything.*` paths via `sys.path` injection; the original source code of TradingAgents-astock and Kronos is never read, written, or modified. The `agent-harness/` fallback is used only when the site-packages copy is unavailable.
 
-### External Projects (read-only calls, source not modified)
+### External Projects (call-only, source never modified)
 
 | Project | GitHub | Purpose |
 |------|--------|------|
 | `TradingAgents-astock` | [simonlin1212/TradingAgents-astock](https://github.com/simonlin1212/TradingAgents-astock) | TA multi-Agent deep analysis |
 | `Kronos` | [shiyu-coder/Kronos](https://github.com/shiyu-coder/Kronos) | K-line sequence prediction |
 
-Called via `cli_anything.*` namespace imports (from `agent-harness/` subdirs); original project code is not modified or imported directly.
+Called exclusively via `cli_anything.*` namespace imports (from `agent-harness/` subdirs); **neither project's source code is modified or directly imported**.
 
 ## Testing
 
@@ -893,7 +893,7 @@ Priority 3: fallback
 
 Confidence fine-tuning:
 - `position_size` corroboration: larger position ratio → confidence +5 when confirming signal
-- `agent_scores` divergence:多空 opinion spread > 20 → confidence -5
+- `agent_scores` divergence: long-short opinion spread > 20 → confidence -5
 
 | Rating | Signal | Base Confidence |
 |--------|--------|-----------|
@@ -1017,7 +1017,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 2. **K-line data**: Fetched free via baostock, max ~100 stocks per day
 3. **TA analysis**: Requires LLM API key configured (any one of DeepSeek / OpenAI / Anthropic / MiniMax / Agnes)
 4. **GPU inference**: Set `KRONOS_DEVICE=cuda:0` to enable GPU acceleration, requires NVIDIA GPU + CUDA
-5. **No source modification**: Called via `sys.path` injection; TradingAgents-astock and Kronos source code is not modified
+5. **No source modification**: External projects (TradingAgents-astock, Kronos) are called exclusively via `sys.path` injection into the `cli_anything.*` namespace — their source code is never read, written, or modified
 6. **Caching**: K-line data, TA results, and Kronos predictions are all cached to SQLite, significantly speeding up re-analysis of the same stock on the same date; use `--no-cache` to force a fresh analysis
 7. **Ticker format**: Supports `600519`, `sh.600519`, `SZ.000858` etc., auto-normalized
 8. **Multi-provider switching**: Switch provider via `LLM_PROVIDER` in `.env`, ensure corresponding API key is configured
