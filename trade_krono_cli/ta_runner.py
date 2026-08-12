@@ -27,16 +27,21 @@ _TRAIDINGAGENTS_IMPORTED = False
 
 
 def _ensure_tradingagents_import() -> None:
-    """将 TradingAgents-astock 加入 sys.path 并导入核心模块。"""
+    """将 TradingAgents-astock/agent-harness 加入 sys.path 并导入核心模块。"""
     global _TRAIDINGAGENTS_IMPORTED
     if _TRAIDINGAGENTS_IMPORTED:
         return
     s = get_settings()
+    # 优先注入 agent-harness（包含 cli_anything.tradingagents）
+    harness_root = s.tradingagents_root / "agent-harness"
+    if harness_root.exists() and str(harness_root) not in sys.path:
+        sys.path.insert(0, str(harness_root))
+    # 后备：根目录（保留以支持直接 from tradingagents 导入）
     ta_root = s.tradingagents_root
     if str(ta_root) not in sys.path:
         sys.path.insert(0, str(ta_root))
     _TRAIDINGAGENTS_IMPORTED = True
-    logger.debug(f"TradingAgents-astock 路径已加入: {ta_root}")
+    logger.debug(f"TradingAgents-astock 路径已加入: {harness_root} + {ta_root}")
 
 
 _REPORT_KEYS = [

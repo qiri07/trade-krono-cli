@@ -24,6 +24,7 @@ Results are automatically merged after both complete, producing a ranked report.
 - [Usage Guide](#usage-guide)
 - [Output Format](#output-format)
 - [Architecture](#architecture)
+- [External Project Call Path](#external-project-call-path)
 - [Prediction Uncertainty Quantification](#prediction-uncertainty-quantification)
 - [Scoring Formula](#scoring-formula)
 - [Risk Engine](#risk-engine)
@@ -818,6 +819,29 @@ EOF
 | `torch` | Kronos model inference |
 | `pytest` | Test framework (dev dependency) |
 
+### External Project Call Path
+
+Both external projects are called through the unified `cli_anything` namespace package, which consolidates each project's agent-harness code under one import path:
+
+```
+call chain:
+  ta_runner.py  →  from cli_anything.tradingagents.core.analysis import run_analysis, build_config
+                   ↑
+  source: external/TradingAgents-astock/agent-harness/cli_anything/tradingagents/
+           (byte-identical copy in .venv/lib/python3.12/site-packages/cli_anything/tradingagents/)
+
+  kronos_runner.py → from cli_anything.kronos.utils.kronos_backend import load_model
+                     ↑
+  source: external/Kronos/agent-harness/cli_anything/kronos/
+           (byte-identical copy in .venv/lib/python3.12/site-packages/cli_anything/kronos/)
+```
+
+**Why `agent-harness/`?** Each external project ships two copies of its code:
+- Root-level (`tradingagents/`, `model/`) — the original project distribution
+- `agent-harness/cli_anything/` — the CLI-facing interface used by trade-krono-cli
+
+trade-krono-cli calls only the `cli_anything.*` paths, leaving original source untouched. `sys.path` injection of `agent-harness/` serves as a fallback for environments without the site-packages copy.
+
 ### External Projects (read-only calls, source not modified)
 
 | Project | GitHub | Purpose |
@@ -825,7 +849,7 @@ EOF
 | `TradingAgents-astock` | [simonlin1212/TradingAgents-astock](https://github.com/simonlin1212/TradingAgents-astock) | TA multi-Agent deep analysis |
 | `Kronos` | [shiyu-coder/Kronos](https://github.com/shiyu-coder/Kronos) | K-line sequence prediction |
 
-Called via `sys.path` injection; original project code is not modified.
+Called via `cli_anything.*` namespace imports (from `agent-harness/` subdirs); original project code is not modified or imported directly.
 
 ## Testing
 

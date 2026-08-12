@@ -24,6 +24,7 @@
 - [使用指南](#使用指南)
 - [输出说明](#输出说明)
 - [架构设计](#架构设计)
+- [外部项目调用路径](#外部项目调用路径)
 - [预测不确定性量化模块](#预测不确定性量化模块)
 - [综合打分公式](#综合打分公式)
 - [风险引擎（Risk Engine）](#风险引擎risk-engine)
@@ -816,6 +817,29 @@ trade-krono-cli repo doctor
 | `torch` | Kronos 模型推理 |
 | `pytest` | 测试框架（开发依赖） |
 
+### 外部项目调用路径
+
+两个外部项目均通过统一的 `cli_anything` 命名空间包进行调用，该包将各自的 `agent-harness` 代码整合到一个 import 路径下：
+
+```
+调用链路：
+  ta_runner.py  →  from cli_anything.tradingagents.core.analysis import run_analysis, build_config
+                   ↑
+  源码位置: external/TradingAgents-astock/agent-harness/cli_anything/tradingagents/
+           (与 .venv/lib/python3.12/site-packages/cli_anything/tradingagents/ 字节相同)
+
+  kronos_runner.py → from cli_anything.kronos.utils.kronos_backend import load_model
+                     ↑
+  源码位置: external/Kronos/agent-harness/cli_anything/kronos/
+           (与 .venv/lib/python3.12/site-packages/cli_anything/kronos/ 字节相同)
+```
+
+**为何使用 `agent-harness/`？** 每个外部项目包含两份代码：
+- 根目录级（`tradingagents/`、`model/`）— 原始项目发行版
+- `agent-harness/cli_anything/` — CLI 面向的接口层
+
+trade-krono-cli 仅调用 `cli_anything.*` 路径，不修改也不直接导入原始源码。`sys.path` 注入 `agent-harness/` 作为 site-packages 副本不存在时的后备方案。
+
 ### 外部项目（只读调用，不修改源码）
 
 | 项目 | GitHub | 用途 |
@@ -823,7 +847,7 @@ trade-krono-cli repo doctor
 | `TradingAgents-astock` | [simonlin1212/TradingAgents-astock](https://github.com/simonlin1212/TradingAgents-astock) | TA 多 Agent 深度分析 |
 | `Kronos` | [shiyu-coder/Kronos](https://github.com/shiyu-coder/Kronos) | K 线序列预测 |
 
-通过 `sys.path` 注入方式调用，不修改原始项目代码。
+通过 `cli_anything.*` 命名空间导入调用（来自 `agent-harness/` 子目录）；不修改也不直接导入原始项目代码。
 
 ## 测试
 
