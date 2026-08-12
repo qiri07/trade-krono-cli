@@ -91,10 +91,11 @@ class Cache:
                     ticker    TEXT NOT NULL,
                     date      TEXT NOT NULL,
                     pred_len  INTEGER NOT NULL,
+                    sample_cnt INTEGER NOT NULL DEFAULT 1,
                     ttl       REAL NOT NULL,
                     data      BLOB NOT NULL,
                     created   REAL NOT NULL,
-                    PRIMARY KEY (ticker, date, pred_len)
+                    PRIMARY KEY (ticker, date, pred_len, sample_cnt)
                 );
             """)
 
@@ -170,13 +171,13 @@ class Cache:
     # ── Kronos 缓存 ───────────────────────────────────
 
     def get_kronos(
-        self, ticker: str, date: str, pred_len: int
+        self, ticker: str, date: str, pred_len: int, sample_count: int = 1
     ) -> Optional[dict]:
         with sqlite3.connect(self._db_path) as conn:
             row = conn.execute(
                 "SELECT data, created, ttl FROM kronos_cache "
-                "WHERE ticker=? AND date=? AND pred_len=?",
-                (ticker, date, pred_len),
+                "WHERE ticker=? AND date=? AND pred_len=? AND sample_cnt=?",
+                (ticker, date, pred_len, sample_count),
             ).fetchone()
         if row is None:
             return None
@@ -187,15 +188,15 @@ class Cache:
 
     def set_kronos(
         self, ticker: str, date: str, pred_len: int,
-        result: dict, ttl: float = 86400,
+        result: dict, ttl: float = 86400, sample_count: int = 1,
     ) -> None:
         created = time.time()
         with sqlite3.connect(self._db_path) as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO kronos_cache "
-                "(ticker, date, pred_len, ttl, data, created) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (ticker, date, pred_len, ttl,
+                "(ticker, date, pred_len, sample_cnt, ttl, data, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (ticker, date, pred_len, sample_count, ttl,
                  json.dumps(result, ensure_ascii=False).encode(), created),
             )
             conn.commit()
@@ -416,6 +417,13 @@ class ResearchDatabase:
                         logger.debug(f"📐 Schema 迁移: jobs.{col}")
                     except sqlite3.OperationalError:
                         pass
+
+            # kronos_cache: 添加 sample_cnt 列（默认值 1）
+            try:
+                conn.execute("ALTER TABLE kronos_cache ADD COLUMN sample_cnt INTEGER NOT NULL DEFAULT 1")
+                logger.debug("📐 Schema 迁移: kronos_cache.sample_cnt")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
 
             # 确保其他表存在
             for table in ("ta_analysis", "kronos_forecast", "signals",

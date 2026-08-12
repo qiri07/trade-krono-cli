@@ -16,6 +16,8 @@ from trade_krono_cli.kronos_runner import KronosRunner, KronosForecastResult
 from trade_krono_cli.merge import merge_results, filter_pool, default_scorer
 from trade_krono_cli.report import save_json, save_html, print_table, print_summary
 from trade_krono_cli.cache import get_research
+from trade_krono_cli.trading_constraints import T1Tracker
+from trade_krono_cli.constraints_config import ConstraintConfig
 
 
 class QuantPipeline:
@@ -35,6 +37,7 @@ class QuantPipeline:
         allowed_signals: Optional[tuple[str, ...]] = None,
         skip_kronos: bool = False,
         no_cache: bool = False,
+        constraints_config: Optional[ConstraintConfig] = None,
     ):
         self._settings = get_settings()
         self.ta = ta_runner or TradingAgentsRunner(no_cache=no_cache)
@@ -45,12 +48,14 @@ class QuantPipeline:
             s.upper() for s in self._settings.default_allowed_signals
         )
         self.allowed_signals = signals
+        self.constraints_config = constraints_config or ConstraintConfig()
 
         logger.info(
             f"🏭 QuantPipeline 就绪 | "
             f"min_confidence={self.min_confidence} "
             f"allowed_signals={self.allowed_signals} "
-            f"skip_kronos={skip_kronos}"
+            f"skip_kronos={skip_kronos} "
+            f"constraints={'enabled' if self.constraints_config.enable_limit_check else 'disabled'}"
         )
 
     def run_parallel(
@@ -113,8 +118,15 @@ class QuantPipeline:
         # filter_pool 返回 dict 列表，提取原始 ta_result 对象供 merge_results 使用
         filtered_ta = [item["ta_result"] for item in filtered_pool]
 
-        # ── 合并 + 打分 ────────────────────────────────────
-        merged = merge_results(filtered_ta, kronos_results, scorer=self.scorer)
+        # ── 合并 + 打分（含交易约束）────────────────────────────
+        t1_tracker = T1Tracker()
+        merged = merge_results(
+            filtered_ta,
+            kronos_results,
+            scorer=self.scorer,
+            constraints_config=self.constraints_config,
+            t1_tracker=t1_tracker,
+        )
 
         # ── 落盘 ───────────────────────────────────────────
         # 保存结构化结果 JSON（含摘要报告，用于展示和后续分析）

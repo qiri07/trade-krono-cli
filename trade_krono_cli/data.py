@@ -77,7 +77,7 @@ def fetch_kline(
     start_date: str,
     end_date: str,
     frequency: str = "d",
-    adjustflag: str = "2",
+    adjustflag: str = "1",
     use_cache: bool = True,
 ) -> pd.DataFrame:
     """
@@ -154,6 +154,7 @@ def fetch_lookback(
     frequency: str = "d",
     buffer_days: int = 60,
     use_cache: bool = True,
+    adjustflag: str = "1",
 ) -> pd.DataFrame:
     """
     自动计算 start_date，拉取足够历史数据。
@@ -168,7 +169,7 @@ def fetch_lookback(
         start = end - timedelta(days=lookback // 48 + 10)
     start_s = start.strftime("%Y-%m-%d")
 
-    df = fetch_kline(ticker, start_s, end_date, frequency=frequency, use_cache=use_cache)
+    df = fetch_kline(ticker, start_s, end_date, frequency=frequency, adjustflag=adjustflag, use_cache=use_cache)
     if len(df) < lookback:
         raise RuntimeError(
             f"数据不足: {ticker} 仅 {len(df)} 行 < lookback {lookback}（检查停牌/新上市）"

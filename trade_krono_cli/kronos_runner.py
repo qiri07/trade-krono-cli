@@ -222,11 +222,14 @@ class KronosRunner:
         self, ticker: str, eval_date: str
     ) -> tuple[pd.DataFrame, pd.Series, pd.Series, float]:
         """拉 K 线 + 构造 x/y timestamp。"""
+        from trade_krono_cli.constraints_config import ConstraintConfig
+        adjustflag = ConstraintConfig().adjustflag
         df = fetch_lookback(
             ticker, eval_date,
             lookback=self.lookback,
             frequency="d",
             use_cache=self.use_cache,
+            adjustflag=adjustflag,
         )
         if len(df) < self.lookback:
             raise RuntimeError(
@@ -350,7 +353,7 @@ class KronosRunner:
         t0 = time.time()
 
         if self.use_cache and self._cache:
-            cached = self._cache.get_kronos(ticker, eval_date, self.pred_len)
+            cached = self._cache.get_kronos(ticker, eval_date, self.pred_len, self.sample_count)
             if cached:
                 logger.debug(f"📦 Kronos 缓存命中: {ticker}")
                 for k, v in cached.items():
@@ -432,7 +435,8 @@ class KronosRunner:
 
             if self._cache:
                 self._cache.set_kronos(
-                    ticker, eval_date, self.pred_len, res.to_dict()
+                    ticker, eval_date, self.pred_len, res.to_dict(),
+                    sample_count=self.sample_count,
                 )
 
         except Exception as e:
@@ -468,7 +472,7 @@ class KronosRunner:
                 model_name=self.model_name,
             )
             if self.use_cache and self._cache:
-                cached = self._cache.get_kronos(tk, eval_date, self.pred_len)
+                cached = self._cache.get_kronos(tk, eval_date, self.pred_len, self.sample_count)
                 if cached:
                     for k, v in cached.items():
                         setattr(res, k, v)
@@ -525,7 +529,8 @@ class KronosRunner:
                 res.forecast_dict = self._pred_df_to_dict(pred_df)
                 if self._cache:
                     self._cache.set_kronos(
-                        res.ticker, eval_date, self.pred_len, res.to_dict()
+                        res.ticker, eval_date, self.pred_len, res.to_dict(),
+                        sample_count=self.sample_count,
                     )
 
         except Exception as e:

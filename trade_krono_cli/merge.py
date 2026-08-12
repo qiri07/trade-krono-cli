@@ -10,6 +10,13 @@ from loguru import logger
 from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.risk.risk_engine import RiskEngine, RiskScore
+from trade_krono_cli.trading_constraints import (
+    T1Tracker,
+    TradingConstraintResult,
+    check_all_constraints,
+    filter_by_constraints,
+)
+from trade_krono_cli.constraints_config import ConstraintConfig
 
 # Truncation lengths for summary output
 REASONING_TRUNCATE_LEN = 500
@@ -45,7 +52,8 @@ def default_scorer(merged: dict) -> float:
     score += 0.4 * max(0, min(100, ta_conf))
 
     # 预期涨跌幅（0-30，-50%~+50% → 0~100 → 0~30）
-    chg = merged.get("kronos_change_pct") or 0
+    # 优先使用扣除成本后的净收益
+    chg = merged.get("kronos_change_pct") or merged.get("kronos_change_pct_gross") or 0
     score += 0.3 * max(0, min(100, chg + 50))
 
     # 方向加成（-5 ~ +5）
@@ -151,6 +159,8 @@ def merge_results(
     scorer: Optional[Callable[..., float]] = None,
     kline_data: Optional[dict[str, pd.DataFrame]] = None,
     quote_data: Optional[dict[str, dict]] = None,
+    constraints_config: Optional[ConstraintConfig] = None,
+    t1_tracker: Optional[T1Tracker] = None,
 ) -> list[dict]:
     """
     将 TA 分析结果和 Kronos 预测结果合并。
@@ -162,6 +172,8 @@ def merge_results(
     scorer         : 自定义打分函数，默认为 default_scorer
     kline_data     : {ticker: kline_df} 字典（可选，用于风险引擎）
     quote_data     : {ticker: quote_dict} 字典（可选，用于流动性风险计算）
+    constraints_config : A 股交易约束配置（可选，默认启用全部约束）
+    t1_tracker     : T+1 买入跟踪器（可选，跨股票共享）
 
     Returns
     -------
@@ -169,6 +181,9 @@ def merge_results(
     """
     if scorer is None:
         scorer = default_scorer
+
+    if constraints_config is None:
+        constraints_config = ConstraintConfig()
 
     kronos_map = {r.ticker: r for r in kronos_results if r.error is None}
     kline_map = kline_data or {}
@@ -178,6 +193,59 @@ def merge_results(
     for ta in ta_results:
         kr = kronos_map.get(ta.ticker)
         item = _make_empty_merged(ta.ticker, ta, kr)
+
+        # ── A 股交易约束检查 ──────────────────────────────────────
+        if constraints_config.enable_limit_check or constraints_config.enable_t1:
+            prev_close = kr.last_close if kr else None
+            pred_close = kr.predicted_close_final if kr else None
+            # 从 K 线提取最新收盘价作为当前参考价
+            tk = ta.ticker
+            if tk in kline_map and not prev_close:
+                df = kline_map[tk]
+                if len(df) > 0:
+                    prev_close = float(df["close"].iloc[-1])
+                    if pred_close is None:
+                        pred_close = prev_close
+
+            constraint_result = check_all_constraints(
+                ticker=tk,
+                eval_date=ta.date,
+                current_price=pred_close,
+                prev_close=prev_close,
+                kline_df=kline_map.get(tk),
+                t1_tracker=t1_tracker,
+                config=constraints_config,
+            )
+            item["constraint_allowed"] = constraint_result.allowed
+            item["constraint_reason"] = constraint_result.reason
+            item["constraint_is_st"] = constraint_result.is_st
+            item["constraint_limit_up"] = constraint_result.limit_up_price
+            item["constraint_limit_down"] = constraint_result.limit_down_price
+
+            # 若被约束拦截，标记信号为 HOLD 并记录原因
+            if not constraint_result.allowed:
+                item["ta_signal"] = "HOLD"
+                item["ta_confidence"] = 0.0
+                logger.info(
+                    f"🚫 {tk} 被约束拦截: {constraint_result.reason}"
+                )
+
+        # ── 应用交易成本模型 ──────────────────────────────────────
+        if (
+            kr
+            and kr.expected_change_pct is not None
+            and constraints_config.enable_cost_model
+        ):
+            gross = kr.expected_change_pct
+            net = constraints_config.apply_roundtrip_cost(gross)
+            item["kronos_change_pct_gross"] = gross
+            item["kronos_change_pct"] = round(net, 3)
+            item["cost_bps_applied"] = constraints_config.total_roundtrip_bps()
+        else:
+            item["kronos_change_pct_gross"] = (
+                kr.expected_change_pct if kr else None
+            )
+            item["cost_bps_applied"] = 0.0
 
         # 运行风险引擎（若有 K 线数据）
         tk = ta.ticker
