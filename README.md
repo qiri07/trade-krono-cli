@@ -228,11 +228,14 @@ export KRONOS_DEVICE=cuda:0
 ### Command Overview
 
 ```
-trade-krono-cli run        # One-command run: TA + Kronos parallel pipeline
-trade-krono-cli ta         # TradingAgents stock selection analysis only
-trade-krono-cli kronos     # Kronos batch prediction only
-trade-krono-cli status     # View system status (keys, cache, models)
-trade-krono-cli clear-cache # Clear all caches
+trade-krono-cli run            # One-command run: TA + Kronos parallel pipeline
+trade-krono-cli ta             # TradingAgents stock selection analysis only
+trade-krono-cli kronos         # Kronos batch prediction only
+trade-krono-cli status         # View system status (keys, cache, models)
+trade-krono-cli history        # View historical analysis jobs
+trade-krono-cli repo-status    # View external repo status (branch / commit / lock drift)
+trade-krono-cli eval-prediction # Evaluate prediction accuracy on historical data
+trade-krono-cli clear-cache    # Clear all caches
 ```
 
 ### `run` — Full Pipeline
@@ -447,24 +450,37 @@ Baseline: Random direction accuracy 50%, win rate 50%.
 ```
 trade-krono-cli
 ├── trade_krono_cli/
-│   ├── cli.py              # Typer CLI entry (run / ta / kronos / status / history)
-│   ├── config.py           # Configuration management (.env → Settings singleton)
-│   ├── data.py             # K-line data fetching (baostock)
-│   ├── security.py         # Key validation + input validation + retry + rate limiting
-│   ├── cache.py            # Cache (TTL performance cache) + ResearchDatabase (persistent records)
-│   ├── logger.py           # Logging configuration
-│   ├── ta_decision.py      # Investment decision standardization (Signal / InvestmentDecision / DecisionAdapter)
-│   ├── ta_runner.py        # TradingAgents wrapper (with save_raw_reports three-tier storage)
-│   ├── kronos_runner.py    # Kronos prediction wrapper (with prediction_uncertainty module)
-│   ├── merge.py            # Result merge + scoring (with risk penalty)
-│   ├── report.py           # JSON/HTML/console reports
-│   ├── prediction_eval.py  # Prediction evaluation (Kronos/TA/combined signal win rate validation)
-│   ├── pipeline.py         # Parallel pipeline orchestration (auto raw report save + research DB write)
-│   ├── external.py         # External repo management (repo status/doctor/update/pin)
-│   └── risk/               # Risk engine (volatility / drawdown / liquidity / concentration / market regime)
+│   ├── cli.py                  # Typer CLI entry (run / ta / kronos / status / history / eval-prediction / repo-status / clear-cache)
+│   ├── config.py               # Configuration management (.env → Settings singleton)
+│   ├── data.py                 # K-line data fetching (baostock)
+│   ├── security.py             # Key validation + input validation + retry + rate limiting
+│   ├── cache.py                # Cache (TTL performance cache) + ResearchDatabase (persistent records)
+│   ├── logger.py               # Logging configuration
+│   ├── logging_config.py       # Structured log sinks (text + JSON)
+│   ├── ta_decision.py          # Investment decision standardization (Signal / InvestmentDecision / DecisionAdapter)
+│   ├── ta_runner.py            # TradingAgents wrapper (with save_raw_reports three-tier storage)
+│   ├── kronos_runner.py        # Kronos prediction wrapper (with prediction_uncertainty module)
+│   ├── merge.py                # Result merge + scoring (with risk penalty)
+│   ├── report.py               # JSON/HTML/console reports
+│   ├── prediction_eval.py      # Prediction evaluation (Kronos/TA/combined signal win rate validation)
+│   ├── pipeline_config.py      # PipelineConfig dataclass + run configuration
+│   ├── pipeline.py             # Thin delegator → pipeline.orchestrator.PipelineRunner
+│   ├── external.py             # External repo management (repo status/doctor/update/pin)
+│   ├── pipeline/               # Pipeline packages
+│   │   ├── orchestrator.py     # Main pipeline orchestration (ThreadPoolExecutor + raw report auto-save)
+│   │   ├── data_fetcher.py     # Parallel K-line fetching + cache write
+│   │   ├── scorer.py           # Composite scoring + risk penalty + ranking
+│   │   └── reporter.py         # Report generation (JSON / HTML / console)
+│   ├── models/                 # Session state models
+│   │   ├── kronos_session.py   # Kronos model session lifecycle (lazy-load, device selection)
+│   │   └── ta_session.py       # TradingAgents session state (provider, debate rounds)
+│   ├── batch/                  # Batch prediction
+│   │   └── batch_runner.py     # Async semaphore-based batch Kronos predictions
+│   └── risk/                   # Risk engine (volatility / drawdown / liquidity / concentration / market regime)
 ├── scripts/
-│   └── install.sh          # One-click install script
-├── tests/                  # Test suite (156 tests all passing)
+│   └── install.sh              # One-click install script
+├── tests/                      # Test suite (398 tests, 87% coverage, mypy clean)
+└── external/                   # External project configs (repos.yaml + repo.lock)
 ```
 
 ### Cache vs Research Database
@@ -858,11 +874,11 @@ Called exclusively via `cli_anything.*` namespace imports (from `agent-harness/`
 pytest tests/ -v
 ```
 
-Test Results: **156/156 all passing** (including end-to-end pipeline, cache serialization, error isolation scenarios)
+Test Results: **398/398 all passing** · **87% overall coverage** · **mypy: 0 errors in 38 files**
 
 | File | Coverage |
 |------|----------|
-| `test_cli.py` | CLI entry, parameter parsing, stock list loading, eval-prediction command |
+| `test_cli.py` | CLI entry, parameter parsing, stock list loading, repo-status, eval-prediction command |
 | `test_data.py` | K-line data fetching, cache read/write, TTL expiry |
 | `test_merge.py` | Result merge logic, scoring formula, filter pool |
 | `test_pipeline.py` | Pipeline orchestration, error isolation |
@@ -871,9 +887,13 @@ Test Results: **156/156 all passing** (including end-to-end pipeline, cache seri
 | `test_ta_decision.py` | DecisionAdapter structured parsing, InvestmentDecision dataclass, raw report storage |
 | `test_research_db.py` | ResearchDatabase full-table CRUD, jobs lifecycle, schema migration, cache/research isolation |
 | `test_version.py` | run_id generation, version snapshot construction, config_hash, backward-compatible migration |
-| `test_prediction_eval.py` | EvalRecord, EvaluationSummary, statistical calculation logic |
+| `test_prediction_eval.py` | EvalRecord, EvaluationSummary, HorizonMetrics, statistical calculation logic |
 | `test_risk.py` | Risk engine (volatility/drawdown/liquidity/concentration/market regime) full-dimension tests |
 | `test_external.py` | External repo management (config I/O, status, pin, lock drift detection) |
+| `test_kronos_runner.py` | Device resolution (CPU/CUDA/large-model warning), result save |
+| `test_ta_runner.py` | BuildConfig, provider validation, graph lazy-load, batch analysis, raw report I/O |
+| `test_batch_runner.py` | Async semaphore-based batch prediction |
+| `integration/test_pipeline_integration.py` | End-to-end pipeline integration |
 
 ## TA Decision Extraction Logic
 
@@ -1013,6 +1033,23 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | Log Sanitization | Exception logs auto-sanitize API keys (regex replace sk-xxx / Bearer xxx) | `security.py::sanitize_for_log` |
 
 ## Changelog
+
+### v0.1.1 — 2026-08-12
+
+**Code quality & static analysis:**
+- **mypy clean**: 0 errors across 38 source files; fixed type annotations in `kronos_runner.py`, `ta_runner.py`, `batch_runner.py`, `cache.py`, `errors.py`, `external.py`, `trading_constraints.py`, `prediction_eval.py`, `pipeline/orchestrator.py`, `logging_config.py`
+- **Coverage 87%** (up from 80%): `prediction_eval.py` 94%, `ta_runner.py` 91%, `kronos_runner.py` 83%, `cli.py` 56%
+- Test count: **398** (up from 156); added tests for CLI entry points, kronos_runner device resolution, ta_runner config/validation/graph, prediction_eval edge cases, batch runner
+
+**New packages (modular refactor):**
+- `pipeline/` — orchestrator (ThreadPoolExecutor + raw report auto-save), data_fetcher (parallel K-line fetch), scorer (composite scoring + risk penalty), reporter (JSON/HTML/console)
+- `models/` — kronos_session (lazy-load, device selection), ta_session (provider/debate state)
+- `batch/` — batch_runner (async semaphore-based batch predictions)
+- `pipeline.py` is now a thin delegator to `pipeline.orchestrator`
+
+**Tests added:** `test_cli.py`, `test_kronos_runner.py`, `test_ta_runner.py`, `test_prediction_eval.py`, `test_batch_runner.py`, `integration/test_pipeline_integration.py`
+
+---
 
 ### v0.1.0 — 2026-08-12
 
