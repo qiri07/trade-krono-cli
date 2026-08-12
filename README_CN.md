@@ -34,6 +34,7 @@
 - [原始报告三层存储](#原始报告三层存储)
 - [投资决断标准化（InvestmentDecision）](#投资决断标准化investmentdecision)
 - [安全说明](#安全说明)
+- [更新日志](#更新日志)
 - [注意事项](#注意事项)
 
 ---
@@ -1007,7 +1008,24 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | 路径隔离 | 外部项目通过 `sys.path` 注入，输出路径限制在项目根目录下 | `kronos_runner.py`, `ta_runner.py`, `cli.py::_sanitize_path` |
 | 缓存安全 | SQLite 本地存储，不上传任何数据；缓存 TTL 过期自动清理；`investment_decision` / `prediction_uncertainty` 缓存反序列化安全处理 | `cache.py`, `ta_runner.py`, `kronos_runner.py` |
 | baostock 登录 | 全局单例 + 线程锁，避免并发冲突 | `data.py::_ensure_bs_login` |
-| 日志脱敏 | 异常日志自动脱敏 API key（正则替换 sk-xxx / Bearer xxx） | `ta_runner.py`, `kronos_runner.py` |
+| 日志脱敏 | 异常日志自动脱敏 API key（正则替换 sk-xxx / Bearer xxx） | `security.py::sanitize_for_log` |
+
+## 更新日志
+
+### v0.1.0 — 2026-08-12
+
+**代码质量与安全修复：**
+- 在 `security.py` 新增 `sanitize_for_log()` — 统一的 API key 脱敏工具函数，替换 `kronos_runner.py` 和 `ta_runner.py` 中原有的重复内联正则
+- 在 `security.py` 新增 `ensure_import_path()` — 统一 harness 优先的 sys.path 注入逻辑，消除两个 runner 模块中的重复代码
+- 修复 `ta_runner.py` 中 `_TRAIDINGAGENTS_IMPORTED` 拼写错误 → `_TRADINGAGENTS_IMPORTED`
+- 将魔法截断字面量（`[:500]`、`[:300]`）提取为模块级常量，分布于 `ta_runner.py`、`merge.py`、`ta_decision.py`、`cache.py`
+- 重构 `EvaluationSummary` — 用按 horizon 分组的 `HorizonMetrics` dataclass 替代原有 30+ 个平铺字段；同步更新所有调用方
+- 修复 `cache.py` 中 SQL f-string 表名插值问题 — 新增 `_validate_table_name()` 白名单校验助手
+- 移除 `HorizonMetrics` 上重复的 `@dataclass` 装饰器
+
+**测试：** `test_security.py` 新增 4 个，`test_prediction_eval.py` 新增 2 个，总计 162 个测试全部通过。
+
+---
 
 ## 注意事项
 

@@ -34,6 +34,7 @@ Results are automatically merged after both complete, producing a ranked report.
 - [Three-Tier Raw Report Storage](#three-tier-raw-report-storage)
 - [InvestmentDecision Standardization](#investmentdecision-standardization)
 - [Security Notes](#security-notes)
+- [Changelog](#changelog)
 - [Notes](#notes)
 
 ---
@@ -1009,7 +1010,24 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | Path Isolation | External projects injected via `sys.path`; output paths restricted to project root | `kronos_runner.py`, `ta_runner.py`, `cli.py::_sanitize_path` |
 | Cache Safety | SQLite local storage, no data upload; cache TTL auto-expiry; safe deserialization of `investment_decision` / `prediction_uncertainty` | `cache.py`, `ta_runner.py`, `kronos_runner.py` |
 | baostock Login | Global singleton + thread lock to avoid concurrent conflicts | `data.py::_ensure_bs_login` |
-| Log Sanitization | Exception logs auto-sanitize API keys (regex replace sk-xxx / Bearer xxx) | `ta_runner.py`, `kronos_runner.py` |
+| Log Sanitization | Exception logs auto-sanitize API keys (regex replace sk-xxx / Bearer xxx) | `security.py::sanitize_for_log` |
+
+## Changelog
+
+### v0.1.0 — 2026-08-12
+
+**Code quality & security fixes:**
+- Added `sanitize_for_log()` to `security.py` — single shared helper for API-key redaction; replaces duplicated inline regex in `kronos_runner.py` and `ta_runner.py`
+- Added `ensure_import_path()` to `security.py` — deduplicates the harness-first sys.path injection from both runner modules
+- Fixed `_TRAIDINGAGENTS_IMPORTED` typo → `_TRADINGAGENTS_IMPORTED` in `ta_runner.py`
+- Extracted magic truncation literals (`[:500]`, `[:300]`) to module-level constants across `ta_runner.py`, `merge.py`, `ta_decision.py`, `cache.py`
+- Restructured `EvaluationSummary` — replaced 30+ flat fields with a `HorizonMetrics` dataclass grouped by horizon; updated all consumers
+- Fixed SQL f-string table-name interpolation in `cache.py` — added `_validate_table_name()` whitelist helper
+- Removed duplicate `@dataclass` decorator on `HorizonMetrics`
+
+**Tests:** 4 new in `test_security.py`, 2 new in `test_prediction_eval.py` — 162 total passing.
+
+---
 
 ## Notes
 
