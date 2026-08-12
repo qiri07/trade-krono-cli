@@ -5,6 +5,8 @@
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+🌐 [English Docs](README.md) | [中文文档](README_CN.md)
+
 ## 概述
 
 `trade-krono-cli` 是一个命令行工具，接受 N 个 A 股股票代码，**同步并行**调用：

@@ -5,6 +5,8 @@
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+🌐 [中文文档](README_CN.md) | [English Docs](README.md)
+
 ## Overview
 
 `trade-krono-cli` is a CLI tool that accepts N A-share stock ticker symbols and **synchronously parallel-calls**:
