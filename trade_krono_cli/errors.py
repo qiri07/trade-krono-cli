@@ -64,7 +64,7 @@ class ModuleResult:
         return self.success and self.error is None
 
     def to_dict(self) -> dict:
-        d = {
+        d: dict[str, Any] = {
             "success": self.success,
             "elapsed_sec": self.elapsed_sec,
         }

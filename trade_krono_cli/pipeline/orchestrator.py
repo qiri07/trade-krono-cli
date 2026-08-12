@@ -174,8 +174,8 @@ class QuantPipeline:
 
         self._index_ta_raw_reports(research, job_id, ta_results, raw_paths)
 
-        for r in kronos_results:
-            research.insert_kronos(job_id, r, version_snapshot=version_snapshot)
+        for kr in kronos_results:
+            research.insert_kronos(job_id, kr, version_snapshot=version_snapshot)
 
         research.insert_signals(job_id, merged, version_snapshot=version_snapshot)
 

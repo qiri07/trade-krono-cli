@@ -220,7 +220,7 @@ class PredictionEvaluator:
                 actual_return = _calc_return(entry_price, exit_price)
                 actual_dir = "UP" if actual_return > 1.0 else ("DOWN" if actual_return < -1.0 else "FLAT")
 
-                pred_dir = kronos_dir  # Kronos 预测方向
+                pred_dir = str(kronos_dir) if kronos_dir is not None else None  # type: ignore[arg-type]
                 pred_ret = kronos_chg  # Kronos 预测涨跌幅
 
                 is_dir_correct = False

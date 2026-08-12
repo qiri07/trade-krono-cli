@@ -417,7 +417,8 @@ def doctor(project_root: Optional[Path] = None) -> list[str]:
         if st.is_dirty:
             issues.append(f"[{name}] ⚠️  工作区有未提交修改（dirty），可能影响结果复现")
         if st.lock_mismatch:
-            issues.append(f"[{name}] ❌ lock 漂移：repo.lock 锁定的是 {st.lock_commit[:12]}，"
+            lock_short = st.lock_commit[:12] if st.lock_commit else "?"
+            issues.append(f"[{name}] ❌ lock 漂移：repo.lock 锁定的是 {lock_short}，"
                           f"当前是 {st.commit_short}")
         elif st.error and "未 pin" in st.error:
             issues.append(f"[{name}] ❌ {st.error}")

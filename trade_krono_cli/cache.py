@@ -14,7 +14,10 @@
 """
 from __future__ import annotations
 
+from __future__ import annotations
+
 import json
+from typing import Any, Optional
 import sqlite3
 import time
 from io import BytesIO
@@ -573,7 +576,7 @@ class ResearchDatabase:
     # ── TA Analysis ───────────────────────────────────
 
     def insert_ta(
-        self, job_id: str, result: "StockAnalysisResult",
+        self, job_id: str, result: Any,
         version_snapshot: Optional[dict] = None,
     ) -> None:
         """写入 TA 分析记录（含版本信息）。"""

@@ -82,6 +82,7 @@ class BatchRunner:
         errors: list[str] = []
 
         async def _run_with_semaphore(item: Any, idx: int) -> tuple[Any | None, str | None]:
+            assert self._semaphore is not None
             async with self._semaphore:
                 for attempt in range(1 + self.config.retry_attempts):
                     try:
@@ -102,6 +103,7 @@ class BatchRunner:
                         else:
                             logger.error(f"  ✗ [{idx}] 最终失败: {e}")
                             return None, f"{type(e).__name__}: {e}"
+                return None, None  # unreachable but satisfies mypy
 
         # 分批处理
         batches = self._split_batches(items, self.config.batch_size)

@@ -157,8 +157,8 @@ class KronosRunner:
         self.use_sample_confidence = s.kronos_use_sample_confidence
 
         self._cache = get_cache()
-        self._predictor = None
-        self._device = None
+        self._predictor: Any = None
+        self._device: str = "cpu"
         self._max_context = 512
 
         if "large" in self.model_name.lower():
@@ -371,6 +371,7 @@ class KronosRunner:
             n_samples = max(1, self.sample_count)
             all_paths: list[np.ndarray] = []
 
+            assert self._predictor is not None
             for _s in range(n_samples):
                 pred_df = self._predictor.predict(
                     df=x_df, x_timestamp=x_ts, y_timestamp=y_ts,
@@ -463,7 +464,7 @@ class KronosRunner:
         logger.info(f"🚀 Kronos 批量预测: {len(tickers)} 只, date={eval_date}")
 
         results: list[KronosForecastResult] = []
-        prepared: list[tuple[str, Any, Any, Any, float]] = []
+        prepared: list[tuple[str, Any, Any, Any, float] | None] = []
 
         for tk in tickers:
             res = KronosForecastResult(
@@ -509,6 +510,7 @@ class KronosRunner:
             logger.info(f"⏳ GPU 批量推理 {len(df_list)} 只...")
             t0 = time.time()
 
+            assert self._predictor is not None
             pred_dfs = self._predictor.predict_batch(
                 df_list=df_list,
                 x_timestamp_list=x_ts_list,

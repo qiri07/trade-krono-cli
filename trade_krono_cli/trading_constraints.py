@@ -191,7 +191,7 @@ def check_limit_status(
         )
 
     # 检查是否触及跌停
-    if current_price <= limit_down * 1.001:
+    if limit_down is not None and current_price <= limit_down * 1.001:
         return TradingConstraintResult(
             symbol=ticker,
             allowed=False,
