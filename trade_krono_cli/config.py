@@ -82,7 +82,7 @@ class Settings:
         default_factory=lambda: int(os.getenv("KRONOS_PRED_LEN", "30"))
     )
     kronos_sample_count: int = field(
-        default_factory=lambda: int(os.getenv("KRONOS_SAMPLE_COUNT", "1"))
+        default_factory=lambda: int(os.getenv("KRONOS_SAMPLE_COUNT", "5"))
     )
     kronos_T: float = field(
         default_factory=lambda: float(os.getenv("KRONOS_T", "1.0"))

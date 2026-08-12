@@ -16,9 +16,10 @@ def test_default_scorer_buy_up():
     # TA: 80 * 0.4 = 32
     # Kronos: max(0, min(100, 3.2 + 50)) * 0.3 = 53.2 * 0.3 = 15.96
     # Direction: +10 * 0.1 = +1
-    # Uncertainty: 70 * 0.1 = 7
-    # Total: 32 + 15.96 + 1 + 7 = 55.96
-    assert score == pytest.approx(55.96, abs=0.1)
+    # Uncertainty base: 70 * 0.1 = 7
+    # Uncertainty bonus (cs>=70 → +3): +3
+    # Total: 32 + 15.96 + 1 + 7 + 3 = 58.96
+    assert score == pytest.approx(58.96, abs=0.1)
 
 
 def test_default_scorer_sell_down():
@@ -32,9 +33,10 @@ def test_default_scorer_sell_down():
     # TA: 80 * 0.4 = 32
     # Kronos: max(0, min(100, -1.5 + 50)) * 0.3 = 48.5 * 0.3 = 14.55
     # Direction: -10 * 0.1 = -1
-    # Uncertainty: 60 * 0.1 = 6
-    # Total: 32 + 14.55 - 1 + 6 = 51.55
-    assert score == pytest.approx(51.55, abs=0.1)
+    # Uncertainty base: 60 * 0.1 = 6
+    # Uncertainty bonus (50<=cs<70 → +1): +1
+    # Total: 32 + 14.55 - 1 + 6 + 1 = 52.55
+    assert score == pytest.approx(52.55, abs=0.1)
 
 
 def test_default_scorer_flat():
@@ -48,9 +50,10 @@ def test_default_scorer_flat():
     # TA: 60 * 0.4 = 24
     # Kronos: 50 * 0.3 = 15
     # Direction: 0
-    # Uncertainty: 50 * 0.1 = 5
-    # Total: 24 + 15 + 0 + 5 = 44
-    assert score == pytest.approx(44.0, abs=0.1)
+    # Uncertainty base: 50 * 0.1 = 5
+    # Uncertainty bonus (50<=cs<70 → +1): +1
+    # Total: 24 + 15 + 0 + 5 + 1 = 45
+    assert score == pytest.approx(45.0, abs=0.1)
 
 
 def test_merge_results():

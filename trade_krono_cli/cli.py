@@ -261,6 +261,10 @@ def run(
         False, "--no-cache",
         help="禁用缓存"
     ),
+    sample_count: int = typer.Option(
+        None, "--sample-count",
+        help="Kronos 采样次数（默认 5，设 1 为快速模式）"
+    ),
 ):
     """🔥 一键运行完整流水线（TA 与 Kronos 并行）。"""
     _load_env()
@@ -290,6 +294,7 @@ def run(
         min_confidence=min_confidence,
         allowed_signals=signals_tuple,
         no_cache=no_cache,
+        sample_count=sample_count,
     )
 
     merged = pipeline.run_parallel(
@@ -349,6 +354,10 @@ def kronos(
     date: str = typer.Option(..., "--date", "-d"),
     pred_len: int = typer.Option(30, "--pred-len"),
     lookback: int = typer.Option(400, "--lookback"),
+    sample_count: int = typer.Option(
+        None, "--sample-count",
+        help="Kronos 采样次数（默认 5，设 1 为快速模式）"
+    ),
     output: str = typer.Option("outputs/kronos_result.json", "--output", "-o"),
 ):
     """仅运行 Kronos 批量预测。"""
@@ -364,7 +373,7 @@ def kronos(
     project_root = Path(__file__).resolve().parent.parent
     output_p = _sanitize_path(output, "Kronos输出", project_root)
 
-    pipeline = QuantPipeline()
+    pipeline = QuantPipeline(sample_count=sample_count)
     results = pipeline.run_kronos_only(tk_list, date, output=str(output_p))
 
     console.print(f"[green]✅ Kronos 预测完成 → {output}[/green]")

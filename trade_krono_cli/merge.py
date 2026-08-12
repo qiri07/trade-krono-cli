@@ -30,6 +30,34 @@ POOL_REASONING_TRUNCATE_LEN = 300
 _RISK_PENALTY_WEIGHT = 0.15  # 风险惩罚在总分中的最大占比（15%）
 
 
+# ═══════════════════════════════════════════════════════
+# 不确定性置信度映射
+# ═══════════════════════════════════════════════════════
+
+def _uncertainty_confidence_bonus(pu: dict) -> float:
+    """
+    基于预测不确定性的置信度加分/减分。
+
+    映射规则：
+      confidence_score >= 70  → 高置信  +3 分
+      50 <= confidence_score < 70 → 中置信  +1 分
+      confidence_score < 50   → 低置信  -2 分
+      无不确定性数据          → 0 分
+    """
+    if not pu:
+        return 0.0
+    cs = pu.get("confidence_score")
+    if cs is None:
+        return 0.0
+    if cs >= 70:
+        return 3.0
+    elif cs >= 50:
+        return 1.0
+    else:
+        return -2.0
+
+
+
 def default_scorer(merged: dict) -> float:
     """
     综合打分（满分 100）。
@@ -63,11 +91,13 @@ def default_scorer(merged: dict) -> float:
     elif direction == "DOWN":
         score += 0.1 * (-10)  # -1
 
-    # 预测不确定性加成（0-10）
+    # 预测不确定性加成（0-10）+ 置信度微调
     pu = merged.get("kronos_prediction_uncertainty")
     if pu:
         cs = pu.get("confidence_score") or 0
         score += 0.1 * max(0, min(100, cs))
+        # 置信度 bonus/penalty
+        score += _uncertainty_confidence_bonus(pu)
 
     # 风险惩罚（0~15，高风险 → 扣分多）
     total_risk = merged.get("risk_score_total", 0) or 0

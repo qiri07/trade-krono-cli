@@ -38,10 +38,19 @@ class QuantPipeline:
         skip_kronos: bool = False,
         no_cache: bool = False,
         constraints_config: Optional[ConstraintConfig] = None,
+        sample_count: Optional[int] = None,
     ):
         self._settings = get_settings()
         self.ta = ta_runner or TradingAgentsRunner(no_cache=no_cache)
-        self.kronos = None if skip_kronos else (kronos_runner or KronosRunner(no_cache=no_cache))
+        if kronos_runner is not None:
+            self.kronos = None if skip_kronos else kronos_runner
+        elif skip_kronos:
+            self.kronos = None
+        else:
+            self.kronos = KronosRunner(
+                no_cache=no_cache,
+                sample_count=self._sample_count,
+            )
         self.scorer = scorer or default_scorer
         self.min_confidence = min_confidence or self._settings.default_min_confidence
         signals = allowed_signals or tuple(
@@ -49,13 +58,15 @@ class QuantPipeline:
         )
         self.allowed_signals = signals
         self.constraints_config = constraints_config or ConstraintConfig()
+        self._sample_count = sample_count
 
         logger.info(
             f"🏭 QuantPipeline 就绪 | "
             f"min_confidence={self.min_confidence} "
             f"allowed_signals={self.allowed_signals} "
             f"skip_kronos={skip_kronos} "
-            f"constraints={'enabled' if self.constraints_config.enable_limit_check else 'disabled'}"
+            f"constraints={'enabled' if self.constraints_config.enable_limit_check else 'disabled'} "
+            f"sample_count={'(default)' if sample_count is None else sample_count}"
         )
 
     def run_parallel(
