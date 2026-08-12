@@ -243,3 +243,157 @@ class TestTradingAgentsRunnerSaveResults:
             data = json.load(f)
         assert len(data) == 2
         assert data[0]["ticker"] == "sh.600519"
+
+
+class TestTradingAgentsRunnerBuildConfig:
+    """_build_config 测试。"""
+
+    def test_build_config_default(self):
+        runner = _make_ta_runner()
+        cfg = runner._build_config()
+        assert cfg["llm_provider"] == "deepseek"
+        assert cfg["deep_think_llm"] == "deepseek-chat"
+        assert cfg["output_language"] == "Chinese"
+        assert cfg["max_debate_rounds"] == 1
+
+    def test_build_config_with_backend_url(self):
+        runner = _make_ta_runner()
+        runner.backend_url = "http://test:8080"
+        cfg = runner._build_config()
+        assert cfg["backend_url"] == "http://test:8080"
+
+    def test_build_config_custom_params(self):
+        runner = _make_ta_runner()
+        runner.llm_provider = "openai"
+        runner.deep_think_llm = "gpt-4"
+        cfg = runner._build_config()
+        assert cfg["llm_provider"] == "openai"
+        assert cfg["deep_think_llm"] == "gpt-4"
+
+
+class TestTradingAgentsRunnerValidateProvider:
+    """_validate_provider 测试。"""
+
+    def test_no_available_providers_raises(self):
+        from trade_krono_cli.ta_runner import TradingAgentsRunner
+        with patch("trade_krono_cli.ta_runner.get_settings") as mock_settings:
+            mock_settings.return_value.llm_provider = "deepseek"
+            runner = TradingAgentsRunner(safe_mode=True)
+        with patch("trade_krono_cli.security.KeyVault") as mock_vault:
+            mock_vault.return_value.available_providers.return_value = []
+            with pytest.raises(RuntimeError, match="未检测到任何 LLM API 密钥"):
+                runner._validate_provider()
+
+    def test_provider_not_available_falls_back(self):
+        from trade_krono_cli.ta_runner import TradingAgentsRunner
+        with patch("trade_krono_cli.ta_runner.get_settings") as mock_settings:
+            mock_settings.return_value.llm_provider = "nonexistent"
+            runner = TradingAgentsRunner(safe_mode=True)
+        with patch("trade_krono_cli.security.KeyVault") as mock_vault:
+            mock_vault.return_value.available_providers.return_value = ["openai"]
+            runner._validate_provider()
+            assert runner.llm_provider == "openai"
+
+
+class TestTradingAgentsRunnerGetGraph:
+    """_get_graph 懒加载测试。"""
+
+    def test_get_graph_lazy_load(self):
+        runner = _make_ta_runner()
+        assert runner._graph is None
+        with patch("trade_krono_cli.ta_runner._ensure_tradingagents_import"):
+            with patch("cli_anything.tradingagents.core.analysis.run_analysis", return_value={}) as mock_run:
+                with patch("cli_anything.tradingagents.core.analysis.build_config", return_value={}) as mock_build:
+                    graphs = runner._get_graph()
+                    assert runner._graph is not None
+                    assert "run_analysis" in graphs
+                    assert "build_config" in graphs
+
+    def test_get_graph_already_loaded_returns_cached(self):
+        runner = _make_ta_runner()
+        mock_graph = {"run_analysis": lambda *a, **k: {}, "build_config": lambda *a, **k: {}}
+        runner._graph = mock_graph
+        result = runner._get_graph()
+        assert result is mock_graph
+
+
+class TestTradingAgentsRunnerAnalyzeBatch:
+    """analyze_batch 测试。"""
+
+    def test_analyze_batch_calls_analyze_one(self):
+        runner = _make_ta_runner()
+        results = runner.analyze_batch(["sh.600519", "sz.000858"], "2026-08-12")
+        assert len(results) == 2
+        assert all(r.ticker in ("sh.600519", "sz.000858") for r in results)
+
+    def test_analyze_batch_with_progress_cb(self):
+        runner = _make_ta_runner()
+        callbacks = []
+        def cb(idx, total, result):
+            callbacks.append((idx, total))
+        results = runner.analyze_batch(["sh.600519"], "2026-08-12", progress_cb=cb)
+        assert len(callbacks) == 1
+        assert callbacks[0] == (1, 1)
+
+    def test_analyze_batch_progress_cb_raises(self):
+        """progress_cb 抛异常时不应中断批处理。"""
+        runner = _make_ta_runner()
+        def bad_cb(idx, total, result):
+            raise RuntimeError("cb error")
+        results = runner.analyze_batch(["sh.600519"], "2026-08-12", progress_cb=bad_cb)
+        assert len(results) == 1
+        assert results[0].ticker == "sh.600519"
+
+
+class TestTradingAgentsRunnerSaveRawReports:
+    """save_raw_reports 测试。"""
+
+    def test_save_raw_reports_writes_files(self, tmp_path):
+        from trade_krono_cli.ta_runner import TradingAgentsRunner, StockAnalysisResult
+        runner = _make_ta_runner()
+        results = [
+            StockAnalysisResult(
+                ticker="sh.600519", date="2026-08-12", signal="BUY",
+                confidence=80.0,
+                reports_raw={"market": "full market report text"},
+                reasoning="strong momentum",
+                risk_assessment="low risk",
+            ),
+            StockAnalysisResult(
+                ticker="sz.000858", date="2026-08-12", signal="HOLD",
+                error="network error",  # 有 error 应跳过
+            ),
+        ]
+        written = runner.save_raw_reports(results, "2026-08-12", results_dir=tmp_path)
+        assert "sh.600519" in written
+        assert "sz.000858" not in written
+        # 验证文件内容
+        import json
+        file_path = tmp_path / "raw" / "2026-08-12" / "sh.600519.json"
+        with open(file_path) as f:
+            data = json.load(f)
+        assert data["ticker"] == "sh.600519"
+        assert data["reports_raw"]["market"] == "full market report text"
+
+
+class TestTradingAgentsRunnerLoadRawReport:
+    """load_raw_report 静态方法测试。"""
+
+    def test_load_existing_report(self, tmp_path):
+        import json
+        from pathlib import Path
+        raw_dir = tmp_path / "raw" / "2026-08-12"
+        raw_dir.mkdir(parents=True)
+        report_path = raw_dir / "sh.600519.json"
+        with open(report_path, "w") as f:
+            json.dump({"ticker": "sh.600519", "date": "2026-08-12"}, f)
+
+        from trade_krono_cli.ta_runner import TradingAgentsRunner
+        result = TradingAgentsRunner.load_raw_report("sh.600519", "2026-08-12", results_dir=tmp_path)
+        assert result is not None
+        assert result["ticker"] == "sh.600519"
+
+    def test_load_missing_report_returns_none(self, tmp_path):
+        from trade_krono_cli.ta_runner import TradingAgentsRunner
+        result = TradingAgentsRunner.load_raw_report("sh.600519", "2026-08-12", results_dir=tmp_path)
+        assert result is None

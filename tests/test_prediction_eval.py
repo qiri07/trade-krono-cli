@@ -1,11 +1,14 @@
 """测试预测评估模块 (prediction_eval.py)。"""
 import pytest
+from unittest.mock import MagicMock, patch
 from trade_krono_cli.prediction_eval import (
     EvalRecord,
     EvaluationSummary,
     PredictionEvaluator,
     _calc_return,
     _get_close_price,
+    HorizonMetrics,
+    run_evaluation,
 )
 
 
@@ -204,3 +207,279 @@ def test_evaluate_store_true_paths_through_store_summary(tmp_path):
     # 由于没有实际价格数据，返回空 summary 但不应 AttributeError
     summary = evaluator.evaluate(store=True)
     assert isinstance(summary, type(evaluator._compute_summary([])))
+
+
+def test_get_close_price_returns_none_on_empty():
+    """当 fetch_kline 返回空 DataFrame 时，应返回 None。"""
+    with patch("trade_krono_cli.prediction_eval.fetch_kline") as mock_fetch:
+        mock_fetch.return_value = MagicMock()
+        mock_fetch.return_value.empty = True
+        result = _get_close_price("sh.600519", "2026-08-11")
+    assert result is None
+
+
+def test_get_close_price_returns_none_on_error():
+    """fetch_kline 抛异常时，应返回 None。"""
+    with patch("trade_krono_cli.prediction_eval.fetch_kline") as mock_fetch:
+        mock_fetch.side_effect = RuntimeError("network error")
+        result = _get_close_price("sh.600519", "2026-08-11")
+    assert result is None
+
+
+def test_get_close_price_fallback_to_nearest():
+    """精确日期无数据时，应回退到最近交易日。"""
+    import pandas as pd
+    with patch("trade_krono_cli.prediction_eval.fetch_kline") as mock_fetch:
+        df = pd.DataFrame({
+            "timestamps": ["2026-08-08", "2026-08-12"],
+            "close": [100.0, 105.0],
+        })
+        mock_fetch.return_value = df
+        result = _get_close_price("sh.600519", "2026-08-11")
+    # 应回退到最近的收盘价 105.0
+    assert result == 105.0
+
+
+def test_compute_summary_empty_horizon():
+    """记录跨多个 horizon 时的正确分组。"""
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+    evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
+    evaluator.HORIZONS = [5, 10, 20]
+
+    records = []
+    # 5D 记录
+    for i in range(2):
+        records.append(EvalRecord(
+            ticker="sh.600519", eval_date="2026-01-01",
+            horizon_days=5, pred_direction="UP", pred_return_pct=None,
+            actual_return_pct=3.0, actual_direction="UP",
+            is_direction_correct=True, error_pct=0.0,
+            ta_signal="BUY", composite_score=75.0,
+        ))
+    # 10D 记录
+    records.append(EvalRecord(
+        ticker="sh.600519", eval_date="2026-01-01",
+        horizon_days=10, pred_direction="DOWN", pred_return_pct=None,
+        actual_return_pct=-2.0, actual_direction="DOWN",
+        is_direction_correct=True, error_pct=0.0,
+        ta_signal=None, composite_score=None,
+    ))
+
+    summary = evaluator._compute_summary(records)
+    assert 5 in summary.horizons
+    assert 10 in summary.horizons
+    assert 20 not in summary.horizons
+    assert summary.horizons[5].kronos_dir_accuracy == pytest.approx(100.0, abs=0.1)
+    assert summary.horizons[10].kronos_dir_accuracy == pytest.approx(100.0, abs=0.1)
+
+
+def test_compute_summary_no_pred_direction():
+    """pred_direction 为 None 时，Kronos 方向准确率不计入。"""
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+    evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
+    evaluator.HORIZONS = [5, 10, 20]
+
+    records = [EvalRecord(
+        ticker="sh.600519", eval_date="2026-01-01",
+        horizon_days=5, pred_direction=None, pred_return_pct=None,
+        actual_return_pct=3.0, actual_direction="UP",
+        is_direction_correct=False, error_pct=0.0,
+        ta_signal="BUY", composite_score=70.0,
+    )]
+
+    summary = evaluator._compute_summary(records)
+    m5 = summary.horizons[5]
+    # pred_direction 为 None，kronos_n 应为 0，准确率应为 0
+    assert summary.kronos_n == 0
+    assert m5.kronos_dir_accuracy == 0.0
+
+
+def test_compute_summary_flat_direction():
+    """FLAT 方向的 Kronos 预测仍计入 kronos_n，但方向不判定为正确。"""
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+    evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
+    evaluator.HORIZONS = [5, 10, 20]
+
+    records = [EvalRecord(
+        ticker="sh.600519", eval_date="2026-01-01",
+        horizon_days=5, pred_direction="FLAT", pred_return_pct=None,
+        actual_return_pct=3.0, actual_direction="UP",
+        is_direction_correct=False, error_pct=0.0,
+        ta_signal=None, composite_score=None,
+    )]
+
+    summary = evaluator._compute_summary(records)
+    m5 = summary.horizons[5]
+    # FLAT 仍计入 kronos_n，但 is_direction_correct=False
+    assert summary.kronos_n == 1
+    assert m5.kronos_dir_accuracy == 0.0
+
+
+def test_compute_summary_high_conf_threshold():
+    """composite_score >= 70 才计入高置信。"""
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+    evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
+    evaluator.HORIZONS = [5, 10, 20]
+
+    records = [
+        EvalRecord(
+            ticker="sh.600519", eval_date="2026-01-01",
+            horizon_days=5, pred_direction="UP", pred_return_pct=None,
+            actual_return_pct=2.0, actual_direction="UP",
+            is_direction_correct=True, error_pct=0.0,
+            ta_signal="BUY", composite_score=70.0,
+        ),
+        EvalRecord(
+            ticker="sh.600519", eval_date="2026-01-01",
+            horizon_days=5, pred_direction="UP", pred_return_pct=None,
+            actual_return_pct=2.0, actual_direction="UP",
+            is_direction_correct=True, error_pct=0.0,
+            ta_signal="BUY", composite_score=69.0,
+        ),
+        EvalRecord(
+            ticker="sh.600519", eval_date="2026-01-01",
+            horizon_days=5, pred_direction="UP", pred_return_pct=None,
+            actual_return_pct=2.0, actual_direction="UP",
+            is_direction_correct=True, error_pct=0.0,
+            ta_signal="BUY", composite_score=None,
+        ),
+    ]
+
+    summary = evaluator._compute_summary(records)
+    m5 = summary.horizons[5]
+    # 只有 score=70 的那条计入高置信
+    assert summary.high_conf_n == 1
+    assert m5.high_conf_win_rate == pytest.approx(100.0, abs=0.1)
+
+
+def test_get_latest_evaluation_no_table(tmp_path):
+    """数据库中没有 evaluation_results 表时，返回 None。"""
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+    from trade_krono_cli.cache import ResearchDatabase
+
+    db = tmp_path / "no_eval.db"
+    research = ResearchDatabase(db_path=db)
+    evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
+    evaluator._research = research
+
+    result = evaluator.get_latest_evaluation()
+    assert result is None
+
+
+def test_get_latest_evaluation_with_data(tmp_path):
+    """数据库中有评估结果时，应返回正确数据。"""
+    import sqlite3
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+    from trade_krono_cli.cache import ResearchDatabase
+
+    db = tmp_path / "has_eval.db"
+    research = ResearchDatabase(db_path=db)
+    evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
+    evaluator._research = research
+
+    # 手动插入一条评估记录
+    with sqlite3.connect(db) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS evaluation_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                eval_at REAL NOT NULL,
+                eval_date_range TEXT,
+                n_records INTEGER NOT NULL,
+                kronos_acc_5d REAL,
+                kronos_acc_10d REAL,
+                kronos_acc_20d REAL,
+                ta_buy_wr_5d REAL,
+                ta_buy_wr_10d REAL,
+                ta_buy_wr_20d REAL,
+                combined_wr_5d REAL,
+                combined_wr_10d REAL,
+                combined_wr_20d REAL,
+                high_conf_wr_5d REAL,
+                high_conf_wr_10d REAL,
+                summary_json TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "INSERT INTO evaluation_results "
+            "(eval_at, eval_date_range, n_records, kronos_acc_5d, summary_json) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (1700000000.0, "2026-01-01", 5, 60.0, '{"kronos_n": 5}'),
+        )
+        conn.commit()
+
+    result = evaluator.get_latest_evaluation()
+    assert result is not None
+    assert result["n_records"] == 5
+    assert result["summary"]["kronos_n"] == 5
+
+
+def test_print_report_empty_summary(capsys):
+    """打印空 summary 的报告不应崩溃。"""
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+    evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
+    evaluator.HORIZONS = [5, 10, 20]
+    summary = EvaluationSummary()
+    evaluator.print_report(summary)
+    captured = capsys.readouterr()
+    assert "预测评估报告" in captured.out
+    assert "5D 准确率:   0.0%" in captured.out
+
+
+def test_print_report_with_data(capsys):
+    """打印有数据的报告应包含正确的指标。"""
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+    evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
+    evaluator.HORIZONS = [5, 10, 20]
+
+    records = [EvalRecord(
+        ticker="sh.600519", eval_date="2026-01-01",
+        horizon_days=5, pred_direction="UP", pred_return_pct=3.0,
+        actual_return_pct=2.5, actual_direction="UP",
+        is_direction_correct=True, error_pct=0.5,
+        ta_signal="BUY", composite_score=80.0,
+    )]
+    summary = evaluator._compute_summary(records)
+    evaluator.print_report(summary)
+    captured = capsys.readouterr()
+    assert "100.0%" in captured.out  # 5D 准确率 100%
+    assert "综合信号" in captured.out
+
+
+def test_run_evaluation_no_results(capsys):
+    """latest=True 且无评估结果时，应打印提示并返回。"""
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+    with patch.object(PredictionEvaluator, 'get_latest_evaluation') as mock_get:
+        mock_get.return_value = None
+        run_evaluation(latest=True)
+    captured = capsys.readouterr()
+    assert "暂无评估结果" in captured.out
+
+
+def test_run_evaluation_with_latest_result(capsys):
+    """latest=True 且有评估结果时，应打印结果。"""
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+
+    class FakeSummary:
+        kronos_n = 3
+        ta_buy_n = 1
+        combined_buy_up_n = 0
+        high_conf_n = 0
+        horizons = {5: MagicMock(kronos_dir_accuracy=60.0, ta_buy_win_rate=50.0,
+                                  ta_buy_avg_return=1.5, combined_buy_up_win_rate=0.0,
+                                  combined_buy_up_avg_return=0.0, high_conf_win_rate=0.0,
+                                  high_conf_avg_return=0.0)}
+        records = []
+
+        def get(self, key, default=None):
+            return getattr(self, key, default)
+
+    with patch.object(PredictionEvaluator, 'get_latest_evaluation') as mock_get:
+        fake = MagicMock()
+        fake.__getitem__ = lambda self, key: {"id": 1, "eval_at": 1700000000.0,
+            "eval_date_range": "2026-01-01", "n_records": 3,
+            "summary": FakeSummary()}[key]
+        mock_get.return_value = fake
+        run_evaluation(latest=True)
+    captured = capsys.readouterr()
+    assert "最新评估结果" in captured.out
+    assert "样本数: 3" in captured.out

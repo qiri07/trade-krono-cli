@@ -372,3 +372,94 @@ class TestKronosRunnerPredictBatch:
                 results = runner.predict_batch(["sh.600519"], "2026-08-12")
                 assert len(results) == 1
                 assert results[0].error is not None
+
+
+class TestKronosRunnerResolveDevice:
+    """_resolve_device 测试。"""
+
+    def _make_runner(self):
+        from trade_krono_cli.kronos_runner import KronosRunner
+        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
+            mock_settings.return_value.kronos_device = "cuda"
+            return KronosRunner(device="cuda", no_cache=True)
+
+    def test_cpu_device(self):
+        runner = self._make_runner()
+        runner.device_pref = "cpu"
+        assert runner._resolve_device() == "cpu"
+
+    def test_cuda_device_no_torch(self):
+        """无 torch 时 cuda 回退到 cpu。"""
+        runner = self._make_runner()
+        runner.device_pref = "cuda"
+        with patch.dict("sys.modules", {"torch": None}):
+            result = runner._resolve_device()
+        assert result == "cpu"
+
+    def test_cuda_with_torch_not_available(self):
+        """torch.cuda.is_available() 为 False 时回退到 cpu。"""
+        runner = self._make_runner()
+        runner.device_pref = "cuda"
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = False
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            result = runner._resolve_device()
+        assert result == "cpu"
+
+    def test_cuda_with_torch_available(self):
+        """torch.cuda.is_available() 为 True 时返回 cuda。"""
+        runner = self._make_runner()
+        runner.device_pref = "cuda"
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = True
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            result = runner._resolve_device()
+        assert result == "cuda"
+
+    def test_large_model_warning(self):
+        """large 模型名应触发警告并切换为 base。"""
+        from trade_krono_cli.kronos_runner import KronosRunner
+        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings, \
+             patch("trade_krono_cli.kronos_runner.logger.warning"):
+            mock_settings.return_value.kronos_model = "kronos-large"
+            mock_settings.return_value.kronos_tokenizer = "kronos-base"
+            mock_settings.return_value.kronos_device = "cpu"
+            mock_settings.return_value.kronos_lookback = 400
+            mock_settings.return_value.kronos_pred_len = 30
+            mock_settings.return_value.kronos_sample_count = 1
+            mock_settings.return_value.kronos_T = 1.0
+            mock_settings.return_value.kronos_top_p = 0.9
+            mock_settings.return_value.kronos_use_sample_confidence = False
+            runner = KronosRunner(no_cache=True)
+        assert runner.model_name == "kronos-base"
+
+
+class TestKronosRunnerSaveResults:
+    """save_results 测试。"""
+
+    def test_saves_json(self, tmp_path):
+        from trade_krono_cli.kronos_runner import KronosRunner, KronosForecastResult
+        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
+            mock_settings.return_value.kronos_model = "kronos-base"
+            mock_settings.return_value.kronos_tokenizer = "kronos-base"
+            mock_settings.return_value.kronos_device = "cpu"
+            mock_settings.return_value.kronos_lookback = 400
+            mock_settings.return_value.kronos_pred_len = 30
+            mock_settings.return_value.kronos_sample_count = 1
+            mock_settings.return_value.kronos_T = 1.0
+            mock_settings.return_value.kronos_top_p = 0.9
+            mock_settings.return_value.kronos_use_sample_confidence = False
+            runner = KronosRunner(no_cache=True)
+
+        results = [
+            KronosForecastResult(ticker="sh.600519", eval_date="2026-08-12", horizon=30, direction="UP", expected_change_pct=2.0),
+            KronosForecastResult(ticker="sz.000858", eval_date="2026-08-12", horizon=30, direction="DOWN", expected_change_pct=-1.5),
+        ]
+        path = str(tmp_path / "kronos_out.json")
+        returned = runner.save_results(results, path)
+        assert returned == path
+        import json
+        with open(path) as f:
+            data = json.load(f)
+        assert len(data) == 2
+        assert data[0]["ticker"] == "sh.600519"
