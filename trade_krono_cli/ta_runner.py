@@ -127,16 +127,21 @@ class TradingAgentsRunner:
         checkpoint_enabled: Optional[bool] = None,
         output_language: str = "Chinese",
         safe_mode: bool = True,
+        no_cache: bool = False,
     ):
         self._settings = get_settings()
-        self._cache = get_cache()
+        self._cache = None if no_cache else get_cache()
 
         # 配置合并：显式参数 > settings 默认值
         self.llm_provider = llm_provider or self._settings.llm_provider
         self.deep_think_llm = deep_think_llm or self._settings.deep_think_llm
         self.quick_think_llm = quick_think_llm or self._settings.quick_think_llm
         self.backend_url = backend_url or self._settings.backend_url
-        self.max_debate_rounds = max_debate_rounds or self._settings.max_debate_rounds
+        self.max_debate_rounds = (
+            max_debate_rounds
+            if max_debate_rounds is not None
+            else self._settings.max_debate_rounds
+        )
         self.checkpoint_enabled = (
             checkpoint_enabled
             if checkpoint_enabled is not None
@@ -272,7 +277,7 @@ class TradingAgentsRunner:
         }
         return legacy, inv_decision
 
-    @retry(max_attempts=3, base_delay=5.0, exceptions=(Exception,))
+    @retry(max_attempts=3, base_delay=5.0, exceptions=(RuntimeError, ConnectionError, TimeoutError))
     def analyze_one(self, ticker: str, date: str) -> StockAnalysisResult:
         ticker = validate_ticker(ticker)
         date = validate_date(date)
@@ -286,6 +291,9 @@ class TradingAgentsRunner:
                 logger.debug(f"📦 TA 缓存命中: {ticker}")
                 for k, v in cached.items():
                     setattr(result, k, v)
+                # 缓存中 investment_decision 是 dict，需还原为对象
+                if isinstance(result.investment_decision, dict):
+                    result.investment_decision = InvestmentDecision.from_dict(result.investment_decision)
                 result.elapsed_sec = 0.0
                 return result
 
@@ -349,7 +357,14 @@ class TradingAgentsRunner:
 
         except Exception as e:
             result.error = f"{type(e).__name__}: {e}"
-            logger.error(f"❌ {ticker} TA 分析失败: {result.error}")
+            # 脱敏：移除可能的 API key 片段
+            import re
+            safe_msg = re.sub(
+                r"(sk-[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9._\-]+)",
+                "[REDACTED_KEY]",
+                str(e),
+            )
+            logger.error(f"❌ {ticker} TA 分析失败: {safe_msg}")
 
         finally:
             result.elapsed_sec = round(time.time() - t0, 2)

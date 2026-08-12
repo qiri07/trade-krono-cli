@@ -63,6 +63,21 @@ class InvestmentDecision:
         return d
 
     @classmethod
+    def from_dict(cls, data: dict) -> "InvestmentDecision":
+        """从 dict 反序列化，将 signal 字符串还原为 Signal 枚举。"""
+        signal_str = data.get("signal", "HOLD")
+        if isinstance(signal_str, str):
+            try:
+                signal = Signal(signal_str)
+            except ValueError:
+                from loguru import logger
+                logger.warning(f"未知 Signal 值 '{signal_str}'，回退到 HOLD")
+                signal = Signal.HOLD
+            data = dict(data)
+            data["signal"] = signal
+        return cls(**data)
+
+    @classmethod
     def fallback(cls, signal: Signal = Signal.HOLD, confidence: float = 50.0) -> "InvestmentDecision":
         return cls(signal=signal, confidence=confidence)
 

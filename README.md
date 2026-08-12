@@ -2,7 +2,7 @@
 
 > A股投研 + Kronos 预测一体化流水线 — 并行分析 N 只股票
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ## 概述
@@ -69,7 +69,18 @@ trade-krono-cli run --tickers "600519,000858,600036" --date 2026-08-11
 
 ## 安装
 
-### 方式一：pip 安装（推荐）
+### 方式一：uv 虚拟环境（推荐）
+
+```bash
+cd trade-krono-cli
+uv venv .venv --python 3.12
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+> **注意**：本项目使用 Python 3.12。Python 3.14 暂不被支持（torch 尚无 cp314 wheel，且 PEP 668 禁止系统 pip 安装）。
+
+### 方式二：pip 安装
 
 ```bash
 cd trade-krono-cli
@@ -98,8 +109,8 @@ bash scripts/install.sh
 
 | 依赖 | 最低版本 | 说明 |
 |------|----------|------|
-| Python | 3.10+ | 使用 walrus 运算符、typing 扩展 |
-| PyTorch | 2.0+ | Kronos 模型推理 |
+| Python | 3.12 | 3.14 暂不支持（torch 无 wheel） |
+| PyTorch | 2.13+ (cu130) | Kronos 模型推理；通过 uv 安装 `.venv/bin/uv pip install torch` |
 | Typer | 0.9+ | CLI 框架 |
 | Rich | 13+ | 终端美化输出 |
 | Python-dotenv | 1.0+ | .env 文件加载 |
@@ -818,7 +829,7 @@ trade-krono-cli repo doctor
 pytest tests/ -v
 ```
 
-测试结果：**156/156 全部通过**
+测试结果：**156/156 全部通过**（含端到端流水线、缓存序列化、错误隔离等场景）
 
 | 文件 | 覆盖模块 |
 |------|----------|
@@ -965,11 +976,12 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 |------|------|------|
 | 密钥管理 | API key 仅从 .env 读取，不硬编码；支持多个供应商轮换 | `security.py::KeyVault` |
 | 输入校验 | 股票代码正则匹配（6 位数字）、日期格式校验（YYYY-MM-DD） | `security.py::validate_ticker / validate_date` |
-| 失败重试 | 指数退避重试（TA 3次 / Kronos 2次） | `security.py::retry` |
+| 失败重试 | 指数退避重试（TA 3次 / Kronos 2次，仅重试网络/连接错误） | `security.py::retry` |
 | API 限流 | 令牌桶算法控制 baostock 请求频率（默认 1次/秒） | `security.py::TokenBucket` |
-| 路径隔离 | 外部项目通过 `sys.path` 注入，不修改其源码 | `kronos_runner.py`, `ta_runner.py` |
-| 缓存安全 | SQLite 本地存储，不上传任何数据；缓存 TTL 过期自动清理 | `cache.py` |
-| baostock 登录 | 全局单例登录 + 令牌桶限流，避免并发冲突；不支持多线程并发登录 | `data.py::_ensure_bs_login` |
+| 路径隔离 | 外部项目通过 `sys.path` 注入，输出路径限制在项目根目录下 | `kronos_runner.py`, `ta_runner.py`, `cli.py::_sanitize_path` |
+| 缓存安全 | SQLite 本地存储，不上传任何数据；缓存 TTL 过期自动清理；`investment_decision` / `prediction_uncertainty` 缓存反序列化安全处理 | `cache.py`, `ta_runner.py`, `kronos_runner.py` |
+| baostock 登录 | 全局单例 + 线程锁，避免并发冲突 | `data.py::_ensure_bs_login` |
+| 日志脱敏 | 异常日志自动脱敏 API key（正则替换 sk-xxx / Bearer xxx） | `ta_runner.py`, `kronos_runner.py` |
 
 ## 注意事项
 
@@ -978,8 +990,8 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 3. **TA 分析**：需要配置 LLM API key（DeepSeek / OpenAI / Anthropic / MiniMax / Agnes 任一）
 4. **GPU 推理**：设置 `KRONOS_DEVICE=cuda:0` 可启用 GPU 加速，需 NVIDIA 显卡 + CUDA
 5. **不修改原始项目**：通过 `sys.path` 注入方式调用，不修改 TradingAgents-astock 和 Kronos 代码
-6. **缓存**：K 线数据、TA 结果、Kronos 预测均会缓存到 SQLite，重复分析同日期股票时大幅加速
+6. **缓存**：K 线数据、TA 结果、Kronos 预测均会缓存到 SQLite，重复分析同日期股票时大幅加速；使用 `--no-cache` 可强制禁用缓存（全新分析）
 7. **股票代码格式**：支持 `600519`、`sh.600519`、`SZ.000858` 等格式，自动归一化
 8. **多供应商切换**：`.env` 中 `LLM_PROVIDER` 切换供应商，同时确保对应 API key 已配置
 9. **不确定性量化**：默认 `sample_count=1` 时 `path_dispersion=null`，`confidence_score` 仅基于方向置信度；设置 `KRONOS_SAMPLE_COUNT>1` 可启用跨样本真实不确定性
-10. **baostock 登录**：baostock 全局单例登录，不支持多线程并发登录；已有令牌桶限流保护
+10. **baostock 登录**：baostock 全局单例登录，使用线程锁保护；已有令牌桶限流保护

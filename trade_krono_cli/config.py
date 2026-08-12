@@ -99,7 +99,11 @@ class Settings:
         default_factory=lambda: float(os.getenv("MIN_CONFIDENCE", "55.0"))
     )
     default_allowed_signals: list[str] = field(
-        default_factory=lambda: os.getenv("ALLOWED_SIGNALS", "BUY,HOLD").split(",")
+        default_factory=lambda: [
+            s.strip().upper()
+            for s in os.getenv("ALLOWED_SIGNALS", "BUY,HOLD").split(",")
+            if s.strip()
+        ]
     )
 
     # ── 数据获取配置 ──────────────────────────────────────

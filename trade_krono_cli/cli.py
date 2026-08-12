@@ -155,6 +155,19 @@ def repo_pin(
         raise typer.Exit(1)
 
 
+def _sanitize_path(path: str, label: str, project_root: Path) -> Path:
+    """验证输出路径在项目根目录内，防止路径遍历。"""
+    p = Path(path).resolve()
+    try:
+        p.relative_to(project_root)
+    except ValueError:
+        console.print(
+            f"[red]❌ {label} 路径必须在项目根目录下: {path}[/red]"
+        )
+        raise typer.Exit(1)
+    return p
+
+
 def _load_env() -> None:
     """启动时初始化配置和日志。"""
     import os
@@ -267,17 +280,23 @@ def run(
     def _progress(stage: str, cur: int, total: int) -> None:
         console.print(f"  [cyan]{stage}[/cyan] [{cur}/{total}]")
 
+    # 输出路径校验
+    project_root = Path(__file__).resolve().parent.parent
+    json_out_p = _sanitize_path(json_out, "JSON", project_root)
+    html_out_p = _sanitize_path(html_out, "HTML", project_root)
+
     pipeline = QuantPipeline(
         skip_kronos=skip_kronos,
         min_confidence=min_confidence,
         allowed_signals=signals_tuple,
+        no_cache=no_cache,
     )
 
     merged = pipeline.run_parallel(
         tickers=tk_list,
         date=date,
-        output_json=json_out,
-        output_html=html_out,
+        output_json=str(json_out_p),
+        output_html=str(html_out_p),
         progress_cb=_progress,
     )
 
@@ -309,8 +328,11 @@ def ta(
         console.print("[red]❌ 股票列表为空[/red]")
         raise typer.Exit(1)
 
+    project_root = Path(__file__).resolve().parent.parent
+    output_p = _sanitize_path(output, "TA输出", project_root)
+
     pipeline = QuantPipeline()
-    results = pipeline.run_ta_only(tk_list, date, output=output)
+    results = pipeline.run_ta_only(tk_list, date, output=str(output_p))
 
     console.print(f"[green]✅ TA 分析完成 → {output}[/green]")
     console.print(f"   成功: {sum(1 for r in results if r.error is None)}/{len(results)}")
@@ -339,8 +361,11 @@ def kronos(
         console.print("[red]❌ 股票列表为空[/red]")
         raise typer.Exit(1)
 
+    project_root = Path(__file__).resolve().parent.parent
+    output_p = _sanitize_path(output, "Kronos输出", project_root)
+
     pipeline = QuantPipeline()
-    results = pipeline.run_kronos_only(tk_list, date, output=output)
+    results = pipeline.run_kronos_only(tk_list, date, output=str(output_p))
 
     console.print(f"[green]✅ Kronos 预测完成 → {output}[/green]")
     console.print(f"   成功: {sum(1 for r in results if r.error is None)}/{len(results)}")
@@ -449,7 +474,11 @@ def history(
         for col in ("日期", "RunID", "数据版本", "排名", "综合分", "TA信号", "TA置信", "Kronos方向", "预期%"):
             table.add_column(col, justify="right" if col not in ("日期", "RunID", "数据版本") else "left")
         for r in records:
-            change = f"{r['kronos_change']:.2f}" if r.get("kronos_change") else "-"
+            change = (
+                f"{r['kronos_change']:.2f}"
+                if r.get("kronos_change") is not None
+                else "-"
+            )
             table.add_row(
                 str(r["date"]),
                 str(r.get("run_id") or "-"),

@@ -72,6 +72,11 @@ class PredictionUncertainty:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "PredictionUncertainty":
+        """从 dict 反序列化。"""
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
 
 # ── 预测结果 ─────────────────────────────────────────────────────────────────
 
@@ -130,6 +135,7 @@ class KronosRunner:
         top_p: Optional[float] = None,
         fallback_cpu: bool = True,
         use_cache: bool = True,
+        no_cache: bool = False,
     ):
         s = get_settings()
         self.model_name = model_name or s.kronos_model
@@ -141,7 +147,7 @@ class KronosRunner:
         self.T = T if T is not None else s.kronos_T
         self.top_p = top_p if top_p is not None else s.kronos_top_p
         self.fallback_cpu = fallback_cpu
-        self.use_cache = use_cache
+        self.use_cache = use_cache and not no_cache
         self.use_sample_confidence = s.kronos_use_sample_confidence
 
         self._cache = get_cache()
@@ -196,7 +202,7 @@ class KronosRunner:
             self._tokenizer = KronosTokenizer(**tokenizer_cfg)
             weight_path = models_dir / self.tokenizer_name / "model.safetensors"
             self._tokenizer.load_state_dict(
-                torch.load(weight_path, map_location="cpu")
+                torch.load(weight_path, map_location="cpu", weights_only=True)
             )
 
             model_cfg_path = models_dir / self.model_name / "config.json"
@@ -205,7 +211,7 @@ class KronosRunner:
             self._model = Kronos(**model_cfg)
             weight_path = models_dir / self.model_name / "model.safetensors"
             self._model.load_state_dict(
-                torch.load(weight_path, map_location="cpu")
+                torch.load(weight_path, map_location="cpu", weights_only=True)
             )
 
             name = self.model_name.lower()
@@ -369,6 +375,9 @@ class KronosRunner:
                 logger.debug(f"📦 Kronos 缓存命中: {ticker}")
                 for k, v in cached.items():
                     setattr(res, k, v)
+                # 缓存中 prediction_uncertainty 是 dict，需还原为对象
+                if isinstance(res.prediction_uncertainty, dict):
+                    res.prediction_uncertainty = PredictionUncertainty.from_dict(res.prediction_uncertainty)
                 res.elapsed_sec = 0.0
                 return res
 
@@ -448,7 +457,13 @@ class KronosRunner:
 
         except Exception as e:
             res.error = f"{type(e).__name__}: {e}"
-            logger.error(f"❌ Kronos 预测失败 {ticker}: {res.error}")
+            import re
+            safe_msg = re.sub(
+                r"(sk-[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9._\-]+)",
+                "[REDACTED_KEY]",
+                str(e),
+            )
+            logger.error(f"❌ Kronos 预测失败 {ticker}: {safe_msg}")
         finally:
             res.elapsed_sec = round(time.time() - t0, 2)
 
@@ -482,6 +497,9 @@ class KronosRunner:
                 if cached:
                     for k, v in cached.items():
                         setattr(res, k, v)
+                    # 缓存中 prediction_uncertainty 是 dict，需还原为对象
+                    if isinstance(res.prediction_uncertainty, dict):
+                        res.prediction_uncertainty = PredictionUncertainty.from_dict(res.prediction_uncertainty)
                     results.append(res)
                     prepared.append(None)
                     continue

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import time
+import threading
 from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Optional
@@ -21,6 +22,7 @@ _bs = None
 _HAS_BS = False
 _bs_logged_in = False
 _bs_limiter: Optional[TokenBucket] = None
+_bs_login_lock = threading.Lock()
 
 
 def _get_limiter() -> TokenBucket:
@@ -54,7 +56,11 @@ def _ensure_bs_login() -> None:
         _ensure_bs_import()
     if _bs_logged_in:
         return
-    lg = _bs.login()  # type: ignore
+    with _bs_login_lock:
+        # 双重检查：另一线程可能已在此等待锁期间完成登录
+        if _bs_logged_in:
+            return
+        lg = _bs.login()  # type: ignore
     if lg.error_code != "0":
         raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
     _bs_logged_in = True

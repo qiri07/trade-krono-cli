@@ -76,7 +76,11 @@ def _make_empty_merged(
 ) -> dict:
     pu = None
     if kronos and kronos.prediction_uncertainty:
-        pu = kronos.prediction_uncertainty.to_dict()
+        pu = (
+            kronos.prediction_uncertainty.to_dict()
+            if hasattr(kronos.prediction_uncertainty, "to_dict")
+            else kronos.prediction_uncertainty
+        )
 
     return {
         "ticker": ticker,

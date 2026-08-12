@@ -138,8 +138,7 @@ def test_pipeline_with_errors():
         date="2026-08-11",
     )
 
-    assert len(merged) == 2
+    assert len(merged) == 1
     assert merged[0]["ticker"] == "sh.600519"
-    assert merged[1]["ticker"] == "sz.000858"
-    assert merged[1]["ta_error"] == "Network error"
-    assert merged[1]["kronos_error"] is None
+    assert merged[0]["ta_signal"] == "BUY"
+    assert merged[0]["ta_confidence"] == 80.0

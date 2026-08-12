@@ -34,10 +34,11 @@ class QuantPipeline:
         min_confidence: Optional[float] = None,
         allowed_signals: Optional[tuple[str, ...]] = None,
         skip_kronos: bool = False,
+        no_cache: bool = False,
     ):
         self._settings = get_settings()
-        self.ta = ta_runner or TradingAgentsRunner()
-        self.kronos = None if skip_kronos else (kronos_runner or KronosRunner())
+        self.ta = ta_runner or TradingAgentsRunner(no_cache=no_cache)
+        self.kronos = None if skip_kronos else (kronos_runner or KronosRunner(no_cache=no_cache))
         self.scorer = scorer or default_scorer
         self.min_confidence = min_confidence or self._settings.default_min_confidence
         signals = allowed_signals or tuple(
@@ -103,8 +104,17 @@ class QuantPipeline:
             else:
                 kronos_results = []
 
+        # ── 应用过滤（信号 / 置信度阈值）────────────────────
+        filtered_pool = filter_pool(
+            ta_results,
+            min_confidence=self.min_confidence,
+            allowed_signals=self.allowed_signals,
+        )
+        # filter_pool 返回 dict 列表，提取原始 ta_result 对象供 merge_results 使用
+        filtered_ta = [item["ta_result"] for item in filtered_pool]
+
         # ── 合并 + 打分 ────────────────────────────────────
-        merged = merge_results(ta_results, kronos_results, scorer=self.scorer)
+        merged = merge_results(filtered_ta, kronos_results, scorer=self.scorer)
 
         # ── 落盘 ───────────────────────────────────────────
         # 保存结构化结果 JSON（含摘要报告，用于展示和后续分析）
@@ -141,7 +151,8 @@ class QuantPipeline:
         research.insert_signals(job_id, merged, version_snapshot=version_snapshot)
 
         elapsed = time.time() - t0
-        research.complete_job(job_id, n_success=len(merged), elapsed=elapsed)
+        n_success = sum(1 for r in ta_results if r.error is None)
+        research.complete_job(job_id, n_success=n_success, elapsed=elapsed)
         logger.info(
             f"📊 研究作业完成: job={job_id} run_id={version_snapshot['run_id']} "
             f"| 耗时 {elapsed:.1f}s | 结果 {len(merged)} 条 → 已记录到研究数据库"
