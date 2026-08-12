@@ -143,3 +143,9 @@ def reload_settings() -> Settings:
     global _settings
     _settings = Settings()
     return _settings
+
+
+def clear_settings() -> None:
+    """清除全局单例，使下一次 get_settings() 重新初始化。用于测试隔离。"""
+    global _settings
+    _settings = None

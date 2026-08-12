@@ -231,7 +231,7 @@ trade-krono-cli ta             # 仅 TradingAgents 选股分析
 trade-krono-cli kronos         # 仅 Kronos 批量预测
 trade-krono-cli status         # 查看系统状态（密钥、缓存、模型）
 trade-krono-cli history        # 查看历史分析作业
-trade-krono-cli repo-status    # 查看外部 repo 状态（分支 / commit / lock 漂移）
+trade-krono-cli repo status    # 查看外部 repo 状态（分支 / commit / lock 漂移）
 trade-krono-cli eval-prediction # 对历史数据进行预测评估
 trade-krono-cli clear-cache    # 清除所有缓存
 ```
@@ -448,27 +448,27 @@ trade-krono-cli eval-prediction --latest
 ```
 trade-krono-cli
 ├── trade_krono_cli/
-│   ├── cli.py              # Typer CLI 入口（run / ta / kronos / status / history / eval-prediction / repo-status / clear-cache）
+│   ├── cli.py              # Typer CLI 入口（run / ta / kronos / status / history / eval-prediction / repo / clear-cache）
 │   ├── config.py           # 配置管理（.env → Settings 单例）
+│   ├── config_validator.py # 配置验证（15 项检查，区分错误与警告）
 │   ├── data.py             # K 线获取（baostock）
 │   ├── security.py         # 密钥校验 + 输入校验 + 重试 + 限流
+│   ├── health.py           # 健康检查（LLM API、Kronos 导入、数据库、磁盘）
 │   ├── cache.py            # Cache（TTL 性能缓存）+ ResearchDatabase（永久研究记录）
 │   ├── logger.py           # 日志配置
 │   ├── logging_config.py   # 结构化日志 sink（text + JSON）
+│   ├── globals.py          # 全局状态清理
 │   ├── ta_decision.py      # 投资决断标准化（Signal / InvestmentDecision / DecisionAdapter）
 │   ├── ta_runner.py        # TradingAgents 封装（含 save_raw_reports 三层存储）
 │   ├── kronos_runner.py    # Kronos 预测封装（含 prediction_uncertainty 模块）
-│   ├── merge.py            # 结果合并 + 综合打分（含风险惩罚）
-│   ├── report.py           # JSON/HTML/控制台报告
 │   ├── prediction_eval.py  # 预测评估（Kronos/TA/综合信号胜率验证）
 │   ├── pipeline_config.py  # PipelineConfig 数据类 + 运行配置
-│   ├── pipeline.py         # 薄代理层 → pipeline.orchestrator.PipelineRunner
 │   ├── external.py         # 外部项目管理（repo status/doctor/update/pin）
-│   ├── pipeline/           # 流水线包
-│   │   ├── orchestrator.py # 主流水线编排（ThreadPoolExecutor + raw 报告自动保存）
+│   ├── pipeline/           # 流水线包 — 统一编排入口
+│   │   ├── orchestrator.py # QuantPipeline + PipelineFactory（ThreadPoolExecutor 并行 TA+Kronos）
 │   │   ├── data_fetcher.py # 并行 K 线获取 + 缓存写入
-│   │   ├── scorer.py       # 综合打分 + 风险惩罚 + 排名
-│   │   └── reporter.py     # 报告生成（JSON / HTML / 控制台）
+│   │   ├── merge.py        # merge_results / filter_pool / default_scorer / run_risk_assessment
+│   │   └── reporter.py     # save_json_report / save_html_report / print_results_table / print_results_summary
 │   ├── models/             # 会话状态模型
 │   │   ├── kronos_session.py # Kronos 模型会话生命周期（懒加载、设备选择）
 │   │   └── ta_session.py     # TradingAgents 会话状态（供应商、辩论轮次）
@@ -477,7 +477,7 @@ trade-krono-cli
 │   └── risk/               # 风险引擎（波动率/回撤/流动性/集中度/市场环境）
 ├── scripts/
 │   └── install.sh          # 一键安装脚本
-├── tests/                  # 测试套件（398 项全部通过，87% 覆盖，mypy 零错误）
+├── tests/                  # 测试套件（459 项全部通过，87% 覆盖，mypy 零错误）
 └── external/               # 外部项目配置（repos.yaml + repo.lock）
 ```
 
@@ -512,7 +512,7 @@ trade-krono-cli
 
 ### 并行策略
 
-`pipeline.py` 使用 `concurrent.futures.ThreadPoolExecutor` 实现：
+`pipeline/orchestrator.py` 使用 `concurrent.futures.ThreadPoolExecutor` 实现：
 - TA 分析串行（共享 LLM API，避免并发限流）
 - Kronos 预测串行（GPU 模式下避免显存竞争，CPU 模式可考虑并行）
 - TA 与 Kronos **异步**执行：两者并行启动，完成后合并打分
@@ -872,11 +872,11 @@ trade-krono-cli 仅通过 `sys.path` 注入调用 `cli_anything.*` 路径；Trad
 pytest tests/ -v
 ```
 
-测试结果：**398/398 全部通过** · **87% 整体覆盖** · **mypy：38 个文件零错误**
+测试结果：**459/459 全部通过** · **87% 整体覆盖** · **mypy：38 个文件零错误**
 
 | 文件 | 覆盖模块 |
 |------|----------|
-| `test_cli.py` | CLI 入口、参数解析、股票列表加载、repo-status、eval-prediction 命令 |
+| `test_cli.py` | CLI 入口、参数解析、股票列表加载、repo 命令、eval-prediction 命令 |
 | `test_data.py` | K 线数据获取、缓存读写、TTL 过期 |
 | `test_merge.py` | 结果合并逻辑、打分公式、过滤池 |
 | `test_pipeline.py` | 流水线编排、错误隔离 |
@@ -892,6 +892,10 @@ pytest tests/ -v
 | `test_ta_runner.py` | BuildConfig、provider 校验、图懒加载、批量分析、raw 报告读写 |
 | `test_batch_runner.py` | 异步信号量控制批量预测 |
 | `integration/test_pipeline_integration.py` | 端到端流水线集成测试 |
+| `test_config_validator.py` | 配置验证（15 项检查：类型、范围、必填项） |
+| `test_health.py` | 健康检查（LLM API、Kronos 导入、数据库、磁盘空间） |
+| `test_merge_edge_cases.py` | Merge 边界条件（约束、T+1、混合信号） |
+| `test_merge_uncertainty.py` | 不确定性置信度映射回归测试 |
 
 ## TA 决策提取逻辑
 
@@ -1032,20 +1036,31 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 
 ## 更新日志
 
+### v0.1.2 — 2026-08-12
+
+**流水线收敛重构：**
+- 删除冗余的根目录 `merge.py`、`report.py`、`pipeline.py` 及 `pipeline/scorer.py`
+- 将合并/打分/报告逻辑统一收敛到 `pipeline/merge.py` 和 `pipeline/reporter.py`
+- `pipeline/__init__.py` 现只导出 `QuantPipeline` 和 `PipelineFactory`，子模块内部直接导入
+- 移除未使用的 `MergedItem` dataclass、生产代码中从未调用的 `score_merged_results`，以及 `orchestrator.py` 中的 4 个无效导入
+- `filter_pool` 现直接返回 `list[StockAnalysisResult]`，不再通过 dict 包装泄露内部结构
+- 测试数量：**459**（从 398 增长）；覆盖率保持 **87%**
+
+---
+
 ### v0.1.1 — 2026-08-12
 
 **代码质量与静态分析：**
 - **mypy 零错误**：38 个源文件全部通过类型检查；修复了 `kronos_runner.py`、`ta_runner.py`、`batch_runner.py`、`cache.py`、`errors.py`、`external.py`、`trading_constraints.py`、`prediction_eval.py`、`pipeline/orchestrator.py`、`logging_config.py` 中的类型注解问题
 - **覆盖率 87%**（从 80% 提升）：`prediction_eval.py` 94%、`ta_runner.py` 91%、`kronos_runner.py` 83%、`cli.py` 56%
-- 测试数量：**398**（从 156 增长）；新增 CLI 入口、kronos_runner 设备解析、ta_runner 配置/校验/图、prediction_eval 边界情况、batch runner 的测试
+- 测试数量：**459**（从 398 增长）；新增 CLI 入口、kronos_runner 设备解析、ta_runner 配置/校验/图、prediction_eval 边界情况、batch runner、config_validator、health 检查、merge 边界/不确定性用例、流水线收敛重构
 
 **新包结构（模块化重构）：**
-- `pipeline/` — orchestrator（ThreadPoolExecutor + raw 报告自动保存）、data_fetcher（并行 K 线获取）、scorer（综合打分 + 风险惩罚）、reporter（JSON/HTML/控制台）
+- `pipeline/` — orchestrator（ThreadPoolExecutor + raw 报告自动保存）、data_fetcher（并行 K 线获取）、merge（打分 + 风险惩罚 + 排名）、reporter（JSON/HTML/控制台）
 - `models/` — kronos_session（懒加载、设备选择）、ta_session（供应商/辩论状态）
 - `batch/` — batch_runner（异步信号量控制批量预测）
-- `pipeline.py` 现为薄代理层，委托给 `pipeline.orchestrator`
 
-**新增测试文件：** `test_cli.py`、`test_kronos_runner.py`、`test_ta_runner.py`、`test_prediction_eval.py`、`test_batch_runner.py`、`integration/test_pipeline_integration.py`
+**新增测试文件：** `test_cli.py`、`test_kronos_runner.py`、`test_ta_runner.py`、`test_prediction_eval.py`、`test_batch_runner.py`、`test_config_validator.py`、`test_health.py`、`test_merge_edge_cases.py`、`test_merge_uncertainty.py`、`integration/test_pipeline_integration.py`
 
 ---
 
@@ -1055,7 +1070,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 - 在 `security.py` 新增 `sanitize_for_log()` — 统一的 API key 脱敏工具函数，替换 `kronos_runner.py` 和 `ta_runner.py` 中原有的重复内联正则
 - 在 `security.py` 新增 `ensure_import_path()` — 统一 harness 优先的 sys.path 注入逻辑，消除两个 runner 模块中的重复代码
 - 修复 `ta_runner.py` 中 `_TRAIDINGAGENTS_IMPORTED` 拼写错误 → `_TRADINGAGENTS_IMPORTED`
-- 将魔法截断字面量（`[:500]`、`[:300]`）提取为模块级常量，分布于 `ta_runner.py`、`merge.py`、`ta_decision.py`、`cache.py`
+- 将魔法截断字面量（`[:500]`、`[:300]`）提取为模块级常量，分布于 `ta_runner.py`、`pipeline/merge.py`、`ta_decision.py`、`cache.py`
 - 重构 `EvaluationSummary` — 用按 horizon 分组的 `HorizonMetrics` dataclass 替代原有 30+ 个平铺字段；同步更新所有调用方
 - 修复 `cache.py` 中 SQL f-string 表名插值问题 — 新增 `_validate_table_name()` 白名单校验助手
 - 移除 `HorizonMetrics` 上重复的 `@dataclass` 装饰器

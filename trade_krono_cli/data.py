@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import time
 import threading
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Optional
@@ -13,7 +15,7 @@ from typing import Optional
 import pandas as pd
 
 from loguru import logger
-from trade_krono_cli.config import get_settings
+from trade_krono_cli.config import get_settings, Settings
 from trade_krono_cli.security import TokenBucket, validate_ticker, validate_date, retry
 from trade_krono_cli.cache import get_cache
 
@@ -25,15 +27,32 @@ _bs_limiter: Optional[TokenBucket] = None
 _bs_login_lock = threading.Lock()
 
 
-def _get_limiter() -> TokenBucket:
+def _get_limiter(settings: Optional[Settings] = None) -> TokenBucket:
     global _bs_limiter
     if _bs_limiter is None:
-        s = get_settings()
+        s = settings or get_settings()
         _bs_limiter = TokenBucket(
             rate=1.0 / s.baostock_sleep_sec,
             capacity=5.0,
         )
     return _bs_limiter
+
+
+def clear_baostock_globals() -> None:
+    """
+    重置 baostock 模块级状态，用于测试隔离。
+
+    被清除的状态：
+      - _bs             baostock 模块引用
+      - _HAS_BS         baostock 是否已导入
+      - _bs_logged_in   baostock 是否已登录
+      - _bs_limiter     速率限制器
+    """
+    global _bs, _HAS_BS, _bs_logged_in, _bs_limiter
+    _bs = None
+    _HAS_BS = False
+    _bs_logged_in = False
+    _bs_limiter = None
 
 
 def _ensure_bs_import() -> None:
@@ -229,30 +248,58 @@ def validate_data_freshness(
     )
 
 
+def _safe_float(value: str, default: Optional[float] = None) -> Optional[float]:
+    """
+    安全地将字符串解析为 float，失败时返回 default。
+    腾讯行情接口可能返回空串、'--' 等占位符，不应让整个函数失败。
+    """
+    if not value:
+        return default
+    try:
+        f = float(value)
+        return f if not (f != f or f == float('inf') or f == float('-inf')) else default
+    except (ValueError, TypeError):
+        return default
+
+
+# 腾讯财经接口字段索引（qt.gtimg.cn 协议）
+# https://stock.finance.sina.com.cn/
+# 索引对应字段如下（部分字段可能因股票类型不同而缺失）：
+_TQ_PRICE     = 3    # 当前价（元）
+_TQ_PE        = 39   # 市盈率（动态）
+_TQ_PB        = 46   # 市净率
+_TQ_MKT_CAP   = 44   # 总市值（亿元）
+_TQ_TURNOVER  = 38   # 换手率（%）
+# 最小字段数：需至少包含 _TQ_PRICE（索引 3）+ 分隔符，取保守阈值 45
+_TQ_MIN_FIELDS = 45
+
+
 def fetch_realtime_quote(ticker: str) -> dict:
     """
     腾讯财经实时估值（免费、无需 key）。
     返回 {price, pe, pb, market_cap, turnover} 或 {}。
+
+    字段均安全解析：字段缺失或非数字时该项为 None，不抛异常。
     """
     ticker = validate_ticker(ticker)
     code = ticker.split(".")[-1]
     prefix = ticker.split(".")[0]
 
-    import urllib.request
     url = f"https://qt.gtimg.cn/q={prefix}{code}"
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
             raw = resp.read().decode("gbk", errors="ignore")
-        fields = raw.split("~")
-        if len(fields) < 45:
-            return {}
-        return {
-            "price":     float(fields[3])  if fields[3] else None,
-            "pe":        float(fields[39]) if len(fields) > 39 and fields[39] else None,
-            "pb":        float(fields[46]) if len(fields) > 46 and fields[46] else None,
-            "market_cap": float(fields[44]) if len(fields) > 44 and fields[44] else None,
-            "turnover":  float(fields[38]) if len(fields) > 38 and fields[38] else None,
-        }
-    except Exception as e:
-        logger.warning(f"腾讯行情获取失败 {ticker}: {e}")
+    except (urllib.error.URLError, OSError):
         return {}
+
+    fields = raw.split("~")
+    if len(fields) < _TQ_MIN_FIELDS:
+        return {}
+
+    return {
+        "price":      _safe_float(fields[_TQ_PRICE]),
+        "pe":         _safe_float(fields[_TQ_PE])         if len(fields) > _TQ_PE else None,
+        "pb":         _safe_float(fields[_TQ_PB])         if len(fields) > _TQ_PB else None,
+        "market_cap": _safe_float(fields[_TQ_MKT_CAP])    if len(fields) > _TQ_MKT_CAP else None,
+        "turnover":   _safe_float(fields[_TQ_TURNOVER])   if len(fields) > _TQ_TURNOVER else None,
+    }

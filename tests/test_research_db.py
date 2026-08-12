@@ -3,7 +3,8 @@ import json
 import pytest
 import sqlite3
 from pathlib import Path
-from trade_krono_cli.cache import ResearchDatabase, Cache
+from trade_krono_cli.research_db import ResearchDatabase
+from trade_krono_cli.cache import Cache
 from trade_krono_cli.version import reset_run_id_counter
 
 

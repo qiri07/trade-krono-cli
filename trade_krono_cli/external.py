@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from loguru import logger
+from trade_krono_cli.config import get_settings, Settings
 
 
 # ═══════════════════════════════════════════════════════
@@ -40,8 +41,11 @@ class ExternalRepo:
 
     @property
     def absolute_path(self) -> Path:
-        from trade_krono_cli.config import get_settings
         return get_settings().project_root / self.path
+
+    def absolute_path_from(self, settings: Settings) -> Path:
+        """Use provided settings instead of global singleton."""
+        return settings.project_root / self.path
 
 
 @dataclass
@@ -308,7 +312,7 @@ def save_config(
 # 核心 API
 # ═══════════════════════════════════════════════════════
 
-def get_repos(project_root: Optional[Path] = None) -> list[ExternalRepo]:
+def get_repos(project_root: Optional[Path] = None, settings: Optional[Settings] = None) -> list[ExternalRepo]:
     """
     获取所有外部 repo 配置（从 YAML 或 .env fallback）。
 
@@ -330,8 +334,7 @@ def get_repos(project_root: Optional[Path] = None) -> list[ExternalRepo]:
         ]
 
     # fallback: 从 .env 构造默认配置
-    from trade_krono_cli.config import get_settings
-    s = get_settings()
+    s = settings or get_settings()
     repos = []
     if s.tradingagents_root:
         repos.append(ExternalRepo(

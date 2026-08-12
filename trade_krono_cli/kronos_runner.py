@@ -4,15 +4,13 @@ Kronos 金融时序预测封装层：
   • 批量 predict（GPU/CPU 自动切换）
   • 结果结构化 + 缓存
   • 集成 data.py 拉 K 线
-  • 预测不确定性量化模块：
-      expected_return / direction / volatility /
-      path_dispersion / confidence / stability
+  • 不确定性量化见 prediction_uncertainty.py
 """
 from __future__ import annotations
 
 import time
 import json
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict
 from pathlib import Path
 from typing import Optional, Any
 
@@ -20,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from loguru import logger
-from trade_krono_cli.config import get_settings
+from trade_krono_cli.config import get_settings, Settings
 from trade_krono_cli.security import (
     validate_ticker,
     validate_date,
@@ -30,88 +28,107 @@ from trade_krono_cli.security import (
 )
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.data import fetch_lookback, next_business_days
+from trade_krono_cli.errors import ModelLoadError, DataError
+from trade_krono_cli.prediction_uncertainty import (
+    PredictionUncertainty,
+    build_result_dict,
+)
+
+# 向后兼容：保持从 kronos_runner 导入 PredictionUncertainty 的能力
+__all__ = ("KronosRunner", "KronosForecastResult", "PredictionUncertainty")
 
 # Kronos 模块懒加载
 _KRONOS_IMPORTED = False
 
 
-def _ensure_kronos_import() -> None:
+def _ensure_kronos_import(settings: Settings) -> None:
     global _KRONOS_IMPORTED
     if _KRONOS_IMPORTED:
         return
-    s = get_settings()
-    # 优先注入 agent-harness（包含 cli_anything.kronos）
-    harness_root = s.kronos_root / "agent-harness"
-    kronos_root = s.kronos_root
+    harness_root = settings.kronos_root / "agent-harness"
+    kronos_root = settings.kronos_root
     ensure_import_path(harness_root, kronos_root)
     _KRONOS_IMPORTED = True
     logger.debug(f"Kronos 路径已加入: {harness_root} + {kronos_root}")
 
 
-# ── 预测不确定性量化子模块 ───────────────────────────────────────────────────
-
-@dataclass
-class PredictionUncertainty:
-    """
-    预测不确定性量化结果。
-
-    字段语义：
-      expected_return       预期收益率（%），= (final_close - last_close) / last_close * 100
-      direction             UP / DOWN / FLAT（阈值 ±1%）
-      direction_confidence  方向置信度 0-1，基于 |change_pct| 与波动率的比率
-                            = sigmoid(|change_pct| / (10 * std + 1e-8))
-      volatility            预测路径的标准差（绝对价格波动）
-      path_dispersion       归一化路径分散度；多样本时为 std/|mean|，单样本时为 None
-      confidence_score      综合不确定性评分 0-100
-                            多样本：direction_confidence*50 + max(0, 50-dispersion*200)
-                            单样本：direction_confidence * 100
-      sample_count_used     实际使用的样本数
-    """
-    expected_return: Optional[float] = None
-    direction: Optional[str] = None
-    direction_confidence: Optional[float] = None
-    volatility: Optional[float] = None
-    path_dispersion: Optional[float] = None
-    confidence_score: Optional[float] = None
-    sample_count_used: int = 1
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "PredictionUncertainty":
-        """从 dict 反序列化。"""
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+def clear_kronos_imported() -> None:
+    """重置 Kronos 懒加载状态，用于测试隔离。"""
+    global _KRONOS_IMPORTED
+    _KRONOS_IMPORTED = False
 
 
 # ── 预测结果 ─────────────────────────────────────────────────────────────────
 
-@dataclass
 class KronosForecastResult:
     """单只股票的 Kronos 预测结果。"""
-    ticker: str
-    eval_date: str
-    horizon: int
-    interval: str = "d"
-    last_close: Optional[float] = None
-    predicted_close_mean: Optional[float] = None
-    predicted_close_final: Optional[float] = None
-    expected_change_pct: Optional[float] = None
-    direction: Optional[str] = None     # UP / DOWN / FLAT
-    volatility_proxy: Optional[float] = None
-    confidence_band: Optional[dict] = None
-    forecast_dict: Optional[dict] = None
-    model_name: Optional[str] = None
-    error: Optional[str] = None
-    elapsed_sec: float = 0.0
+    __slots__ = (
+        "ticker", "eval_date", "horizon", "interval",
+        "last_close", "predicted_close_mean", "predicted_close_final",
+        "expected_change_pct", "direction", "volatility_proxy",
+        "confidence_band", "forecast_dict", "model_name",
+        "error", "elapsed_sec", "prediction_uncertainty",
+    )
 
-    # 新增：预测不确定性量化模块
-    prediction_uncertainty: Optional[PredictionUncertainty] = None
+    def __init__(
+        self,
+        ticker: str,
+        eval_date: str,
+        horizon: int,
+        interval: str = "d",
+        last_close: Optional[float] = None,
+        predicted_close_mean: Optional[float] = None,
+        predicted_close_final: Optional[float] = None,
+        expected_change_pct: Optional[float] = None,
+        direction: Optional[str] = None,
+        volatility_proxy: Optional[float] = None,
+        confidence_band: Optional[dict] = None,
+        forecast_dict: Optional[dict] = None,
+        model_name: Optional[str] = None,
+        error: Optional[str] = None,
+        elapsed_sec: float = 0.0,
+        prediction_uncertainty: Optional[PredictionUncertainty] = None,
+    ):
+        self.ticker = ticker
+        self.eval_date = eval_date
+        self.horizon = horizon
+        self.interval = interval
+        self.last_close = last_close
+        self.predicted_close_mean = predicted_close_mean
+        self.predicted_close_final = predicted_close_final
+        self.expected_change_pct = expected_change_pct
+        self.direction = direction
+        self.volatility_proxy = volatility_proxy
+        self.confidence_band = confidence_band
+        self.forecast_dict = forecast_dict
+        self.model_name = model_name
+        self.error = error
+        self.elapsed_sec = elapsed_sec
+        self.prediction_uncertainty = prediction_uncertainty
 
     def to_dict(self) -> dict:
-        d = asdict(self)
-        if self.prediction_uncertainty is not None:
-            d["prediction_uncertainty"] = self.prediction_uncertainty.to_dict()
+        d = {
+            "ticker": self.ticker,
+            "eval_date": self.eval_date,
+            "horizon": self.horizon,
+            "interval": self.interval,
+            "last_close": self.last_close,
+            "predicted_close_mean": self.predicted_close_mean,
+            "predicted_close_final": self.predicted_close_final,
+            "expected_change_pct": self.expected_change_pct,
+            "direction": self.direction,
+            "volatility_proxy": self.volatility_proxy,
+            "confidence_band": self.confidence_band,
+            "forecast_dict": self.forecast_dict,
+            "model_name": self.model_name,
+            "error": self.error,
+            "elapsed_sec": self.elapsed_sec,
+            "prediction_uncertainty": (
+                self.prediction_uncertainty.to_dict()
+                if self.prediction_uncertainty is not None
+                else None
+            ),
+        }
         return d
 
 
@@ -126,7 +143,7 @@ class KronosRunner:
     - GPU/CPU 自动切换
     - 批量推理 + 自动降级逐只预测
     - 多 sample 取均值 + 真实置信区间（sample_count > 1 时）
-    - 预测不确定性量化模块
+    - 预测不确定性量化见 prediction_uncertainty.py
     """
 
     def __init__(
@@ -142,20 +159,20 @@ class KronosRunner:
         fallback_cpu: bool = True,
         use_cache: bool = True,
         no_cache: bool = False,
+        settings: Optional[Settings] = None,
     ):
-        s = get_settings()
-        self.model_name = model_name or s.kronos_model
-        self.tokenizer_name = tokenizer_name or s.kronos_tokenizer
-        self.device_pref = (device or s.kronos_device).lower()
-        self.lookback = lookback or s.kronos_lookback
-        self.pred_len = pred_len or s.kronos_pred_len
-        self.sample_count = sample_count or s.kronos_sample_count
-        self.T = T if T is not None else s.kronos_T
-        self.top_p = top_p if top_p is not None else s.kronos_top_p
+        self._settings_obj = settings or get_settings()
+        self.model_name = model_name or self._settings_obj.kronos_model
+        self.tokenizer_name = tokenizer_name or self._settings_obj.kronos_tokenizer
+        self.device_pref = (device or self._settings_obj.kronos_device).lower()
+        self.lookback = lookback or self._settings_obj.kronos_lookback
+        self.pred_len = pred_len or self._settings_obj.kronos_pred_len
+        self.sample_count = sample_count or self._settings_obj.kronos_sample_count
+        self.T = T if T is not None else self._settings_obj.kronos_T
+        self.top_p = top_p if top_p is not None else self._settings_obj.kronos_top_p
         self.fallback_cpu = fallback_cpu
         self.use_cache = use_cache and not no_cache
-        self.use_sample_confidence = s.kronos_use_sample_confidence
-
+        self.use_sample_confidence = self._settings_obj.kronos_use_sample_confidence
         self._cache = get_cache()
         self._predictor: Any = None
         self._device: str = "cpu"
@@ -187,7 +204,7 @@ class KronosRunner:
         if self._predictor is not None:
             return
 
-        _ensure_kronos_import()
+        _ensure_kronos_import(self._settings)
         device = self._resolve_device()
         self._device = device
 
@@ -208,7 +225,7 @@ class KronosRunner:
             )
 
         except ImportError as e:
-            raise RuntimeError(
+            raise ModelLoadError(
                 f"无法导入 cli_anything.kronos：{e}。"
                 f"请确认已安装 Kronos agent-harness "
                 f"（pip install -e {self._settings.kronos_root / 'agent-harness'}）"
@@ -216,7 +233,7 @@ class KronosRunner:
 
     @property
     def _settings(self):
-        return get_settings()
+        return self.__dict__.get("_settings_obj") or get_settings()
 
     def _prepare(
         self, ticker: str, eval_date: str
@@ -256,71 +273,32 @@ class KronosRunner:
         sample_count: int = 1,
     ) -> dict:
         """
-        从单条预测 DataFrame 解析结果。
+        从单条预测 DataFrame 解析结果（委托给 prediction_uncertainty 模块）。
 
         Parameters
         ----------
         pred_df : 预测结果 DataFrame
         last_close : 历史最后一个收盘价
-        sample_count : 实际样本数（1=单路径，>1=多路径均值）
+        sample_count : 实际样本数（>1 时填充 path_dispersion）
         """
         closes = pred_df["close"].astype(float).values
         if len(closes) == 0:
             raise RuntimeError("Kronos 返回空预测")
 
-        final_close = float(closes[-1])
-        mean_close = float(np.mean(closes))
-        change_pct = (final_close - last_close) / last_close * 100.0
-        direction = "UP" if change_pct > 1.0 else ("DOWN" if change_pct < -1.0 else "FLAT")
-        vol = float(np.std(closes))
+        result = build_result_dict(closes, last_close, sample_count=sample_count)
 
-        # 传统 confidence_band（仅向后兼容）
-        q_low = float(np.percentile(closes, 25)) if len(closes) > 1 else mean_close
-        q_high = float(np.percentile(closes, 75)) if len(closes) > 1 else mean_close
-
-        # direction_confidence: sigmoid(|change_pct| / (10*std + eps))
-        denom = 10.0 * vol + 1e-8
-        raw_ratio = abs(change_pct) / denom
-        direction_confidence = float(1.0 / (1.0 + np.exp(-raw_ratio)))
-
-        # path_dispersion：多样本才有跨路径统计意义
+        # 当 sample_count > 1 时，补填 path_dispersion（基于路径内波动）
         if sample_count > 1:
+            mean_close = float(np.mean(closes))
+            vol = float(np.std(closes))
             if abs(mean_close) > 1e-8:
-                path_dispersion = vol / abs(mean_close)
+                result["prediction_uncertainty"]["path_dispersion"] = round(
+                    vol / abs(mean_close), 6
+                )
             else:
-                path_dispersion = 0.0
-        else:
-            path_dispersion = None  # 单样本无跨路径方差
+                result["prediction_uncertainty"]["path_dispersion"] = 0.0
 
-        # confidence_score
-        if path_dispersion is not None:
-            score = direction_confidence * 50.0 + max(0.0, 50.0 - path_dispersion * 200.0)
-        else:
-            score = direction_confidence * 100.0
-        confidence_score = round(min(100.0, max(0.0, score)), 2)
-
-        uncertainty = PredictionUncertainty(
-            expected_return=round(change_pct, 3),
-            direction=direction,
-            direction_confidence=round(direction_confidence, 4),
-            volatility=round(vol, 4),
-            path_dispersion=round(path_dispersion, 6) if path_dispersion is not None else None,
-            confidence_score=confidence_score,
-            sample_count_used=sample_count,
-        )
-
-        return {
-            "predicted_close_mean": round(mean_close, 4),
-            "predicted_close_final": round(final_close, 4),
-            "expected_change_pct": round(change_pct, 3),
-            "direction": direction,
-            "volatility_proxy": round(vol, 4),
-            "confidence_band": {
-                "low": round(q_low, 4),
-                "high": round(q_high, 4),
-            },
-            "prediction_uncertainty": uncertainty.to_dict(),
-        }
+        return result
 
     def _pred_df_to_dict(self, pred_df: pd.DataFrame) -> dict:
         idx = pred_df.index
@@ -335,13 +313,18 @@ class KronosRunner:
             "volume": [round(float(x), 2) for x in pred_df.get("volume", pd.Series(0)).tolist()],
         }
 
-    def _apply_uncertainty(self, res: KronosForecastResult, parsed: dict) -> None:
+    def _apply_parsed_to_result(
+        self, res: KronosForecastResult, parsed: dict,
+    ) -> None:
         """将 parsed dict 写入 result，单独处理 prediction_uncertainty。"""
         pu_dict = parsed.pop("prediction_uncertainty", None)
         for k, v in parsed.items():
             setattr(res, k, v)
         if pu_dict:
             res.prediction_uncertainty = PredictionUncertainty(**pu_dict)
+
+    # 向后兼容别名
+    _apply_uncertainty = _apply_parsed_to_result
 
     @retry(max_attempts=2, base_delay=3.0, exceptions=(RuntimeError, ConnectionError))
     def predict_one(self, ticker: str, eval_date: str) -> KronosForecastResult:
@@ -360,9 +343,10 @@ class KronosRunner:
                 logger.debug(f"📦 Kronos 缓存命中: {ticker}")
                 for k, v in cached.items():
                     setattr(res, k, v)
-                # 缓存中 prediction_uncertainty 是 dict，需还原为对象
                 if isinstance(res.prediction_uncertainty, dict):
-                    res.prediction_uncertainty = PredictionUncertainty.from_dict(res.prediction_uncertainty)
+                    res.prediction_uncertainty = PredictionUncertainty.from_dict(
+                        res.prediction_uncertainty
+                    )
                 res.elapsed_sec = 0.0
                 return res
 
@@ -380,12 +364,10 @@ class KronosRunner:
                     pred_len=len(y_ts), T=self.T, top_p=self.top_p,
                     sample_count=n_samples, verbose=False,
                 )
-                # 模型返回多路径时，close 列是 (n_samples, pred_len) 的堆叠
-                # 需按列取均值作为单条路径
                 close_vals = pred_df["close"].astype(float).values
                 if close_vals.ndim == 2:
                     avg_close = close_vals.mean(axis=0)
-                    stacked = close_vals  # 保留原始路径供后续分析
+                    stacked = close_vals
                 else:
                     avg_close = close_vals
                     stacked = close_vals.reshape(1, -1)
@@ -399,64 +381,49 @@ class KronosRunner:
                 avg_close = pred_df["close"].astype(float).values
                 stacked = avg_close.reshape(1, -1)
 
-            # 计算预测结果（单样本或多样本统一处理）
+            # 计算预测结果（委托给 prediction_uncertainty 模块）
             if n_samples > 1:
-                final_close = float(avg_close[-1])
-                mean_close = float(np.mean(avg_close))
-                change_pct = (final_close - last_close) / last_close * 100.0
-                direction = "UP" if change_pct > 1.0 else ("DOWN" if change_pct < -1.0 else "FLAT")
-                vol = float(np.std(avg_close))
-
-                # 跨样本最终价的变异系数 → 真正的路径间不确定性
-                sample_std = float(np.std(stacked[:, -1]))
-                sample_cv = sample_std / abs(final_close) if abs(final_close) > 1e-8 else 0.0
-
-                raw_ratio = abs(change_pct) / (10.0 * sample_std + 1e-8)
-                direction_confidence = float(1.0 / (1.0 + np.exp(-raw_ratio)))
-
-                conf_score = direction_confidence * 50.0 + max(0.0, 50.0 - sample_cv * 200.0)
-                conf_score = round(min(100.0, max(0.0, conf_score)), 2)
-
-                uncertainty = PredictionUncertainty(
-                    expected_return=round(change_pct, 3),
-                    direction=direction,
-                    direction_confidence=round(direction_confidence, 4),
-                    volatility=round(vol, 4),
-                    path_dispersion=round(sample_cv, 6),
-                    confidence_score=conf_score,
-                    sample_count_used=n_samples,
+                from trade_krono_cli.prediction_uncertainty import (
+                    compute_multi_sample,
+                    build_uncertainty,
                 )
+                (
+                    change_pct, direction, vol, path_dispersion,
+                    direction_confidence, conf_score,
+                ) = compute_multi_sample(avg_close, stacked, last_close)
 
-                res.predicted_close_mean = round(mean_close, 4)
-                res.predicted_close_final = round(final_close, 4)
-                res.expected_change_pct = round(change_pct, 3)
+                res.predicted_close_mean = round(float(np.mean(avg_close)), 4)
+                res.predicted_close_final = round(float(avg_close[-1]), 4)
+                res.expected_change_pct = change_pct
                 res.direction = direction
-                res.volatility_proxy = round(vol, 4)
+                res.volatility_proxy = vol
                 res.confidence_band = {
                     "low": round(float(np.percentile(avg_close, 25)), 4),
                     "high": round(float(np.percentile(avg_close, 75)), 4),
                 }
-                res.prediction_uncertainty = uncertainty
+                res.prediction_uncertainty = build_uncertainty(
+                    change_pct=change_pct,
+                    direction=direction,
+                    vol=vol,
+                    path_dispersion=path_dispersion,
+                    direction_confidence=direction_confidence,
+                    confidence_score=conf_score,
+                    sample_count=n_samples,
+                )
             else:
-                # 单样本：退化为方向置信度
                 parsed = self._parse_pred_df(
                     pd.DataFrame({"close": avg_close}), last_close, sample_count=1
                 )
                 res.last_close = last_close
-                self._apply_uncertainty(res, parsed)
+                self._apply_parsed_to_result(res, parsed)
 
-                # 重建预测 DataFrame（使用均值），供 forecast_dict 使用
-                # ⚠️ 使用 y_ts 的实际日期，不用 "today"（避免日期漂移）
-                # 防御性：若 y_ts 长度不匹配 avg_close（如测试 mock 场景），回退到基于 pred_len 的日期范围
+                # 重建预测 DataFrame，供 forecast_dict 使用
                 y_ts_len = len(y_ts) if hasattr(y_ts, '__len__') else 0
                 if y_ts_len == len(avg_close):
                     pred_idx = y_ts.reset_index(drop=True)
                 else:
                     pred_idx = pd.date_range("today", periods=len(avg_close), freq="B")
-                pred_df = pd.DataFrame(
-                    {"close": avg_close},
-                    index=pred_idx,
-                )
+                pred_df = pd.DataFrame({"close": avg_close}, index=pred_idx)
 
             res.forecast_dict = self._pred_df_to_dict(pred_df)
 
@@ -466,6 +433,12 @@ class KronosRunner:
                     sample_count=self.sample_count,
                 )
 
+        except DataError as e:
+            res.error = f"{type(e).__name__}: {e}"
+            logger.error(f"❌ 数据准备失败 {ticker}: {sanitize_for_log(str(e))}")
+        except ModelLoadError as e:
+            res.error = f"{type(e).__name__}: {e}"
+            logger.error(f"❌ 模型加载失败 {ticker}: {e}")
         except Exception as e:
             res.error = f"{type(e).__name__}: {e}"
             safe_msg = sanitize_for_log(str(e))
@@ -503,9 +476,10 @@ class KronosRunner:
                 if cached:
                     for k, v in cached.items():
                         setattr(res, k, v)
-                    # 缓存中 prediction_uncertainty 是 dict，需还原为对象
                     if isinstance(res.prediction_uncertainty, dict):
-                        res.prediction_uncertainty = PredictionUncertainty.from_dict(res.prediction_uncertainty)
+                        res.prediction_uncertainty = PredictionUncertainty.from_dict(
+                            res.prediction_uncertainty
+                        )
                     results.append(res)
                     prepared.append(None)
                     continue
@@ -514,9 +488,14 @@ class KronosRunner:
                 x_df, x_ts, y_ts, last_close = self._prepare(tk, eval_date)
                 prepared.append((tk, x_df, x_ts, y_ts, last_close))
                 results.append(res)
+            except DataError as e:
+                res.error = f"{type(e).__name__}: {e}"
+                logger.error(f"❌ 数据准备失败 {tk}: {sanitize_for_log(str(e))}")
+                results.append(res)
             except Exception as e:
                 res.error = f"{type(e).__name__}: {e}"
-                logger.error(f"❌ 数据准备失败 {tk}: {res.error}")
+                safe_msg = sanitize_for_log(str(e))
+                logger.error(f"❌ 数据准备异常 {tk}: {safe_msg}")
                 results.append(res)
                 prepared.append(None)
                 if stop_on_error:
@@ -550,47 +529,44 @@ class KronosRunner:
             logger.info(f"✅ 批量推理完成 ({time.time()-t0:.1f}s)")
 
             n_samples = max(1, self.sample_count)
+            from trade_krono_cli.prediction_uncertainty import (
+                compute_multi_sample,
+                build_uncertainty,
+            )
             for (_, idx), pred_df, lc in zip(valid_items, pred_dfs, last_closes):
                 res = results[idx]
                 close_vals = pred_df["close"].astype(float).values
                 if n_samples > 1 and close_vals.ndim == 2:
                     avg_close = close_vals.mean(axis=0)
                     stacked = close_vals
-                    final_close = float(avg_close[-1])
-                    mean_close = float(np.mean(avg_close))
-                    change_pct = (final_close - lc) / lc * 100.0
-                    direction = "UP" if change_pct > 1.0 else ("DOWN" if change_pct < -1.0 else "FLAT")
-                    vol = float(np.std(avg_close))
-                    sample_std = float(np.std(stacked[:, -1]))
-                    sample_cv = sample_std / abs(final_close) if abs(final_close) > 1e-8 else 0.0
-                    raw_ratio = abs(change_pct) / (10.0 * sample_std + 1e-8)
-                    direction_confidence = float(1.0 / (1.0 + np.exp(-raw_ratio)))
-                    conf_score = direction_confidence * 50.0 + max(0.0, 50.0 - sample_cv * 200.0)
-                    conf_score = round(min(100.0, max(0.0, conf_score)), 2)
-                    uncertainty = PredictionUncertainty(
-                        expected_return=round(change_pct, 3),
-                        direction=direction,
-                        direction_confidence=round(direction_confidence, 4),
-                        volatility=round(vol, 4),
-                        path_dispersion=round(sample_cv, 6),
-                        confidence_score=conf_score,
-                        sample_count_used=n_samples,
-                    )
-                    res.predicted_close_mean = round(mean_close, 4)
-                    res.predicted_close_final = round(final_close, 4)
-                    res.expected_change_pct = round(change_pct, 3)
+                    (
+                        change_pct, direction, vol, path_dispersion,
+                        direction_confidence, conf_score,
+                    ) = compute_multi_sample(avg_close, stacked, lc)
+
+                    res.predicted_close_mean = round(float(np.mean(avg_close)), 4)
+                    res.predicted_close_final = round(float(avg_close[-1]), 4)
+                    res.expected_change_pct = change_pct
                     res.direction = direction
-                    res.volatility_proxy = round(vol, 4)
+                    res.volatility_proxy = vol
                     res.confidence_band = {
                         "low": round(float(np.percentile(avg_close, 25)), 4),
                         "high": round(float(np.percentile(avg_close, 75)), 4),
                     }
-                    res.prediction_uncertainty = uncertainty
+                    res.prediction_uncertainty = build_uncertainty(
+                        change_pct=change_pct,
+                        direction=direction,
+                        vol=vol,
+                        path_dispersion=path_dispersion,
+                        direction_confidence=direction_confidence,
+                        confidence_score=conf_score,
+                        sample_count=n_samples,
+                    )
                     res.forecast_dict = self._pred_df_to_dict(pred_df)
                 else:
                     parsed = self._parse_pred_df(pred_df, lc, sample_count=1)
                     res.last_close = lc
-                    self._apply_uncertainty(res, parsed)
+                    self._apply_parsed_to_result(res, parsed)
                     res.forecast_dict = self._pred_df_to_dict(pred_df)
                 if self._cache:
                     self._cache.set_kronos(
@@ -598,8 +574,20 @@ class KronosRunner:
                         sample_count=self.sample_count,
                     )
 
+        except DataError as e:
+            logger.warning(f"⚠️  predict_batch 数据错误({e})，降级为逐只推理")
+            for (_, idx) in valid_items:
+                tk = results[idx].ticker
+                results[idx] = self.predict_one(tk, eval_date)
+        except ModelLoadError as e:
+            logger.warning(f"⚠️  predict_batch 模型错误({e})，降级为逐只推理")
+            for (_, idx) in valid_items:
+                tk = results[idx].ticker
+                results[idx] = self.predict_one(tk, eval_date)
         except Exception as e:
-            logger.warning(f"⚠️  predict_batch 失败({e})，降级为逐只推理")
+            logger.warning(
+                f"⚠️  predict_batch 失败({sanitize_for_log(str(e))})，降级为逐只推理"
+            )
             for (_, idx) in valid_items:
                 tk = results[idx].ticker
                 results[idx] = self.predict_one(tk, eval_date)
@@ -609,7 +597,6 @@ class KronosRunner:
         return results
 
     def save_results(self, results: list[KronosForecastResult], path: str) -> str:
-        from pathlib import Path
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         data = [r.to_dict() for r in results]
         with open(path, "w", encoding="utf-8") as f:

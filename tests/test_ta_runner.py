@@ -3,19 +3,18 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 
-def _make_ta_runner():
+def _make_ta_runner(settings=None):
+    from tests.conftest import make_mock_settings
     from trade_krono_cli.ta_runner import TradingAgentsRunner
-    with patch("trade_krono_cli.ta_runner.get_settings") as mock_settings:
-        s = mock_settings.return_value
-        s.llm_provider = "deepseek"
-        s.deep_think_llm = "deepseek-chat"
-        s.quick_think_llm = "deepseek-chat"
-        s.max_debate_rounds = 1
-        s.max_risk_discuss_rounds = 1
-        s.cache_dir = MagicMock()
-        s.results_dir = MagicMock()
-        s.memory_log_path = MagicMock()
-        return TradingAgentsRunner(no_cache=True, safe_mode=False)
+    if settings is None:
+        settings = make_mock_settings(
+            llm_provider="deepseek",
+            deep_think_llm="deepseek-chat",
+            quick_think_llm="deepseek-chat",
+            max_debate_rounds=1,
+            max_risk_discuss_rounds=1,
+        )
+    return TradingAgentsRunner(no_cache=True, safe_mode=False, settings=settings)
 
 
 class TestStockAnalysisResult:
@@ -276,9 +275,9 @@ class TestTradingAgentsRunnerValidateProvider:
 
     def test_no_available_providers_raises(self):
         from trade_krono_cli.ta_runner import TradingAgentsRunner
-        with patch("trade_krono_cli.ta_runner.get_settings") as mock_settings:
-            mock_settings.return_value.llm_provider = "deepseek"
-            runner = TradingAgentsRunner(safe_mode=True)
+        from tests.conftest import make_mock_settings
+        settings = make_mock_settings(llm_provider="deepseek")
+        runner = TradingAgentsRunner(safe_mode=True, settings=settings)
         with patch("trade_krono_cli.security.KeyVault") as mock_vault:
             mock_vault.return_value.available_providers.return_value = []
             with pytest.raises(RuntimeError, match="未检测到任何 LLM API 密钥"):
@@ -286,9 +285,9 @@ class TestTradingAgentsRunnerValidateProvider:
 
     def test_provider_not_available_falls_back(self):
         from trade_krono_cli.ta_runner import TradingAgentsRunner
-        with patch("trade_krono_cli.ta_runner.get_settings") as mock_settings:
-            mock_settings.return_value.llm_provider = "nonexistent"
-            runner = TradingAgentsRunner(safe_mode=True)
+        from tests.conftest import make_mock_settings
+        settings = make_mock_settings(llm_provider="nonexistent")
+        runner = TradingAgentsRunner(safe_mode=True, settings=settings)
         with patch("trade_krono_cli.security.KeyVault") as mock_vault:
             mock_vault.return_value.available_providers.return_value = ["openai"]
             runner._validate_provider()

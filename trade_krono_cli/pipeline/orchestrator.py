@@ -3,32 +3,122 @@ orchestrator — 调度主循环。
 
 QuantPipeline 的核心实现，负责协调 TA + Kronos 并行执行、
 结果合并、落盘和数据库写入。
+
+PipelineFactory 负责组装组件（TradingAgentsRunner / KronosRunner），
+实现创建与执行的职责分离。
 """
 from __future__ import annotations
 
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional, Callable
 
 from loguru import logger
-from trade_krono_cli.config import get_settings
+from trade_krono_cli.config import get_settings, Settings
 from trade_krono_cli.ta_runner import TradingAgentsRunner, StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosRunner, KronosForecastResult
-from trade_krono_cli.merge import merge_results, filter_pool, default_scorer
-from trade_krono_cli.cache import get_research
+from trade_krono_cli.pipeline.merge import merge_results, filter_pool
+from trade_krono_cli.research_db import get_research
 from trade_krono_cli.trading_constraints import T1Tracker
 from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.pipeline_config import PipelineConfig
 from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
-from trade_krono_cli.pipeline.scorer import score_merged_results
 from trade_krono_cli.pipeline.reporter import (
     save_json_report,
     save_html_report,
-    print_results_table,
-    print_results_summary,
 )
-from trade_krono_cli.errors import ModuleResult, safe_run
+from trade_krono_cli.security import sanitize_for_log
+
+
+def _collect_futures(
+    ta_future, kronos_future,
+) -> tuple[list, list]:
+    """
+    同时等待两个 Future 完成，Kronos 异常时降级为空列表。
+
+    关键：不先后调用 .result()，而是统一等待，确保不会浪费"并行"时间。
+    """
+    try:
+        ta_results = ta_future.result()
+    except Exception as e:
+        safe_msg = sanitize_for_log(str(e))
+        logger.error(f"⚠️  TA 批量分析线程异常: {safe_msg}")
+        ta_results = []
+
+    if kronos_future is None:
+        return ta_results, []
+
+    try:
+        kronos_results = kronos_future.result()
+    except Exception as e:
+        safe_msg = sanitize_for_log(str(e))
+        logger.error(f"⚠️  Kronos 批量预测线程异常: {safe_msg}")
+        kronos_results = []
+
+    return ta_results, kronos_results
+
+
+class PipelineFactory:
+    """
+    流水线组件工厂。
+
+    负责根据 Settings / PipelineConfig 组装 TradingAgentsRunner 和
+    KronosRunner，将「组件创建」与「执行调度」解耦。
+
+    用法：
+        # 生产路径：完全由工厂创建
+        ta, kronos = PipelineFactory.create(settings, config, no_cache=False)
+
+        # 测试注入：传入 mock runner，工厂补全缺失的另一个
+        ta, kronos = PipelineFactory.create(
+            settings, config, no_cache=True,
+            ta_runner=mock_ta,   # 仅注入 TA，Kronos 由工厂创建
+        )
+    """
+
+    @staticmethod
+    def create(
+        settings: Settings,
+        config: PipelineConfig,
+        no_cache: bool = False,
+        constraints_config: Optional[ConstraintConfig] = None,
+        sample_count: Optional[int] = None,
+        skip_kronos: bool = False,
+        ta_runner: Optional[TradingAgentsRunner] = None,
+        kronos_runner: Optional[KronosRunner] = None,
+    ) -> tuple[TradingAgentsRunner, Optional[KronosRunner]]:
+        """
+        创建流水线组件。
+
+        Parameters
+        ----------
+        settings          : 全局配置
+        config            : 流水线配置
+        no_cache          : 是否禁用缓存
+        constraints_config : 交易约束配置（None 时使用 config 默认值）
+        sample_count      : Kronos 采样次数（None 时使用 config 默认值）
+        skip_kronos       : 是否跳过 Kronos
+        ta_runner         : 测试注入的 TA runner（None 时由工厂创建）
+        kronos_runner     : 测试注入的 Kronos runner（None 时由工厂创建）
+
+        Returns
+        -------
+        (ta_runner, kronos_runner)
+          kronos_runner 在 skip_kronos=True 或无注入时为 None
+        """
+        if ta_runner is None:
+            ta_runner = TradingAgentsRunner(no_cache=no_cache, settings=settings)
+        if skip_kronos:
+            return ta_runner, None
+        if kronos_runner is None:
+            kronos_runner = KronosRunner(
+                no_cache=no_cache,
+                sample_count=sample_count,
+                settings=settings,
+            )
+        return ta_runner, kronos_runner
 
 
 class QuantPipeline:
@@ -51,8 +141,9 @@ class QuantPipeline:
         no_cache: bool = False,
         constraints_config: Optional[ConstraintConfig] = None,
         sample_count: Optional[int] = None,
+        settings: Optional[Settings] = None,
     ):
-        self._settings = get_settings()
+        self._settings = settings or get_settings()
         self._config = config or PipelineConfig.default()
 
         # 参数优先级：显式参数 > config > settings
@@ -63,16 +154,17 @@ class QuantPipeline:
         self.allowed_signals = signals
         self.no_cache = no_cache
 
-        self.ta = ta_runner or TradingAgentsRunner(no_cache=no_cache)
-        if kronos_runner is not None:
-            self.kronos = None if skip_kronos else kronos_runner
-        elif skip_kronos:
-            self.kronos = None
-        else:
-            self.kronos = KronosRunner(
-                no_cache=no_cache,
-                sample_count=self._sample_count,
-            )
+        # 组件创建：显式传入 > 工厂创建
+        self.ta, self.kronos = PipelineFactory.create(
+            settings=self._settings,
+            config=self._config,
+            no_cache=no_cache,
+            constraints_config=constraints_config,
+            sample_count=sample_count,
+            skip_kronos=skip_kronos,
+            ta_runner=ta_runner,
+            kronos_runner=kronos_runner,
+        )
 
         logger.info(
             f"🏭 QuantPipeline 就绪 | "
@@ -120,23 +212,14 @@ class QuantPipeline:
                 self.kronos.predict_batch, tickers, date
             ) if self.kronos else None
 
-            ta_results = ta_future.result()
-            if kronos_future:
-                try:
-                    kronos_results = kronos_future.result()
-                except Exception as e:
-                    logger.error(f"⚠️  Kronos 批量预测线程异常: {e}")
-                    kronos_results = []
-            else:
-                kronos_results = []
+            ta_results, kronos_results = _collect_futures(ta_future, kronos_future)
 
         # ── 应用过滤（信号 / 置信度阈值）────────────────────
-        filtered_pool = filter_pool(
+        filtered_ta = filter_pool(
             ta_results,
             min_confidence=self.min_confidence,
             allowed_signals=self.allowed_signals,
         )
-        filtered_ta = [item["ta_result"] for item in filtered_pool]
 
         # ── 合并 + 打分（含交易约束）────────────────────────────
         t1_tracker = T1Tracker()
@@ -259,20 +342,23 @@ class QuantPipeline:
         research, job_id: str, ta_results: list, raw_paths: dict,
     ) -> None:
         """索引 TA 原始报告文件到 research database。"""
-        from pathlib import Path as _P
-        import json as _json
         for r in ta_results:
             if not r.investment_decision:
                 continue
             report_path = raw_paths.get(r.ticker)
             if not report_path:
                 continue
-            raw_file = _P(report_path)
+            raw_file = Path(report_path)
             if not raw_file.exists():
                 continue
             try:
-                file_data = _json.loads(raw_file.read_text(encoding="utf-8"))
+                file_data = json.loads(raw_file.read_text(encoding="utf-8"))
                 lengths = {k: len(v) for k, v in file_data.get("reports_raw", {}).items()}
                 research.index_raw_report(job_id, r.ticker, str(report_path), lengths)
-            except Exception as e:
+            except (OSError, ValueError) as e:
+                # 已知文件/格式错误
                 logger.warning(f"⚠️  索引原始报告失败 {r.ticker}: {e}")
+            except Exception as e:
+                # 未预料错误：脱敏记录
+                safe_msg = sanitize_for_log(str(e))
+                logger.warning(f"⚠️  索引原始报告异常 {r.ticker}: {safe_msg}")

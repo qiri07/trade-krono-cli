@@ -12,6 +12,7 @@ from loguru import logger
 
 from trade_krono_cli.data import fetch_lookback, fetch_realtime_quote
 from trade_krono_cli.constraints_config import ConstraintConfig
+from trade_krono_cli.errors import DataError
 
 
 def fetch_stock_data(
@@ -81,6 +82,8 @@ def prepare_kline_batch(
                 tk, eval_date, lookback=lookback,
                 adjustflag=adjustflag, use_cache=use_cache,
             )
-        except Exception as e:
+        except DataError as e:
             logger.warning(f"⚠️  K 线获取失败 {tk}: {e}")
+        except Exception as e:
+            logger.warning(f"⚠️  K 线获取异常 {tk}: {str(e)[:200]}")
     return result

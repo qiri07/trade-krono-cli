@@ -1,6 +1,6 @@
 """测试合并和打分逻辑。"""
 import pytest
-from trade_krono_cli.merge import default_scorer, merge_results, filter_pool
+from trade_krono_cli.pipeline.merge import default_scorer, merge_results, filter_pool
 from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
 
@@ -118,7 +118,7 @@ def test_filter_pool():
 
     pool = filter_pool(ta_results, min_confidence=55.0, allowed_signals=("BUY", "HOLD"))
     assert len(pool) == 2
-    tickers = {p["ticker"] for p in pool}
+    tickers = {p.ticker for p in pool}
     assert "sh.600519" in tickers
     assert "sh.600036" in tickers
     assert "sz.000858" not in tickers
@@ -159,7 +159,7 @@ def test_merge_with_risk_data():
     """有 K 线数据时应计算风险分并影响综合得分。"""
     import pandas as pd
     import numpy as np
-    from trade_krono_cli.merge import merge_results
+    from trade_krono_cli.pipeline.merge import merge_results
 
     ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0)
     kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=3.2)
@@ -185,7 +185,7 @@ def test_risk_penalty_reduces_score():
     """高风险应降低综合得分。"""
     import pandas as pd
     import numpy as np
-    from trade_krono_cli.merge import merge_results
+    from trade_krono_cli.pipeline.merge import merge_results
 
     ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0)
     kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=3.2)
@@ -215,7 +215,7 @@ def test_risk_penalty_reduces_score():
 def test_merge_with_quote_data():
     """提供 quote_data 时应计算换手率。"""
     import pandas as pd
-    from trade_krono_cli.merge import merge_results
+    from trade_krono_cli.pipeline.merge import merge_results
 
     ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=70.0)
     kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=2.0)

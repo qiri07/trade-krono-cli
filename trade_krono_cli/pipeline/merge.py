@@ -1,5 +1,11 @@
 """
-结果合并 + 综合打分。
+pipeline.merge — 结果合并 + 综合打分。
+
+从 trade_krono_cli.merge 收敛而来，职责明确：
+  - default_scorer   ：综合打分函数（满分 100）
+  - merge_results    ：TA + Kronos 结果合并 + 约束 + 风险评分
+  - filter_pool      ：按信号/置信度过滤股票池
+  - run_risk_assessment ：单只股票风险引擎
 """
 from __future__ import annotations
 
@@ -7,27 +13,40 @@ from typing import Callable, Optional
 
 import pandas as pd
 from loguru import logger
+
 from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosForecastResult
-from trade_krono_cli.risk.risk_engine import RiskEngine, RiskScore
+from trade_krono_cli.risk.risk_engine import RiskEngine
 from trade_krono_cli.trading_constraints import (
     T1Tracker,
-    TradingConstraintResult,
     check_all_constraints,
-    filter_by_constraints,
 )
 from trade_krono_cli.constraints_config import ConstraintConfig
 
-# Truncation lengths for summary output
+# ── 截断长度 ──────────────────────────────────────────────────────────────────
 REASONING_TRUNCATE_LEN = 500
-POOL_REASONING_TRUNCATE_LEN = 300
 
 
 # ═══════════════════════════════════════════════════════
-# 综合打分
+# 打分常量
 # ═══════════════════════════════════════════════════════
 
-_RISK_PENALTY_WEIGHT = 0.15  # 风险惩罚在总分中的最大占比（15%）
+_RISK_PENALTY_WEIGHT = 0.15          # 风险惩罚在总分中的最大占比（15%）
+
+_TA_CONFIDENCE_WEIGHT = 0.4          # TA 置信度权重（40%）
+_CHANGE_PCT_WEIGHT = 0.3             # 预期涨跌幅权重（30%）
+_DIRECTION_BASE_WEIGHT = 0.1         # 方向加成基础权重（10%）
+_UNCERTAINTY_BASE_WEIGHT = 0.1       # 不确定性加成基础权重（10%）
+
+_DIRECTION_BONUS_POINT = 10          # 方向加分乘数：0.1 × 10 = ±1 分
+
+_CHANGE_PCT_OFFSET = 50              # 将 -50%~+50% 线性映射到 0~100 分的偏移量
+
+_UNCERTAINTY_HIGH_THRESHOLD = 70     # 高置信度下限（≥70 → +3）
+_UNCERTAINTY_MED_THRESHOLD = 50      # 中置信度下限（≥50 → +1）
+_UNCERTAINTY_HIGH_BONUS = 3.0        # 高置信度加分
+_UNCERTAINTY_MED_BONUS = 1.0         # 中置信度加分
+_UNCERTAINTY_LOW_PENALTY = -2.0      # 低置信度扣分
 
 
 # ═══════════════════════════════════════════════════════
@@ -39,9 +58,9 @@ def _uncertainty_confidence_bonus(pu: dict) -> float:
     基于预测不确定性的置信度加分/减分。
 
     映射规则：
-      confidence_score >= 70  → 高置信  +3 分
-      50 <= confidence_score < 70 → 中置信  +1 分
-      confidence_score < 50   → 低置信  -2 分
+      confidence_score >= _UNCERTAINTY_HIGH_THRESHOLD → 高置信  +_UNCERTAINTY_HIGH_BONUS 分
+      _UNCERTAINTY_MED_THRESHOLD <= confidence_score < _UNCERTAINTY_HIGH_THRESHOLD → 中置信  +_UNCERTAINTY_MED_BONUS 分
+      confidence_score < _UNCERTAINTY_MED_THRESHOLD   → 低置信  +_UNCERTAINTY_LOW_PENALTY 分
       无不确定性数据          → 0 分
     """
     if not pu:
@@ -49,54 +68,66 @@ def _uncertainty_confidence_bonus(pu: dict) -> float:
     cs = pu.get("confidence_score")
     if cs is None:
         return 0.0
-    if cs >= 70:
-        return 3.0
-    elif cs >= 50:
-        return 1.0
+    if cs >= _UNCERTAINTY_HIGH_THRESHOLD:
+        return _UNCERTAINTY_HIGH_BONUS
+    elif cs >= _UNCERTAINTY_MED_THRESHOLD:
+        return _UNCERTAINTY_MED_BONUS
     else:
-        return -2.0
+        return _UNCERTAINTY_LOW_PENALTY
 
 
+# ═══════════════════════════════════════════════════════
+# 综合打分
+# ═══════════════════════════════════════════════════════
 
 def default_scorer(merged: dict) -> float:
     """
     综合打分（满分 100）。
 
-    权重：
-      TA 置信度        40%
-      预期涨跌幅       30%
-      方向加成         10%
-      预测不确定性     10%
-      风险惩罚        15%   （新增：高风险股票扣分）
+    各子项得分范围及权重：
 
-    风险惩罚逻辑：
-      总风险分 0-100 → 惩罚力度 0~15 分（线性映射）
-      即：高风险股票的综合得分最多被扣 15 分
+    ┌──────────────────────┬───────────┬──────────────────────────────────┐
+    │ 子项                 │ 权重      │ 映射逻辑                         │
+    ├──────────────────────┼───────────┼──────────────────────────────────┤
+    │ TA 置信度            │ 40%       │ clamped(0,100) × 0.4             │
+    │ 预期涨跌幅（净）     │ 30%       │ (chg+50) clamped(0,100) × 0.3    │
+    │ 方向加成             │ 10%（基） │ UP:+1 / DOWN:-1 / FLAT:0         │
+    │ 预测不确定性         │ 10%（基） │ confidence_score × 0.1           │
+    │ 置信度 bonus/penalty │ ±3/±1/-2  │ >=70:+3 / 50-70:+1 / <50:-2     │
+    │ 风险惩罚             │ -15%~0    │ -(risk_score/100) × 15           │
+    └──────────────────────┴───────────┴──────────────────────────────────┘
+
+    预期涨跌幅区间约定：
+      -50% ~ +50% 映射到 0 ~ 100 分（线性），再乘以 0.3 权重。
+      优先使用扣成本后的净收益（kronos_change_pct），无则用毛利（kronos_change_pct_gross）。
+
+    方向加成是对基础 10 分的微调，最终方向分范围在 -1 ~ +1。
+
+    返回 0~100 之间的浮点数，保留两位小数。
     """
     score = 0.0
 
     # TA 部分（0-40）
     ta_conf = merged.get("ta_confidence") or 0
-    score += 0.4 * max(0, min(100, ta_conf))
+    score += _TA_CONFIDENCE_WEIGHT * max(0, min(100, ta_conf))
 
     # 预期涨跌幅（0-30，-50%~+50% → 0~100 → 0~30）
     # 优先使用扣除成本后的净收益
     chg = merged.get("kronos_change_pct") or merged.get("kronos_change_pct_gross") or 0
-    score += 0.3 * max(0, min(100, chg + 50))
+    score += _CHANGE_PCT_WEIGHT * max(0, min(100, chg + _CHANGE_PCT_OFFSET))
 
-    # 方向加成（-5 ~ +5）
+    # 方向加成（-1 ~ +1）
     direction = merged.get("kronos_direction")
     if direction == "UP":
-        score += 0.1 * 10   # +1
+        score += _DIRECTION_BASE_WEIGHT * _DIRECTION_BONUS_POINT   # +1
     elif direction == "DOWN":
-        score += 0.1 * (-10)  # -1
+        score += _DIRECTION_BASE_WEIGHT * (-_DIRECTION_BONUS_POINT)  # -1
 
     # 预测不确定性加成（0-10）+ 置信度微调
     pu = merged.get("kronos_prediction_uncertainty")
     if pu:
         cs = pu.get("confidence_score") or 0
-        score += 0.1 * max(0, min(100, cs))
-        # 置信度 bonus/penalty
+        score += _UNCERTAINTY_BASE_WEIGHT * max(0, min(100, cs))
         score += _uncertainty_confidence_bonus(pu)
 
     # 风险惩罚（0~15，高风险 → 扣分多）
@@ -108,7 +139,7 @@ def default_scorer(merged: dict) -> float:
 
 
 # ═══════════════════════════════════════════════════════
-# 合并函数
+# 合并辅助函数
 # ═══════════════════════════════════════════════════════
 
 def _make_empty_merged(
@@ -141,7 +172,6 @@ def _make_empty_merged(
         "kronos_error": kronos.error if kronos else None,
         "composite_score": None,
         "forecast_dict": kronos.forecast_dict if kronos else None,
-        # Risk Engine 字段
         "risk_score_total": None,
         "risk_scores": None,
     }
@@ -182,6 +212,10 @@ def run_risk_assessment(
     }
     return risk.total_risk, scores
 
+
+# ═══════════════════════════════════════════════════════
+# 合并 + 打分主函数
+# ═══════════════════════════════════════════════════════
 
 def merge_results(
     ta_results: list[StockAnalysisResult],
@@ -228,7 +262,6 @@ def merge_results(
         if constraints_config.enable_limit_check or constraints_config.enable_t1:
             prev_close = kr.last_close if kr else None
             pred_close = kr.predicted_close_final if kr else None
-            # 从 K 线提取最新收盘价作为当前参考价
             tk = ta.ticker
             if tk in kline_map and not prev_close:
                 df = kline_map[tk]
@@ -256,28 +289,20 @@ def merge_results(
             if not constraint_result.allowed:
                 item["ta_signal"] = "HOLD"
                 item["ta_confidence"] = 0.0
-                logger.info(
-                    f"🚫 {tk} 被约束拦截: {constraint_result.reason}"
-                )
+                logger.info(f"🚫 {tk} 被约束拦截: {constraint_result.reason}")
 
         # ── 应用交易成本模型 ──────────────────────────────────────
-        if (
-            kr
-            and kr.expected_change_pct is not None
-            and constraints_config.enable_cost_model
-        ):
+        if kr and kr.expected_change_pct is not None and constraints_config.enable_cost_model:
             gross = kr.expected_change_pct
             net = constraints_config.apply_roundtrip_cost(gross)
             item["kronos_change_pct_gross"] = gross
             item["kronos_change_pct"] = round(net, 3)
             item["cost_bps_applied"] = constraints_config.total_roundtrip_bps()
         else:
-            item["kronos_change_pct_gross"] = (
-                kr.expected_change_pct if kr else None
-            )
+            item["kronos_change_pct_gross"] = kr.expected_change_pct if kr else None
             item["cost_bps_applied"] = 0.0
 
-        # 运行风险引擎（若有 K 线数据）
+        # ── 风险引擎 ──────────────────────────────────────────────
         tk = ta.ticker
         if tk in kline_map:
             try:
@@ -290,8 +315,8 @@ def merge_results(
                 )
                 item["risk_score_total"] = total_risk
                 item["risk_scores"] = risk_scores
-            except Exception as e:
-                logger.warning(f"⚠️  风险评估失败 {tk}: {e}")
+            except (ValueError, TypeError, KeyError, IndexError) as e:
+                logger.warning(f"⚠️  风险评估异常 {tk}: {str(e)[:200]}")
                 item["risk_score_total"] = 50.0
                 item["risk_scores"] = {}
         else:
@@ -302,7 +327,6 @@ def merge_results(
         merged.append(item)
 
     merged.sort(key=lambda x: (x.get("composite_score") or 0), reverse=True)
-
     for i, item in enumerate(merged, 1):
         item["rank"] = i
 
@@ -311,7 +335,6 @@ def merge_results(
         f"TA 成功 {sum(1 for r in ta_results if r.error is None)}/{len(ta_results)}, "
         f"Kronos 成功 {len(kronos_map)}/{len(kronos_results)}"
     )
-
     return merged
 
 
@@ -319,24 +342,17 @@ def filter_pool(
     ta_results: list[StockAnalysisResult],
     min_confidence: float = 55.0,
     allowed_signals: tuple[str, ...] = ("BUY", "HOLD"),
-) -> list[dict]:
+) -> list[StockAnalysisResult]:
     """
     按信号 + 置信度过滤出可行股票池。
     """
-    pool = []
+    pool: list[StockAnalysisResult] = []
     for r in ta_results:
         if r.error:
             continue
         if r.signal in allowed_signals and (r.confidence or 0) >= min_confidence:
-            pool.append({
-                "ticker": r.ticker,
-                "ta_signal": r.signal,
-                "ta_confidence": r.confidence,
-                "ta_reasoning": (r.reasoning or "")[:POOL_REASONING_TRUNCATE_LEN],
-                "ta_reports": r.reports,
-                "ta_result": r,
-            })
+            pool.append(r)
     logger.info(f"📋 过滤后股票池: {len(pool)} 只")
     for p in pool:
-        logger.info(f"   • {p['ticker']}: {p['ta_signal']} 置信度 {p['ta_confidence']}")
+        logger.info(f"   • {p.ticker}: {p.signal} 置信度 {p.confidence}")
     return pool

@@ -15,8 +15,10 @@ class TestKronosSampleCount:
 
     def test_runner_uses_default_sample_count(self):
         """KronosRunner 未传 sample_count 时使用 settings 默认值。"""
+        from tests.conftest import make_mock_settings
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
-            runner = KronosRunner(no_cache=True)
+            settings = make_mock_settings(kronos_sample_count=5)
+            runner = KronosRunner(no_cache=True, settings=settings)
             assert runner.sample_count == 5
 
     def test_runner_uses_explicit_sample_count(self):

@@ -2,7 +2,7 @@
 import json
 import pytest
 from pathlib import Path
-from trade_krono_cli.report import save_json, save_html, print_table, print_summary
+from trade_krono_cli.pipeline.reporter import save_json, save_html, print_table, print_summary
 
 
 @pytest.fixture

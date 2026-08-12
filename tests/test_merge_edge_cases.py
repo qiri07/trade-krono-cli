@@ -1,6 +1,6 @@
 """测试 merge.py 边界情况和约束注入行为。"""
 import pytest
-from trade_krono_cli.merge import merge_results, filter_pool, default_scorer
+from trade_krono_cli.pipeline.merge import merge_results, filter_pool, default_scorer
 from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
 from trade_krono_cli.constraints_config import ConstraintConfig

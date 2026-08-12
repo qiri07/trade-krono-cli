@@ -109,6 +109,32 @@ def test_sanitize_path_traversal_rejected():
             _sanitize_path("/etc/passwd", "Test", Path(td))
 
 
+def test_sanitize_path_symlink_escape_rejected(tmp_path):
+    """通过符号链接绕过项目根目录的检查应被拒绝。"""
+    from trade_krono_cli.cli import _sanitize_path
+    from typer import Exit
+
+    # 在项目根目录下创建指向 /etc 的符号链接
+    link = tmp_path / "link"
+    link.symlink_to("/etc")
+
+    with pytest.raises(Exit):
+        _sanitize_path(str(link / "passwd"), "Test", tmp_path)
+
+
+def test_sanitize_path_symlink_to_valid_dir_accepted(tmp_path):
+    """指向项目内合法目录的符号链接应被接受。"""
+    from trade_krono_cli.cli import _sanitize_path
+
+    out_dir = tmp_path / "outputs"
+    out_dir.mkdir()
+    link = tmp_path / "link_out"
+    link.symlink_to(out_dir)
+
+    result = _sanitize_path(str(link / "result.json"), "Test", tmp_path)
+    assert result == (out_dir / "result.json").resolve()
+
+
 def test_repo_commands_help(runner):
     """repo 子命令应显示帮助信息。"""
     result = runner.invoke(app, ["repo", "--help"])

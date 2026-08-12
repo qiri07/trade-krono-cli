@@ -19,8 +19,16 @@ from trade_krono_cli.config import get_settings
 
 F = TypeVar("F", bound=Callable[..., Any])
 
-# Key-redaction regex — matches API keys and Bearer tokens
-_KEY_REDACT_RE = re.compile(r"(sk-[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9._\-]+)")
+# Key-redaction regex — matches API keys and Bearer tokens from common providers.
+# Covers:
+#   sk-<20+ alphanum>       OpenAI / DeepSeek style
+#   sk-ant-<20+ alphanum>   Anthropic style
+#   Bearer <token>          Standard bearer auth
+_KEY_REDACT_RE = re.compile(
+    r"(?P<openai>sk-[a-zA-Z0-9]{20,})"
+    r"|(?P<anthropic>sk-ant-[a-zA-Z0-9_\-]{20,})"
+    r"|(?P<bearer>Bearer\s+[a-zA-Z0-9._\-]+)",
+)
 
 
 # ═══════════════════════════════════════════════════════
@@ -122,7 +130,11 @@ class KeyVault:
         return result
 
     def get_key(self, provider: str) -> Optional[str]:
-        """获取指定供应商的 API key。"""
+        """获取指定供应商的 API key。
+
+        ⚠️  返回值为明文密钥，调用方严禁将其传入 logger / print / 任何日志输出。
+            若必须记录，先通过 sanitize_for_log() 脱敏。
+        """
         env_key = _KEY_ENV_MAP.get(provider)
         if not env_key:
             return None

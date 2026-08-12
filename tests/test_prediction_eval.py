@@ -54,7 +54,7 @@ def test_evaluation_summary_defaults():
 
 def test_prediction_evaluator_init(tmp_path):
     """PredictionEvaluator 可以正常初始化。"""
-    from trade_krono_cli.cache import ResearchDatabase
+    from trade_krono_cli.research_db import ResearchDatabase
     db = tmp_path / "test_eval.db"
     research = ResearchDatabase(db_path=db)
     evaluator = PredictionEvaluator()
@@ -65,7 +65,7 @@ def test_prediction_evaluator_init(tmp_path):
 
 def test_predict_empty_evaluation(tmp_path):
     """没有历史数据时返回空 Summary。"""
-    from trade_krono_cli.cache import ResearchDatabase
+    from trade_krono_cli.research_db import ResearchDatabase
     db = tmp_path / "empty_eval.db"
     research = ResearchDatabase(db_path=db)
 
@@ -138,7 +138,7 @@ def test_store_summary_writes_to_db(tmp_path):
         PredictionEvaluator,
         EvalRecord,
     )
-    from trade_krono_cli.cache import ResearchDatabase
+    from trade_krono_cli.research_db import ResearchDatabase
     import sqlite3
 
     db = tmp_path / "store_test.db"
@@ -180,7 +180,7 @@ def test_store_summary_writes_to_db(tmp_path):
 
 def test_evaluate_store_true_paths_through_store_summary(tmp_path):
     """evaluate(store=True) 完整路径不应崩溃。"""
-    from trade_krono_cli.cache import ResearchDatabase
+    from trade_krono_cli.research_db import ResearchDatabase
     from trade_krono_cli.prediction_eval import PredictionEvaluator, EvalRecord
 
     db = tmp_path / "eval_store.db"
@@ -213,7 +213,7 @@ def test_evaluate_store_true_paths_through_store_summary(tmp_path):
 
 def test_get_close_price_returns_none_on_empty():
     """当 fetch_kline 返回空 DataFrame 时，应返回 None。"""
-    with patch("trade_krono_cli.prediction_eval.fetch_kline") as mock_fetch:
+    with patch("trade_krono_cli.eval_data.fetch_kline") as mock_fetch:
         mock_fetch.return_value = MagicMock()
         mock_fetch.return_value.empty = True
         result = _get_close_price("sh.600519", "2026-08-11")
@@ -222,7 +222,7 @@ def test_get_close_price_returns_none_on_empty():
 
 def test_get_close_price_returns_none_on_error():
     """fetch_kline 抛异常时，应返回 None。"""
-    with patch("trade_krono_cli.prediction_eval.fetch_kline") as mock_fetch:
+    with patch("trade_krono_cli.eval_data.fetch_kline") as mock_fetch:
         mock_fetch.side_effect = RuntimeError("network error")
         result = _get_close_price("sh.600519", "2026-08-11")
     assert result is None
@@ -231,7 +231,7 @@ def test_get_close_price_returns_none_on_error():
 def test_get_close_price_fallback_to_nearest():
     """精确日期无数据时，应回退到最近交易日。"""
     import pandas as pd
-    with patch("trade_krono_cli.prediction_eval.fetch_kline") as mock_fetch:
+    with patch("trade_krono_cli.eval_data.fetch_kline") as mock_fetch:
         df = pd.DataFrame({
             "timestamps": ["2026-08-08", "2026-08-12"],
             "close": [100.0, 105.0],
@@ -357,7 +357,7 @@ def test_compute_summary_high_conf_threshold():
 def test_get_latest_evaluation_no_table(tmp_path):
     """数据库中没有 evaluation_results 表时，返回 None。"""
     from trade_krono_cli.prediction_eval import PredictionEvaluator
-    from trade_krono_cli.cache import ResearchDatabase
+    from trade_krono_cli.research_db import ResearchDatabase
 
     db = tmp_path / "no_eval.db"
     research = ResearchDatabase(db_path=db)
@@ -372,7 +372,7 @@ def test_get_latest_evaluation_with_data(tmp_path):
     """数据库中有评估结果时，应返回正确数据。"""
     import sqlite3
     from trade_krono_cli.prediction_eval import PredictionEvaluator
-    from trade_krono_cli.cache import ResearchDatabase
+    from trade_krono_cli.research_db import ResearchDatabase
 
     db = tmp_path / "has_eval.db"
     research = ResearchDatabase(db_path=db)
@@ -572,7 +572,7 @@ class TestEvaluateConstraintAware:
 
     def test_limit_up_entry_skipped(self, tmp_path):
         """买入日涨停 → 该记录被跳过，不计入 eval_records。"""
-        from trade_krono_cli.cache import ResearchDatabase
+        from trade_krono_cli.research_db import ResearchDatabase
         from trade_krono_cli.prediction_eval import PredictionEvaluator
 
         db = tmp_path / "constraint_eval.db"
@@ -617,7 +617,7 @@ class TestEvaluateConstraintAware:
                 return 108.0   # 退出日正常
             return None
 
-        with patch("trade_krono_cli.prediction_eval.fetch_kline", side_effect=fake_fetch_kline):
+        with patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline):
             with patch("trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close):
                 summary = evaluator.evaluate(store=False)
 
@@ -628,7 +628,7 @@ class TestEvaluateConstraintAware:
 
     def test_cost_deducted_in_return(self, tmp_path):
         """正常信号应扣减 17bps 交易成本。"""
-        from trade_krono_cli.cache import ResearchDatabase
+        from trade_krono_cli.research_db import ResearchDatabase
         from trade_krono_cli.prediction_eval import PredictionEvaluator
 
         db = tmp_path / "cost_eval.db"
@@ -676,7 +676,7 @@ class TestEvaluateConstraintAware:
                 "amount": [100000.0, 100000.0, 105000.0],
             })
 
-        with patch("trade_krono_cli.prediction_eval.fetch_kline", side_effect=fake_fetch_kline):
+        with patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline):
             with patch("trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close):
                 summary = evaluator.evaluate(store=False)
 

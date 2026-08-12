@@ -168,7 +168,17 @@ class DecisionAdapter:
     # ── 子解析方法 ──────────────────────────────────────────────────────────
 
     def _extract_thesis(self, text: str) -> str:
-        """提取 Investment Thesis 或 Executive Summary 作为 thesis。"""
+        """
+        提取 Investment Thesis 或 Executive Summary 作为 thesis。
+
+        优先级：
+          1. **Investment Thesis** 段落（正则 _RE_THESIS）
+          2. **Executive Summary** 段落（正则 _RE_SUMMARY）
+          3. 第一句话（中文句号 / 感叹号 / 换行切分）
+
+        长度限制：最多 THESIS_TRUNCATE_LEN（300）字符，
+        兜底路径限制 200 字符。
+        """
         m = self._RE_THESIS.search(text)
         if m:
             return m.group(1).strip()[:THESIS_TRUNCATE_LEN]
@@ -180,7 +190,17 @@ class DecisionAdapter:
         return first_sentence[0][:200] if first_sentence else ""
 
     def _extract_risks(self, text: str) -> list[str]:
-        """从文本中提取风险点列表。"""
+        """
+        从文本中提取风险点列表。
+
+        解析逻辑：
+          1. 定位首个风险上下文标记（中英文：风险/风险点/担忧/压力/隐患/不利因素等）
+          2. 截取标记后 800 字符作为候选块
+          3. 按行拆分，去除 bullet 标记（支持 "- "、"* "、"• "、数字列表）
+          4. 过滤：长度 10~120 字符，去重，最多保留 8 条
+
+        返回的风险列表顺序与原文出现顺序一致。
+        """
         risks: list[str] = []
         # 找风险上下文位置（中英文）
         risk_marker_pos = -1
@@ -237,7 +257,14 @@ class DecisionAdapter:
         return None
 
     def _fallback_signal_from_rating(self, rating_str: str) -> tuple[Signal, float]:
-        """未命中预定义映射时的兜底信号解析。"""
+        """
+        未命中预定义映射时的兜底信号解析。
+
+        置信度分配（低于正式映射的置信度，反映解析不确定性）：
+          BUY   → 70.0  （含 "buy"/"overweight"/"strong" 词根）
+          SELL  → 35.0  （含 "sell"/"underweight" 词根）
+          HOLD  → 50.0  （其余所有情况）
+        """
         s = rating_str.lower()
         if any(k in s for k in ("buy", "overweight", "strong")):
             return Signal.BUY, 70.0
@@ -247,7 +274,14 @@ class DecisionAdapter:
 
     @staticmethod
     def _has_negative_before(words: list[str], target: str, window: int = 10) -> bool:
-        """target 词前 window 个词内是否有否定词。"""
+        """
+        检查 target 词前 window 个词内是否存在否定词。
+
+        否定词集合（_NEG_WORDS）：
+          NOT, NO, NEVER, FAIL, FAILS, FAILED, NEITHER, NON, UNLIKELY, NEGATIVE
+
+        用于负上下文感知：如 "NOT BUY" 不应视为买入信号。
+        """
         upper = [w.upper() for w in words]
         idx = None
         for i, w in enumerate(upper):
@@ -261,7 +295,19 @@ class DecisionAdapter:
 
     @classmethod
     def _keyword_fallback(cls, text: str) -> tuple[Signal, float]:
-        """无 Rating 字段时，负上下文感知的关键词兜底。"""
+        """
+        无 Rating 字段时，负上下文感知的关键词兜底。
+
+        搜索策略（按信号强度排序）：
+          BUY    → "BUY"     无否定 → 75.0
+          BUY    → "OVERWEIGHT" 无否定 → 65.0
+          SELL   → "SELL"    无否定 → 30.0
+          SELL   → "UNDERWEIGHT" 无否定 → 40.0
+          HOLD   → "HOLD"/"NEUTRAL" 无否定 → 50.0
+
+        每个信号检查其前面 window=10 个词内是否有否定词（_has_negative_before），
+        有则跳过该信号。首个匹配的信号即为结果。
+        """
         words = text.split()
         upper_words = [w.upper() for w in words]
 

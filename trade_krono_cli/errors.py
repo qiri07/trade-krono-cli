@@ -2,6 +2,18 @@
 错误隔离 — ModuleError 及各模块的失败封装。
 
 让单个模块（Kronos / TA / Risk）的失败不影响整个 pipeline 继续运行。
+
+异常类型层次：
+  TradeKronoError    — 项目根异常，所有业务异常均继承于此
+    ConfigurationError  — 配置/密钥相关问题
+    DataError           — 数据获取/处理问题
+      DataFetchError      — K 线、实时行情拉取失败
+      DataValidationError — 数据格式/新鲜度校验失败
+    ModelError          — 模型相关错误
+      ModelLoadError      — 模型加载失败（网络/路径/依赖）
+    PipelineError       — 流水线执行错误
+    ReportError         — 报告生成/落盘错误
+    ModuleError         — 单个 pipeline 模块执行失败的封装异常
 """
 from __future__ import annotations
 
@@ -11,7 +23,47 @@ from typing import Any, Optional, TypeVar
 T = TypeVar("T")
 
 
-class ModuleError(Exception):
+# ═══════════════════════════════════════════════════════
+# 异常层次
+# ═══════════════════════════════════════════════════════
+
+class TradeKronoError(Exception):
+    """项目根异常。所有业务异常均继承于此，便于统一捕获。"""
+
+
+class ConfigurationError(TradeKronoError):
+    """配置错误：密钥缺失、配置项无效等。"""
+
+
+class DataError(TradeKronoError):
+    """数据相关错误基类。"""
+
+
+class DataFetchError(DataError):
+    """K 线或行情数据拉取失败。"""
+
+
+class DataValidationError(DataError):
+    """数据校验失败：格式异常、数据过旧、未来数据等。"""
+
+
+class ModelError(TradeKronoError):
+    """模型相关错误基类。"""
+
+
+class ModelLoadError(ModelError):
+    """模型加载失败：依赖缺失、路径错误、GPU 内存不足等。"""
+
+
+class PipelineError(TradeKronoError):
+    """流水线执行错误。"""
+
+
+class ReportError(TradeKronoError):
+    """报告生成/落盘错误。"""
+
+
+class ModuleError(TradeKronoError):
     """
     单个 pipeline 模块执行失败的封装异常。
 

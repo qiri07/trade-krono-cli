@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from trade_krono_cli.constraints_config import ConstraintConfig
-from trade_krono_cli.config import get_settings
+from trade_krono_cli.config import get_settings, Settings
 
 
 @dataclass
@@ -74,9 +74,9 @@ class PipelineConfig:
     no_cache: bool = False
 
     @classmethod
-    def default(cls) -> "PipelineConfig":
+    def default(cls, settings: Optional[Settings] = None) -> "PipelineConfig":
         """使用 Settings 默认值构建配置。"""
-        s = get_settings()
+        s = settings or get_settings()
         return cls(
             constraints=ConstraintConfig(),
             sample_count=s.kronos_sample_count,

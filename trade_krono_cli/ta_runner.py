@@ -17,7 +17,7 @@ from typing import Optional, Callable, Any
 
 from loguru import logger
 
-from trade_krono_cli.config import get_settings
+from trade_krono_cli.config import get_settings, Settings
 from trade_krono_cli.security import (
     validate_ticker,
     validate_date,
@@ -27,6 +27,7 @@ from trade_krono_cli.security import (
 )
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.ta_decision import InvestmentDecision, Signal, DecisionAdapter
+from trade_krono_cli.errors import ModelLoadError, TradeKronoError
 
 # Truncation lengths for summary output
 SUMMARY_TRUNCATE_LEN = 500
@@ -35,18 +36,23 @@ SUMMARY_TRUNCATE_LEN = 500
 _TRADINGAGENTS_IMPORTED = False
 
 
-def _ensure_tradingagents_import() -> None:
+def _ensure_tradingagents_import(settings: Settings) -> None:
     """将 TradingAgents-astock/agent-harness 加入 sys.path 并导入核心模块。"""
     global _TRADINGAGENTS_IMPORTED
     if _TRADINGAGENTS_IMPORTED:
         return
-    s = get_settings()
     # 优先注入 agent-harness（包含 cli_anything.tradingagents）
-    harness_root = s.tradingagents_root / "agent-harness"
-    ta_root = s.tradingagents_root
+    harness_root = settings.tradingagents_root / "agent-harness"
+    ta_root = settings.tradingagents_root
     ensure_import_path(harness_root, ta_root)
     _TRADINGAGENTS_IMPORTED = True
     logger.debug(f"TradingAgents-astock 路径已加入: {harness_root} + {ta_root}")
+
+
+def clear_tradingagents_imported() -> None:
+    """重置 TradingAgents 懒加载状态，用于测试隔离。"""
+    global _TRADINGAGENTS_IMPORTED
+    _TRADINGAGENTS_IMPORTED = False
 
 
 _REPORT_KEYS = [
@@ -138,8 +144,9 @@ class TradingAgentsRunner:
         output_language: str = "Chinese",
         safe_mode: bool = True,
         no_cache: bool = False,
+        settings: Optional[Settings] = None,
     ):
-        self._settings = get_settings()
+        self._settings = settings or get_settings()
         self._cache = None if no_cache else get_cache()
 
         # 配置合并：显式参数 > settings 默认值
@@ -213,7 +220,7 @@ class TradingAgentsRunner:
         """懒加载 TradingAgentsGraph。"""
         if self._graph is not None:
             return self._graph
-        _ensure_tradingagents_import()
+        _ensure_tradingagents_import(self._settings)
 
         try:
             from cli_anything.tradingagents.core.analysis import (
@@ -221,7 +228,7 @@ class TradingAgentsRunner:
                 build_config,
             )
         except ImportError as e:
-            raise RuntimeError(
+            raise ModelLoadError(
                 f"无法导入 TradingAgents 核心模块：{e}。"
                 f"请确认已安装 tradingagents（pip install -e {self._settings.tradingagents_root}）"
             ) from e
@@ -365,9 +372,13 @@ class TradingAgentsRunner:
             if self._cache:
                 self._cache.set_ta(ticker, date, result.to_dict())
 
-        except Exception as e:
+        except TradeKronoError as e:
+            # 已知业务错误：记录完整信息
             result.error = f"{type(e).__name__}: {e}"
-            # 脱敏：移除可能的 API key 片段
+            logger.error(f"❌ {ticker} TA 分析失败: {e}")
+        except Exception as e:
+            # 未预料错误：脱敏记录
+            result.error = f"{type(e).__name__}: {e}"
             safe_msg = sanitize_for_log(str(e))
             logger.error(f"❌ {ticker} TA 分析失败: {safe_msg}")
 
@@ -458,9 +469,9 @@ class TradingAgentsRunner:
         return written
 
     @staticmethod
-    def load_raw_report(ticker: str, date: str, results_dir: Optional[Path] = None) -> Optional[dict]:
+    def load_raw_report(ticker: str, date: str, results_dir: Optional[Path] = None, settings: Optional[Settings] = None) -> Optional[dict]:
         """从磁盘加载某只股票的原始报告。"""
-        rd = results_dir or get_settings().results_dir
+        rd = results_dir or (settings or get_settings()).results_dir
         path = rd / "raw" / date / f"{ticker}.json"
         if not path.exists():
             return None

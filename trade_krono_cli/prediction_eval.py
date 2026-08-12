@@ -1,166 +1,70 @@
 """
-Prediction Evaluation — 预测评估模块。
+Prediction Evaluation — 预测评估模块入口。
 
-从 ResearchDatabase 读取历史分析结果，
-对照实际行情验证预测准确性，输出统计指标。
+职责：协调各子模块，对外暴露统一的 PredictionEvaluator / run_evaluation 接口。
 
-这是从 AI Demo → Quant System 的关键一步：
-  • Kronos 方向准确率（5D / 10D / 20D）
-  • TA BUY/HOLD/SELL 胜率与收益
-  • TA vs Kronos vs TA+Kronos 三者对比
+子模块：
+  eval_data.py      — 价格获取、数据类（EvalRecord / EvaluationSummary）
+  eval_kronos.py    — Kronos 方向准确率
+  eval_ta.py        — TA BUY/HOLD 胜率
+  eval_combined.py  — 综合信号 + 高置信度评估
+  eval_report.py    — 报告生成与持久化
+
+向后兼容：所有旧名称（_get_close_price、fetch_kline 等）均在此重新导出，
+          保证测试中 patch("trade_krono_cli.prediction_eval.*") 正常工作。
 """
 from __future__ import annotations
 
-import json
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
+from typing import Optional, NamedTuple
 
-import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.cache import get_research
-from trade_krono_cli.data import fetch_kline
-from trade_krono_cli.security import validate_ticker, validate_date
+from trade_krono_cli.eval_data import (
+    EvalRecord,
+    EvaluationSummary,
+    HorizonMetrics,
+    get_close_price,
+    get_kline_window,
+    calc_return,
+    is_price_at_limit,
+    apply_roundtrip_cost,
+)
+from trade_krono_cli.eval_kronos import compute_kronos_accuracy
+from trade_krono_cli.eval_ta import compute_ta_metrics
+from trade_krono_cli.eval_combined import compute_combined_metrics, compute_high_conf_metrics
+from trade_krono_cli.eval_report import (
+    store_summary,
+    get_latest_evaluation,
+    print_report,
+)
 from trade_krono_cli.constraints_config import ConstraintConfig
-from trade_krono_cli.trading_constraints import compute_limit_prices, detect_exchange
+
+# ── 向后兼容别名（测试通过 patch("trade_krono_cli.prediction_eval.*") 使用）──
+# fetch_kline 是测试直接 patch 的模块级依赖，需在此重新绑定
+from trade_krono_cli.data import fetch_kline  # noqa: F401
+
+def _get_close_price(ticker: str, date_str: str, **kwargs) -> Optional[float]:
+    """Wrapper: forwards _fetch_kline injection for test compatibility."""
+    return get_close_price(ticker, date_str, **kwargs)
+
+_get_kline_window = get_kline_window  # type: ignore[misc]
+_calc_return = calc_return            # type: ignore[misc]
+_is_price_at_limit = is_price_at_limit  # type: ignore[misc]
+_apply_roundtrip_cost = apply_roundtrip_cost  # type: ignore[misc]
 
 
-# ═══════════════════════════════════════════════════════
-# 核心：获取实际价格
-# ═══════════════════════════════════════════════════════
-
-def _get_close_price(ticker: str, date_str: str) -> Optional[float]:
-    """获取指定日期的收盘价（支持精确日期和最近交易日）。"""
-    try:
-        ticker = validate_ticker(ticker)
-        date_str = validate_date(date_str)
-        # 拉取当天及前后各 3 天的 K 线，找到最近的收盘价
-        start = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=5)).strftime("%Y-%m-%d")
-        end = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=5)).strftime("%Y-%m-%d")
-        df = fetch_kline(ticker, start, end, frequency="d", use_cache=True)
-        if df.empty:
-            return None
-        # 找最接近目标日期的记录
-        df["date_col"] = pd.to_datetime(df["timestamps"]).dt.strftime("%Y-%m-%d")
-        target = df[df["date_col"] == date_str]
-        if not target.empty:
-            return float(target["close"].iloc[0])
-        # fallback: 取最近的收盘价
-        df_sorted = df.sort_values("timestamps", ascending=False)
-        return float(df_sorted["close"].iloc[0])
-    except Exception as e:
-        logger.debug(f"获取收盘价失败 {ticker} @ {date_str}: {e}")
-        return None
-
-
-def _calc_return(entry_price: float, exit_price: float) -> float:
-    """计算收益率（%）。"""
-    if entry_price <= 0 or exit_price <= 0:
-        return 0.0
-    return (exit_price - entry_price) / entry_price * 100.0
-
-
-def _is_price_at_limit(
-    ticker: str, price: float, prev_close: float, direction: str,
-) -> bool:
-    """判断价格是否触及涨跌停。
-
-    Parameters
-    ----------
-    ticker : 股票代码
-    price  : 当日收盘价
-    prev_close : 前一日收盘价
-    direction : "up" | "down"
-
-    Returns
-    -------
-    True 表示触及对应方向的涨停/跌停
-    """
-    if prev_close is None or prev_close <= 0:
-        return False
-    limit_up, limit_down = compute_limit_prices(prev_close, ticker)
-    if limit_up is None:
-        return False
-    if direction == "up":
-        # 涨停容差 0.1%
-        return price >= limit_up * 0.999
-    else:
-        # 跌停容差 0.1%（用相对误差防止浮点精度问题）
-        return limit_down is not None and price / limit_down <= 1.001
-
-
-def _get_kline_window(
-    ticker: str, start_date: str, end_date: str,
-) -> Optional[pd.DataFrame]:
-    """拉取指定区间的 K 线，失败时返回 None。"""
-    try:
-        return fetch_kline(ticker, start_date, end_date, frequency="d", use_cache=True)
-    except Exception as e:
-        logger.debug(f"K 线拉取失败 {ticker} {start_date}~{end_date}: {e}")
-        return None
-
-
-def _apply_roundtrip_cost(gross_return_pct: float, cost_bps: float = 17.0) -> float:
-    """扣减双边交易成本后的净收益率（%）。"""
-    return round(gross_return_pct - cost_bps / 100.0, 4)
-
-
-# ═══════════════════════════════════════════════════════
-# 预测评估结果
-# ═══════════════════════════════════════════════════════
-
-@dataclass
-class EvalRecord:
-    """单次预测的评估记录。"""
+# ── 待评估信号数据结构 ────────────────────────────────────────────────────────
+class _EvalSignal(NamedTuple):
+    """单条待评估信号，字段含义明确，替代匿名 8 元组。"""
+    job_id: str
     ticker: str
     eval_date: str
-    horizon_days: int
-    pred_direction: Optional[str]   # UP / DOWN / FLAT
-    pred_return_pct: Optional[float]
-    actual_return_pct: float
-    actual_direction: str           # UP / DOWN / FLAT
-    is_direction_correct: bool      # 方向是否预测正确
-    error_pct: float                # 预测误差 = 预测 - 实际
-    # 附加上下文（用于分组统计）
-    ta_signal: Optional[str] = None
-    composite_score: Optional[float] = None
-    # ── 交易约束标记（由约束感知评估写入）──────────────────────
-    entry_blocked_limit_up: bool = False   # 买入日涨停，实际无法建仓
-    exit_blocked_limit_down: bool = False  # 退出日跌停，实际无法平仓
-    cost_bps_applied: float = 0.0          # 本次扣减的交易成本（bps）
-
-
-@dataclass
-class HorizonMetrics:
-    """指标汇总按单一 horizon（天）分组。"""
-    kronos_dir_accuracy: float = 0.0
-    ta_buy_win_rate: float = 0.0
-    ta_buy_avg_return: float = 0.0
-    ta_hold_avg_return: float = 0.0
-    combined_buy_up_win_rate: float = 0.0
-    combined_buy_up_avg_return: float = 0.0
-    high_conf_win_rate: float = 0.0
-    high_conf_avg_return: float = 0.0
-
-
-@dataclass
-class EvaluationSummary:
-    """评估汇总统计。"""
-    # 聚合计数
-    kronos_n: int = 0
-    ta_buy_n: int = 0
-    ta_hold_n: int = 0
-    combined_buy_up_n: int = 0
-    high_conf_n: int = 0
-    # 约束拦截计数
-    entry_limit_up_blocked: int = 0    # 买入日涨停导致无法建仓
-    exit_limit_down_blocked: int = 0   # 退出日跌停导致无法平仓
-    cost_applied_n: int = 0            # 扣减过交易成本的记录数
-    # 按 horizon 分组的指标
-    horizons: dict[int, HorizonMetrics] = field(default_factory=dict)
-    records: list[EvalRecord] = field(default_factory=list)
+    ta_signal: Optional[str]
+    kronos_direction: Optional[str]
+    composite_score: Optional[float]
+    kronos_change: Optional[float]
 
 
 # ═══════════════════════════════════════════════════════
@@ -174,13 +78,14 @@ class PredictionEvaluator:
     工作流程：
       1. 从 ResearchDatabase 读取历史 jobs + signals
       2. 对每个信号，获取实际价格并计算 realized return
-      3. 按 horizon (5/10/20 天) 分组统计
+      3. 按 horizon (5/10/20 天) 分组统计（委托给 eval_* 子模块）
       4. 输出评估报告
     """
 
     HORIZONS = [5, 10, 20]
 
     def __init__(self, max_workers: int = 4):
+        from trade_krono_cli.research_db import get_research
         self._research = get_research()
         self._max_workers = max_workers
 
@@ -223,27 +128,23 @@ class PredictionEvaluator:
             return EvaluationSummary()
 
         # 2. 收集所有需要评估的信号
-        records_to_eval: list[tuple[str, str, str, Optional[str], Optional[float],
-                                     Optional[str], Optional[float], Optional[float]]] = []
-        # (job_id, ticker, eval_date, ta_signal, kronos_direction,
-        #  composite_score, kronos_change_pct, ta_confidence)
+        records_to_eval: list[_EvalSignal] = []
 
         for job in jobs:
             signals = self._research.get_signals_by_job(job["job_id"])
             for sig in signals:
                 if sig.get("ta_error") and sig.get("kronos_error"):
-                    continue  # 双源都失败，跳过
+                    continue
                 if tickers and sig["ticker"] not in tickers:
                     continue
-                records_to_eval.append((
-                    job["job_id"],
-                    sig["ticker"],
-                    job["date"],
-                    sig.get("ta_signal"),
-                    sig.get("kronos_direction"),
-                    sig.get("composite_score"),
-                    sig.get("kronos_change"),
-                    sig.get("ta_confidence"),
+                records_to_eval.append(_EvalSignal(
+                    job_id=job["job_id"],
+                    ticker=sig["ticker"],
+                    eval_date=job["date"],
+                    ta_signal=sig.get("ta_signal"),
+                    kronos_direction=sig.get("kronos_direction"),
+                    composite_score=sig.get("composite_score"),
+                    kronos_change=sig.get("kronos_change"),
                 ))
 
         if not records_to_eval:
@@ -255,32 +156,30 @@ class PredictionEvaluator:
         # 3. 逐条获取实际价格并计算 realized return（含交易约束）
         cfg = ConstraintConfig()
         eval_records: list[EvalRecord] = []
-        # 预初始化 summary 用于在循环内累加约束计数
         summary = EvaluationSummary()
-        for i, (job_id, ticker, eval_date, ta_signal,
-                kronos_dir, comp_score, kronos_chg, ta_conf) in enumerate(
-                records_to_eval, 1):
-            entry_price = _get_close_price(ticker, eval_date)
+
+        from datetime import datetime, timedelta
+
+        for i, sig in enumerate(records_to_eval, 1):
+            entry_price = _get_close_price(sig.ticker, sig.eval_date)
             if entry_price is None or entry_price <= 0:
-                logger.debug(f"  ⏭️ 跳过 {ticker} @ {eval_date}: 无入口价格")
+                logger.debug(f"  ⏭️ 跳过 {sig.ticker} @ {sig.eval_date}: 无入口价格")
                 continue
 
-            # 拉取 eval_date 前 10 天至 eval_date 的 K 线，用于判断涨停/获取 prev_close
             entry_start = (
-                datetime.strptime(eval_date, "%Y-%m-%d") - timedelta(days=15)
+                datetime.strptime(sig.eval_date, "%Y-%m-%d") - timedelta(days=15)
             ).strftime("%Y-%m-%d")
-            entry_kline = _get_kline_window(ticker, entry_start, eval_date)
-            entry_prev_close: Optional[float] = None
+            entry_kline = _get_kline_window(sig.ticker, entry_start, sig.eval_date)
+            entry_prev_close = None
             if entry_kline is not None and len(entry_kline) >= 2:
-                # 最后一天是 eval_date，倒数第二天是 prev_close
                 entry_prev_close = float(entry_kline["close"].iloc[-2])
 
             for horizon in self.HORIZONS:
                 eval_date_h = (
-                    datetime.strptime(eval_date, "%Y-%m-%d")
+                    datetime.strptime(sig.eval_date, "%Y-%m-%d")
                     + timedelta(days=horizon)
                 ).strftime("%Y-%m-%d")
-                exit_price = _get_close_price(ticker, eval_date_h)
+                exit_price = _get_close_price(sig.ticker, eval_date_h)
 
                 if exit_price is None or exit_price <= 0:
                     continue
@@ -289,27 +188,27 @@ class PredictionEvaluator:
                 entry_blocked = False
                 if entry_prev_close and entry_prev_close > 0:
                     entry_blocked = _is_price_at_limit(
-                        ticker, entry_price, entry_prev_close, direction="up"
+                        sig.ticker, entry_price, entry_prev_close, direction="up"
                     )
                 if entry_blocked:
                     summary.entry_limit_up_blocked += 1
-                    continue  # 涨停买不进，该信号不可执行
+                    continue
 
                 # ── 约束检查 2：退出日是否跌停（无法平仓）──────────────
                 exit_blocked = False
                 exit_start = (
                     datetime.strptime(eval_date_h, "%Y-%m-%d") - timedelta(days=5)
                 ).strftime("%Y-%m-%d")
-                exit_prev_kline = _get_kline_window(ticker, exit_start, eval_date_h)
+                exit_prev_kline = _get_kline_window(sig.ticker, exit_start, eval_date_h)
                 if exit_prev_kline is not None and len(exit_prev_kline) >= 2:
                     exit_prev_close = float(exit_prev_kline["close"].iloc[-2])
                     exit_blocked = _is_price_at_limit(
-                        ticker, exit_price, exit_prev_close, direction="down"
+                        sig.ticker, exit_price, exit_prev_close, direction="down"
                     )
 
                 if exit_blocked:
                     summary.exit_limit_down_blocked += 1
-                    continue  # 跌停卖不出，该信号退出受阻
+                    continue
 
                 # ── 计算净收益（扣减交易成本）─────────────────────────
                 gross_return = _calc_return(entry_price, exit_price)
@@ -319,8 +218,8 @@ class PredictionEvaluator:
 
                 actual_dir = "UP" if net_return > 1.0 else ("DOWN" if net_return < -1.0 else "FLAT")
 
-                pred_dir = str(kronos_dir) if kronos_dir is not None else None  # type: ignore[arg-type]
-                pred_ret = kronos_chg  # Kronos 预测涨跌幅
+                pred_dir = str(sig.kronos_direction) if sig.kronos_direction is not None else None
+                pred_ret = sig.kronos_change
 
                 is_dir_correct = False
                 if pred_dir and pred_dir != "FLAT":
@@ -329,8 +228,8 @@ class PredictionEvaluator:
                 error = (pred_ret - gross_return) if pred_ret is not None else 0.0
 
                 eval_records.append(EvalRecord(
-                    ticker=ticker,
-                    eval_date=eval_date,
+                    ticker=sig.ticker,
+                    eval_date=sig.eval_date,
                     horizon_days=horizon,
                     pred_direction=pred_dir,
                     pred_return_pct=pred_ret,
@@ -338,8 +237,8 @@ class PredictionEvaluator:
                     actual_direction=actual_dir,
                     is_direction_correct=is_dir_correct,
                     error_pct=round(error, 4),
-                    ta_signal=ta_signal,
-                    composite_score=float(comp_score) if comp_score is not None else None,
+                    ta_signal=sig.ta_signal,
+                    composite_score=float(sig.composite_score) if sig.composite_score is not None else None,
                     entry_blocked_limit_up=False,
                     exit_blocked_limit_down=False,
                     cost_bps_applied=cost_bps,
@@ -359,9 +258,8 @@ class PredictionEvaluator:
             f"扣成本 {summary.cost_applied_n} 条{blocked_str}, 耗时 {elapsed:.1f}s"
         )
 
-        # 4. 计算统计
+        # 4. 计算统计（委托给子模块）
         full_summary = self._compute_summary(eval_records)
-        # 合并约束计数
         full_summary.entry_limit_up_blocked = summary.entry_limit_up_blocked
         full_summary.exit_limit_down_blocked = summary.exit_limit_down_blocked
         full_summary.cost_applied_n = summary.cost_applied_n
@@ -373,7 +271,7 @@ class PredictionEvaluator:
         return full_summary
 
     def _compute_summary(self, records: list[EvalRecord]) -> EvaluationSummary:
-        """根据评估记录计算汇总统计。"""
+        """根据评估记录计算汇总统计（委托给各评估子模块）。"""
         summary = EvaluationSummary(records=records)
 
         for horizon in self.HORIZONS:
@@ -383,52 +281,12 @@ class PredictionEvaluator:
 
             metrics = HorizonMetrics()
 
-            # ── Kronos 方向准确率 ──────────────────────────────
-            kronos_records = [r for r in h_records
-                              if r.pred_direction is not None]
-            if kronos_records:
-                correct = sum(1 for r in kronos_records if r.is_direction_correct)
-                acc = correct / len(kronos_records) * 100
-                metrics.kronos_dir_accuracy = round(acc, 1)
-                summary.kronos_n += len(kronos_records)
-
-            # ── TA BUY 胜率 ────────────────────────────────────
-            buy_records = [r for r in h_records if r.ta_signal == "BUY"]
-            if buy_records:
-                wins = sum(1 for r in buy_records if r.actual_return_pct > 0)
-                avg_ret = sum(r.actual_return_pct for r in buy_records) / len(buy_records)
-                metrics.ta_buy_win_rate = round(wins / len(buy_records) * 100, 1)
-                metrics.ta_buy_avg_return = round(avg_ret, 2)
-                summary.ta_buy_n += len(buy_records)
-
-            # ── TA HOLD 平均收益 ───────────────────────────────
-            hold_records = [r for r in h_records if r.ta_signal == "HOLD"]
-            if hold_records:
-                avg_ret = sum(r.actual_return_pct for r in hold_records) / len(hold_records)
-                metrics.ta_hold_avg_return = round(avg_ret, 2)
-                summary.ta_hold_n += len(hold_records)
-
-            # ── 综合信号（TA BUY + Kronos UP）──────────────────
-            combined_records = [r for r in h_records
-                                if r.ta_signal == "BUY"
-                                and r.pred_direction == "UP"]
-            if combined_records:
-                wins = sum(1 for r in combined_records if r.actual_return_pct > 0)
-                avg_ret = sum(r.actual_return_pct for r in combined_records) / len(combined_records)
-                metrics.combined_buy_up_win_rate = round(wins / len(combined_records) * 100, 1)
-                metrics.combined_buy_up_avg_return = round(avg_ret, 2)
-                summary.combined_buy_up_n += len(combined_records)
-
-            # ── 高置信信号（composite_score >= 70）─────────────
-            high_conf_records = [r for r in h_records
-                                 if r.composite_score is not None
-                                 and r.composite_score >= 70]
-            if high_conf_records:
-                wins = sum(1 for r in high_conf_records if r.actual_return_pct > 0)
-                avg_ret = sum(r.actual_return_pct for r in high_conf_records) / len(high_conf_records)
-                metrics.high_conf_win_rate = round(wins / len(high_conf_records) * 100, 1)
-                metrics.high_conf_avg_return = round(avg_ret, 2)
-                summary.high_conf_n += len(high_conf_records)
+            summary.kronos_n += compute_kronos_accuracy(h_records, metrics)
+            ta_buy_n, ta_hold_n = compute_ta_metrics(h_records, metrics)
+            summary.ta_buy_n += ta_buy_n
+            summary.ta_hold_n += ta_hold_n
+            summary.combined_buy_up_n += compute_combined_metrics(h_records, metrics)
+            summary.high_conf_n += compute_high_conf_metrics(h_records, metrics)
 
             summary.horizons[horizon] = metrics
 
@@ -438,188 +296,18 @@ class PredictionEvaluator:
         self, summary: EvaluationSummary, eval_date_range: Optional[str],
     ) -> None:
         """将评估结果存储到 research database。"""
-        import sqlite3
-        from trade_krono_cli.config import get_settings
-
         db_path = self._research._db_path
-        with sqlite3.connect(db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS evaluation_results (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    eval_at         REAL NOT NULL,
-                    eval_date_range TEXT,
-                    n_records       INTEGER NOT NULL,
-                    kronos_acc_5d   REAL,
-                    kronos_acc_10d  REAL,
-                    kronos_acc_20d  REAL,
-                    ta_buy_wr_5d    REAL,
-                    ta_buy_wr_10d   REAL,
-                    ta_buy_wr_20d   REAL,
-                    combined_wr_5d  REAL,
-                    combined_wr_10d REAL,
-                    combined_wr_20d REAL,
-                    high_conf_wr_5d REAL,
-                    high_conf_wr_10d REAL,
-                    summary_json    TEXT NOT NULL
-                )
-            """)
-            summary_json = json.dumps({
-                "kronos_n": summary.kronos_n,
-                "kronos_dir_accuracy": {
-                    str(h): m.kronos_dir_accuracy
-                    for h, m in summary.horizons.items()
-                },
-                "ta_buy_win_rate": {
-                    str(h): m.ta_buy_win_rate
-                    for h, m in summary.horizons.items()
-                },
-                "ta_buy_avg_return": {
-                    str(h): m.ta_buy_avg_return
-                    for h, m in summary.horizons.items()
-                },
-                "combined_buy_up_win_rate": {
-                    str(h): m.combined_buy_up_win_rate
-                    for h, m in summary.horizons.items()
-                },
-                "combined_buy_up_avg_return": {
-                    str(h): m.combined_buy_up_avg_return
-                    for h, m in summary.horizons.items()
-                },
-                "high_conf_win_rate": {
-                    str(h): m.high_conf_win_rate
-                    for h, m in summary.horizons.items()
-                },
-                "high_conf_avg_return": {
-                    str(h): m.high_conf_avg_return
-                    for h, m in summary.horizons.items()
-                },
-            }, ensure_ascii=False)
-
-            conn.execute(
-                """INSERT INTO evaluation_results
-                   (eval_at, eval_date_range, n_records,
-                    kronos_acc_5d, kronos_acc_10d, kronos_acc_20d,
-                    ta_buy_wr_5d, ta_buy_wr_10d, ta_buy_wr_20d,
-                    combined_wr_5d, combined_wr_10d, combined_wr_20d,
-                    high_conf_wr_5d, high_conf_wr_10d, summary_json)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    time.time(), eval_date_range,
-                    len(summary.records),
-                    summary.horizons.get(5, HorizonMetrics()).kronos_dir_accuracy,
-                    summary.horizons.get(10, HorizonMetrics()).kronos_dir_accuracy,
-                    summary.horizons.get(20, HorizonMetrics()).kronos_dir_accuracy,
-                    summary.horizons.get(5, HorizonMetrics()).ta_buy_win_rate,
-                    summary.horizons.get(10, HorizonMetrics()).ta_buy_win_rate,
-                    summary.horizons.get(20, HorizonMetrics()).ta_buy_win_rate,
-                    summary.horizons.get(5, HorizonMetrics()).combined_buy_up_win_rate,
-                    summary.horizons.get(10, HorizonMetrics()).combined_buy_up_win_rate,
-                    summary.horizons.get(20, HorizonMetrics()).combined_buy_up_win_rate,
-                    summary.horizons.get(5, HorizonMetrics()).high_conf_win_rate,
-                    summary.horizons.get(10, HorizonMetrics()).high_conf_win_rate,
-                    summary_json,
-                ),
-            )
-            conn.commit()
+        store_summary(summary, db_path, eval_date_range)
         logger.info("💾 评估结果已存储到研究数据库")
 
     def get_latest_evaluation(self) -> Optional[dict]:
         """获取最新的评估结果。"""
-        import sqlite3
         db_path = self._research._db_path
-        try:
-            with sqlite3.connect(db_path) as conn:
-                row = conn.execute(
-                    "SELECT id, eval_at, eval_date_range, n_records, summary_json "
-                    "FROM evaluation_results ORDER BY eval_at DESC LIMIT 1"
-                ).fetchone()
-        except sqlite3.OperationalError:
-            return None
-        if not row:
-            return None
-        return {
-            "id": row[0],
-            "eval_at": row[1],
-            "eval_date_range": row[2],
-            "n_records": row[3],
-            "summary": json.loads(row[4]),
-        }
+        return get_latest_evaluation(db_path)
 
     def print_report(self, summary: EvaluationSummary) -> None:
         """打印评估报告到控制台。"""
-        print()
-        print("=" * 60)
-        print("  📊 预测评估报告")
-        print("=" * 60)
-        print()
-
-        # ── Kronos 方向准确率 ──────────────────────────────────
-        print("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
-        print(f"│  样本数: {summary.kronos_n}                              │")
-        for h in self.HORIZONS:
-            m = summary.horizons.get(h)
-            acc = m.kronos_dir_accuracy if m else 0.0
-            marker = "✅" if acc > 55 else "⚠️" if acc > 50 else "❌"
-            print(f"│  {marker} {h}D 准确率: {acc:5.1f}%                       │")
-        print("└" + "─" * 58 + "┘")
-        print()
-
-        # ── TA BUY 胜率 ───────────────────────────────────────
-        print("┌─ TA BUY 信号表现 ───────────────────────────────────┐")
-        print(f"│  样本数: {summary.ta_buy_n}                              │")
-        for h in self.HORIZONS:
-            m = summary.horizons.get(h)
-            wr = m.ta_buy_win_rate if m else 0.0
-            avg_ret = m.ta_buy_avg_return if m else 0.0
-            marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
-            print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
-                  f"平均收益: {avg_ret:+.2f}%                    │")
-        print("└" + "─" * 58 + "┘")
-        print()
-
-        # ── 综合信号（TA BUY + Kronos UP）────────────────────
-        print("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
-        print(f"│  样本数: {summary.combined_buy_up_n}                          │")
-        for h in self.HORIZONS:
-            m = summary.horizons.get(h)
-            wr = m.combined_buy_up_win_rate if m else 0.0
-            avg_ret = m.combined_buy_up_avg_return if m else 0.0
-            marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
-            print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
-                  f"平均收益: {avg_ret:+.2f}%                    │")
-        print("└" + "─" * 58 + "┘")
-        print()
-
-        # ── 高置信信号（composite_score >= 70）───────────────
-        print("┌─ 高置信信号（综合分 ≥ 70）──────────────────────────┐")
-        print(f"│  样本数: {summary.high_conf_n}                              │")
-        for h in self.HORIZONS:
-            m = summary.horizons.get(h)
-            wr = m.high_conf_win_rate if m else 0.0
-            avg_ret = m.high_conf_avg_return if m else 0.0
-            marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
-            print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
-                  f"平均收益: {avg_ret:+.2f}%                    │")
-        print("└" + "─" * 58 + "┘")
-        print()
-
-        # ── 交易约束统计 ───────────────────────────────────────
-        if summary.entry_limit_up_blocked or summary.exit_limit_down_blocked or summary.cost_applied_n:
-            print("┌─ 交易约束统计 ──────────────────────────────────────┐")
-            print(f"│  交易成本已扣减: {summary.cost_applied_n} 条记录                 │")
-            if summary.entry_limit_up_blocked:
-                print(f"│  🚫 买入日涨停拦截: {summary.entry_limit_up_blocked} 条                  │")
-            if summary.exit_limit_down_blocked:
-                print(f"│  🚫 退出日跌停拦截: {summary.exit_limit_down_blocked} 条                  │")
-            print("└" + "─" * 58 + "┘")
-            print()
-
-        # ── 基准：随机基准 ────────────────────────────────────
-        print("┌─ 基准对比（50% 随机基准）───────────────────────────┐")
-        print("│  方向准确率 > 50% = 超越随机                          │")
-        print("│  胜率 > 50% = 正向 alpha                              │")
-        print("└" + "─" * 58 + "┘")
-        print()
+        print_report(summary, self.HORIZONS)
 
 
 # ═══════════════════════════════════════════════════════
@@ -650,42 +338,9 @@ def run_evaluation(
         print()
         summary = result["summary"]
 
-        # Kronos
-        print("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
-        print(f"│  样本数: {summary.get('kronos_n', 0)}                              │")
-        for h in [5, 10, 20]:
-            acc = summary.get("kronos_dir_accuracy", {}).get(str(h), 0)
-            marker = "✅" if acc > 55 else "⚠️" if acc > 50 else "❌"
-            print(f"│  {marker} {h}D 准确率: {acc:5.1f}%                       │")
-        print("└" + "─" * 58 + "┘")
-        print()
-
-        # TA BUY
-        print("┌─ TA BUY 信号表现 ───────────────────────────────────┐")
-        ta_buy_n = sum(1 for r in summary.records if r.ta_signal == "BUY")
-        print(f"│  样本数: {ta_buy_n}                             │")
-        for h in [5, 10, 20]:
-            wr = summary.get("ta_buy_win_rate", {}).get(str(h), 0)
-            avg_ret = summary.get("ta_buy_avg_return", {}).get(str(h), 0)
-            marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
-            print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
-                  f"平均收益: {avg_ret:+.2f}%                    │")
-        print("└" + "─" * 58 + "┘")
-        print()
-
-        # Combined
-        print("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
-        combined_n = sum(1 for r in summary.records if r.ta_signal == "BUY" and r.pred_direction == "UP")
-        print(f"│  样本数: {combined_n}                          │")
-        for h in [5, 10, 20]:
-            wr = summary.get("combined_buy_up_win_rate", {}).get(str(h), 0)
-            avg_ret = summary.get("combined_buy_up_avg_return", {}).get(str(h), 0)
-            marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
-            print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
-                  f"平均收益: {avg_ret:+.2f}%                    │")
-        print("└" + "─" * 58 + "┘")
-        print()
-
+        _print_latest_kronos(summary)
+        _print_latest_ta(summary)
+        _print_latest_combined(summary)
         return
 
     # 完整评估
@@ -696,3 +351,45 @@ def run_evaluation(
         store=True,
     )
     evaluator.print_report(summary)
+
+
+def _print_latest_kronos(summary: dict) -> None:
+    print("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
+    print(f"│  样本数: {summary.get('kronos_n', 0)}                              │")
+    for h in [5, 10, 20]:
+        acc = summary.get("kronos_dir_accuracy", {}).get(str(h), 0)
+        marker = "✅" if acc > 55 else "⚠️" if acc > 50 else "❌"
+        print(f"│  {marker} {h}D 准确率: {acc:5.1f}%                       │")
+    print("└" + "─" * 58 + "┘")
+    print()
+
+
+def _print_latest_ta(summary: dict) -> None:
+    print("┌─ TA BUY 信号表现 ───────────────────────────────────┐")
+    ta_buy_n = sum(1 for r in summary.get("records", []) if r.ta_signal == "BUY")
+    print(f"│  样本数: {ta_buy_n}                             │")
+    for h in [5, 10, 20]:
+        wr = summary.get("ta_buy_win_rate", {}).get(str(h), 0)
+        avg_ret = summary.get("ta_buy_avg_return", {}).get(str(h), 0)
+        marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
+        print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
+              f"平均收益: {avg_ret:+.2f}%                    │")
+    print("└" + "─" * 58 + "┘")
+    print()
+
+
+def _print_latest_combined(summary: dict) -> None:
+    print("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
+    combined_n = sum(
+        1 for r in summary.get("records", [])
+        if r.ta_signal == "BUY" and r.pred_direction == "UP"
+    )
+    print(f"│  样本数: {combined_n}                          │")
+    for h in [5, 10, 20]:
+        wr = summary.get("combined_buy_up_win_rate", {}).get(str(h), 0)
+        avg_ret = summary.get("combined_buy_up_avg_return", {}).get(str(h), 0)
+        marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
+        print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
+              f"平均收益: {avg_ret:+.2f}%                    │")
+    print("└" + "─" * 58 + "┘")
+    print()

@@ -116,7 +116,7 @@ def check_st_status(
         logger.debug("baostock 未安装，ST 检测跳过")
         result = False
     except Exception as e:
-        logger.debug(f"ST 检测异常 {ticker}: {e}")
+        logger.debug(f"ST 检测异常 {ticker}: {str(e)[:200]}")
         result = False
 
     _st_cache[ticker] = result

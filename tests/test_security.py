@@ -122,6 +122,16 @@ def test_sanitize_for_log_redacts_bearer():
     assert "[REDACTED_KEY]" in result
 
 
+def test_sanitize_for_log_redacts_anthropic_key():
+    """Anthropic sk-ant-* 格式的密钥也应被脱敏。"""
+    from trade_krono_cli.security import sanitize_for_log
+    msg = "Error connecting with sk-ant-api03-XyZ123abc456def789ghiJKLmnopqrstu"
+    result = sanitize_for_log(msg)
+    assert "sk-ant-" not in result
+    assert "[REDACTED_KEY]" in result
+    assert "Error connecting with" in result
+
+
 def test_ensure_import_path():
     from pathlib import Path
     from trade_krono_cli.security import ensure_import_path

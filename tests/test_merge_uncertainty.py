@@ -1,6 +1,6 @@
 """测试不确定性置信度映射（Phase 2）。"""
 import pytest
-from trade_krono_cli.merge import _uncertainty_confidence_bonus, default_scorer
+from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus, default_scorer
 
 
 class TestUncertaintyConfidenceBonus:

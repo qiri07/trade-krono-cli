@@ -90,17 +90,19 @@ class TestKronosRunnerParsePredDf:
     def _make_runner(self):
         """创建真实 KronosRunner 实例（跳过模型加载和 settings 依赖）。"""
         from trade_krono_cli.kronos_runner import KronosRunner
-        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
-            mock_settings.return_value.kronos_model = "kronos-base"
-            mock_settings.return_value.kronos_tokenizer = "kronos-base"
-            mock_settings.return_value.kronos_device = "cpu"
-            mock_settings.return_value.kronos_lookback = 400
-            mock_settings.return_value.kronos_pred_len = 30
-            mock_settings.return_value.kronos_sample_count = 1
-            mock_settings.return_value.kronos_T = 1.0
-            mock_settings.return_value.kronos_top_p = 0.9
-            mock_settings.return_value.kronos_use_sample_confidence = False
-            return KronosRunner(no_cache=True, sample_count=1)
+        from tests.conftest import make_mock_settings
+        settings = make_mock_settings(
+            kronos_model="kronos-base",
+            kronos_tokenizer="kronos-base",
+            kronos_device="cpu",
+            kronos_lookback=400,
+            kronos_pred_len=30,
+            kronos_sample_count=1,
+            kronos_T=1.0,
+            kronos_top_p=0.9,
+            kronos_use_sample_confidence=False,
+        )
+        return KronosRunner(no_cache=True, sample_count=1, settings=settings)
 
     def test_single_sample_up(self):
         runner = self._make_runner()
@@ -168,18 +170,19 @@ class TestKronosRunnerPredDfToDict:
 
     def _make_runner(self):
         from trade_krono_cli.kronos_runner import KronosRunner
-        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
-            s = mock_settings.return_value
-            s.kronos_model = "kronos-base"
-            s.kronos_tokenizer = "kronos-base"
-            s.kronos_device = "cpu"
-            s.kronos_lookback = 400
-            s.kronos_pred_len = 30
-            s.kronos_sample_count = 1
-            s.kronos_T = 1.0
-            s.kronos_top_p = 0.9
-            s.kronos_use_sample_confidence = False
-            return KronosRunner(no_cache=True, sample_count=1)
+        from tests.conftest import make_mock_settings
+        settings = make_mock_settings(
+            kronos_model="kronos-base",
+            kronos_tokenizer="kronos-base",
+            kronos_device="cpu",
+            kronos_lookback=400,
+            kronos_pred_len=30,
+            kronos_sample_count=1,
+            kronos_T=1.0,
+            kronos_top_p=0.9,
+            kronos_use_sample_confidence=False,
+        )
+        return KronosRunner(no_cache=True, sample_count=1, settings=settings)
 
     def test_basic(self):
         runner = self._make_runner()
@@ -209,18 +212,19 @@ class TestKronosRunnerApplyUncertainty:
 
     def _make_runner(self):
         from trade_krono_cli.kronos_runner import KronosRunner
-        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
-            s = mock_settings.return_value
-            s.kronos_model = "kronos-base"
-            s.kronos_tokenizer = "kronos-base"
-            s.kronos_device = "cpu"
-            s.kronos_lookback = 400
-            s.kronos_pred_len = 30
-            s.kronos_sample_count = 1
-            s.kronos_T = 1.0
-            s.kronos_top_p = 0.9
-            s.kronos_use_sample_confidence = False
-            return KronosRunner(no_cache=True, sample_count=1)
+        from tests.conftest import make_mock_settings
+        settings = make_mock_settings(
+            kronos_model="kronos-base",
+            kronos_tokenizer="kronos-base",
+            kronos_device="cpu",
+            kronos_lookback=400,
+            kronos_pred_len=30,
+            kronos_sample_count=1,
+            kronos_T=1.0,
+            kronos_top_p=0.9,
+            kronos_use_sample_confidence=False,
+        )
+        return KronosRunner(no_cache=True, sample_count=1, settings=settings)
 
     def test_applies_fields(self):
         runner = self._make_runner()
@@ -379,9 +383,9 @@ class TestKronosRunnerResolveDevice:
 
     def _make_runner(self):
         from trade_krono_cli.kronos_runner import KronosRunner
-        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
-            mock_settings.return_value.kronos_device = "cuda"
-            return KronosRunner(device="cuda", no_cache=True)
+        from tests.conftest import make_mock_settings
+        settings = make_mock_settings(kronos_device="cuda")
+        return KronosRunner(device="cuda", no_cache=True, settings=settings)
 
     def test_cpu_device(self):
         runner = self._make_runner()
@@ -419,18 +423,20 @@ class TestKronosRunnerResolveDevice:
     def test_large_model_warning(self):
         """large 模型名应触发警告并切换为 base。"""
         from trade_krono_cli.kronos_runner import KronosRunner
-        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings, \
-             patch("trade_krono_cli.kronos_runner.logger.warning"):
-            mock_settings.return_value.kronos_model = "kronos-large"
-            mock_settings.return_value.kronos_tokenizer = "kronos-base"
-            mock_settings.return_value.kronos_device = "cpu"
-            mock_settings.return_value.kronos_lookback = 400
-            mock_settings.return_value.kronos_pred_len = 30
-            mock_settings.return_value.kronos_sample_count = 1
-            mock_settings.return_value.kronos_T = 1.0
-            mock_settings.return_value.kronos_top_p = 0.9
-            mock_settings.return_value.kronos_use_sample_confidence = False
-            runner = KronosRunner(no_cache=True)
+        from tests.conftest import make_mock_settings
+        with patch("trade_krono_cli.kronos_runner.logger.warning"):
+            settings = make_mock_settings(
+                kronos_model="kronos-large",
+                kronos_tokenizer="kronos-base",
+                kronos_device="cpu",
+                kronos_lookback=400,
+                kronos_pred_len=30,
+                kronos_sample_count=1,
+                kronos_T=1.0,
+                kronos_top_p=0.9,
+                kronos_use_sample_confidence=False,
+            )
+            runner = KronosRunner(no_cache=True, settings=settings)
         assert runner.model_name == "kronos-base"
 
 
@@ -441,18 +447,19 @@ class TestKronosRunnerResolveDevice:
         导致预测窗口起点早于评估日（未来函数/数据泄漏）。
         """
         from trade_krono_cli.kronos_runner import KronosRunner
-        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
-            s = mock_settings.return_value
-            s.kronos_model = "kronos-base"
-            s.kronos_tokenizer = "kronos-base"
-            s.kronos_device = "cpu"
-            s.kronos_lookback = 5
-            s.kronos_pred_len = 3
-            s.kronos_sample_count = 1
-            s.kronos_T = 1.0
-            s.kronos_top_p = 0.9
-            s.kronos_use_sample_confidence = False
-            runner = KronosRunner(no_cache=True, lookback=5, pred_len=3)
+        from tests.conftest import make_mock_settings
+        settings = make_mock_settings(
+            kronos_model="kronos-base",
+            kronos_tokenizer="kronos-base",
+            kronos_device="cpu",
+            kronos_lookback=5,
+            kronos_pred_len=3,
+            kronos_sample_count=1,
+            kronos_T=1.0,
+            kronos_top_p=0.9,
+            kronos_use_sample_confidence=False,
+        )
+        runner = KronosRunner(no_cache=True, lookback=5, pred_len=3, settings=settings)
 
         # 模拟数据：最后一行是 2026-08-05（停牌两周后的评估日）
         import pandas as pd
@@ -482,18 +489,19 @@ class TestKronosRunnerResolveDevice:
         _prepare 应将异常传播出去，阻止预测。
         """
         from trade_krono_cli.kronos_runner import KronosRunner
-        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
-            s = mock_settings.return_value
-            s.kronos_model = "kronos-base"
-            s.kronos_tokenizer = "kronos-base"
-            s.kronos_device = "cpu"
-            s.kronos_lookback = 5
-            s.kronos_pred_len = 3
-            s.kronos_sample_count = 1
-            s.kronos_T = 1.0
-            s.kronos_top_p = 0.9
-            s.kronos_use_sample_confidence = False
-            runner = KronosRunner(no_cache=True, lookback=5, pred_len=3)
+        from tests.conftest import make_mock_settings
+        settings = make_mock_settings(
+            kronos_model="kronos-base",
+            kronos_tokenizer="kronos-base",
+            kronos_device="cpu",
+            kronos_lookback=5,
+            kronos_pred_len=3,
+            kronos_sample_count=1,
+            kronos_T=1.0,
+            kronos_top_p=0.9,
+            kronos_use_sample_confidence=False,
+        )
+        runner = KronosRunner(no_cache=True, lookback=5, pred_len=3, settings=settings)
 
         # 模拟 fetch_lookback 因数据过旧（停牌）而抛异常
         with patch("trade_krono_cli.kronos_runner.fetch_lookback") as mock_fetch:
@@ -510,17 +518,19 @@ class TestKronosRunnerSaveResults:
 
     def test_saves_json(self, tmp_path):
         from trade_krono_cli.kronos_runner import KronosRunner, KronosForecastResult
-        with patch("trade_krono_cli.kronos_runner.get_settings") as mock_settings:
-            mock_settings.return_value.kronos_model = "kronos-base"
-            mock_settings.return_value.kronos_tokenizer = "kronos-base"
-            mock_settings.return_value.kronos_device = "cpu"
-            mock_settings.return_value.kronos_lookback = 400
-            mock_settings.return_value.kronos_pred_len = 30
-            mock_settings.return_value.kronos_sample_count = 1
-            mock_settings.return_value.kronos_T = 1.0
-            mock_settings.return_value.kronos_top_p = 0.9
-            mock_settings.return_value.kronos_use_sample_confidence = False
-            runner = KronosRunner(no_cache=True)
+        from tests.conftest import make_mock_settings
+        settings = make_mock_settings(
+            kronos_model="kronos-base",
+            kronos_tokenizer="kronos-base",
+            kronos_device="cpu",
+            kronos_lookback=400,
+            kronos_pred_len=30,
+            kronos_sample_count=1,
+            kronos_T=1.0,
+            kronos_top_p=0.9,
+            kronos_use_sample_confidence=False,
+        )
+        runner = KronosRunner(no_cache=True, settings=settings)
 
         results = [
             KronosForecastResult(ticker="sh.600519", eval_date="2026-08-12", horizon=30, direction="UP", expected_change_pct=2.0),
