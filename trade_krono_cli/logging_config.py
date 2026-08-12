@@ -14,6 +14,9 @@ from typing import Optional
 
 from loguru import logger
 
+# Type stub so mypy knows this attribute exists (set dynamically at runtime).
+_json_sink: Optional[_JsonLogSink] = None
+
 
 class _JsonLogSink:
     """JSON 结构化日志 sink，累积记录供测试访问。"""
