@@ -125,3 +125,82 @@ def test_compute_summary_with_mock_records():
     # Kronos 方向准确率 5D: 3/5 = 60%
     assert m5.kronos_dir_accuracy == pytest.approx(60.0, abs=0.1)
     assert summary.kronos_n == 5
+
+
+def test_store_summary_writes_to_db(tmp_path):
+    """_store_summary 应能写入 evaluation_results 表而不崩溃。"""
+    from trade_krono_cli.prediction_eval import (
+        PredictionEvaluator,
+        EvalRecord,
+    )
+    from trade_krono_cli.cache import ResearchDatabase
+    import sqlite3
+
+    db = tmp_path / "store_test.db"
+    evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
+    evaluator._research = ResearchDatabase(db_path=db)
+    evaluator.HORIZONS = [5, 10, 20]
+
+    # 构造有数据的 summary
+    records = []
+    for i in range(3):
+        records.append(EvalRecord(
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=5,
+            pred_direction="UP",
+            pred_return_pct=3.0,
+            actual_return_pct=2.5,
+            actual_direction="UP",
+            is_direction_correct=True,
+            error_pct=0.5,
+            ta_signal="BUY",
+            composite_score=80.0,
+        ))
+    summary = evaluator._compute_summary(records)
+
+    # 调用 _store_summary — 之前会因 AttributeError 崩溃
+    evaluator._store_summary(summary, "2026-01-01")
+
+    # 验证记录已写入
+    with sqlite3.connect(db) as conn:
+        row = conn.execute(
+            "SELECT n_records, kronos_acc_5d, ta_buy_wr_5d FROM evaluation_results"
+        ).fetchone()
+    assert row is not None
+    assert row[0] == 3
+    assert row[1] == pytest.approx(100.0, abs=0.1)
+    assert row[2] == pytest.approx(100.0, abs=0.1)
+
+
+def test_evaluate_store_true_paths_through_store_summary(tmp_path):
+    """evaluate(store=True) 完整路径不应崩溃。"""
+    from trade_krono_cli.cache import ResearchDatabase
+    from trade_krono_cli.prediction_eval import PredictionEvaluator, EvalRecord
+
+    db = tmp_path / "eval_store.db"
+    research = ResearchDatabase(db_path=db)
+
+    # 创建一个 job 并插入信号，使 evaluate() 有数据可处理
+    job_id = research.create_job("2026-01-01", ["sh.600519"])
+    # 直接插入一条信号记录（模拟 pipeline 已写入）
+    import sqlite3
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO signals (job_id, ticker, rank, composite_score, "
+            " ta_signal, ta_confidence, ta_reasoning, kronos_direction, "
+            " kronos_change, ta_error, kronos_error) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (job_id, "sh.600519", 1, 80.0, "BUY", 85.0, "test thesis",
+             "UP", 3.0, None, None),
+        )
+        conn.commit()
+
+    evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
+    evaluator._research = research
+    evaluator.HORIZONS = [5, 10, 20]
+
+    # evaluate(store=True) 会走 _store_summary；
+    # 由于没有实际价格数据，返回空 summary 但不应 AttributeError
+    summary = evaluator.evaluate(store=True)
+    assert isinstance(summary, type(evaluator._compute_summary([])))

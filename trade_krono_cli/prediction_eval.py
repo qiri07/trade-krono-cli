@@ -82,7 +82,6 @@ class EvalRecord:
 
 
 @dataclass
-@dataclass
 class HorizonMetrics:
     """指标汇总按单一 horizon（天）分组。"""
     kronos_dir_accuracy: float = 0.0
@@ -391,17 +390,17 @@ class PredictionEvaluator:
                 (
                     time.time(), eval_date_range,
                     len(summary.records),
-                    summary.kronos_dir_accuracy_5d,
-                    summary.kronos_dir_accuracy_10d,
-                    summary.kronos_dir_accuracy_20d,
-                    summary.ta_buy_win_rate_5d,
-                    summary.ta_buy_win_rate_10d,
-                    summary.ta_buy_win_rate_20d,
-                    summary.combined_buy_up_win_rate_5d,
-                    summary.combined_buy_up_win_rate_10d,
-                    summary.combined_buy_up_win_rate_20d,
-                    summary.high_conf_win_rate_5d,
-                    summary.high_conf_win_rate_10d,
+                    summary.horizons.get(5, HorizonMetrics()).kronos_dir_accuracy,
+                    summary.horizons.get(10, HorizonMetrics()).kronos_dir_accuracy,
+                    summary.horizons.get(20, HorizonMetrics()).kronos_dir_accuracy,
+                    summary.horizons.get(5, HorizonMetrics()).ta_buy_win_rate,
+                    summary.horizons.get(10, HorizonMetrics()).ta_buy_win_rate,
+                    summary.horizons.get(20, HorizonMetrics()).ta_buy_win_rate,
+                    summary.horizons.get(5, HorizonMetrics()).combined_buy_up_win_rate,
+                    summary.horizons.get(10, HorizonMetrics()).combined_buy_up_win_rate,
+                    summary.horizons.get(20, HorizonMetrics()).combined_buy_up_win_rate,
+                    summary.horizons.get(5, HorizonMetrics()).high_conf_win_rate,
+                    summary.horizons.get(10, HorizonMetrics()).high_conf_win_rate,
                     summary_json,
                 ),
             )
