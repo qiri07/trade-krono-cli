@@ -371,21 +371,36 @@ class KronosRunner:
             x_df, x_ts, y_ts, last_close = self._prepare(ticker, eval_date)
 
             n_samples = max(1, self.sample_count)
-            all_paths: list[np.ndarray] = []
-
             assert self._predictor is not None
-            for _s in range(n_samples):
+
+            if n_samples > 1:
+                # 多样本：直接委托模型内部处理，避免 N 次独立推理
+                pred_df = self._predictor.predict(
+                    df=x_df, x_timestamp=x_ts, y_timestamp=y_ts,
+                    pred_len=len(y_ts), T=self.T, top_p=self.top_p,
+                    sample_count=n_samples, verbose=False,
+                )
+                # 模型返回多路径时，close 列是 (n_samples, pred_len) 的堆叠
+                # 需按列取均值作为单条路径
+                close_vals = pred_df["close"].astype(float).values
+                if close_vals.ndim == 2:
+                    avg_close = close_vals.mean(axis=0)
+                    stacked = close_vals  # 保留原始路径供后续分析
+                else:
+                    avg_close = close_vals
+                    stacked = close_vals.reshape(1, -1)
+            else:
+                # 单样本：直接一次调用
                 pred_df = self._predictor.predict(
                     df=x_df, x_timestamp=x_ts, y_timestamp=y_ts,
                     pred_len=len(y_ts), T=self.T, top_p=self.top_p,
                     sample_count=1, verbose=False,
                 )
-                all_paths.append(pred_df["close"].astype(float).values)
+                avg_close = pred_df["close"].astype(float).values
+                stacked = avg_close.reshape(1, -1)
 
+            # 计算预测结果（单样本或多样本统一处理）
             if n_samples > 1:
-                # 多 sample：跨样本均值 + 跨样本标准差
-                stacked = np.stack(all_paths)  # (n_samples, pred_len)
-                avg_close = np.mean(stacked, axis=0)
                 final_close = float(avg_close[-1])
                 mean_close = float(np.mean(avg_close))
                 change_pct = (final_close - last_close) / last_close * 100.0
@@ -422,6 +437,13 @@ class KronosRunner:
                     "high": round(float(np.percentile(avg_close, 75)), 4),
                 }
                 res.prediction_uncertainty = uncertainty
+            else:
+                # 单样本：退化为方向置信度
+                parsed = self._parse_pred_df(
+                    pd.DataFrame({"close": avg_close}), last_close, sample_count=1
+                )
+                res.last_close = last_close
+                self._apply_uncertainty(res, parsed)
 
                 # 重建预测 DataFrame（使用均值），供 forecast_dict 使用
                 # ⚠️ 使用 y_ts 的实际日期，不用 "today"（避免日期漂移）
@@ -435,11 +457,6 @@ class KronosRunner:
                     {"close": avg_close},
                     index=pred_idx,
                 )
-            else:
-                # 单 sample
-                parsed = self._parse_pred_df(pred_df, last_close, sample_count=1)
-                res.last_close = last_close
-                self._apply_uncertainty(res, parsed)
 
             res.forecast_dict = self._pred_df_to_dict(pred_df)
 
@@ -527,17 +544,54 @@ class KronosRunner:
                 pred_len=len(y_ts_list[0]),
                 T=self.T,
                 top_p=self.top_p,
-                sample_count=1,
+                sample_count=self.sample_count,
                 verbose=False,
             )
             logger.info(f"✅ 批量推理完成 ({time.time()-t0:.1f}s)")
 
+            n_samples = max(1, self.sample_count)
             for (_, idx), pred_df, lc in zip(valid_items, pred_dfs, last_closes):
                 res = results[idx]
-                parsed = self._parse_pred_df(pred_df, lc, sample_count=1)
-                res.last_close = lc
-                self._apply_uncertainty(res, parsed)
-                res.forecast_dict = self._pred_df_to_dict(pred_df)
+                close_vals = pred_df["close"].astype(float).values
+                if n_samples > 1 and close_vals.ndim == 2:
+                    avg_close = close_vals.mean(axis=0)
+                    stacked = close_vals
+                    final_close = float(avg_close[-1])
+                    mean_close = float(np.mean(avg_close))
+                    change_pct = (final_close - lc) / lc * 100.0
+                    direction = "UP" if change_pct > 1.0 else ("DOWN" if change_pct < -1.0 else "FLAT")
+                    vol = float(np.std(avg_close))
+                    sample_std = float(np.std(stacked[:, -1]))
+                    sample_cv = sample_std / abs(final_close) if abs(final_close) > 1e-8 else 0.0
+                    raw_ratio = abs(change_pct) / (10.0 * sample_std + 1e-8)
+                    direction_confidence = float(1.0 / (1.0 + np.exp(-raw_ratio)))
+                    conf_score = direction_confidence * 50.0 + max(0.0, 50.0 - sample_cv * 200.0)
+                    conf_score = round(min(100.0, max(0.0, conf_score)), 2)
+                    uncertainty = PredictionUncertainty(
+                        expected_return=round(change_pct, 3),
+                        direction=direction,
+                        direction_confidence=round(direction_confidence, 4),
+                        volatility=round(vol, 4),
+                        path_dispersion=round(sample_cv, 6),
+                        confidence_score=conf_score,
+                        sample_count_used=n_samples,
+                    )
+                    res.predicted_close_mean = round(mean_close, 4)
+                    res.predicted_close_final = round(final_close, 4)
+                    res.expected_change_pct = round(change_pct, 3)
+                    res.direction = direction
+                    res.volatility_proxy = round(vol, 4)
+                    res.confidence_band = {
+                        "low": round(float(np.percentile(avg_close, 25)), 4),
+                        "high": round(float(np.percentile(avg_close, 75)), 4),
+                    }
+                    res.prediction_uncertainty = uncertainty
+                    res.forecast_dict = self._pred_df_to_dict(pred_df)
+                else:
+                    parsed = self._parse_pred_df(pred_df, lc, sample_count=1)
+                    res.last_close = lc
+                    self._apply_uncertainty(res, parsed)
+                    res.forecast_dict = self._pred_df_to_dict(pred_df)
                 if self._cache:
                     self._cache.set_kronos(
                         res.ticker, eval_date, self.pred_len, res.to_dict(),
