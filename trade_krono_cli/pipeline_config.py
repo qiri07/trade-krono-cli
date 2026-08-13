@@ -152,6 +152,7 @@ class PipelineConfig:
         degrade_mode: Optional[str] = None,
         ta_cache_fallback_enabled: Optional[bool] = None,
         ta_cache_max_age_days: Optional[int] = None,
+        universe_source: Optional[str] = None,
     ):
         # 构建各子配置（优先用显式参数，其次用扁平字段覆盖，最后用默认值）
         self.kronos = self._merge_sub(
@@ -194,6 +195,7 @@ class PipelineConfig:
                 ("min_volume_ratio", min_volume_ratio),
                 ("min_turnover_rate", min_turnover_rate),
                 ("exclude_st", exclude_st),
+                ("universe_source", universe_source),
             ] if v is not None},
         )
         self.abnormality = self._merge_sub(
@@ -358,6 +360,7 @@ class PipelineConfig:
             "retry_max_attempts", "retry_base_delay", "retry_jitter",
             "retry_rate_limit_backoff", "retry_rate_limit_max_wait",
             "degrade_mode", "ta_cache_fallback_enabled", "ta_cache_max_age_days",
+            "universe_source",
             # 向后兼容别名
             "constraints",
         }
@@ -481,6 +484,7 @@ class PipelineConfig:
             "degrade_mode":      ("degradation", "degrade_mode"),
             "ta_cache_fallback_enabled": ("degradation", "ta_cache_fallback_enabled"),
             "ta_cache_max_age_days": ("degradation", "ta_cache_max_age_days"),
+            "universe_source":   ("filters", "universe_source"),
         }
         for flat_key, (container, attr) in _DELEGATES.items():
             result[flat_key] = _to_plain(getattr(getattr(self, container), attr))
@@ -600,6 +604,7 @@ class PipelineConfig:
             "degrade_mode":      ("degradation", "degrade_mode"),
             "ta_cache_fallback_enabled": ("degradation", "ta_cache_fallback_enabled"),
             "ta_cache_max_age_days": ("degradation", "ta_cache_max_age_days"),
+            "universe_source":   ("filters", "universe_source"),
         }
         if name in _DELEGATES:
             container, attr = _DELEGATES[name]

@@ -24,6 +24,8 @@ class FilterConfig:
     min_turnover_rate: Optional[float] = None
     exclude_st: bool = True
     filter_rules: list[FilterRule] = field(default_factory=list)
+    universe_source: str = "akshare"
+    """全市场数据源：akshare / baostock / mootdx / tushare。"""
 
     def merge(self, **overrides) -> "FilterConfig":
         current = {k: getattr(self, k) for k in self.__dataclass_fields__}

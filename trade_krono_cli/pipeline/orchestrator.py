@@ -40,6 +40,7 @@ from trade_krono_cli.pipeline.reporter import (
     save_html_report,
 )
 from trade_krono_cli.security import sanitize_for_log
+from trade_krono_cli.universe.engine import UniverseEngine
 
 
 def _collect_futures(
@@ -150,6 +151,25 @@ class PipelineFactory:
         wrapper.analyze_batch = obj.analyze_batch if hasattr(obj, "analyze_batch") else None
         return wrapper
 
+    @staticmethod
+    def build_universe_engine(
+        config: PipelineConfig,
+        universe_source: Optional[str] = None,
+    ) -> Optional[UniverseEngine]:
+        """
+        从 PipelineConfig 构建 UniverseEngine。
+
+        若 universe_source 未配置或为 "manual"，返回 None（由调用方提供 tickers）。
+        """
+        source = universe_source or getattr(config.filters, "universe_source", "akshare")
+        if source in ("manual", ""):
+            return None
+        try:
+            return UniverseEngine.from_config(config.filters, universe_source=source)
+        except Exception as e:
+            logger.warning(f"UniverseEngine 初始化失败: {e}，使用手动 tickers 模式")
+            return None
+
 
 class QuantPipeline:
     """
@@ -175,6 +195,8 @@ class QuantPipeline:
         # 向后兼容：直接注入 runner
         ta_runner: Optional[Any] = None,
         kronos_runner: Optional[Any] = None,
+        # Universe Engine（可选：无 tickers 时自动从全市场生成）
+        universe_engine: Optional[UniverseEngine] = None,
     ):
         self._settings = settings or get_settings()
         self._config = config or PipelineConfig.default()
@@ -186,6 +208,7 @@ class QuantPipeline:
         signals = allowed_signals or self._config.allowed_signals
         self.allowed_signals = signals
         self.no_cache = no_cache
+        self._universe_engine = universe_engine
 
         # 兼容旧的 ta_runner / kronos_runner 参数
         if ta_runner is not None and ta_session is None:
@@ -275,6 +298,18 @@ class QuantPipeline:
                     总耗时 ≈ max(T_fetch, T_compute)；默认 False 使用传统批量模式。
         """
         t0 = time.time()
+        # ── 自动宇宙解析：无 tickers 时从全市场生成 ─────────────────────
+        if not tickers and self._universe_engine is not None:
+            logger.info("🌌 未指定股票列表，启动 Universe Engine 自动发现...")
+            tickers = self._universe_engine.run(eval_date=date)
+            if not tickers:
+                logger.warning("Universe Engine 返回空列表，流水线终止")
+                return []
+            logger.info(f"🌌 Universe Engine 产出 {len(tickers)} 只候选股票")
+        elif not tickers:
+            logger.warning("未提供股票列表且无 Universe Engine，流水线终止")
+            return []
+
         logger.info(
             f"🚀 流水线启动{'（流式）' if streaming else '（并行）'}| "
             f"{len(tickers)} 只候选 | date={date}"

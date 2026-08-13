@@ -1,0 +1,55 @@
+"""
+Factor Filter Stage — 量比 / 换手率 流动性过滤。
+
+在静态和基本面过滤之后，通过成交活跃度排除流动性不足的标的。
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from loguru import logger
+
+from trade_krono_cli.universe.stages import FilterStage
+from trade_krono_cli.universe.provider import UniverseTicket
+
+
+class FactorFilterStage(FilterStage):
+    """
+    因子过滤阶段：流动性相关指标。
+
+    过滤条件（全部可选，None 表示不限制）：
+      - min_volume_ratio: 最小量比
+      - min_turnover_rate: 最小换手率（%）
+    """
+
+    name = "factor"
+
+    def __init__(
+        self,
+        min_volume_ratio: Optional[float] = None,
+        min_turnover_rate: Optional[float] = None,
+    ):
+        self.min_volume_ratio = min_volume_ratio
+        self.min_turnover_rate = min_turnover_rate
+
+    def filter(self, tickets: list[UniverseTicket]) -> list[UniverseTicket]:
+        if not tickets:
+            return []
+
+        kept: list[UniverseTicket] = []
+
+        for t in tickets:
+            if self.min_volume_ratio is not None and t.volume_ratio is not None:
+                if t.volume_ratio < self.min_volume_ratio:
+                    continue
+
+            if self.min_turnover_rate is not None and t.turnover_rate is not None:
+                if t.turnover_rate < self.min_turnover_rate:
+                    continue
+
+            kept.append(t)
+
+        logger.info(
+            f"📋 Factor stage: {len(tickets)} → {len(kept)}"
+        )
+        return kept
