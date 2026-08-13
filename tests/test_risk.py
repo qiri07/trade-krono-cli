@@ -253,27 +253,32 @@ class TestRiskEngine:
         """基础风险评估流程。"""
         engine = RiskEngine()
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
-        risk = engine.assess("sh.600519", "2026-08-11", df)
+        risk_score, risk_metrics = engine.assess("sh.600519", "2026-08-11", df)
 
-        assert isinstance(risk, RiskScore)
-        assert risk.ticker == "sh.600519"
-        assert risk.date == "2026-08-11"
-        assert 0 <= risk.total_risk <= 100
-        assert 0 <= risk.volatility_score <= 100
-        assert 0 <= risk.drawdown_score <= 100
-        assert 0 <= risk.liquidity_score <= 100
-        assert 0 <= risk.concentration_score <= 100
-        assert 0 <= risk.market_regime_score <= 100
+        assert isinstance(risk_score, RiskScore)
+        assert risk_score.ticker == "sh.600519"
+        assert risk_score.date == "2026-08-11"
+        assert 0 <= risk_score.total_risk <= 100
+        assert 0 <= risk_score.volatility_score <= 100
+        assert 0 <= risk_score.drawdown_score <= 100
+        assert 0 <= risk_score.liquidity_score <= 100
+        assert 0 <= risk_score.concentration_score <= 100
+        assert 0 <= risk_score.market_regime_score <= 100
+
+        # RiskMetrics carries the new dimensions
+        assert 0 <= risk_metrics.gap_risk_score <= 100
+        assert 0 <= risk_metrics.event_risk_score <= 100
+        assert 0 <= risk_metrics.valuation_risk_score <= 100
 
     def test_assess_with_quote_data(self):
         """提供实时估值数据时应计算换手率。"""
         engine = RiskEngine()
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
         quote = {"market_cap": 200.0}  # 200 亿元
-        risk = engine.assess("sh.600519", "2026-08-11", df, quote_data=quote)
+        risk_score, risk_metrics = engine.assess("sh.600519", "2026-08-11", df, quote_data=quote)
 
-        assert risk.avg_turnover is not None
-        assert isinstance(risk.avg_turnover, float)
+        assert risk_score.avg_turnover is not None
+        assert isinstance(risk_score.avg_turnover, float)
 
     def test_total_risk_is_weighted_sum(self):
         """总分是各维度加权求和。"""
@@ -283,43 +288,47 @@ class TestRiskEngine:
         close_vals = 100 * (1 + np.random.randn(60) * 0.03)
         df = _make_kline_df(close_vals.tolist())
 
-        risk = engine.assess("sh.600519", "2026-08-11", df)
+        risk_score, risk_metrics = engine.assess("sh.600519", "2026-08-11", df)
 
         w = engine._weights
         expected = (
-            risk.volatility_score * w["volatility"]
-            + risk.drawdown_score * w["drawdown"]
-            + risk.liquidity_score * w["liquidity"]
-            + risk.concentration_score * w["concentration"]
-            + risk.market_regime_score * w["market_regime"]
+            risk_score.volatility_score * w["volatility"]
+            + risk_score.drawdown_score * w["drawdown"]
+            + risk_score.liquidity_score * w["liquidity"]
+            + risk_score.concentration_score * w["concentration"]
+            + risk_score.market_regime_score * w["market_regime"]
+            + risk_metrics.gap_risk_score * w["gap_risk"]
+            + risk_metrics.event_risk_score * w["event_risk"]
+            + risk_metrics.valuation_risk_score * w["valuation_risk"]
         )
-        assert risk.total_risk == pytest.approx(expected, abs=0.1)
+        assert risk_score.total_risk == pytest.approx(expected, abs=0.1)
 
     def test_custom_weights(self):
         """自定义权重应生效。"""
         rc = RiskConfig(weights=RiskConfig().weights.merge(
             volatility=0.50, drawdown=0.20, liquidity=0.15,
             concentration=0.10, market_regime=0.05,
+            gap_risk=0.0, event_risk=0.0, valuation_risk=0.0,
         ))
         engine = RiskEngine(risk_config=rc)
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
-        risk = engine.assess("sh.600519", "2026-08-11", df)
+        risk_score, _ = engine.assess("sh.600519", "2026-08-11", df)
 
         expected = (
-            risk.volatility_score * 0.50
-            + risk.drawdown_score * 0.20
-            + risk.liquidity_score * 0.15
-            + risk.concentration_score * 0.10
-            + risk.market_regime_score * 0.05
+            risk_score.volatility_score * 0.50
+            + risk_score.drawdown_score * 0.20
+            + risk_score.liquidity_score * 0.15
+            + risk_score.concentration_score * 0.10
+            + risk_score.market_regime_score * 0.05
         )
-        assert risk.total_risk == pytest.approx(expected, abs=0.1)
+        assert risk_score.total_risk == pytest.approx(expected, abs=0.1)
 
     def test_to_dict(self):
-        """RiskScore 序列化应包含所有字段。"""
+        """RiskScore 序列化应包含原始字段。"""
         engine = RiskEngine()
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
-        risk = engine.assess("sh.600519", "2026-08-11", df)
-        d = risk.to_dict()
+        risk_score, _ = engine.assess("sh.600519", "2026-08-11", df)
+        d = risk_score.to_dict()
 
         assert d["ticker"] == "sh.600519"
         assert d["date"] == "2026-08-11"
@@ -329,13 +338,18 @@ class TestRiskEngine:
         assert "liquidity_score" in d
         assert "concentration_score" in d
         assert "market_regime_score" in d
+        # RiskScore 不含新维度字段（它们在 RiskMetrics 中）
+        assert "gap_risk_score" not in d
+        assert "event_risk_score" not in d
+        assert "valuation_risk_score" not in d
+        assert "var_95" not in d
 
     def test_print_report(self):
         """print_report 输出格式正确。"""
         engine = RiskEngine()
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
-        risk = engine.assess("sh.600519", "2026-08-11", df)
-        report = risk.print_report()
+        risk_score, _ = engine.assess("sh.600519", "2026-08-11", df)
+        report = risk_score.print_report()
 
         assert "sh.600519" in report
         assert "2026-08-11" in report
@@ -344,22 +358,39 @@ class TestRiskEngine:
         assert "波动率风险" in report
         assert "市场环境风险" in report
 
+    def test_risk_metrics_has_var_cvar(self):
+        """RiskMetrics 应包含 VaR/CVaR/Beta/return_adjustment。"""
+        engine = RiskEngine()
+        np.random.seed(42)
+        close_vals = 100 * (1 + np.random.randn(60) * 0.02)
+        df = _make_kline_df(close_vals.tolist())
+        _, metrics = engine.assess("sh.600519", "2026-08-11", df)
+
+        assert metrics.var_95 is not None
+        assert metrics.cvar_95 is not None
+        assert metrics.beta is not None
+        assert metrics.return_adjustment is not None
+        # RiskMetrics 包含新维度
+        assert metrics.gap_risk_score is not None
+        assert metrics.event_risk_score is not None
+        assert metrics.valuation_risk_score is not None
+
 
 # ── assess_risk 便捷函数测试 ─────────────────────────────────────────────────
 
 class TestAssessRisk:
     def test_convenience_function(self):
-        """便捷函数 assess_risk 应返回 RiskScore。"""
+        """便捷函数 assess_risk 应返回 (RiskScore, RiskMetrics)。"""
         from trade_krono_cli.risk.risk_engine import assess_risk
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
-        risk = assess_risk("sh.600519", "2026-08-11", df)
-        assert isinstance(risk, RiskScore)
-        assert 0 <= risk.total_risk <= 100
+        risk_score, risk_metrics = assess_risk("sh.600519", "2026-08-11", df)
+        assert isinstance(risk_score, RiskScore)
+        assert 0 <= risk_score.total_risk <= 100
 
     def test_convenience_with_config(self):
         """便捷函数支持传入 RiskConfig。"""
         from trade_krono_cli.risk.risk_engine import assess_risk
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
         rc = RiskConfig(weights=RiskConfig().weights.merge(volatility=0.99))
-        risk = assess_risk("sh.600519", "2026-08-11", df, risk_config=rc)
-        assert isinstance(risk, RiskScore)
+        risk_score, _ = assess_risk("sh.600519", "2026-08-11", df, risk_config=rc)
+        assert isinstance(risk_score, RiskScore)

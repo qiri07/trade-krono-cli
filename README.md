@@ -626,7 +626,7 @@ trade-krono-cli
 │   │   └── ta_session.py       # TradingAgents session state (provider, debate rounds)
 │   ├── batch/                  # Batch prediction
 │   │   └── batch_runner.py     # Async semaphore-based batch Kronos predictions
-│   └── risk/                   # Risk engine (volatility / drawdown / liquidity / concentration / market regime)
+│   └── risk/                   # Risk engine (volatility/drawdown/liquidity/concentration/regime/gap/event/valuation)
 ├── scripts/
 │   └── install.sh              # One-click install script
 ├── tests/                      # Test suite (459 tests, 87% coverage, mypy clean)
@@ -733,57 +733,94 @@ Where:
 
 The highest composite score ranks first. Compared to the old formula (40%/40%/20%), the new version reduces the weight on price change (40%→30%) and introduces an uncertainty quantification bonus (10%), making rankings more robust.
 
-## Risk Engine
+## Risk Engine v2
 
-Multi-dimensional risk quantification for each candidate stock, outputting a 0-100 risk score that acts as a penalty factor in the composite score.
+Multi-dimensional risk quantification for each candidate stock, outputting VaR/CVaR/Beta/volatility/drawdown plus gap/event/valuation regime scores.
+Risk is mapped to an **expected return adjustment factor** via exponential decay, replacing the old linear penalty formula.
+
+### Architecture
+
+```
+Expected Return
+      │
+      ▼
+  Risk Model
+      ├── VaR / CVaR       (tail risk)
+      ├── Beta             (systematic risk)
+      ├── Volatility       (total risk)
+      ├── Max Drawdown     (extreme loss)
+      ├── Liquidity        (liquidity risk)
+      ├── Gap Risk         (gap risk)
+      ├── Event Risk       (event-driven anomaly)
+      ├── Valuation Risk   (valuation risk)
+      └── Market Regime    (market environment)
+```
 
 ### Risk Dimensions
 
 | Dimension | Source | Logic | Weight |
 |------|----------|------|------|
-| **Volatility Risk** | 20-day annualized std of K-line daily returns | Higher volatility = higher risk (0%→0, 60%→100) | 30% |
-| **Drawdown Risk** | 60-day rolling max → max drawdown | Larger drawdown = higher risk (5%→20, 40%→100) | 25% |
-| **Liquidity Risk** | 20-day avg volume + market cap | Lower volume = higher risk (segmented mapping) | 20% |
-| **Concentration Risk** | Placeholder (reserved portfolio weight interface) | Default 10 points | 10% |
-| **Market Regime Risk** | 20-day + 60-day momentum | Downtrend = high risk, uptrend = low risk | 15% |
+| **VaR(95%)** | 60-day historical return 5th percentile | Lower-bound estimate of extreme daily loss | Mapped to return adj |
+| **CVaR(95%)** | Mean of returns below VaR | Conditional tail loss | Mapped to return adj |
+| **Beta** | Cov(stock, market) / Var(market) | >1 high systemic risk, <1 low | Mapped to return adj |
+| **Volatility Risk** | 20-day annualized std of daily returns | Higher vol = higher risk (0%→0, 60%→100) | 25% |
+| **Drawdown Risk** | 60-day rolling max → max drawdown | Larger DD = higher risk (5%→20, 40%→100) | 20% |
+| **Liquidity Risk** | 20-day avg volume + market cap | Lower volume = higher risk (segmented) | 15% |
+| **Concentration Risk** | Placeholder | Default 10 points | 8% |
+| **Market Regime Risk** | 20-day + 60-day momentum | Downtrend = high, uptrend = low | 12% |
+| **Gap Risk** | Frequency of daily moves >3% | More frequent large moves = higher risk | 5% |
+| **Event Risk** | Short-term / long-term vol ratio | Ratio >> 1 means recent volatility spike | 5% |
+| **Valuation Risk** | PE/PB/market cap composite score | High valuation + small cap = high risk | 5% |
 
 ### Output Example
 
 ```
-====================================
-  Risk Score for sh.600519 (2026-08-11)
-====================================
-  Liquidity Risk       8
-  Volatility Risk     12
-  Drawdown Risk       15
-  Concentration Risk    5
-  Market Regime Risk  10
-------------------------------------
-  Total Risk         50.0
-====================================
+============================================
+  Risk Metrics for sh.600519 (2026-08-11)
+============================================
+  VaR(95%)          -2.34%
+  CVaR(95%)         -3.12%
+  Beta               1.15
+  Ann. Volatility   32.5%
+  Max Drawdown     -18.3%
+--------------------------------------------
+  Gap Risk            25
+  Event Risk          42
+  Valuation Risk      30
+  Liquidity Risk      12
+  Market Regime       28
+--------------------------------------------
+  Total Risk         45.2
+  Return Adj        -0.062  (-6.2%)
+============================================
 ```
 
 ### Relationship to Composite Scoring
 
-The risk score enters `default_scorer` as a **penalty factor**:
+Risk Engine v2 bakes risk into **adjusted expected return** rather than applying a flat penalty:
 
 ```
-risk_penalty = total_risk / 100 × 15   (max deduction: 15 points)
-final_score  = base_score - risk_penalty
+adjusted_return = raw_return × (1 + return_adjustment)
+                = 15% × (1 - 0.062) ≈ 14.07%
 ```
 
-High-risk stocks (e.g., total risk 80) can be penalized up to 12 points (80% × 15), naturally down-weighting them in the ranking.
+When `adjusted_expected_return` is present, the scorer uses it directly;
+otherwise it falls back to the legacy linear penalty `-(risk_score/100) × 15`.
 
 ### Module Structure
 
 ```
 trade_krono_cli/risk/
-├── volatility.py    # Volatility risk
-├── drawdown.py      # Drawdown risk
-├── liquidity.py     # Liquidity risk
-├── concentration.py # Concentration risk (reserved interface)
-├── market_regime.py # Market regime risk
-└── risk_engine.py   # Aggregation engine + RiskScore dataclass
+├── models.py          # VaR/CVaR/Beta/Sharpe/return adj/shared weights
+├── volatility.py      # Volatility risk
+├── drawdown.py        # Drawdown risk
+├── liquidity.py       # Liquidity risk
+├── concentration.py   # Concentration risk (reserved interface)
+├── market_regime.py   # Market regime risk
+├── gap_risk.py        # Gap risk
+├── event_risk.py      # Event risk
+├── valuation_risk.py  # Valuation risk
+└── risk_engine.py     # Aggregation engine + RiskScore/RiskMetrics
 ```
 
 ### Usage
@@ -792,10 +829,13 @@ trade_krono_cli/risk/
 from trade_krono_cli.risk import RiskEngine, assess_risk
 import pandas as pd
 
-# Method 1: Convenience function
+# Method 1: Convenience function (returns RiskScore + RiskMetrics)
 engine = RiskEngine()
-risk = engine.assess(ticker, date, kline_df, quote_data={"market_cap": 200.0})
-print(risk.print_report())
+risk_score, risk_metrics = engine.assess(
+    ticker, date, kline_df,
+    quote_data={"market_cap": 200.0, "pe_ttm": 18.0, "pb": 2.5}
+)
+print(risk_metrics.print_report())
 
 # Method 2: Call sub-module directly
 from trade_krono_cli.risk.volatility import calc_volatility_risk
@@ -1038,7 +1078,8 @@ Test Results: **468/468 all passing** · **87% overall coverage** · **mypy clea
 | `test_research_db.py` | ResearchDatabase full-table CRUD, jobs lifecycle, schema migration, cache/research isolation |
 | `test_version.py` | run_id generation, version snapshot construction, config_hash, backward-compatible migration |
 | `test_prediction_eval.py` | EvalRecord, EvaluationSummary, HorizonMetrics, statistical calculation logic |
-| `test_risk.py` | Risk engine (volatility/drawdown/liquidity/concentration/market regime) full-dimension tests |
+| `test_risk.py` | Risk Engine (multi-dimensional scores + VaR/CVaR/Beta + RiskMetrics) full-dimension tests |
+| `test_risk_models.py` | Risk models (VaR/CVaR/Beta/Sharpe/expected return adj/gap/event/valuation) unit tests |
 | `test_external.py` | External repo management (config I/O, status, pin, lock drift detection) |
 | `test_kronos_runner.py` | Device resolution (CPU/CUDA/large-model warning), result save |
 | `test_ta_runner.py` | BuildConfig, provider validation, graph lazy-load, batch analysis, raw report I/O |

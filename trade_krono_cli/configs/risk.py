@@ -10,11 +10,15 @@ from typing import Optional
 @dataclass(frozen=True)
 class RiskWeights:
     """各风险维度的加权占比，总和应为 1.0。"""
-    volatility: float = 0.30
-    drawdown: float = 0.25
-    liquidity: float = 0.20
-    concentration: float = 0.10
-    market_regime: float = 0.15
+    volatility: float = 0.25
+    drawdown: float = 0.20
+    liquidity: float = 0.15
+    concentration: float = 0.08
+    market_regime: float = 0.12
+    gap_risk: float = 0.05
+    event_risk: float = 0.05
+    valuation_risk: float = 0.05
+    beta: float = 0.05
 
     def validate(self) -> list[str]:
         errors: list[str] = []
@@ -110,6 +114,33 @@ class MarketRegimeThresholds:
         return errors
 
 
+@dataclass(frozen=True)
+class GapRiskThresholds:
+    """缺口风险阈值。"""
+    min_gap_pct: float = 3.0
+    insufficient_data_min_rows: int = 30
+    insufficient_data_score: float = 50.0
+
+
+@dataclass(frozen=True)
+class EventRiskThresholds:
+    """事件风险阈值。"""
+    short_window: int = 10
+    long_window: int = 60
+    insufficient_data_min_rows: int = 60
+    insufficient_data_score: float = 50.0
+
+
+@dataclass(frozen=True)
+class ValuationRiskThresholds:
+    """估值风险阈值。"""
+    pe_high: float = 100.0
+    pe_low: float = 10.0
+    pb_high: float = 5.0
+    pb_low: float = 0.5
+    small_cap_threshold: float = 20.0  # 亿元
+
+
 # ── RiskConfig ────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -122,6 +153,14 @@ class RiskConfig:
     market_regime: MarketRegimeThresholds = field(
         default_factory=MarketRegimeThresholds
     )
+    gap_risk: GapRiskThresholds = field(default_factory=GapRiskThresholds)
+    event_risk: EventRiskThresholds = field(default_factory=EventRiskThresholds)
+    valuation_risk: ValuationRiskThresholds = field(
+        default_factory=ValuationRiskThresholds
+    )
+    beta_default: float = 1.0
+    var_confidence: float = 0.95
+    var_lookback: int = 60
     enable_cost_model: bool = True
     commission_bps: float = 3.0
     slippage_bps: float = 5.0
@@ -132,6 +171,10 @@ class RiskConfig:
         errors.extend(self.weights.validate())
         errors.extend(self.drawdown.validate())
         errors.extend(self.market_regime.validate())
+        if not (0.0 <= self.var_confidence < 1.0):
+            errors.append(
+                f"var_confidence={self.var_confidence} 须在 (0, 1) 范围内"
+            )
         for name, val in [
             ("commission_bps", self.commission_bps),
             ("slippage_bps", self.slippage_bps),

@@ -1,29 +1,38 @@
 """
-风险引擎 — Risk Engine。
+风险引擎 v2 — Risk Engine。
 
-多维度风险量化，输出 0-100 综合风险分（越高越危险）。
+多维度风险量化，输出 RiskMetrics（VaR/CVaR/Beta/Gap/Event/Valuation）
++ 向后兼容的 RiskScore（0-100 综合分）。
 
-风险维度：
-  volatility       波动率风险（基于 K 线日收益率标准差）
-  drawdown         回撤风险（基于最大回撤）
-  liquidity        流动性风险（基于日均成交量/换手率）
-  concentration    集中度风险（预留接口，当前返回默认值）
-  market_regime    市场环境风险（基于市场趋势动量）
-
-总风险分 = Σ(各维度分 × 权重)
-
-集成至 merge.py：高风险股票综合评分向下修正（最高扣 15 分）。
+输出示例：
+  RiskMetrics for sh.600519 (2026-08-11)
+  ======================================
+    VaR(95%)        -2.34%
+    CVaR(95%)       -3.12%
+    Beta            1.15
+    Ann. Volatility 32.5%
+    Max Drawdown   -18.3%
+    Gap Risk         25
+    Event Risk       42
+    Valuation Risk   30
+    Liquidity Risk   12
+    Market Regime    28
+  --------------------------------------
+    Total Risk      45.2
+    Return Adj      -0.062  (预期收益降低 6.2%)
 """
 from __future__ import annotations
 
 from trade_krono_cli.risk.risk_engine import (
     RiskEngine,
     RiskScore,
+    RiskMetrics,
     assess_risk,
 )
 
 __all__ = [
     "RiskEngine",
     "RiskScore",
+    "RiskMetrics",
     "assess_risk",
 ]

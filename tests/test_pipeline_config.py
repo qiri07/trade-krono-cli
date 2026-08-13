@@ -118,15 +118,19 @@ def test_scoring_defaults():
 
 
 def test_risk_defaults():
-    """RiskConfig 默认值应与原 hard-coded 常量一致。"""
+    """RiskConfig 默认值应与新架构一致。"""
     cfg = PipelineConfig.default()
     r = cfg.risk
     w = r.weights
-    assert w.volatility == 0.30
-    assert w.drawdown == 0.25
-    assert w.liquidity == 0.20
-    assert w.concentration == 0.10
-    assert w.market_regime == 0.15
+    assert w.volatility == 0.25
+    assert w.drawdown == 0.20
+    assert w.liquidity == 0.15
+    assert w.concentration == 0.08
+    assert w.market_regime == 0.12
+    assert w.gap_risk == 0.05
+    assert w.event_risk == 0.05
+    assert w.valuation_risk == 0.05
+    assert w.beta == 0.05
     assert r.volatility.high_pct == 60.0
     assert r.drawdown.breakpoints == [(5.0, 20.0), (20.0, 60.0), (40.0, 100.0)]
     assert r.liquidity.breakpoints == [(5.0, 80.0), (6.0, 60.0), (7.0, 40.0), (8.0, 20.0)]

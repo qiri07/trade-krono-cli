@@ -5,6 +5,11 @@ scoring.scorers — 三种综合打分策略实现。
   linear       : 加权线性组合（默认，与原 default_scorer 等价）
   multiplicative: 乘法衰减型（高风险→分数指数衰减）
   rank_based   : 百分位排名转换（相对排序优先于绝对分）
+
+Risk Engine v2 集成：
+  - 若 merged 包含 adjusted_expected_return（风险模型已调整预期收益），
+    直接使用调整后的收益率参与打分，替代旧的线性风险惩罚。
+  - 若未调整（legacy），退化为原有的 risk_penalty 扣分逻辑。
 """
 from __future__ import annotations
 
@@ -48,7 +53,16 @@ class LinearScorer(CompositeScorer):
         components["ta_confidence"] = ta_score
 
         # 预期涨跌幅（0–30）
-        chg = merged.get("kronos_change_pct") or merged.get("kronos_change_pct_gross") or 0
+        # Risk Engine v2：若存在 adjusted_expected_return，使用风险模型已调整的收益率；
+        # 否则使用原始收益率（风险惩罚在下方单独扣除）。
+        adj_ret = merged.get("adjusted_expected_return")
+        if adj_ret is not None:
+            # Risk model has already adjusted the expected return
+            chg = adj_ret
+        else:
+            chg = merged.get("kronos_change_pct") or merged.get(
+                "kronos_change_pct_gross"
+            ) or 0
         chg_score = max(0, min(100, chg + s.change_pct_offset)) * s.change_pct_weight
         score += chg_score
         components["change_pct"] = chg_score
@@ -82,11 +96,12 @@ class LinearScorer(CompositeScorer):
             score += unc_bonus
             components["uncertainty_bonus"] = unc_bonus
 
-        # 风险惩罚（0 ~ -15）
-        total_risk = merged.get("risk_score_total") or 0
-        risk_penalty = (total_risk / 100.0) * s.risk_penalty_weight * 100
-        score -= risk_penalty
-        components["risk_penalty"] = -risk_penalty
+        # 风险惩罚（仅在没有 adjusted_expected_return 时应用，否则风险已融入收益率）
+        if merged.get("adjusted_expected_return") is None:
+            total_risk = merged.get("risk_score_total") or 0
+            risk_penalty = (total_risk / 100.0) * s.risk_penalty_weight * 100
+            score -= risk_penalty
+            components["risk_penalty"] = -risk_penalty
 
         final = round(max(0, min(100, score)), 2)
         return final
@@ -123,6 +138,10 @@ class MultiplicativeScorer(CompositeScorer):
         base = max(0, min(100, ta_conf)) * s.ta_confidence_weight
 
         chg = merged.get("kronos_change_pct") or merged.get("kronos_change_pct_gross") or 0
+        # Risk Engine v2：使用调整后的预期收益（若可用）
+        adj_ret = merged.get("adjusted_expected_return")
+        if adj_ret is not None:
+            chg = adj_ret
         base += max(0, min(100, chg + s.change_pct_offset)) * s.change_pct_weight
 
         direction = merged.get("kronos_direction")
@@ -142,9 +161,12 @@ class MultiplicativeScorer(CompositeScorer):
             else:
                 base += s.uncertainty_low_penalty
 
-        # 风险乘法因子：风险 0→factor=1.0，风险 100→factor=1-w_risk
-        total_risk = merged.get("risk_score_total") or 0
-        risk_factor = 1.0 - (total_risk / 100.0) * s.risk_penalty_weight
+        # 风险乘法因子（仅在没有 adjusted_expected_return 时应用，避免双重惩罚）
+        if merged.get("adjusted_expected_return") is None:
+            total_risk = merged.get("risk_score_total") or 0
+            risk_factor = 1.0 - (total_risk / 100.0) * s.risk_penalty_weight
+        else:
+            risk_factor = 1.0  # 风险已融入调整后的收益率
 
         final = base * risk_factor
         return round(max(0, min(100, final)), 2)

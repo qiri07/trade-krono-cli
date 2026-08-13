@@ -292,11 +292,15 @@ scoring:
 # ── 风险引擎 ──────────────────────────────────────────────────────────────
 risk:
   weights:
-    volatility:     0.30   # 20日年化波动率 → 风险分
-    drawdown:       0.25   # 60日最大回撤 → 风险分
-    liquidity:      0.20   # 日均成交量/换手率 → 风险分
-    concentration:  0.10   # 占位（预留组合权重接口）
-    market_regime:  0.15   # 20日+60日动量 → 风险分
+    volatility:     0.25   # 20日年化波动率 → 风险分
+    drawdown:       0.20   # 60日最大回撤 → 风险分
+    liquidity:      0.15   # 日均成交量/换手率 → 风险分
+    concentration:  0.08   # 占位（预留组合权重接口）
+    market_regime:  0.12   # 20日+60日动量 → 风险分
+    gap_risk:       0.05   # 跳空缺口频率 → 风险分
+    event_risk:     0.05   # 短期/长期波动率突变 → 风险分
+    valuation_risk: 0.05   # PE/PB/市值综合估值风险
+    beta:           0.05   # 系统性风险（计入预期收益调整）
 
   volatility:
     low_pct:                    0.0   # 0% 波动率 → 0 风险分
@@ -325,10 +329,31 @@ risk:
     insufficient_data_score:           30.0
     insufficient_data_min_rows:        30
 
-  enable_cost_model:   true   # 扣除交易成本后再计算预期收益
-  commission_bps:      3.0
-  slippage_bps:        5.0
-  stamp_duty_bps:      1.0
+  gap_risk:
+    min_gap_pct:              3.0   # 单日涨跌幅超过此阈值视为"缺口"
+    insufficient_data_min_rows: 30
+    insufficient_data_score:   50.0
+
+  event_risk:
+    short_window:             10   # 短期波动率窗口
+    long_window:              60   # 长期波动率窗口
+    insufficient_data_min_rows: 60
+    insufficient_data_score:  50.0
+
+  valuation_risk:
+    pe_high:             100.0   # PE > 此值视为高估值风险
+    pe_low:               10.0   # PE < 此值视为低估值风险
+    pb_high:               5.0   # PB > 此值视为高估值风险
+    pb_low:                0.5   # PB < 此值视为低估值风险
+    small_cap_threshold:  20.0   # 市值 < 此值（亿元）触发小市值风险
+
+  beta_default:           1.0   # 无市场数据时的默认 Beta
+  var_confidence:         0.95  # VaR/CVaR 置信水平
+  var_lookback:           60    # VaR 计算回看天数
+  enable_cost_model:      true  # 扣除交易成本后再计算预期收益
+  commission_bps:         3.0
+  slippage_bps:           5.0
+  stamp_duty_bps:         1.0
 
 # ── 其他流水线设置 ──────────────────────────────────────────────────────────
 sample_count:      5
@@ -626,10 +651,10 @@ trade-krono-cli
 │   │   └── ta_session.py     # TradingAgents 会话状态（供应商、辩论轮次）
 │   ├── batch/              # 批量预测
 │   │   └── batch_runner.py # 异步信号量控制批量 Kronos 预测
-│   └── risk/               # 风险引擎（波动率/回撤/流动性/集中度/市场环境）
+│   └── risk/               # 风险引擎（波动率/回撤/流动性/集中度/市场环境/缺口/事件/估值）
 ├── scripts/
 │   └── install.sh          # 一键安装脚本
-├── tests/                  # 测试套件（468 项全部通过，87% 覆盖，mypy 零错误）
+├── tests/                  # 测试套件（941 项全部通过，87% 覆盖，mypy 零错误）
 └── external/               # 外部项目配置（repos.yaml + repo.lock）
 ```
 
@@ -733,57 +758,94 @@ score = TA_confidence * 0.4
 
 综合得分最高者排名最前。相比旧版公式（40%/40%/20%），新版降低了对涨跌幅的权重（40%→30%），引入了不确定性量化加成（10%），使排名更加稳健。
 
-## 风险引擎（Risk Engine）
+## 风险引擎（Risk Engine v2）
 
-对每只候选股票进行多维度风险量化，输出 0-100 风险分，并作为综合打分的惩罚因子。
+对每只候选股票进行多维度风险量化，输出 VaR/CVaR/Beta/年化波动率/最大回撤等详细指标，
+并通过指数衰减模型将综合风险映射为**预期收益调整因子**，替代旧的线性扣分惩罚。
+
+### 架构
+
+```
+Expected Return
+      │
+      ▼
+  Risk Model
+      ├── VaR / CVaR       （尾部风险度量）
+      ├── Beta             （系统性风险）
+      ├── Volatility       （总波动率）
+      ├── Max Drawdown     （极端损失）
+      ├── Liquidity        （流动性风险）
+      ├── Gap Risk         （跳空缺口风险）
+      ├── Event Risk       （事件驱动异常）
+      ├── Valuation Risk   （估值风险）
+      └── Market Regime    （市场环境风险）
+```
 
 ### 风险维度
 
 | 维度 | 计算来源 | 逻辑 | 权重 |
 |------|----------|------|------|
-| **波动率风险** | K 线日收益率 20 日年化标准差 | 波动率越高，风险越大（0%→0分，60%→100分） | 30% |
-| **回撤风险** | 60 日滚动最高价 → 最大回撤 | 回撤越大，风险越大（5%→20分，40%→100分） | 25% |
-| **流动性风险** | 20 日平均成交量 + 市值 | 成交量越小，风险越大（分段映射） | 20% |
-| **集中度风险** | 占位实现（预留组合权重接口） | 当前默认 10 分 | 10% |
-| **市场环境风险** | 20 日 + 60 日动量 | 下跌趋势风险高，上涨趋势风险低 | 15% |
+| **VaR(95%)** | 60 日历史收益率 5% 分位数 | 极端日损失的下界估计 | 归入预期收益调整 |
+| **CVaR(95%)** | VaR 以下收益率的均值 | 尾部条件期望损失 | 归入预期收益调整 |
+| **Beta** | 个股与市场收益率协方差 / 市场方差 | >1 高系统风险，<1 低系统风险 | 归入预期收益调整 |
+| **波动率风险** | 20 日年化标准差 | 波动率越高风险越大（0%→0，60%→100） | 25% |
+| **回撤风险** | 60 日滚动最高价 → 最大回撤 | 回撤越大风险越大（5%→20，40%→100） | 20% |
+| **流动性风险** | 20 日平均成交量 + 市值 | 成交量越小风险越大（分段映射） | 15% |
+| **集中度风险** | 占位实现 | 当前默认 10 分 | 8% |
+| **市场环境风险** | 20 日 + 60 日动量 | 下跌趋势风险高，上涨趋势风险低 | 12% |
+| **缺口风险** | 单日涨跌幅 >3% 的频率 | 跳空越大越频繁，风险越高 | 5% |
+| **事件风险** | 10 日 / 60 日波动率比值 | 比值 >> 1 表示近期波动异常 | 5% |
+| **估值风险** | PE/PB/市值综合评分 | 高估值+小市值 → 高风险 | 5% |
 
 ### 输出示例
 
 ```
-====================================
-  Risk Score for sh.600519 (2026-08-11)
-====================================
-  流动性风险       8
-  波动率风险      12
-  回撤风险        15
-  集中度风险       5
-  市场环境风险    10
-------------------------------------
-  Total Risk     50.0
-====================================
+============================================
+  Risk Metrics for sh.600519 (2026-08-11)
+============================================
+  VaR(95%)          -2.34%
+  CVaR(95%)         -3.12%
+  Beta               1.15
+  Ann. Volatility   32.5%
+  Max Drawdown     -18.3%
+--------------------------------------------
+  Gap Risk            25
+  Event Risk          42
+  Valuation Risk      30
+  Liquidity Risk      12
+  Market Regime       28
+--------------------------------------------
+  Total Risk         45.2
+  Return Adj        -0.062  (-6.2%)
+============================================
 ```
 
 ### 与综合打分的关系
 
-风险分进入 `default_scorer` 作为**惩罚因子**：
+Risk Engine v2 将风险**融入预期收益**而非单独扣分：
 
 ```
-risk_penalty = total_risk / 100 × 15   （最高扣 15 分）
-final_score  = base_score - risk_penalty
+adjusted_return = raw_return × (1 + return_adjustment)
+                = 15% × (1 - 0.062) ≈ 14.07%
 ```
 
-高风险股票（如总风险 80）的综合得分最多被扣 12 分（80% × 15），从而在排名中自然降权。
+当 `adjusted_expected_return` 存在时，scorer 直接使用调整后的收益率；
+否则回退到旧线性惩罚 `-(risk_score/100) × 15`，保持向后兼容。
 
 ### 模块结构
 
 ```
 trade_krono_cli/risk/
-├── volatility.py    # 波动率风险
-├── drawdown.py      # 回撤风险
-├── liquidity.py     # 流动性风险
-├── concentration.py # 集中度风险（预留接口）
-├── market_regime.py # 市场环境风险
-└── risk_engine.py   # 聚合引擎 + RiskScore 数据类
+├── models.py          # VaR/CVaR/Beta/Sharpe/预期收益调整/共享权重
+├── volatility.py      # 波动率风险
+├── drawdown.py        # 回撤风险
+├── liquidity.py       # 流动性风险
+├── concentration.py   # 集中度风险（预留接口）
+├── market_regime.py   # 市场环境风险
+├── gap_risk.py        # 跳空缺口风险
+├── event_risk.py      # 事件驱动异常风险
+├── valuation_risk.py  # 估值风险
+└── risk_engine.py     # 聚合引擎 + RiskScore/RiskMetrics 数据类
 ```
 
 ### 使用方式
@@ -792,10 +854,13 @@ trade_krono_cli/risk/
 from trade_krono_cli.risk import RiskEngine, assess_risk
 import pandas as pd
 
-# 方式一：便捷函数
+# 方式一：便捷函数（返回 RiskScore + RiskMetrics）
 engine = RiskEngine()
-risk = engine.assess(ticker, date, kline_df, quote_data={"market_cap": 200.0})
-print(risk.print_report())
+risk_score, risk_metrics = engine.assess(
+    ticker, date, kline_df,
+    quote_data={"market_cap": 200.0, "pe_ttm": 18.0, "pb": 2.5}
+)
+print(risk_metrics.print_report())
 
 # 方式二：直接调用子模块
 from trade_krono_cli.risk.volatility import calc_volatility_risk
@@ -1038,7 +1103,8 @@ pytest tests/ -v
 | `test_research_db.py` | ResearchDatabase 全表 CRUD、jobs 生命周期、schema 迁移、cache/research 隔离 |
 | `test_version.py` | run_id 生成、版本快照构建、config_hash、向后兼容迁移 |
 | `test_prediction_eval.py` | EvalRecord、EvaluationSummary、HorizonMetrics、统计计算逻辑 |
-| `test_risk.py` | 风险引擎（波动率/回撤/流动性/集中度/市场环境）全维度测试 |
+| `test_risk.py` | 风险引擎（多维度风险评分 + VaR/CVaR/Beta + RiskMetrics）全维度测试 |
+| `test_risk_models.py` | 风险模型（VaR/CVaR/Beta/Sharpe/预期收益调整/缺口/事件/估值）专项测试 |
 | `test_external.py` | 外部项目管理（config I/O、status、pin、lock 漂移检测） |
 | `test_kronos_runner.py` | 设备解析（CPU/CUDA/大模型警告）、结果保存 |
 | `test_ta_runner.py` | BuildConfig、provider 校验、图懒加载、批量分析、raw 报告读写 |

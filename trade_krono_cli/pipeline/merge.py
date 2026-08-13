@@ -20,6 +20,7 @@ from trade_krono_cli.scoring.registry import get_scorer_registry
 from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.risk.risk_engine import RiskEngine
+from trade_krono_cli.risk.models import adjust_expected_return
 from trade_krono_cli.trading_constraints import (
     T1Tracker,
     check_all_constraints,
@@ -75,16 +76,14 @@ def default_scorer(merged: dict, scoring: Optional[ScoringConfig] = None) -> flo
     │ 方向加成             │ 10%（基） │ UP:+1 / DOWN:-1 / FLAT:0         │
     │ 预测不确定性         │ 10%（基） │ confidence_score × 0.1           │
     │ 置信度 bonus/penalty │ ±3/±1/-2  │ >=70:+3 / 50-70:+1 / <50:-2     │
-    │ 风险惩罚             │ -15%~0    │ -(risk_score/100) × 15           │
+    │ 风险惩罚             │ 内置      │ adjusted_expected_return 或      │
+    │                      │           │ -(risk_score/100) × 15 (fallback)│
     └──────────────────────┴───────────┴──────────────────────────────────┘
 
-    预期涨跌幅区间约定：
-      -50% ~ +50% 映射到 0 ~ 100 分（线性），再乘以 0.3 权重。
-      优先使用扣成本后的净收益（kronos_change_pct），无则用毛利（kronos_change_pct_gross）。
-
-    方向加成是对基础 10 分的微调，最终方向分范围在 -1 ~ +1。
-
-    返回 0~100 之间的浮点数，保留两位小数。
+    Risk Engine v2 集成：
+      - 若 merged 包含 adjusted_expected_return（风险模型已调整预期收益），
+        直接使用调整后的收益率，风险已融入收益率无需额外扣分。
+      - 否则回退到旧线性惩罚：-(risk_score/100) × 15。
     """
     s = scoring or ScoringConfig()
 
@@ -94,9 +93,16 @@ def default_scorer(merged: dict, scoring: Optional[ScoringConfig] = None) -> flo
     ta_conf = merged.get("ta_confidence") or 0
     score += s.ta_confidence_weight * max(0, min(100, ta_conf))
 
-    # 预期涨跌幅（0-30，-offset~+offset → 0~100 → 0-30）
-    # 优先使用扣除成本后的净收益
-    chg = merged.get("kronos_change_pct") or merged.get("kronos_change_pct_gross") or 0
+    # 预期涨跌幅（0-30）
+    # Risk Engine v2：优先使用调整后的预期收益（风险模型已整合 VaR/CVaR/Beta）
+    # 否则回退到原始收益率
+    adj_ret = merged.get("adjusted_expected_return")
+    if adj_ret is not None:
+        chg = adj_ret
+    else:
+        chg = merged.get("kronos_change_pct") or merged.get(
+            "kronos_change_pct_gross"
+        ) or 0
     score += s.change_pct_weight * max(0, min(100, chg + s.change_pct_offset))
 
     # 方向加成（-base_weight*bonus ~ +base_weight*bonus）
@@ -113,10 +119,11 @@ def default_scorer(merged: dict, scoring: Optional[ScoringConfig] = None) -> flo
         score += s.uncertainty_base_weight * max(0, min(100, cs))
         score += _uncertainty_confidence_bonus(pu, s)
 
-    # 风险惩罚（0~weight*100，高风险 → 扣分多）
-    total_risk = merged.get("risk_score_total", 0) or 0
-    risk_penalty = (total_risk / 100.0) * s.risk_penalty_weight * 100
-    score -= risk_penalty
+    # 风险惩罚（仅在没有 adjusted_expected_return 时应用，避免双重惩罚）
+    if merged.get("adjusted_expected_return") is None:
+        total_risk = merged.get("risk_score_total", 0) or 0
+        risk_penalty = (total_risk / 100.0) * s.risk_penalty_weight * 100
+        score -= risk_penalty
 
     return round(max(0, min(100, score)), 2)
 
@@ -157,6 +164,8 @@ def _make_empty_merged(
         "forecast_dict": kronos.forecast_dict if kronos else None,
         "risk_score_total": None,
         "risk_scores": None,
+        "risk_metrics": None,       # new: RiskMetrics dict for VaR/CVaR/beta/adj_return
+        "adjusted_expected_return": None,  # new: raw return × (1 + return_adj)
     }
 
 
@@ -167,9 +176,9 @@ def run_risk_assessment(
     quote_data: Optional[dict] = None,
     ta_result: Optional[StockAnalysisResult] = None,
     risk_config: Optional[RiskConfig] = None,
-) -> tuple[float, dict]:
+) -> tuple[float, dict, dict]:
     """
-    对单只股票运行风险引擎，返回 (total_risk, risk_scores_dict)。
+    对单只股票运行风险引擎，返回 (total_risk, risk_scores_dict, risk_metrics_dict)。
 
     Parameters
     ----------
@@ -182,20 +191,31 @@ def run_risk_assessment(
 
     Returns
     -------
-    (total_risk, risk_scores)
-      total_risk : 综合风险分 0-100
-      risk_scores : {volatility, drawdown, liquidity, concentration, market_regime}
+    (total_risk, risk_scores, risk_metrics)
+      total_risk   : 综合风险分 0-100
+      risk_scores  : {volatility, drawdown, liquidity, ..., gap_risk, event_risk, ...}
+      risk_metrics : {var_95, cvar_95, beta, annualized_vol, max_drawdown,
+                     return_adjustment, ...}（供 Scorers 做预期收益调整）
     """
     engine = RiskEngine(risk_config=risk_config)
-    risk = engine.assess(ticker, date, kline_df, quote_data, ta_result)
+    risk_score, risk_metrics = engine.assess(
+        ticker, date, kline_df, quote_data, ta_result
+    )
+
     scores = {
-        "volatility": risk.volatility_score,
-        "drawdown": risk.drawdown_score,
-        "liquidity": risk.liquidity_score,
-        "concentration": risk.concentration_score,
-        "market_regime": risk.market_regime_score,
+        "volatility": risk_score.volatility_score,
+        "drawdown": risk_score.drawdown_score,
+        "liquidity": risk_score.liquidity_score,
+        "concentration": risk_score.concentration_score,
+        "market_regime": risk_score.market_regime_score,
+        "gap_risk": risk_metrics.gap_risk_score,
+        "event_risk": risk_metrics.event_risk_score,
+        "valuation_risk": risk_metrics.valuation_risk_score,
     }
-    return risk.total_risk, scores
+
+    metrics_dict = risk_metrics.to_dict()
+
+    return risk_score.total_risk, scores, metrics_dict
 
 
 # ═══════════════════════════════════════════════════════
@@ -325,7 +345,7 @@ def merge_results(
         tk = ta.ticker
         if tk in kline_map:
             try:
-                total_risk, risk_scores = run_risk_assessment(
+                total_risk, risk_scores, risk_metrics = run_risk_assessment(
                     ticker=tk,
                     date=ta.date,
                     kline_df=kline_map[tk],
@@ -335,13 +355,27 @@ def merge_results(
                 )
                 item["risk_score_total"] = total_risk
                 item["risk_scores"] = risk_scores
+                item["risk_metrics"] = risk_metrics
+
+                # 预期收益调整：raw_return × (1 + return_adj)
+                raw_ret = item.get("kronos_change_pct") or item.get(
+                    "kronos_change_pct_gross"
+                )
+                if raw_ret is not None and risk_metrics.get("return_adjustment") is not None:
+                    item["adjusted_expected_return"] = adjust_expected_return(
+                        raw_ret, risk_metrics
+                    )
             except (ValueError, TypeError, KeyError, IndexError) as e:
                 logger.warning(f"⚠️  风险评估异常 {tk}: {str(e)[:200]}")
                 item["risk_score_total"] = 50.0
                 item["risk_scores"] = {}
+                item["risk_metrics"] = {}
+                item["adjusted_expected_return"] = None
         else:
             item["risk_score_total"] = None
             item["risk_scores"] = None
+            item["risk_metrics"] = None
+            item["adjusted_expected_return"] = None
 
         item["composite_score"] = scorer(item)
         merged.append(item)
