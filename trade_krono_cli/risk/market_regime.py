@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from trade_krono_cli.configs.schema import MarketRegimeThresholds
+from trade_krono_cli.configs.risk import MarketRegimeThresholds
 
 
 def calc_market_regime_risk(

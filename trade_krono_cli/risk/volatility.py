@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from trade_krono_cli.configs.schema import VolatilityThresholds
+from trade_krono_cli.configs.risk import VolatilityThresholds
 
 
 def calc_volatility_risk(

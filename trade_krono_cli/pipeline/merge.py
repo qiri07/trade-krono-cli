@@ -14,7 +14,8 @@ from typing import Callable, Optional
 import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.configs.schema import ScoringConfig, RiskConfig, ScoringStrategyConfig
+from trade_krono_cli.configs.scoring import ScoringConfig, ScoringStrategyConfig
+from trade_krono_cli.configs.risk import RiskConfig
 from trade_krono_cli.scoring.registry import get_scorer_registry
 from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosForecastResult

@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 
 import pandas as pd
 
-from trade_krono_cli.configs.schema import LiquidityThresholds
+from trade_krono_cli.configs.risk import LiquidityThresholds
 
 
 def calc_liquidity_risk(

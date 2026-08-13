@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from trade_krono_cli.configs.schema import ScoringConfig
+from trade_krono_cli.configs.scoring import ScoringConfig
 from trade_krono_cli.scoring.base import CompositeScorer
 
 

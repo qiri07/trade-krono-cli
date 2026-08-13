@@ -1,28 +1,52 @@
 """
-配置 Schema 统一入口。
+配置统一入口。
 
-所有可调参数通过此模块访问，避免各模块直接 import 内部实现细节。
+所有子配置模块从 trade_krono_cli.configs.* 导入，
+旧路径 trade_krono_cli.configs.schema 通过兼容性层保留。
 """
 from __future__ import annotations
 
-from trade_krono_cli.configs.schema import (
-    ConstraintConfig as ConstraintConfig,
-    DrawdownThresholds as DrawdownThresholds,
-    LiquidityThresholds as LiquidityThresholds,
-    MarketRegimeThresholds as MarketRegimeThresholds,
-    RiskConfig as RiskConfig,
-    RiskWeights as RiskWeights,
-    ScoringConfig as ScoringConfig,
-    VolatilityThresholds as VolatilityThresholds,
+# ── 新模块（推荐）──────────────────────────────────────────────────────────────
+from trade_krono_cli.configs.kronos import KronosConfig
+from trade_krono_cli.configs.ta import TAConfig
+from trade_krono_cli.configs.scoring import (
+    ScoringConfig,
+    ScoringStrategyConfig,
+    RiskBoostStrategyConfig,
 )
+from trade_krono_cli.configs.risk import (
+    RiskConfig,
+    RiskWeights,
+    VolatilityThresholds,
+    DrawdownThresholds,
+    LiquidityThresholds,
+    MarketRegimeThresholds,
+)
+from trade_krono_cli.configs.filters import FilterConfig
+from trade_krono_cli.configs.abnormality import AbnormalityConfig
+from trade_krono_cli.configs.trading import ConstraintConfig
+from trade_krono_cli.configs.output import OutputConfig
+from trade_krono_cli.configs.logging import LoggingConfig
+from trade_krono_cli.configs.retry import RetryConfig
+from trade_krono_cli.configs.degradation import DegradationConfig
 
 __all__ = [
+    "KronosConfig",
+    "TAConfig",
     "ScoringConfig",
+    "ScoringStrategyConfig",
+    "RiskBoostStrategyConfig",
     "RiskConfig",
     "RiskWeights",
     "VolatilityThresholds",
     "DrawdownThresholds",
     "LiquidityThresholds",
     "MarketRegimeThresholds",
+    "FilterConfig",
+    "AbnormalityConfig",
     "ConstraintConfig",
+    "OutputConfig",
+    "LoggingConfig",
+    "RetryConfig",
+    "DegradationConfig",
 ]

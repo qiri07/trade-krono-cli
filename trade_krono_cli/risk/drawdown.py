@@ -9,7 +9,7 @@ from typing import Optional, Tuple
 
 import pandas as pd
 
-from trade_krono_cli.configs.schema import DrawdownThresholds
+from trade_krono_cli.configs.risk import DrawdownThresholds
 
 
 def calc_drawdown_risk(

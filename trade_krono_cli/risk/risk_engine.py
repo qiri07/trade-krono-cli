@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.configs.schema import RiskConfig
+from trade_krono_cli.configs.risk import RiskConfig
 from trade_krono_cli.risk.volatility import calc_volatility_risk
 from trade_krono_cli.risk.drawdown import calc_drawdown_risk
 from trade_krono_cli.risk.liquidity import calc_liquidity_risk
