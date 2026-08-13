@@ -21,6 +21,8 @@ Results are automatically merged after both complete, producing a ranked report.
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Pipeline Config (YAML/JSON)](#pipeline-config-yamljson)
+- [Parameter Priority](#parameter-priority)
 - [Usage Guide](#usage-guide)
 - [Output Format](#output-format)
 - [Architecture](#architecture)
@@ -221,6 +223,114 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock request interval (seconds)
 export LLM_PROVIDER=openai
 export KRONOS_DEVICE=cuda:0
 .venv/bin/python -m trade_krono_cli.cli run --tickers "600519" --date 2026-08-11
+```
+
+## Pipeline Config (YAML/JSON)
+
+In addition to `.env` / environment variables, the pipeline accepts a YAML or JSON config file via `--config`:
+
+```bash
+.venv/bin/python -m trade_krono_cli.cli run --tickers "600519" --date 2026-08-11 --config pipeline_config.yaml
+```
+
+### Full Schema Reference
+
+```yaml
+# ── Scoring Weights ────────────────────────────────────────────────────────
+scoring:
+  ta_confidence_weight:        0.40   # TA confidence × this weight
+  change_pct_weight:           0.30   # Expected return × this weight
+  direction_base_weight:       0.10   # Direction bonus base weight
+  uncertainty_base_weight:     0.10   # Prediction uncertainty base weight
+  risk_penalty_weight:         0.15   # Risk penalty × this weight (max deduction)
+  direction_bonus_point:       10.0   # UP=+10·0.1=+1  DOWN=-10·0.1=-1
+  change_pct_offset:           50.0   # Maps [-50%, +50%] → [0, 100]
+  uncertainty_high_threshold:  70.0   # confidence ≥ 70 → +3 bonus
+  uncertainty_med_threshold:   50.0   # 50 ≤ confidence < 70 → +1 bonus
+  uncertainty_high_bonus:      3.0
+  uncertainty_med_bonus:       1.0
+  uncertainty_low_penalty:    -2.0   # confidence < 50 → -2 penalty
+
+# ── Risk Engine ────────────────────────────────────────────────────────────
+risk:
+  weights:
+    volatility:     0.30   # 20-day annualized vol → risk
+    drawdown:       0.25   # 60-day max drawdown → risk
+    liquidity:      0.20   # Avg volume / turnover → risk
+    concentration:  0.10   # Placeholder (portfolio weights reserved)
+    market_regime:  0.15   # 20d+60d momentum → risk
+
+  volatility:
+    low_pct:                  0.0   # 0% vol → 0 risk score
+    high_pct:                60.0   # 60% vol → 100 risk score
+    insufficient_data_score:  25.0   # < min_rows → this score
+    insufficient_data_min_rows: 30
+
+  drawdown:
+    breakpoints: [[5, 20], [20, 60], [40, 100]]  # (abs_dd%, risk_score)
+    insufficient_data_score:           20.0
+    insufficient_data_min_rows:        30
+
+  liquidity:
+    breakpoints: [[5, 80], [6, 60], [7, 40], [8, 20]]  # log1p(vol), score
+    tail_penalty_rate:     5.0   # log_vol > max_bp after: score -= rate per unit
+    insufficient_data_score:           30.0
+    insufficient_data_min_rows:        10
+
+  market_regime:
+    bear_threshold:    -10.0   # momentum ≤ -10% → 80 risk
+    neutral_low:        0.0   # -10% < momentum ≤ 0% → 50-80 risk
+    neutral_high:      10.0   # 0% < momentum ≤ 10% → 0-50 risk
+    bear_score:        80.0
+    neutral_mid_score: 50.0
+    bull_base_score:   20.0
+    insufficient_data_score:           30.0
+    insufficient_data_min_rows:        30
+
+  enable_cost_model:   true   # Deduct transaction costs from expected returns
+  commission_bps:      3.0
+  slippage_bps:        5.0
+  stamp_duty_bps:      1.0
+
+# ── Other Pipeline Settings ─────────────────────────────────────────────────
+sample_count:  5
+pred_len:      30
+lookback:      400
+model_name:    kronos-base
+device:        cpu
+T:             1.0
+top_p:         0.9
+min_confidence: 55.0
+allowed_signals: [BUY, HOLD]
+output_dir:    outputs
+```
+
+## Parameter Priority
+
+Configuration values follow this precedence (high → low):
+
+```
+1. CLI arguments (e.g. --pred-len 60)
+2. Environment variables / .env file
+3. PipelineConfig YAML/JSON file (via --config)
+4. Schema defaults (hard-coded in configs/schema.py)
+```
+
+Example — overriding volatility threshold:
+
+```yaml
+# pipeline_config.yaml
+risk:
+  volatility:
+    high_pct: 50.0   # 50% vol → 100 risk score (instead of default 60%)
+```
+
+```bash
+# CLI can override further:
+.venv/bin/python -m trade_krono_cli.cli run \
+  --tickers "600519" --date 2026-08-11 \
+  --config pipeline_config.yaml \
+  --pred-len 60          # env var KRONOS_PRED_LEN is ignored when --pred-len is set
 ```
 
 ## Usage Guide
@@ -874,7 +984,7 @@ Called exclusively via `cli_anything.*` namespace imports (from `agent-harness/`
 pytest tests/ -v
 ```
 
-Test Results: **459/459 all passing** · **87% overall coverage** · **mypy: 0 errors in 38 files**
+Test Results: **468/468 all passing** · **87% overall coverage** · **mypy clean**
 
 | File | Coverage |
 |------|----------|
@@ -894,10 +1004,11 @@ Test Results: **459/459 all passing** · **87% overall coverage** · **mypy: 0 e
 | `test_ta_runner.py` | BuildConfig, provider validation, graph lazy-load, batch analysis, raw report I/O |
 | `test_batch_runner.py` | Async semaphore-based batch prediction |
 | `integration/test_pipeline_integration.py` | End-to-end pipeline integration |
-| `test_config_validator.py` | Settings validation (15 checks: types, ranges, required keys) |
+| `test_config_validator.py` | Settings validation (15 checks: types, ranges, required keys) + new config schema defaults |
 | `test_health.py` | Health checks (LLM API, Kronos import, DB, disk space) |
 | `test_merge_edge_cases.py` | Merge boundary conditions (constraints, T+1, mixed signals) |
 | `test_merge_uncertainty.py` | Uncertainty confidence bonus regression tests |
+| `test_pipeline_config.py` | PipelineConfig defaults, override, JSON/YAML roundtrip, scoring & risk schema validation |
 
 ## TA Decision Extraction Logic
 
@@ -1037,6 +1148,22 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | Log Sanitization | Exception logs auto-sanitize API keys (regex replace sk-xxx / Bearer xxx) | `security.py::sanitize_for_log` |
 
 ## Changelog
+
+### v0.1.3 — 2026-08-13
+
+**Centralized config validation & tiered management:**
+
+- New `configs/schema.py` — all scoring weights, risk dimension weights, and segment-mapping thresholds (volatility 0%→0 / 60%→100, drawdown breakpoints, liquidity log thresholds, market regime momentum thresholds) are now defined in one place as frozen dataclasses with `validate()` and `merge()` methods
+- `RiskEngine` now accepts `RiskConfig`; all `calc_*_risk()` functions accept optional `thresholds` params
+- `default_scorer()` / `merge_results()` accept optional `ScoringConfig` / `RiskConfig` params
+- `PipelineConfig` carries `scoring: ScoringConfig` and `risk: RiskConfig` fields; `from_dict()` correctly reconstructs nested dataclasses
+- `cli_commands._load_env()` calls `run_validation()` at startup — fatal errors exit immediately, warnings are logged
+- `config_validator.validate_settings()` now returns `(errors, warnings)` tuple
+- **Priority documented**: CLI params > env vars / .env > `PipelineConfig` YAML > schema defaults
+- YAML serialization fixed: uses `yaml.safe_dump` (no `!!python/tuple` tags); `to_dict()` recursively converts tuples to lists
+- Test count: **468** (up from 459); added `test_custom_thresholds` for all risk modules, `test_from_dict_restores_dataclasses`, `test_merge_works_with_loaded_config`
+
+---
 
 ### v0.1.2 — 2026-08-12
 

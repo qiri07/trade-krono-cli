@@ -58,12 +58,13 @@ def check_kronos_import() -> HealthResult:
     """
     检查 Kronos 依赖是否可导入（轻量：仅 import，不加载模型）。
 
-    验证 cli_anything.kronos 包是否存在，以及 torch 是否可用（可选）。
+    验证适配器能否加载，以及 torch 是否可用（可选）。
     """
     try:
-        import cli_anything.kronos  # noqa: F401
+        from trade_krono_cli.adapters import KronosAdapterImpl
+        adapter = KronosAdapterImpl()
     except ImportError as e:
-        return HealthResult("Kronos", False, f"未安装 cli_anything.kronos: {e}")
+        return HealthResult("Kronos", False, f"无法导入适配器: {e}")
 
     torch_ok = False
     torch_detail = ""

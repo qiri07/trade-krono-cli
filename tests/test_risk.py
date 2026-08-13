@@ -7,7 +7,11 @@ from trade_krono_cli.risk.drawdown import calc_drawdown_risk
 from trade_krono_cli.risk.liquidity import calc_liquidity_risk
 from trade_krono_cli.risk.concentration import calc_concentration_risk
 from trade_krono_cli.risk.market_regime import calc_market_regime_risk
-from trade_krono_cli.risk.risk_engine import RiskEngine, RiskScore, DEFAULT_WEIGHTS
+from trade_krono_cli.risk.risk_engine import RiskEngine, RiskScore
+from trade_krono_cli.configs.schema import (
+    RiskConfig, VolatilityThresholds,
+    DrawdownThresholds, LiquidityThresholds, MarketRegimeThresholds,
+)
 
 
 # ── 辅助函数：构造测试用 K 线数据 ───────────────────────────────────────────────
@@ -73,6 +77,14 @@ class TestVolatilityRisk:
         score, _ = calc_volatility_risk(close)
         assert 0 <= score <= 100
 
+    def test_custom_thresholds(self):
+        """自定义 thresholds 应生效。"""
+        close = _make_close_series([100 + i * 0.01 for i in range(50)])
+        th = VolatilityThresholds(low_pct=0.0, high_pct=10.0, insufficient_data_score=10.0)
+        score, _ = calc_volatility_risk(close, thresholds=th)
+        # 低波动，但 high_pct=10，所以分数很低
+        assert score < 10
+
 
 # ═══════════════════════════════════════════════════════
 # Drawdown 风险测试
@@ -112,6 +124,19 @@ class TestDrawdownRisk:
         score, _ = calc_drawdown_risk(high, close)
         assert 0 <= score <= 100
 
+    def test_custom_thresholds(self):
+        """自定义 breakpoints 应生效。"""
+        close = _make_close_series([100, 95, 90, 85, 80, 75, 70] * 5)
+        high = close * 1.02
+        th = DrawdownThresholds(
+            breakpoints=[(5.0, 10.0), (15.0, 50.0), (30.0, 100.0)],
+            insufficient_data_score=5.0,
+        )
+        score, _ = calc_drawdown_risk(high, close, thresholds=th)
+        # 应该使用自定义阈值计算
+        assert isinstance(score, float)
+        assert 0 <= score <= 100
+
 
 # ═══════════════════════════════════════════════════════
 # Liquidity 风险测试
@@ -145,6 +170,17 @@ class TestLiquidityRisk:
         assert score >= 0
         assert turnover is not None
         assert isinstance(turnover, float)
+
+    def test_custom_thresholds(self):
+        """自定义 breakpoints 应生效。"""
+        volume = pd.Series([1e6] * 20, dtype=float)
+        th = LiquidityThresholds(
+            breakpoints=[(5.0, 90.0), (6.0, 70.0), (7.0, 40.0)],
+            tail_penalty_rate=3.0,
+        )
+        score, _ = calc_liquidity_risk(volume, thresholds=th)
+        assert isinstance(score, float)
+        assert 0 <= score <= 100
 
 
 # ═══════════════════════════════════════════════════════
@@ -192,6 +228,21 @@ class TestMarketRegimeRisk:
         score = calc_market_regime_risk(close)
         assert 20 <= score <= 50
 
+    def test_custom_thresholds(self):
+        """自定义阈值应生效。"""
+        close = _make_close_series([100 + i * 0.5 for i in range(60)])
+        th = MarketRegimeThresholds(
+            bear_threshold=-5.0,
+            neutral_low=-2.0,
+            neutral_high=5.0,
+            bear_score=90.0,
+            neutral_mid_score=60.0,
+            bull_base_score=10.0,
+        )
+        score = calc_market_regime_risk(close, thresholds=th)
+        assert isinstance(score, float)
+        assert 0 <= score <= 100
+
 
 # ═══════════════════════════════════════════════════════
 # RiskEngine 集成测试
@@ -226,7 +277,7 @@ class TestRiskEngine:
 
     def test_total_risk_is_weighted_sum(self):
         """总分是各维度加权求和。"""
-        engine = RiskEngine(weights=DEFAULT_WEIGHTS)
+        engine = RiskEngine()
         # 创建高波动数据
         np.random.seed(123)
         close_vals = 100 * (1 + np.random.randn(60) * 0.03)
@@ -234,25 +285,23 @@ class TestRiskEngine:
 
         risk = engine.assess("sh.600519", "2026-08-11", df)
 
+        w = engine._weights
         expected = (
-            risk.volatility_score * 0.30
-            + risk.drawdown_score * 0.25
-            + risk.liquidity_score * 0.20
-            + risk.concentration_score * 0.10
-            + risk.market_regime_score * 0.15
+            risk.volatility_score * w["volatility"]
+            + risk.drawdown_score * w["drawdown"]
+            + risk.liquidity_score * w["liquidity"]
+            + risk.concentration_score * w["concentration"]
+            + risk.market_regime_score * w["market_regime"]
         )
         assert risk.total_risk == pytest.approx(expected, abs=0.1)
 
     def test_custom_weights(self):
         """自定义权重应生效。"""
-        custom_weights = {
-            "volatility": 0.50,
-            "drawdown":   0.20,
-            "liquidity":  0.15,
-            "concentration": 0.10,
-            "market_regime": 0.05,
-        }
-        engine = RiskEngine(weights=custom_weights)
+        rc = RiskConfig(weights=RiskConfig().weights.merge(
+            volatility=0.50, drawdown=0.20, liquidity=0.15,
+            concentration=0.10, market_regime=0.05,
+        ))
+        engine = RiskEngine(risk_config=rc)
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
         risk = engine.assess("sh.600519", "2026-08-11", df)
 
@@ -306,3 +355,11 @@ class TestAssessRisk:
         risk = assess_risk("sh.600519", "2026-08-11", df)
         assert isinstance(risk, RiskScore)
         assert 0 <= risk.total_risk <= 100
+
+    def test_convenience_with_config(self):
+        """便捷函数支持传入 RiskConfig。"""
+        from trade_krono_cli.risk.risk_engine import assess_risk
+        df = _make_kline_df([100 + i * 0.1 for i in range(60)])
+        rc = RiskConfig(weights=RiskConfig().weights.merge(volatility=0.99))
+        risk = assess_risk("sh.600519", "2026-08-11", df, risk_config=rc)
+        assert isinstance(risk, RiskScore)

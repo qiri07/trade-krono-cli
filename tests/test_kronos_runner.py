@@ -313,11 +313,13 @@ class TestKronosRunnerPredictOneErrorPaths:
                 mock_prepare.return_value = (
                     MagicMock(), MagicMock(), MagicMock(), 100.0
                 )
-                runner._predictor = MagicMock()
-                runner._predictor.predict.side_effect = RuntimeError("GPU OOM")
-                result = runner.predict_one("sh.600519", "2026-08-12")
-                assert result.error is not None
-                assert "RuntimeError" in result.error
+                with patch.object(runner, "_get_adapter") as mock_get_adapter:
+                    mock_adapter = MagicMock()
+                    mock_get_adapter.return_value = mock_adapter
+                    mock_adapter.predict.side_effect = RuntimeError("GPU OOM")
+                    result = runner.predict_one("sh.600519", "2026-08-12")
+                    assert result.error is not None
+                    assert "RuntimeError" in result.error
 
 
 class TestKronosRunnerPredictBatch:
@@ -348,16 +350,17 @@ class TestKronosRunnerPredictBatch:
     def test_batch_fallback_to_single_on_failure(self):
         """批量预测失败时应降级为逐只预测。"""
         from trade_krono_cli.kronos_runner import KronosRunner
-        with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
-            runner = KronosRunner(no_cache=True, sample_count=1)
+        runner = KronosRunner(no_cache=True, sample_count=1)
 
-            with patch.object(runner, "_prepare") as mock_prepare:
-                mock_prepare.return_value = (
-                    MagicMock(), MagicMock(), MagicMock(), 100.0
-                )
-                runner._predictor = MagicMock()
-                runner._predictor.predict_batch.side_effect = RuntimeError("batch failed")
-                runner._predictor.predict.return_value = pd.DataFrame({"close": [102.0]})
+        with patch.object(runner, "_prepare") as mock_prepare:
+            mock_prepare.return_value = (
+                MagicMock(), MagicMock(), MagicMock(), 100.0
+            )
+            with patch.object(runner, "_get_adapter") as mock_get_adapter:
+                mock_adapter = MagicMock()
+                mock_get_adapter.return_value = mock_adapter
+                mock_adapter.predict_batch.side_effect = RuntimeError("batch failed")
+                mock_adapter.predict.return_value = pd.DataFrame({"close": [102.0]})
 
                 with patch.object(runner, "_pred_df_to_dict") as mock_dict:
                     mock_dict.return_value = {"close": [102.0]}

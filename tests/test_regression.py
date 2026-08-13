@@ -88,19 +88,23 @@ class TestRegressionUncertaintyBonus:
 
     def test_high_confidence_bonus(self):
         from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
-        assert _uncertainty_confidence_bonus({"confidence_score": 75.0}) == 3.0
+        from trade_krono_cli.configs.schema import ScoringConfig
+        assert _uncertainty_confidence_bonus({"confidence_score": 75.0}, ScoringConfig()) == 3.0
 
     def test_medium_confidence_bonus(self):
         from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
-        assert _uncertainty_confidence_bonus({"confidence_score": 60.0}) == 1.0
+        from trade_krono_cli.configs.schema import ScoringConfig
+        assert _uncertainty_confidence_bonus({"confidence_score": 60.0}, ScoringConfig()) == 1.0
 
     def test_low_confidence_penalty(self):
         from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
-        assert _uncertainty_confidence_bonus({"confidence_score": 30.0}) == -2.0
+        from trade_krono_cli.configs.schema import ScoringConfig
+        assert _uncertainty_confidence_bonus({"confidence_score": 30.0}, ScoringConfig()) == -2.0
 
     def test_none_returns_zero(self):
         from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
-        assert _uncertainty_confidence_bonus(None) == 0.0
+        from trade_krono_cli.configs.schema import ScoringConfig
+        assert _uncertainty_confidence_bonus(None, ScoringConfig()) == 0.0
 
 
 class TestRegressionPipelineConfig:

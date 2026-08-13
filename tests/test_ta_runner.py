@@ -195,8 +195,8 @@ class TestTradingAgentsRunnerCacheHit:
         runner._cache = MagicMock()
         runner._cache.get_ta.return_value = None
 
-        with patch.object(runner, "_get_graph") as mock_graph:
-            mock_graph.side_effect = RuntimeError("graph init failed")
+        with patch.object(runner, "_get_adapter") as mock_adapter:
+            mock_adapter.side_effect = RuntimeError("adapter init failed")
             result = runner.analyze_one("sh.600519", "2026-08-12")
             assert result.error is not None
             assert "RuntimeError" in result.error
@@ -209,8 +209,8 @@ class TestTradingAgentsRunnerAnalyzeError:
         """分析过程失败时应记录 error。"""
         from trade_krono_cli.ta_runner import TradingAgentsRunner
         runner = _make_ta_runner()
-        with patch.object(runner, "_get_graph") as mock_graph:
-            mock_graph.side_effect = RuntimeError("graph init failed")
+        with patch.object(runner, "_get_adapter") as mock_adapter:
+            mock_adapter.side_effect = RuntimeError("adapter init failed")
             result = runner.analyze_one("sh.600519", "2026-08-12")
             assert result.error is not None
             assert result.ticker == "sh.600519"
@@ -294,26 +294,26 @@ class TestTradingAgentsRunnerValidateProvider:
             assert runner.llm_provider == "openai"
 
 
-class TestTradingAgentsRunnerGetGraph:
-    """_get_graph 懒加载测试。"""
+class TestTradingAgentsRunnerGetAdapter:
+    """_get_adapter 懒加载测试。"""
 
-    def test_get_graph_lazy_load(self):
+    def test_get_adapter_lazy_load(self):
         runner = _make_ta_runner()
-        assert runner._graph is None
-        with patch("trade_krono_cli.ta_runner._ensure_tradingagents_import"):
-            with patch("cli_anything.tradingagents.core.analysis.run_analysis", return_value={}) as mock_run:
-                with patch("cli_anything.tradingagents.core.analysis.build_config", return_value={}) as mock_build:
-                    graphs = runner._get_graph()
-                    assert runner._graph is not None
-                    assert "run_analysis" in graphs
-                    assert "build_config" in graphs
+        assert runner._adapter is None
+        with patch("trade_krono_cli.ta_runner.TradingAgentsAdapterImpl") as MockAdapter:
+            mock_adapter = MagicMock()
+            MockAdapter.return_value = mock_adapter
+            adapter = runner._get_adapter()
+            assert runner._adapter is mock_adapter
+            MockAdapter.assert_called_once()
+            mock_adapter.load.assert_called_once()
 
-    def test_get_graph_already_loaded_returns_cached(self):
+    def test_get_adapter_already_loaded_returns_cached(self):
         runner = _make_ta_runner()
-        mock_graph = {"run_analysis": lambda *a, **k: {}, "build_config": lambda *a, **k: {}}
-        runner._graph = mock_graph
-        result = runner._get_graph()
-        assert result is mock_graph
+        mock_adapter = MagicMock()
+        runner._adapter = mock_adapter
+        result = runner._get_adapter()
+        assert result is mock_adapter
 
 
 class TestTradingAgentsRunnerAnalyzeBatch:

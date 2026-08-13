@@ -28,20 +28,24 @@ from trade_krono_cli.security import (
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.ta_decision import InvestmentDecision, Signal, DecisionAdapter
 from trade_krono_cli.errors import ModelLoadError, TradeKronoError
+from trade_krono_cli.adapters import TradingAgentsAdapterImpl
 
-# Truncation lengths for summary output
+
+# 摘要截断长度
 SUMMARY_TRUNCATE_LEN = 500
 
 # 懒加载：首次调用时才 import，避免无密钥时直接报错
 _TRADINGAGENTS_IMPORTED = False
 
 
-def _ensure_tradingagents_import(settings: Settings) -> None:
-    """将 TradingAgents-astock/agent-harness 加入 sys.path 并导入核心模块。"""
+def _ensure_tradingagents_import(settings) -> None:
+    """将 TradingAgents-astock/agent-harness 加入 sys.path 并导入核心模块。
+    （已迁移至 adapters 层；此函数保留供旧测试兼容。）
+    """
     global _TRADINGAGENTS_IMPORTED
     if _TRADINGAGENTS_IMPORTED:
         return
-    # 优先注入 agent-harness（包含 cli_anything.tradingagents）
+    from trade_krono_cli.security import ensure_import_path
     harness_root = settings.tradingagents_root / "agent-harness"
     ta_root = settings.tradingagents_root
     ensure_import_path(harness_root, ta_root)
@@ -169,7 +173,7 @@ class TradingAgentsRunner:
         if safe_mode:
             self._validate_provider()
 
-        self._graph = None
+        self._adapter = None
         logger.info(
             f"🤖 TradingAgentsRunner 就绪 | provider={self.llm_provider} "
             f"deep={self.deep_think_llm}"
@@ -216,29 +220,18 @@ class TradingAgentsRunner:
             cfg["backend_url"] = self.backend_url
         return cfg
 
-    def _get_graph(self):
-        """懒加载 TradingAgentsGraph。"""
-        if self._graph is not None:
-            return self._graph
-        _ensure_tradingagents_import(self._settings)
+    def _get_adapter(self):
+        """懒加载 TradingAgentsAdapter。"""
+        if self._adapter is not None:
+            return self._adapter
+        self._adapter = TradingAgentsAdapterImpl()
+        self._adapter.load(self._settings)
+        return self._adapter
 
-        try:
-            from cli_anything.tradingagents.core.analysis import (
-                run_analysis,
-                build_config,
-            )
-        except ImportError as e:
-            raise ModelLoadError(
-                f"无法导入 TradingAgents 核心模块：{e}。"
-                f"请确认已安装 tradingagents（pip install -e {self._settings.tradingagents_root}）"
-            ) from e
-
-        self._graph = {
-            "run_analysis": run_analysis,
-            "build_config": build_config,
-        }
-        logger.info("✅ TradingAgentsGraph 核心模块加载完成")
-        return self._graph
+    @property
+    def adapter(self):
+        """暴露适配器实例，供测试注入或外部访问。"""
+        return self._get_adapter()
 
     def _extract_reports(self, state: dict) -> tuple[dict[str, str], dict[str, str]]:
         """
@@ -315,11 +308,8 @@ class TradingAgentsRunner:
                 return result
 
         try:
-            graphs = self._get_graph()
-            run_analysis = graphs["run_analysis"]
-            build_config = graphs["build_config"]
-
-            config = build_config(
+            adapter = self._get_adapter()
+            config = adapter.build_config(
                 ticker=ticker,
                 trade_date=date,
                 provider=self.llm_provider,
@@ -332,9 +322,16 @@ class TradingAgentsRunner:
             )
 
             logger.info(f"🔍 TA 分析 {ticker} @ {date}")
-            analysis_result = run_analysis(
-                ticker, date, config,
-                analysts=["market", "social", "news", "fundamentals", "policy", "hot_money", "lockup"],
+            analysis_result = adapter.run_analysis(
+                ticker, {
+                    **config,
+                    "extra_kwargs": {
+                        "analysts": [
+                            "market", "social", "news",
+                            "fundamentals", "policy", "hot_money", "lockup",
+                        ],
+                    },
+                }
             )
 
             if not analysis_result.get("success"):

@@ -48,12 +48,10 @@ def test_check_kronos_import_structure():
 
 def test_check_kronos_import_missing():
     """不可导入时应返回失败。"""
-    import sys
-    # 清除 cli_anything 相关缓存
-    mods_to_remove = {k: None for k in list(sys.modules) if k.startswith("cli_anything")}
-    for k in mods_to_remove:
-        sys.modules.pop(k, None)
-    with patch("builtins.__import__", side_effect=ImportError("no mod")):
+    with patch(
+        "trade_krono_cli.adapters.KronosAdapterImpl",
+        side_effect=ImportError("no module"),
+    ):
         result = check_kronos_import()
         assert result.ok is False
 

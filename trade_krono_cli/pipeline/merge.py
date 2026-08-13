@@ -14,6 +14,7 @@ from typing import Callable, Optional
 import pandas as pd
 from loguru import logger
 
+from trade_krono_cli.configs.schema import ScoringConfig, RiskConfig
 from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.risk.risk_engine import RiskEngine
@@ -28,39 +29,17 @@ REASONING_TRUNCATE_LEN = 500
 
 
 # ═══════════════════════════════════════════════════════
-# 打分常量
-# ═══════════════════════════════════════════════════════
-
-_RISK_PENALTY_WEIGHT = 0.15          # 风险惩罚在总分中的最大占比（15%）
-
-_TA_CONFIDENCE_WEIGHT = 0.4          # TA 置信度权重（40%）
-_CHANGE_PCT_WEIGHT = 0.3             # 预期涨跌幅权重（30%）
-_DIRECTION_BASE_WEIGHT = 0.1         # 方向加成基础权重（10%）
-_UNCERTAINTY_BASE_WEIGHT = 0.1       # 不确定性加成基础权重（10%）
-
-_DIRECTION_BONUS_POINT = 10          # 方向加分乘数：0.1 × 10 = ±1 分
-
-_CHANGE_PCT_OFFSET = 50              # 将 -50%~+50% 线性映射到 0~100 分的偏移量
-
-_UNCERTAINTY_HIGH_THRESHOLD = 70     # 高置信度下限（≥70 → +3）
-_UNCERTAINTY_MED_THRESHOLD = 50      # 中置信度下限（≥50 → +1）
-_UNCERTAINTY_HIGH_BONUS = 3.0        # 高置信度加分
-_UNCERTAINTY_MED_BONUS = 1.0         # 中置信度加分
-_UNCERTAINTY_LOW_PENALTY = -2.0      # 低置信度扣分
-
-
-# ═══════════════════════════════════════════════════════
 # 不确定性置信度映射
 # ═══════════════════════════════════════════════════════
 
-def _uncertainty_confidence_bonus(pu: dict) -> float:
+def _uncertainty_confidence_bonus(pu: Optional[dict], scoring: ScoringConfig) -> float:
     """
     基于预测不确定性的置信度加分/减分。
 
     映射规则：
-      confidence_score >= _UNCERTAINTY_HIGH_THRESHOLD → 高置信  +_UNCERTAINTY_HIGH_BONUS 分
-      _UNCERTAINTY_MED_THRESHOLD <= confidence_score < _UNCERTAINTY_HIGH_THRESHOLD → 中置信  +_UNCERTAINTY_MED_BONUS 分
-      confidence_score < _UNCERTAINTY_MED_THRESHOLD   → 低置信  +_UNCERTAINTY_LOW_PENALTY 分
+      confidence_score >= scoring.uncertainty_high_threshold → 高置信  +scoring.uncertainty_high_bonus 分
+      scoring.uncertainty_med_threshold <= cs < high_threshold → 中置信  +scoring.uncertainty_med_bonus 分
+      confidence_score < scoring.uncertainty_med_threshold   → 低置信  +scoring.uncertainty_low_penalty 分
       无不确定性数据          → 0 分
     """
     if not pu:
@@ -68,19 +47,19 @@ def _uncertainty_confidence_bonus(pu: dict) -> float:
     cs = pu.get("confidence_score")
     if cs is None:
         return 0.0
-    if cs >= _UNCERTAINTY_HIGH_THRESHOLD:
-        return _UNCERTAINTY_HIGH_BONUS
-    elif cs >= _UNCERTAINTY_MED_THRESHOLD:
-        return _UNCERTAINTY_MED_BONUS
+    if cs >= scoring.uncertainty_high_threshold:
+        return scoring.uncertainty_high_bonus
+    elif cs >= scoring.uncertainty_med_threshold:
+        return scoring.uncertainty_med_bonus
     else:
-        return _UNCERTAINTY_LOW_PENALTY
+        return scoring.uncertainty_low_penalty
 
 
 # ═══════════════════════════════════════════════════════
 # 综合打分
 # ═══════════════════════════════════════════════════════
 
-def default_scorer(merged: dict) -> float:
+def default_scorer(merged: dict, scoring: Optional[ScoringConfig] = None) -> float:
     """
     综合打分（满分 100）。
 
@@ -105,34 +84,36 @@ def default_scorer(merged: dict) -> float:
 
     返回 0~100 之间的浮点数，保留两位小数。
     """
+    s = scoring or ScoringConfig()
+
     score = 0.0
 
     # TA 部分（0-40）
     ta_conf = merged.get("ta_confidence") or 0
-    score += _TA_CONFIDENCE_WEIGHT * max(0, min(100, ta_conf))
+    score += s.ta_confidence_weight * max(0, min(100, ta_conf))
 
-    # 预期涨跌幅（0-30，-50%~+50% → 0~100 → 0~30）
+    # 预期涨跌幅（0-30，-offset~+offset → 0~100 → 0-30）
     # 优先使用扣除成本后的净收益
     chg = merged.get("kronos_change_pct") or merged.get("kronos_change_pct_gross") or 0
-    score += _CHANGE_PCT_WEIGHT * max(0, min(100, chg + _CHANGE_PCT_OFFSET))
+    score += s.change_pct_weight * max(0, min(100, chg + s.change_pct_offset))
 
-    # 方向加成（-1 ~ +1）
+    # 方向加成（-base_weight*bonus ~ +base_weight*bonus）
     direction = merged.get("kronos_direction")
     if direction == "UP":
-        score += _DIRECTION_BASE_WEIGHT * _DIRECTION_BONUS_POINT   # +1
+        score += s.direction_base_weight * s.direction_bonus_point   # +1
     elif direction == "DOWN":
-        score += _DIRECTION_BASE_WEIGHT * (-_DIRECTION_BONUS_POINT)  # -1
+        score += s.direction_base_weight * (-s.direction_bonus_point)  # -1
 
-    # 预测不确定性加成（0-10）+ 置信度微调
+    # 预测不确定性加成（0-base）+ 置信度微调
     pu = merged.get("kronos_prediction_uncertainty")
     if pu:
         cs = pu.get("confidence_score") or 0
-        score += _UNCERTAINTY_BASE_WEIGHT * max(0, min(100, cs))
-        score += _uncertainty_confidence_bonus(pu)
+        score += s.uncertainty_base_weight * max(0, min(100, cs))
+        score += _uncertainty_confidence_bonus(pu, s)
 
-    # 风险惩罚（0~15，高风险 → 扣分多）
+    # 风险惩罚（0~weight*100，高风险 → 扣分多）
     total_risk = merged.get("risk_score_total", 0) or 0
-    risk_penalty = (total_risk / 100.0) * _RISK_PENALTY_WEIGHT * 100
+    risk_penalty = (total_risk / 100.0) * s.risk_penalty_weight * 100
     score -= risk_penalty
 
     return round(max(0, min(100, score)), 2)
@@ -183,6 +164,7 @@ def run_risk_assessment(
     kline_df: pd.DataFrame,
     quote_data: Optional[dict] = None,
     ta_result: Optional[StockAnalysisResult] = None,
+    risk_config: Optional[RiskConfig] = None,
 ) -> tuple[float, dict]:
     """
     对单只股票运行风险引擎，返回 (total_risk, risk_scores_dict)。
@@ -194,6 +176,7 @@ def run_risk_assessment(
     kline_df    : K 线 DataFrame
     quote_data  : 实时估值数据（可选）
     ta_result   : TA 分析结果（可选）
+    risk_config : 风险配置（可选，默认使用 RiskConfig 默认值）
 
     Returns
     -------
@@ -201,7 +184,7 @@ def run_risk_assessment(
       total_risk : 综合风险分 0-100
       risk_scores : {volatility, drawdown, liquidity, concentration, market_regime}
     """
-    engine = RiskEngine()
+    engine = RiskEngine(risk_config=risk_config)
     risk = engine.assess(ticker, date, kline_df, quote_data, ta_result)
     scores = {
         "volatility": risk.volatility_score,
@@ -225,6 +208,8 @@ def merge_results(
     quote_data: Optional[dict[str, dict]] = None,
     constraints_config: Optional[ConstraintConfig] = None,
     t1_tracker: Optional[T1Tracker] = None,
+    scoring_config: Optional[ScoringConfig] = None,
+    risk_config: Optional[RiskConfig] = None,
 ) -> list[dict]:
     """
     将 TA 分析结果和 Kronos 预测结果合并。
@@ -238,13 +223,15 @@ def merge_results(
     quote_data     : {ticker: quote_dict} 字典（可选，用于流动性风险计算）
     constraints_config : A 股交易约束配置（可选，默认启用全部约束）
     t1_tracker     : T+1 买入跟踪器（可选，跨股票共享）
+    scoring_config : 综合打分配置（可选，默认使用 ScoringConfig 默认值）
+    risk_config    : 风险引擎配置（可选，默认使用 RiskConfig 默认值）
 
     Returns
     -------
     排序后的综合结果列表（按 composite_score 降序）
     """
     if scorer is None:
-        scorer = default_scorer
+        scorer = lambda m: default_scorer(m, scoring=scoring_config)
 
     if constraints_config is None:
         constraints_config = ConstraintConfig()
@@ -312,6 +299,7 @@ def merge_results(
                     kline_df=kline_map[tk],
                     quote_data=quote_map.get(tk),
                     ta_result=ta,
+                    risk_config=risk_config,
                 )
                 item["risk_score_total"] = total_risk
                 item["risk_scores"] = risk_scores

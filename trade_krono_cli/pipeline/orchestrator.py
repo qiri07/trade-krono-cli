@@ -229,6 +229,8 @@ class QuantPipeline:
             kline_data=kline_data,
             constraints_config=self.constraints_config,
             t1_tracker=t1_tracker,
+            scoring_config=self._config.scoring,
+            risk_config=self._config.risk,
         )
 
         # ── 落盘 ───────────────────────────────────────────

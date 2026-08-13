@@ -21,6 +21,8 @@
 - [快速开始](#快速开始)
 - [安装](#安装)
 - [配置说明](#配置说明)
+- [流水线配置（YAML/JSON）](#流水线配置yamljson)
+- [参数优先级](#参数优先级)
 - [使用指南](#使用指南)
 - [输出说明](#输出说明)
 - [架构设计](#架构设计)
@@ -219,6 +221,114 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock 请求间隔（秒）
 export LLM_PROVIDER=openai
 export KRONOS_DEVICE=cuda:0
 trade-krono-cli run --tickers "600519" --date 2026-08-11
+```
+
+## 流水线配置（YAML/JSON）
+
+除 `.env` / 环境变量外，流水线支持通过 `--config` 参数加载 YAML 或 JSON 配置文件：
+
+```bash
+.venv/bin/python -m trade_krono_cli.cli run --tickers "600519" --date 2026-08-11 --config pipeline_config.yaml
+```
+
+### 完整 Schema 参考
+
+```yaml
+# ── 综合打分权重 ───────────────────────────────────────────────────────────
+scoring:
+  ta_confidence_weight:        0.40   # TA 置信度权重
+  change_pct_weight:           0.30   # 预期涨跌幅权重
+  direction_base_weight:       0.10   # 方向加成基础权重
+  uncertainty_base_weight:     0.10   # 预测不确定性基础权重
+  risk_penalty_weight:         0.15   # 风险惩罚权重（最高扣 15 分）
+  direction_bonus_point:       10.0   # UP=+10·0.1=+1  DOWN=-10·0.1=-1
+  change_pct_offset:           50.0   # 将 [-50%, +50%] 映射到 [0, 100]
+  uncertainty_high_threshold:  70.0   # confidence ≥ 70 → +3 加分
+  uncertainty_med_threshold:   50.0   # 50 ≤ confidence < 70 → +1 加分
+  uncertainty_high_bonus:      3.0
+  uncertainty_med_bonus:       1.0
+  uncertainty_low_penalty:    -2.0   # confidence < 50 → -2 扣分
+
+# ── 风险引擎 ──────────────────────────────────────────────────────────────
+risk:
+  weights:
+    volatility:     0.30   # 20日年化波动率 → 风险分
+    drawdown:       0.25   # 60日最大回撤 → 风险分
+    liquidity:      0.20   # 日均成交量/换手率 → 风险分
+    concentration:  0.10   # 占位（预留组合权重接口）
+    market_regime:  0.15   # 20日+60日动量 → 风险分
+
+  volatility:
+    low_pct:                    0.0   # 0% 波动率 → 0 风险分
+    high_pct:                  60.0   # 60% 波动率 → 100 风险分
+    insufficient_data_score:    25.0   # 数据不足时的默认分
+    insufficient_data_min_rows: 30
+
+  drawdown:
+    breakpoints: [[5, 20], [20, 60], [40, 100]]  # (绝对回撤%, 风险分)
+    insufficient_data_score:           20.0
+    insufficient_data_min_rows:        30
+
+  liquidity:
+    breakpoints: [[5, 80], [6, 60], [7, 40], [8, 20]]  # log1p(成交量), 风险分
+    tail_penalty_rate:     5.0   # log_vol > 最高阈值后每增 1 扣减分数
+    insufficient_data_score:           30.0
+    insufficient_data_min_rows:        10
+
+  market_regime:
+    bear_threshold:    -10.0   # 动量 ≤ -10% → 80 风险分
+    neutral_low:        0.0   # -10% < 动量 ≤ 0% → 50-80 风险分
+    neutral_high:      10.0   # 0% < 动量 ≤ 10% → 0-50 风险分
+    bear_score:        80.0
+    neutral_mid_score: 50.0
+    bull_base_score:   20.0
+    insufficient_data_score:           30.0
+    insufficient_data_min_rows:        30
+
+  enable_cost_model:   true   # 扣除交易成本后再计算预期收益
+  commission_bps:      3.0
+  slippage_bps:        5.0
+  stamp_duty_bps:      1.0
+
+# ── 其他流水线设置 ──────────────────────────────────────────────────────────
+sample_count:      5
+pred_len:          30
+lookback:          400
+model_name:        kronos-base
+device:            cpu
+T:                 1.0
+top_p:             0.9
+min_confidence:    55.0
+allowed_signals:   [BUY, HOLD]
+output_dir:        outputs
+```
+
+## 参数优先级
+
+配置值遵循以下优先级（高 → 低）：
+
+```
+1. CLI 命令行参数（如 --pred-len 60）
+2. 环境变量 / .env 文件
+3. PipelineConfig YAML/JSON 文件（通过 --config 指定）
+4. Schema 默认值（configs/schema.py 中硬编码）
+```
+
+示例 — 覆盖波动率阈值：
+
+```yaml
+# pipeline_config.yaml
+risk:
+  volatility:
+    high_pct: 50.0   # 50% 波动率 = 100 风险分（原默认 60%）
+```
+
+```bash
+# CLI 可进一步覆盖：
+.venv/bin/python -m trade_krono_cli.cli run \
+  --tickers "600519" --date 2026-08-11 \
+  --config pipeline_config.yaml \
+  --pred-len 60          # 此时环境变量 KRONOS_PRED_LEN 被忽略
 ```
 
 ## 使用指南
@@ -477,7 +587,7 @@ trade-krono-cli
 │   └── risk/               # 风险引擎（波动率/回撤/流动性/集中度/市场环境）
 ├── scripts/
 │   └── install.sh          # 一键安装脚本
-├── tests/                  # 测试套件（459 项全部通过，87% 覆盖，mypy 零错误）
+├── tests/                  # 测试套件（468 项全部通过，87% 覆盖，mypy 零错误）
 └── external/               # 外部项目配置（repos.yaml + repo.lock）
 ```
 
@@ -872,7 +982,7 @@ trade-krono-cli 仅通过 `sys.path` 注入调用 `cli_anything.*` 路径；Trad
 pytest tests/ -v
 ```
 
-测试结果：**459/459 全部通过** · **87% 整体覆盖** · **mypy：38 个文件零错误**
+测试结果：**468/468 全部通过** · **87% 整体覆盖** · **mypy 零错误**
 
 | 文件 | 覆盖模块 |
 |------|----------|
@@ -892,10 +1002,11 @@ pytest tests/ -v
 | `test_ta_runner.py` | BuildConfig、provider 校验、图懒加载、批量分析、raw 报告读写 |
 | `test_batch_runner.py` | 异步信号量控制批量预测 |
 | `integration/test_pipeline_integration.py` | 端到端流水线集成测试 |
-| `test_config_validator.py` | 配置验证（15 项检查：类型、范围、必填项） |
+| `test_config_validator.py` | 配置校验（15项检查：类型、范围、必填字段）+ 新配置 schema 默认值验证 |
 | `test_health.py` | 健康检查（LLM API、Kronos 导入、数据库、磁盘空间） |
-| `test_merge_edge_cases.py` | Merge 边界条件（约束、T+1、混合信号） |
+| `test_merge_edge_cases.py` | 合并边界条件（约束、T+1、混合信号） |
 | `test_merge_uncertainty.py` | 不确定性置信度映射回归测试 |
+| `test_pipeline_config.py` | PipelineConfig 默认值、覆盖、JSON/YAML 往返、scoring & risk schema 校验 |
 
 ## TA 决策提取逻辑
 
@@ -1036,7 +1147,21 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 
 ## 更新日志
 
-### v0.1.2 — 2026-08-12
+### v0.1.3 — 2026-08-13
+
+**配置集中校验与分层管理：**
+
+- 新增 `configs/schema.py` — 所有打分权重、风险维度权重、分段映射阈值（波动率 0%→0 / 60%→100、回撤断点、流动性 log 阈值、市场环境动量阈值）统一在此定义，均为不可变 dataclass，支持 `validate()` 和 `merge()`
+- `RiskEngine` 改为接受 `RiskConfig`；所有 `calc_*_risk()` 函数增加可选 `thresholds` 参数
+- `default_scorer()` / `merge_results()` 增加可选 `ScoringConfig` / `RiskConfig` 参数
+- `PipelineConfig` 携带 `scoring: ScoringConfig` 和 `risk: RiskConfig` 字段；`from_dict()` 正确还原嵌套 dataclass
+- `cli_commands._load_env()` 在启动时调用 `run_validation()` — 致命错误直接退出，警告降级输出
+- `config_validator.validate_settings()` 返回 `(errors, warnings)` 元组
+- **优先级文档化**：CLI 参数 > 环境变量/.env > PipelineConfig YAML > Schema 默认值
+- YAML 序列化修复：改用 `yaml.safe_dump`（不再产生 `!!python/tuple` 标签）；`to_dict()` 递归转换 tuple→list
+- 测试数量：**468**（从 459 增长）；新增所有风险模块自定义阈值测试、`test_from_dict_restores_dataclasses`、`test_merge_works_with_loaded_config`
+
+---
 
 **流水线收敛重构：**
 - 删除冗余的根目录 `merge.py`、`report.py`、`pipeline.py` 及 `pipeline/scorer.py`
@@ -1060,7 +1185,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 - `models/` — kronos_session（懒加载、设备选择）、ta_session（供应商/辩论状态）
 - `batch/` — batch_runner（异步信号量控制批量预测）
 
-**新增测试文件：** `test_cli.py`、`test_kronos_runner.py`、`test_ta_runner.py`、`test_prediction_eval.py`、`test_batch_runner.py`、`test_config_validator.py`、`test_health.py`、`test_merge_edge_cases.py`、`test_merge_uncertainty.py`、`integration/test_pipeline_integration.py`
+**新增测试文件：** `test_cli.py`、`test_kronos_runner.py`、`test_ta_runner.py`、`test_prediction_eval.py`、`test_batch_runner.py`、`test_config_validator.py`、`test_health.py`、`test_merge_edge_cases.py`、`test_merge_uncertainty.py`、`integration/test_pipeline_integration.py`、`test_pipeline_config.py`
 
 ---
 

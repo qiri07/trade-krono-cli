@@ -3,6 +3,12 @@ PipelineConfig — 流水线集中配置数据类。
 
 将所有散落的参数（约束、Kronos、风险、输出路径、日志级别）汇总到单一配置对象，
 支持从 YAML/JSON 文件加载，也支持代码直接构造。
+
+参数优先级（高 → 低）：
+  1. CLI 命令行参数（typer.Option）
+  2. 环境变量 / .env
+  3. PipelineConfig（YAML/JSON 文件）
+  4. 各模块默认值
 """
 from __future__ import annotations
 
@@ -11,6 +17,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from trade_krono_cli.configs.schema import (
+    ConstraintConfig as SchemaConstraintConfig,
+    RiskConfig as SchemaRiskConfig,
+    ScoringConfig as SchemaScoringConfig,
+)
 from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.config import get_settings, Settings
 
@@ -30,7 +41,7 @@ class PipelineConfig:
         # 部分覆盖
         cfg = PipelineConfig.default().override(
             sample_count=10,
-            risk_threshold=20.0,
+            min_confidence=40.0,
         )
     """
 
@@ -54,8 +65,11 @@ class PipelineConfig:
     max_debate_rounds: int = 1
     output_language: str = "Chinese"
 
-    # ── 风险引擎 ────────────────────────────────────────────
-    risk_threshold: float = 30.0
+    # ── 综合打分配置 ────────────────────────────────────────
+    scoring: SchemaScoringConfig = field(default_factory=SchemaScoringConfig)
+
+    # ── 风险引擎配置 ────────────────────────────────────────
+    risk: SchemaRiskConfig = field(default_factory=SchemaRiskConfig)
 
     # ── 过滤 ────────────────────────────────────────────────
     min_confidence: float = 55.0
@@ -92,7 +106,8 @@ class PipelineConfig:
             quick_think_llm=s.quick_think_llm,
             max_debate_rounds=s.max_debate_rounds,
             output_language=s.output_language,
-            risk_threshold=30.0,
+            scoring=SchemaScoringConfig(),
+            risk=SchemaRiskConfig(),
             min_confidence=s.default_min_confidence,
             allowed_signals=tuple(s.default_allowed_signals),
             output_dir=s.results_dir.parent,
@@ -116,7 +131,23 @@ class PipelineConfig:
         # tuple → list（YAML/JSON 序列化需要）
         if isinstance(d.get("allowed_signals"), tuple):
             d["allowed_signals"] = list(d["allowed_signals"])
+        # 递归转换嵌套 dict 中的 tuple（如 breakpoints）
+        self._convert_tuples_to_lists(d)
         return d
+
+    @staticmethod
+    def _convert_tuples_to_lists(obj):
+        """递归将 dict/list 中的 tuple 转为 list，使 YAML/JSON 可序列化。"""
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if isinstance(v, tuple):
+                    obj[k] = list(v)
+                elif isinstance(v, (dict, list)):
+                    PipelineConfig._convert_tuples_to_lists(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                if isinstance(item, (dict, list)):
+                    PipelineConfig._convert_tuples_to_lists(item)
 
     @classmethod
     def from_dict(cls, data: dict) -> "PipelineConfig":
@@ -126,6 +157,10 @@ class PipelineConfig:
             copy["output_dir"] = Path(copy["output_dir"])
         if "constraints" in copy and isinstance(copy["constraints"], dict):
             copy["constraints"] = ConstraintConfig(**copy["constraints"])
+        if "scoring" in copy and isinstance(copy["scoring"], dict):
+            copy["scoring"] = SchemaScoringConfig(**copy["scoring"])
+        if "risk" in copy and isinstance(copy["risk"], dict):
+            copy["risk"] = SchemaRiskConfig(**copy["risk"])
         return cls(**copy)
 
     @classmethod
@@ -178,8 +213,9 @@ class PipelineConfig:
         data = self.to_dict()
         if p.suffix.lower() in (".yaml", ".yml"):
             import yaml  # type: ignore
+            # 使用 safe_dump 避免生成 Python 专有标签（如 !!python/tuple）
             with open(p, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+                yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False)
         else:
             with open(p, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)

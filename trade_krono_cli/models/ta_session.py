@@ -29,7 +29,7 @@ class TASession:
     @property
     def is_loaded(self) -> bool:
         """graph 是否已初始化。"""
-        return self._runner._graph is not None
+        return self._runner._adapter is not None
 
     @property
     def runner(self) -> TradingAgentsRunner:
@@ -40,8 +40,8 @@ class TASession:
         """确保 graph 已初始化。"""
         if not self.is_loaded:
             logger.info("🤖 TASession: 首次初始化 TradingAgents graph...")
-            # 调用 _get_graph() 触发懒加载
-            self._runner._get_graph()
+            # 调用 _get_adapter() 触发懒加载
+            self._runner._get_adapter()
             self._initialized = True
             logger.info("✅ TASession: graph 已就绪")
 

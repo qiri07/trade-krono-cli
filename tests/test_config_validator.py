@@ -46,8 +46,7 @@ def _make_settings(**overrides) -> SimpleNamespace:
 def test_default_settings_pass():
     """使用默认值构造的 Settings 不应产生错误。"""
     s = _make_settings()
-    messages = validate_settings(s)
-    errors = [m for m in messages if m.startswith("❌")]
+    errors, warnings = validate_settings(s)
     assert errors == [], f" Unexpected errors: {errors}"
 
 
@@ -73,8 +72,7 @@ def test_default_settings_pass():
 def test_validation_errors(field, value, error_sub):
     """各非法字段应产生对应的错误消息。"""
     s = _make_settings(**{field: value})
-    messages = validate_settings(s)
-    errors = [m for m in messages if m.startswith("❌")]
+    errors, warnings = validate_settings(s)
     assert any(error_sub in e for e in errors), (
         f"Expected error containing '{error_sub}', got: {errors}"
     )
@@ -88,12 +86,9 @@ def test_warning_for_missing_external_dir(tmp_path):
         tradingagents_root=tmp_path / "nonexistent_ta",
         kronos_root=tmp_path / "nonexistent_kronos",
     )
-    messages = validate_settings(s)
-    warnings = [m for m in messages if m.startswith("⚠️")]
+    errors, warnings = validate_settings(s)
     assert any("TradingAgents" in w for w in warnings)
     assert any("Kronos" in w for w in warnings)
-    # 不应有错误
-    errors = [m for m in messages if m.startswith("❌")]
     assert errors == []
 
 
@@ -101,10 +96,8 @@ def test_warning_for_missing_api_key(monkeypatch):
     """未设置 API Key 时产生警告（非错误）。"""
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     s = _make_settings(llm_provider="deepseek")
-    messages = validate_settings(s)
-    warnings = [m for m in messages if m.startswith("⚠️")]
+    errors, warnings = validate_settings(s)
     assert any("DEEPSEEK_API_KEY" in w for w in warnings)
-    errors = [m for m in messages if m.startswith("❌")]
     assert errors == []
 
 
@@ -112,21 +105,20 @@ def test_warning_for_missing_api_key(monkeypatch):
 
 def test_print_validation_report_no_errors():
     """无错误时应返回 True。"""
-    assert print_validation_report([]) is True
-    assert print_validation_report(["⚠️  some warning"]) is True
+    assert print_validation_report([], []) is True
+    assert print_validation_report([], ["some warning"]) is True
 
 
 def test_print_validation_report_with_errors(capsys):
     """含错误时应返回 False 并打印消息。"""
-    msgs = ["❌ config error", "⚠️  some warning"]
-    assert print_validation_report(msgs) is False
+    assert print_validation_report(["config error"], ["some warning"]) is False
     captured = capsys.readouterr()
     assert "❌ config error" in captured.out
+    assert "⚠️  some warning" in captured.out
 
 
 def test_print_validation_report_warnings_only(capsys):
     """仅警告时也应打印警告消息并返回 True。"""
-    msgs = ["⚠️  missing directory"]
-    assert print_validation_report(msgs) is True
+    assert print_validation_report([], ["missing directory"]) is True
     captured = capsys.readouterr()
     assert "missing directory" in captured.out

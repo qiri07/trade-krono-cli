@@ -126,6 +126,20 @@ class Settings:
                 available.append(key.replace("_API_KEY", "").lower())
         return available
 
+    # ── 配置校验 ──────────────────────────────────────────
+    def validate(self) -> tuple[list[str], list[str]]:
+        """
+        启动时统一校验所有必填配置、路径合法性、参数范围。
+
+        Returns
+        -------
+        (errors, warnings)
+          errors   — 致命问题，程序应终止
+          warnings — 非致命问题，记录但不阻塞运行
+        """
+        from trade_krono_cli.config_validator import validate_settings
+        return validate_settings(self)
+
 
 # 模块级单例
 _settings: Optional[Settings] = None
@@ -149,3 +163,11 @@ def clear_settings() -> None:
     """清除全局单例，使下一次 get_settings() 重新初始化。用于测试隔离。"""
     global _settings
     _settings = None
+
+
+def run_validation() -> tuple[list[str], list[str]]:
+    """
+    执行全量配置校验并返回 (errors, warnings)。
+    此函数可在 CLI 入口调用，在日志初始化前暴露配置问题。
+    """
+    return get_settings().validate()

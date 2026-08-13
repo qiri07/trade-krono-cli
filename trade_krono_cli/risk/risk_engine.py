@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from trade_krono_cli.configs.schema import RiskConfig
 from trade_krono_cli.risk.volatility import calc_volatility_risk
 from trade_krono_cli.risk.drawdown import calc_drawdown_risk
 from trade_krono_cli.risk.liquidity import calc_liquidity_risk
@@ -70,16 +71,6 @@ class RiskScore:
         return "\n".join(lines)
 
 
-# 默认权重（各维度占总风险的权重）
-DEFAULT_WEIGHTS = {
-    "volatility":    0.30,
-    "drawdown":      0.25,
-    "liquidity":     0.20,
-    "concentration": 0.10,
-    "market_regime": 0.15,
-}
-
-
 class RiskEngine:
     """
     风险引擎：多维度风险量化，输出 0-100 综合风险分。
@@ -90,8 +81,15 @@ class RiskEngine:
         print(risk.print_report())
     """
 
-    def __init__(self, weights: Optional[dict[str, float]] = None):
-        self._weights = weights or DEFAULT_WEIGHTS
+    def __init__(self, risk_config: Optional[RiskConfig] = None):
+        self._config = risk_config or RiskConfig()
+        self._weights = {
+            "volatility":    self._config.weights.volatility,
+            "drawdown":      self._config.weights.drawdown,
+            "liquidity":     self._config.weights.liquidity,
+            "concentration": self._config.weights.concentration,
+            "market_regime": self._config.weights.market_regime,
+        }
         logger.debug(f"RiskEngine initialized | weights={self._weights}")
 
     def assess(
@@ -121,14 +119,22 @@ class RiskEngine:
         high = kline_df["high"].astype(float)
         volume = kline_df["volume"].astype(float)
 
-        vol_score, ann_vol = calc_volatility_risk(close)
-        dd_score, max_dd = calc_drawdown_risk(high, close)
+        vol_score, ann_vol = calc_volatility_risk(
+            close, thresholds=self._config.volatility
+        )
+        dd_score, max_dd = calc_drawdown_risk(
+            high, close, thresholds=self._config.drawdown
+        )
 
         market_cap = quote_data.get("market_cap") if quote_data else None
-        liq_score, avg_turnover = calc_liquidity_risk(volume, market_cap)
+        liq_score, avg_turnover = calc_liquidity_risk(
+            volume, market_cap, thresholds=self._config.liquidity
+        )
 
         conc_score = calc_concentration_risk(ta_result)
-        regime_score = calc_market_regime_risk(close)
+        regime_score = calc_market_regime_risk(
+            close, thresholds=self._config.market_regime
+        )
 
         total = (
             vol_score * self._weights["volatility"]
@@ -159,7 +165,8 @@ def assess_risk(
     kline_df: pd.DataFrame,
     quote_data: Optional[dict] = None,
     ta_result=None,
+    risk_config: Optional[RiskConfig] = None,
 ) -> RiskScore:
     """便捷函数：单步评估某只股票的风险。"""
-    engine = RiskEngine()
+    engine = RiskEngine(risk_config=risk_config)
     return engine.assess(ticker, date, kline_df, quote_data, ta_result)

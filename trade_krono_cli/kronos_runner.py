@@ -33,18 +33,23 @@ from trade_krono_cli.prediction_uncertainty import (
     PredictionUncertainty,
     build_result_dict,
 )
+from trade_krono_cli.adapters import KronosAdapterImpl
 
 # 向后兼容：保持从 kronos_runner 导入 PredictionUncertainty 的能力
 __all__ = ("KronosRunner", "KronosForecastResult", "PredictionUncertainty")
 
-# Kronos 模块懒加载
+# Kronos 模块懒加载（保留，供旧测试兼容）
 _KRONOS_IMPORTED = False
 
 
 def _ensure_kronos_import(settings: Settings) -> None:
+    """将 Kronos agent-harness 加入 sys.path。
+    （已迁移至 adapters 层；此函数保留供旧测试兼容。）
+    """
     global _KRONOS_IMPORTED
     if _KRONOS_IMPORTED:
         return
+    from trade_krono_cli.security import ensure_import_path
     harness_root = settings.kronos_root / "agent-harness"
     kronos_root = settings.kronos_root
     ensure_import_path(harness_root, kronos_root)
@@ -177,6 +182,8 @@ class KronosRunner:
         self._predictor: Any = None
         self._device: str = "cpu"
         self._max_context = 512
+        self._kronos_adapter: Optional[Any] = None  # lazy adapter
+        self._device = self._resolve_device()
 
         if "large" in self.model_name.lower():
             logger.warning("⚠️  Kronos-large 未开源，强制切换为 Kronos-base")
@@ -200,36 +207,21 @@ class KronosRunner:
         return "cpu"
 
     def _load(self) -> None:
-        """懒加载 Kronos 模型（通过 cli_anything.kronos）。"""
+        """懒加载 Kronos 模型（通过适配器层）。"""
         if self._predictor is not None:
             return
 
-        _ensure_kronos_import(self._settings)
-        device = self._resolve_device()
-        self._device = device
+        self._get_adapter().load_model(self._settings)
+        self._device = self._kronos_adapter.device if self._kronos_adapter else "cpu"
+        logger.info(
+            f"✅ Kronos 模型加载完成 (device={self._device})"
+        )
 
-        logger.info(f"⏳ 加载 Kronos 模型（首次约 1-3 分钟）...")
-        t0 = time.time()
-
-        try:
-            from cli_anything.kronos.utils.kronos_backend import load_model
-
-            predictor, meta = load_model(
-                name=self.model_name.lower(),
-                device=device,
-            )
-            self._predictor = predictor
-            self._max_context = meta.get("max_context", 512)
-            logger.info(
-                f"✅ Kronos 模型加载完成 ({time.time()-t0:.1f}s, device={device})"
-            )
-
-        except ImportError as e:
-            raise ModelLoadError(
-                f"无法导入 cli_anything.kronos：{e}。"
-                f"请确认已安装 Kronos agent-harness "
-                f"（pip install -e {self._settings.kronos_root / 'agent-harness'}）"
-            ) from e
+    def _get_adapter(self):
+        """懒加载 KronosAdapter。"""
+        if self._kronos_adapter is None:
+            self._kronos_adapter = KronosAdapterImpl()
+        return self._kronos_adapter
 
     @property
     def _settings(self):
@@ -355,14 +347,14 @@ class KronosRunner:
             x_df, x_ts, y_ts, last_close = self._prepare(ticker, eval_date)
 
             n_samples = max(1, self.sample_count)
-            assert self._predictor is not None
+            adapter = self._get_adapter()
 
             if n_samples > 1:
                 # 多样本：直接委托模型内部处理，避免 N 次独立推理
-                pred_df = self._predictor.predict(
+                pred_df = adapter.predict(
                     df=x_df, x_timestamp=x_ts, y_timestamp=y_ts,
                     pred_len=len(y_ts), T=self.T, top_p=self.top_p,
-                    sample_count=n_samples, verbose=False,
+                    sample_count=n_samples,
                 )
                 close_vals = pred_df["close"].astype(float).values
                 if close_vals.ndim == 2:
@@ -373,10 +365,10 @@ class KronosRunner:
                     stacked = close_vals.reshape(1, -1)
             else:
                 # 单样本：直接一次调用
-                pred_df = self._predictor.predict(
+                pred_df = adapter.predict(
                     df=x_df, x_timestamp=x_ts, y_timestamp=y_ts,
                     pred_len=len(y_ts), T=self.T, top_p=self.top_p,
-                    sample_count=1, verbose=False,
+                    sample_count=1,
                 )
                 avg_close = pred_df["close"].astype(float).values
                 stacked = avg_close.reshape(1, -1)
@@ -515,8 +507,8 @@ class KronosRunner:
             logger.info(f"⏳ GPU 批量推理 {len(df_list)} 只...")
             t0 = time.time()
 
-            assert self._predictor is not None
-            pred_dfs = self._predictor.predict_batch(
+            adapter = self._get_adapter()
+            pred_dfs = adapter.predict_batch(
                 df_list=df_list,
                 x_timestamp_list=x_ts_list,
                 y_timestamp_list=y_ts_list,
@@ -524,7 +516,6 @@ class KronosRunner:
                 T=self.T,
                 top_p=self.top_p,
                 sample_count=self.sample_count,
-                verbose=False,
             )
             logger.info(f"✅ 批量推理完成 ({time.time()-t0:.1f}s)")
 

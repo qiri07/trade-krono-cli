@@ -67,6 +67,17 @@ def _load_env() -> tuple[Settings, Path]:
 
     s = get_settings()
 
+    # ── 配置校验（启动前一次性执行）───────────────────────────────
+    from trade_krono_cli.config import run_validation
+    errors, warnings = run_validation()
+    for w in warnings:
+        console.print(f"  [yellow]{w}[/yellow]")
+    if errors:
+        console.print("[bold red]❌ 配置校验失败，请修复后再运行：[/bold red]")
+        for e in errors:
+            console.print(f"  [red]{e}[/red]")
+        raise typer.Exit(1)
+
     log_file = s.cache_dir.parent / "pipeline.log"
     try:
         setup_logger(level="INFO", log_file=log_file, settings=s)

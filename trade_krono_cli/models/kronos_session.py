@@ -36,7 +36,7 @@ class KronosSession:
     @property
     def is_loaded(self) -> bool:
         """模型是否已加载到内存。"""
-        return self._runner._predictor is not None
+        return self._runner._adapter.predictor is not None
 
     @property
     def runner(self) -> KronosRunner:

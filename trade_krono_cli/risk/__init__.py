@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 from trade_krono_cli.risk.risk_engine import (
-    DEFAULT_WEIGHTS,
     RiskEngine,
     RiskScore,
     assess_risk,
@@ -27,5 +26,4 @@ __all__ = [
     "RiskEngine",
     "RiskScore",
     "assess_risk",
-    "DEFAULT_WEIGHTS",
 ]

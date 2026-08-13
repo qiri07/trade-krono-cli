@@ -12,26 +12,11 @@ if TYPE_CHECKING:
     from trade_krono_cli.config import Settings
 
 
-def validate_settings(s: "Settings") -> List[str]:
+def validate_settings(s: "Settings") -> tuple[List[str], List[str]]:
     """
-    校验配置合法性，返回错误消息列表（空 = 无问题）。
-
-    校验项：
-      - kronos_lookback  >= 10
-      - kronos_pred_len  >= 1
-      - llm_provider     非空
-      - min_confidence   在 [0, 100] 范围内
-      - allowed_signals  非空
-      - baostock_sleep_sec > 0
-      - kronos_sample_count >= 1
-      - kronos_T         > 0
-      - kronos_top_p     在 (0, 1] 范围内
-      - max_debate_rounds        >= 1
-      - max_risk_discuss_rounds  >= 1
-      - output_language          非空
-      - kronos_model             非空
-      - 外部依赖目录是否存在（仅警告，不影响运行）
-      - 已配置 provider 的 API Key 是否可用（仅警告）
+    校验配置合法性，返回 (errors, warnings) 元组。
+    errors   — 致命问题，程序应终止
+    warnings — 非致命问题，记录但不阻塞运行
     """
     errors: List[str] = []
     warnings: List[str] = []
@@ -96,7 +81,7 @@ def validate_settings(s: "Settings") -> List[str]:
             )
 
     all_messages = [f"❌ {e}" for e in errors] + [f"⚠️  {w}" for w in warnings]
-    return all_messages
+    return errors, warnings
 
 
 # ── 内部：provider → 环境变量名映射（复用 security.py 的约定）────────────────
@@ -109,27 +94,24 @@ _PROVIDER_ENV_KEY = {
 }
 
 
-def print_validation_report(errors: List[str]) -> bool:
+def print_validation_report(
+    errors: List[str], warnings: List[str]
+) -> bool:
     """
     打印校验报告到控制台，返回是否通过（无错误 = True）。
 
     Warnings（⚠️）不阻止运行，errors（❌）会。
     """
-    if not errors:
+    if not errors and not warnings:
         return True
 
-    has_errors = any(m.startswith("❌") for m in errors)
-    has_warnings = any(m.startswith("⚠️") for m in errors)
-
-    if has_errors:
+    if errors:
         print("❌ 配置校验失败，请修复以下问题后再运行：")
-        for m in errors:
-            if m.startswith("❌"):
-                print(f"  {m}")
-    if has_warnings:
+        for e in errors:
+            print(f"  ❌ {e}")
+    if warnings:
         print("⚠️  配置存在以下警告（不影响运行，建议修复）：")
-        for m in errors:
-            if m.startswith("⚠️"):
-                print(f"  {m}")
+        for w in warnings:
+            print(f"  ⚠️  {w}")
 
-    return not has_errors
+    return not errors

@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import pandas as pd
 
+from trade_krono_cli.configs.schema import MarketRegimeThresholds
 
-def calc_market_regime_risk(close: pd.Series) -> float:
+
+def calc_market_regime_risk(
+    close: pd.Series,
+    thresholds: "MarketRegimeThresholds | None" = None,
+) -> float:
     """
     计算市场环境风险分。
 
@@ -19,14 +24,17 @@ def calc_market_regime_risk(close: pd.Series) -> float:
 
     Parameters
     ----------
-    close : pd.Series 收盘价序列
+    close      : pd.Series 收盘价序列
+    thresholds : MarketRegimeThresholds  分段映射参数（可选，默认使用 schema 默认值）
 
     Returns
     -------
     risk_score : 0-100，越高越危险
     """
-    if len(close) < 30:
-        return 30.0
+    th = thresholds or MarketRegimeThresholds()
+
+    if len(close) < th.insufficient_data_min_rows:
+        return th.insufficient_data_score
 
     momentum_20 = (close.iloc[-1] - close.iloc[-20]) / close.iloc[-20] * 100
     if len(close) >= 60:
@@ -36,18 +44,33 @@ def calc_market_regime_risk(close: pd.Series) -> float:
 
     avg_momentum = (momentum_20 + momentum_60) / 2.0
 
-    # 动量映射：
-    #   <= -10% → 80 分（强烈下跌趋势，高风险）
-    #   -10%~0% → 50-80 分（递减风险）
-    #   0%~10%  → 20-50 分（温和上涨）
-    #   > 10%   → 0-20 分（强势上涨，低风险）
-    if avg_momentum <= -10:
-        risk_score = 80.0
-    elif avg_momentum <= 0:
-        risk_score = 50.0 + (-avg_momentum / 10.0) * 30.0
-    elif avg_momentum <= 10:
-        risk_score = max(0.0, 50.0 - (avg_momentum / 10.0) * 30.0)
+    # 动量映射（阈值来自配置）：
+    #   <= bear_threshold → bear_score 分（强烈下跌趋势，高风险）
+    #   bear_threshold~neutral_low → 递减风险
+    #   neutral_low~neutral_high  → 温和区间
+    #   > neutral_high   → 递减至 bull_base_score
+    if avg_momentum <= th.bear_threshold:
+        risk_score = th.bear_score
+    elif avg_momentum <= th.neutral_low:
+        risk_score = th.neutral_mid_score + (
+            (th.neutral_low - avg_momentum) / (th.neutral_low - th.bear_threshold)
+            * (th.bear_score - th.neutral_mid_score)
+        )
+    elif avg_momentum <= th.neutral_high:
+        risk_score = max(
+            0.0,
+            th.neutral_mid_score - (
+                (avg_momentum - th.neutral_low) / (th.neutral_high - th.neutral_low)
+                * th.neutral_mid_score
+            ),
+        )
     else:
-        risk_score = max(0.0, 20.0 - (avg_momentum - 10.0) / 10.0 * 20.0)
+        risk_score = max(
+            0.0,
+            th.bull_base_score - (
+                (avg_momentum - th.neutral_high) / th.neutral_high
+                * (th.bull_base_score)
+            ),
+        )
 
     return round(max(0.0, min(100.0, risk_score)), 1)

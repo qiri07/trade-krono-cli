@@ -1,37 +1,40 @@
 """测试不确定性置信度映射（Phase 2）。"""
 import pytest
 from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus, default_scorer
+from trade_krono_cli.configs.schema import ScoringConfig
+
+SCORING = ScoringConfig()
 
 
 class TestUncertaintyConfidenceBonus:
     """_uncertainty_confidence_bonus 函数单元测试。"""
 
     def test_none_pu(self):
-        assert _uncertainty_confidence_bonus(None) == 0.0
+        assert _uncertainty_confidence_bonus(None, SCORING) == 0.0
 
     def test_empty_dict(self):
-        assert _uncertainty_confidence_bonus({}) == 0.0
+        assert _uncertainty_confidence_bonus({}, SCORING) == 0.0
 
     def test_missing_confidence_score(self):
-        assert _uncertainty_confidence_bonus({"direction": "UP"}) == 0.0
+        assert _uncertainty_confidence_bonus({"direction": "UP"}, SCORING) == 0.0
 
     def test_high_confidence(self):
         """confidence_score >= 70 → +3"""
-        assert _uncertainty_confidence_bonus({"confidence_score": 70.0}) == 3.0
-        assert _uncertainty_confidence_bonus({"confidence_score": 85.0}) == 3.0
-        assert _uncertainty_confidence_bonus({"confidence_score": 100.0}) == 3.0
+        assert _uncertainty_confidence_bonus({"confidence_score": 70.0}, SCORING) == 3.0
+        assert _uncertainty_confidence_bonus({"confidence_score": 85.0}, SCORING) == 3.0
+        assert _uncertainty_confidence_bonus({"confidence_score": 100.0}, SCORING) == 3.0
 
     def test_medium_confidence(self):
         """50 <= confidence_score < 70 → +1"""
-        assert _uncertainty_confidence_bonus({"confidence_score": 50.0}) == 1.0
-        assert _uncertainty_confidence_bonus({"confidence_score": 60.0}) == 1.0
-        assert _uncertainty_confidence_bonus({"confidence_score": 69.9}) == 1.0
+        assert _uncertainty_confidence_bonus({"confidence_score": 50.0}, SCORING) == 1.0
+        assert _uncertainty_confidence_bonus({"confidence_score": 60.0}, SCORING) == 1.0
+        assert _uncertainty_confidence_bonus({"confidence_score": 69.9}, SCORING) == 1.0
 
     def test_low_confidence(self):
         """confidence_score < 50 → -2"""
-        assert _uncertainty_confidence_bonus({"confidence_score": 49.9}) == -2.0
-        assert _uncertainty_confidence_bonus({"confidence_score": 30.0}) == -2.0
-        assert _uncertainty_confidence_bonus({"confidence_score": 0.0}) == -2.0
+        assert _uncertainty_confidence_bonus({"confidence_score": 49.9}, SCORING) == -2.0
+        assert _uncertainty_confidence_bonus({"confidence_score": 30.0}, SCORING) == -2.0
+        assert _uncertainty_confidence_bonus({"confidence_score": 0.0}, SCORING) == -2.0
 
 
 class TestDefaultScorerWithUncertainty:
