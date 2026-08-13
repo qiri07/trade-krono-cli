@@ -507,3 +507,277 @@ def test_json_only_signal(adapter):
     assert dec.signal == Signal.SELL
     assert dec.confidence == 30.0  # SELL 默认置信度
 
+
+# ═══════════════════════════════════════════════════════
+# 新字段：JSON 路径
+# ═══════════════════════════════════════════════════════
+
+def test_json_invalidations(adapter):
+    """JSON 中的 invalidations 字段应正确解析。"""
+    import json
+    text = json.dumps({
+        "signal": "BUY",
+        "invalidations": [
+            "毛利率连续2季度下降",
+            "订单增长 < 10%",
+            "核心客户流失",
+        ],
+    })
+    dec = adapter.parse(text)
+    assert dec.invalidations == [
+        "毛利率连续2季度下降",
+        "订单增长 < 10%",
+        "核心客户流失",
+    ]
+
+
+def test_json_price_fields(adapter):
+    """entry_zone / target_price / stop_loss 应正确解析。"""
+    import json
+    text = json.dumps({
+        "signal": "BUY",
+        "entry_zone": [148.0, 152.0],
+        "target_price": 170.0,
+        "stop_loss": 140.0,
+    })
+    dec = adapter.parse(text)
+    assert dec.entry_zone == [148.0, 152.0]
+    assert dec.target_price == 170.0
+    assert dec.stop_loss == 140.0
+
+
+def test_json_holding_period(adapter):
+    """expected_holding_period 应正确解析。"""
+    import json
+    text = json.dumps({
+        "signal": "BUY",
+        "expected_holding_period": 30,
+    })
+    dec = adapter.parse(text)
+    assert dec.expected_holding_period == 30
+
+
+def test_json_catalysts(adapter):
+    """catalysts 字段应正确解析（字符串数组或逗号分隔）。"""
+    import json
+    text = json.dumps({
+        "signal": "BUY",
+        "catalysts": ["Q3业绩超预期", "新产品发布"],
+    })
+    dec = adapter.parse(text)
+    assert dec.catalysts == ["Q3业绩超预期", "新产品发布"]
+
+    # 逗号分隔字符串兼容
+    text = json.dumps({
+        "signal": "BUY",
+        "catalysts": "Q3业绩超预期, 新产品发布",
+    })
+    dec = adapter.parse(text)
+    assert dec.catalysts == ["Q3业绩超预期", "新产品发布"]
+
+
+def test_json_multi_factor_scores(adapter):
+    """多因子评分字段应正确解析并截断到 [0, 100]。"""
+    import json
+    text = json.dumps({
+        "signal": "BUY",
+        "valuation_score": 75.0,
+        "fundamental_score": 82.0,
+        "technical_score": 68.0,
+        "sentiment_score": 90.0,
+        "capital_flow_score": 55.0,
+        "macro_score": 70.0,
+    })
+    dec = adapter.parse(text)
+    assert dec.valuation_score == 75.0
+    assert dec.fundamental_score == 82.0
+    assert dec.technical_score == 68.0
+    assert dec.sentiment_score == 90.0
+    assert dec.capital_flow_score == 55.0
+    assert dec.macro_score == 70.0
+
+
+def test_json_scores_clamped(adapter):
+    """超出 [0, 100] 的评分应被截断。"""
+    import json
+    text = json.dumps({
+        "signal": "BUY",
+        "valuation_score": 150.0,
+        "fundamental_score": -10.0,
+    })
+    dec = adapter.parse(text)
+    assert dec.valuation_score == 100.0
+    assert dec.fundamental_score == 0.0
+
+
+def test_json_all_new_fields(adapter):
+    """完整 JSON 包含所有新字段时应正确解析。"""
+    import json
+    text = json.dumps({
+        "signal": "BUY",
+        "confidence": 88.0,
+        "thesis": "AI需求驱动增长",
+        "risks": ["估值偏高", "竞争加剧"],
+        "invalidations": [
+            "毛利率连续2季度下降",
+            "订单增长 < 10%",
+        ],
+        "entry_zone": [148.0, 152.0],
+        "target_price": 170.0,
+        "stop_loss": 140.0,
+        "expected_holding_period": 60,
+        "expected_return": 15.0,
+        "position_size": 0.08,
+        "catalysts": ["Q3业绩超预期", "新品发布"],
+        "valuation_score": 75.0,
+        "fundamental_score": 82.0,
+        "technical_score": 68.0,
+        "sentiment_score": 90.0,
+        "capital_flow_score": 55.0,
+        "macro_score": 70.0,
+    })
+    dec = adapter.parse(text)
+    assert dec.signal == Signal.BUY
+    assert dec.confidence == 88.0
+    assert dec.invalidations == ["毛利率连续2季度下降", "订单增长 < 10%"]
+    assert dec.entry_zone == [148.0, 152.0]
+    assert dec.target_price == 170.0
+    assert dec.stop_loss == 140.0
+    assert dec.expected_holding_period == 60
+    assert dec.catalysts == ["Q3业绩超预期", "新品发布"]
+    assert dec.valuation_score == 75.0
+    assert dec.fundamental_score == 82.0
+
+
+# ═══════════════════════════════════════════════════════
+# 新字段：文本路径提取
+# ═══════════════════════════════════════════════════════
+
+def test_text_extract_invalidations(adapter):
+    """无效条件应从文本中提取。"""
+    text = """**Rating**: Buy
+Invalidation conditions:
+- 毛利率连续2季度下降
+- 订单增长 < 10%
+- 核心客户流失
+
+Risks:估值偏高"""
+    dec = adapter.parse(text)
+    assert len(dec.invalidations) >= 2
+    assert any("毛利率" in inv or "订单增长" in inv for inv in dec.invalidations)
+
+
+def test_text_extract_entry_zone(adapter):
+    """入场区间应从文本中提取。"""
+    text = """**Rating**: Buy
+Entry zone: 148-152 yuan
+Target: 170 yuan"""
+    dec = adapter.parse(text)
+    assert dec.entry_zone is not None
+    assert dec.entry_zone[0] == 148.0
+    assert dec.entry_zone[1] == 152.0
+
+
+def test_text_extract_target_price(adapter):
+    """目标价应从文本中提取（单一价格返回 [val, val]）。"""
+    text = """**Rating**: Buy
+Target price: 170 yuan"""
+    dec = adapter.parse(text)
+    assert dec.target_price is not None
+    assert dec.target_price == [170.0, 170.0]
+
+
+def test_text_extract_stop_loss(adapter):
+    """止损价应从文本中提取（单一价格返回 [val, val]）。"""
+    text = """**Rating**: Buy
+Stop loss: 140 yuan"""
+    dec = adapter.parse(text)
+    assert dec.stop_loss is not None
+    assert dec.stop_loss == [140.0, 140.0]
+
+
+def test_text_extract_holding_period(adapter):
+    """持有期应从文本中提取。"""
+    text = """**Rating**: Buy
+Holding period: 30 trading days"""
+    dec = adapter.parse(text)
+    assert dec.expected_holding_period == 30
+
+
+def test_text_extract_catalysts(adapter):
+    """催化剂应从文本中提取。"""
+    text = """**Rating**: Buy
+**Catalysts**: Q3业绩超预期
+新产品发布
+宏观政策宽松"""
+    dec = adapter.parse(text)
+    assert len(dec.catalysts) >= 1
+    assert any("业绩" in c or "产品" in c for c in dec.catalysts)
+
+
+def test_text_extract_scores(adapter):
+    """多因子评分应从文本中提取。"""
+    text = """**Rating**: Buy
+估值: 75/100
+基本面: 82/100
+技术面: 68/100
+情绪: 90/100
+资金流向: 55/100
+宏观: 70/100"""
+    dec = adapter.parse(text)
+    assert dec.valuation_score == 75.0
+    assert dec.fundamental_score == 82.0
+    assert dec.technical_score == 68.0
+    assert dec.sentiment_score == 90.0
+    assert dec.capital_flow_score == 55.0
+    assert dec.macro_score == 70.0
+
+
+def test_text_missing_new_fields_are_none(adapter):
+    """文本中未出现的新字段应为 None/空列表。"""
+    text = """**Rating**: Buy
+Strong fundamentals drive growth."""
+    dec = adapter.parse(text)
+    assert dec.invalidations == []
+    assert dec.entry_zone is None
+    assert dec.target_price is None
+    assert dec.stop_loss is None
+    assert dec.expected_holding_period is None
+    assert dec.catalysts == []
+    assert dec.valuation_score is None
+    assert dec.fundamental_score is None
+
+
+# ═══════════════════════════════════════════════════════
+# InvestmentDecision 序列化
+# ═══════════════════════════════════════════════════════
+
+def test_investment_decision_to_dict_new_fields(adapter):
+    """新字段的 to_dict() 应正确输出。"""
+    dec = InvestmentDecision(
+        signal=Signal.BUY,
+        confidence=85.0,
+        invalidations=["毛利率下降", "订单萎缩"],
+        entry_zone=[148.0, 152.0],
+        target_price=170.0,
+        stop_loss=140.0,
+        expected_holding_period=60,
+        catalysts=["Q3超预期"],
+        valuation_score=75.0,
+        fundamental_score=82.0,
+        technical_score=68.0,
+        sentiment_score=90.0,
+        capital_flow_score=55.0,
+        macro_score=70.0,
+    )
+    d = dec.to_dict()
+    assert d["signal"] == "BUY"
+    assert d["invalidations"] == ["毛利率下降", "订单萎缩"]
+    assert d["entry_zone"] == [148.0, 152.0]
+    assert d["target_price"] == 170.0
+    assert d["stop_loss"] == 140.0
+    assert d["expected_holding_period"] == 60
+    assert d["catalysts"] == ["Q3超预期"]
+    assert d["valuation_score"] == 75.0
+    assert d["fundamental_score"] == 82.0
+

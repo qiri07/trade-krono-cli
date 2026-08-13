@@ -5,7 +5,7 @@ LLM 输出（结构化 JSON 或自由文本）→ DecisionAdapter → 结构化 
 
 解析优先级：
   1. JSON 结构化输出（主动约束格式，准确率最高）
-  2. Rating 字段正则 → 负向关键词匹配 → 兜底（自由文本，兼容旧版 prompt）
+  2. Rating → 关键词 → fallback（自由文本，兼容旧版 prompt）
 """
 from __future__ import annotations
 
@@ -44,26 +44,77 @@ _NEG_WORDS = frozenset({
 })
 
 
+# ═══════════════════════════════════════════════════════
+# InvestmentDecision — 扩展结构
+# ═══════════════════════════════════════════════════════
+
 @dataclass
 class InvestmentDecision:
     """
     TradingAgents 决策的标准化结构。
 
+    基础字段
+    ──────────────────────────────────────────────────────
     signal            买入 / 持有 / 卖出
     confidence        0–100，基于 Rating 强度 + 辅助佐证微调
     expected_return   预期收益率（%），从文本解析，未找到则为 None
     position_size     建议仓位比例，-1~1，未找到则为 None
     horizon           投资周期（交易日），未找到则为 None
+
+    投资框架字段
+    ──────────────────────────────────────────────────────
     thesis            核心投资论点（Executive Summary 或 Thesis 段落摘要）
     risks             风险清单（从文本中提取）
+    invalidations     投资逻辑失效条件列表（回测关键）
+
+    交易执行字段
+    ──────────────────────────────────────────────────────
+    entry_zone        建议入场价区间，如 [148.0, 152.0]
+    target_price      目标价（元），未找到则为 None
+    stop_loss         止损价（元），未找到则为 None
+    expected_holding_period  预期持有天数，未找到则为 None
+
+    多因子评分
+    ──────────────────────────────────────────────────────
+    valuation_score         估值评分（0–100）
+    fundamental_score       基本面评分（0–100）
+    technical_score         技术面评分（0–100）
+    sentiment_score         情绪面评分（0–100）
+    capital_flow_score      资金流向评分（0–100）
+    macro_score             宏观评分（0–100）
+
+    催化剂
+    ──────────────────────────────────────────────────────
+    catalysts             潜在催化剂列表
     """
+    # 基础字段
     signal: Signal
     confidence: float
     expected_return: Optional[float] = None
     position_size: Optional[float] = None
     horizon: Optional[int] = None
+
+    # 投资框架
     thesis: str = ""
     risks: list[str] = field(default_factory=list)
+    invalidations: list[str] = field(default_factory=list)
+
+    # 交易执行
+    entry_zone: Optional[list[float]] = None
+    target_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    expected_holding_period: Optional[int] = None
+
+    # 多因子评分
+    valuation_score: Optional[float] = None
+    fundamental_score: Optional[float] = None
+    technical_score: Optional[float] = None
+    sentiment_score: Optional[float] = None
+    capital_flow_score: Optional[float] = None
+    macro_score: Optional[float] = None
+
+    # 催化剂
+    catalysts: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -90,22 +141,24 @@ class InvestmentDecision:
         return cls(signal=signal, confidence=confidence)
 
 
-# ── DecisionAdapter ───────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════
+# DecisionAdapter
+# ═══════════════════════════════════════════════════════
 
 class DecisionAdapter:
     """
     将 TradingAgents 输出解析为结构化 InvestmentDecision。
 
     解析优先级：
-      1. JSON 结构化输出 → 直接映射字段（signal, confidence, thesis, risks, expected_return）
-      2. **Rating**: <value> 结构化字段 → 信号 + 基础置信度
-      3. **Investment Thesis** / **Executive Summary** → thesis 摘要
-      4. 百分比数字模式 → expected_return（如有）
+      1. JSON 结构化输出 → 直接映射字段
+      2. **Rating**: <value> → 信号 + 基础置信度
+      3. **Investment Thesis** / **Executive Summary** → thesis
+      4. 百分比数字模式 → expected_return
       5. keyword fallback（负上下文感知）→ 兜底信号
       6. fallback → HOLD, 50
     """
 
-    # Rating 正则：匹配 **Rating**: Underweight 或 Rating: BUY 等
+    # Rating 正则
     _RE_RATING = re.compile(
         r"\*\*Rating\*\*\s*[:：]\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)",
         re.IGNORECASE,
@@ -115,7 +168,7 @@ class DecisionAdapter:
         r"\*\*Investment Thesis\*\*\s*[:：]\s*(.+?)(?=\n\*\*|\Z)",
         re.DOTALL | re.IGNORECASE,
     )
-    # Executive Summary（取第一段作为 thesis 补充）
+    # Executive Summary
     _RE_SUMMARY = re.compile(
         r"\*\*Executive Summary\*\*\s*[:：]\s*(.+?)(?=\n\*\*|\Z)",
         re.DOTALL | re.IGNORECASE,
@@ -125,12 +178,49 @@ class DecisionAdapter:
     # 持仓比例
     _RE_POS_SIZE = re.compile(r"仓位[:：]?\s*(\d+(?:\.\d+)?)\s*[%‰]?\s*(?:以上|左右|)")
 
+    # 止损相关
+    _RE_STOP_LOSS = re.compile(
+        r"(?:止损|stop\s*loss)[:：]?\s*([\d.,]+\s*[-–—至到]\s*[\d.,]+|[≥≤><=]?\s*[\d.,]+)",
+        re.IGNORECASE,
+    )
+    _RE_TARGET_PRICE = re.compile(
+        r"(?:目标价|target\s*(?:price|price\s*target)|目标)[:：]?\s*([\d.,]+\s*[-–—至到]\s*[\d.,]+|[≥≤><=]?\s*[\d.,]+)",
+        re.IGNORECASE,
+    )
+    _RE_ENTRY_ZONE = re.compile(
+        r"(?:入场区?间|entry\s*(?:zone|price)|建议买入)[:：]?\s*([\d.,]+\s*[-–—至到]\s*[\d.,]+|[≥≤><=]?\s*[\d.,]+)",
+        re.IGNORECASE,
+    )
+
+    # 持有期（更宽松的匹配）
+    _RE_HOLDING_PERIOD = re.compile(
+        r"(?:持有期|holding\s*period|预期持有)[:：]?\s*(\d+)",
+        re.IGNORECASE,
+    )
+
+    # 失效条件
+    _RE_INVALIDATIONS = re.compile(
+        r"(?:失效条件|invalidation|if.*?则?卖出|逻辑失效)[:：]?\s*(.+?)(?=\n\s*(?:风险|catalyst|\*\*|#####)|\Z)",
+        re.DOTALL | re.IGNORECASE,
+    )
+
+    # 催化剂
+    _RE_CATALYSTS = re.compile(
+        r"\*\*Catalysts\*\*\s*[:：]\s*(.+?)(?=\n\*\*|\Z)",
+        re.DOTALL | re.IGNORECASE,
+    )
+
+    # 多因子评分
+    _RE_SCORE = re.compile(
+        r"(?:估值|基本面|技术面|情绪|资金流向|宏观)[:]?\s*(\d+(?:\.\d+)?)\s*/?\s*100",
+        re.IGNORECASE,
+    )
+
     def parse(self, decision_text: str) -> InvestmentDecision:
         """
         主入口：解析 LLM 输出 → InvestmentDecision。
 
         优先尝试 JSON 结构化解析，失败后回退到自由文本正则解析。
-        回退时记录 warning 日志，便于监控 prompt 质量。
         """
         from loguru import logger
 
@@ -163,7 +253,6 @@ class DecisionAdapter:
             else:
                 signal, base_conf = self._fallback_signal_from_rating(rating_str)
         else:
-            # ── 1b. Keyword fallback（负上下文感知）────────────────────────
             signal, base_conf = self._keyword_fallback(decision_text)
 
         confidence = base_conf
@@ -180,6 +269,15 @@ class DecisionAdapter:
         # ── 5. Position size ───────────────────────────────────────────────
         position_size = self._extract_position_size(decision_text)
 
+        # ── 6. 新字段提取 ──────────────────────────────────────────────────
+        invalidations = self._extract_invalidations(decision_text)
+        entry_zone = self._extract_price_range(decision_text, self._RE_ENTRY_ZONE, "entry_zone")
+        target_price = self._extract_price_range(decision_text, self._RE_TARGET_PRICE, "target_price")
+        stop_loss = self._extract_price_range(decision_text, self._RE_STOP_LOSS, "stop_loss")
+        holding_period = self._extract_holding_period(decision_text)
+        catalysts = self._extract_catalysts(decision_text)
+        scores = self._extract_scores(decision_text)
+
         return InvestmentDecision(
             signal=signal,
             confidence=round(confidence, 1),
@@ -188,6 +286,13 @@ class DecisionAdapter:
             horizon=None,
             thesis=thesis,
             risks=risks,
+            invalidations=invalidations,
+            entry_zone=entry_zone,
+            target_price=target_price,
+            stop_loss=stop_loss,
+            expected_holding_period=holding_period,
+            **scores,
+            catalysts=catalysts,
         )
 
     # ── JSON 结构化解析 ─────────────────────────────────────────────────────
@@ -197,24 +302,18 @@ class DecisionAdapter:
         """
         尝试将输入解析为 JSON 结构化决策。
 
-        支持的字段（全部可选，缺失时使用默认值）：
-          signal           "BUY"/"HOLD"/"SELL"（不区分大小写）
-          confidence       0–100 浮点数
-          thesis           投资论点字符串
-          risks            风险列表（字符串数组）
-          expected_return  预期收益率（百分比）
-          position_size    建议仓位比例（0–1）
-
-        Returns
-        -------
-        InvestmentDecision 或 None（解析失败时返回 None，由调用方回退到文本解析）
+        支持的字段（全部可选）：
+          signal, confidence, thesis, risks, expected_return, position_size,
+          invalidations, entry_zone, target_price, stop_loss,
+          expected_holding_period, catalysts,
+          valuation_score, fundamental_score, technical_score,
+          sentiment_score, capital_flow_score, macro_score
         """
         from loguru import logger
 
         try:
             data = json.loads(text)
         except (json.JSONDecodeError, TypeError):
-            # 不是合法 JSON，回退到文本解析
             return None
 
         if not isinstance(data, dict):
@@ -230,13 +329,10 @@ class DecisionAdapter:
             try:
                 signal = Signal(signal_raw)
             except ValueError:
-                # 容忍大小写不敏感
                 try:
                     signal = Signal(signal_raw.upper())
                 except ValueError:
-                    logger.warning(
-                        f"[TA决策解析] 未知 signal 值 '{signal_raw}'，回退到 HOLD"
-                    )
+                    logger.warning(f"[TA决策解析] 未知 signal 值 '{signal_raw}'，回退到 HOLD")
                     signal = Signal.HOLD
         else:
             signal = Signal.HOLD
@@ -250,7 +346,6 @@ class DecisionAdapter:
             except (ValueError, TypeError):
                 confidence = 50.0
         else:
-            # 根据 signal 赋予默认置信度
             confidence = {Signal.BUY: 80.0, Signal.HOLD: 50.0, Signal.SELL: 30.0}[signal]
 
         # ── thesis ──────────────────────────────────────────────────────────
@@ -265,13 +360,10 @@ class DecisionAdapter:
         if isinstance(risks_raw, list):
             risks = [str(r).strip() for r in risks_raw if str(r).strip()]
         elif isinstance(risks_raw, str):
-            # 兼容单字符串格式（逗号分隔或换行分隔）
-            risks = [
-                r.strip() for r in re.split(r"[,\n]+", risks_raw) if r.strip()
-            ]
+            risks = [r.strip() for r in re.split(r"[,\n]+", risks_raw) if r.strip()]
         else:
             risks = []
-        risks = risks[:8]  # 最多保留 8 条
+        risks = risks[:8]
 
         # ── expected_return ─────────────────────────────────────────────────
         expected_return = data.get("expected_return")
@@ -290,6 +382,76 @@ class DecisionAdapter:
             except (ValueError, TypeError):
                 position_size = None
 
+        # ── invalidations ───────────────────────────────────────────────────
+        invalidations_raw = data.get("invalidations")
+        if isinstance(invalidations_raw, list):
+            invalidations = [str(r).strip() for r in invalidations_raw if str(r).strip()]
+        elif isinstance(invalidations_raw, str):
+            invalidations = [r.strip() for r in re.split(r"[,\n]+", invalidations_raw) if r.strip()]
+        else:
+            invalidations = []
+        invalidations = invalidations[:8]
+
+        # ── entry_zone ──────────────────────────────────────────────────────
+        entry_zone = data.get("entry_zone")
+        if isinstance(entry_zone, list) and len(entry_zone) == 2:
+            try:
+                entry_zone = [float(entry_zone[0]), float(entry_zone[1])]
+            except (ValueError, TypeError):
+                entry_zone = None
+
+        # ── target_price / stop_loss ────────────────────────────────────────
+        target_price = data.get("target_price")
+        if target_price is not None:
+            try:
+                target_price = float(target_price)
+            except (ValueError, TypeError):
+                target_price = None
+
+        stop_loss = data.get("stop_loss")
+        if stop_loss is not None:
+            try:
+                stop_loss = float(stop_loss)
+            except (ValueError, TypeError):
+                stop_loss = None
+
+        # ── expected_holding_period ─────────────────────────────────────────
+        holding_period = data.get("expected_holding_period")
+        if holding_period is not None:
+            try:
+                holding_period = int(holding_period)
+            except (ValueError, TypeError):
+                holding_period = None
+
+        # ── catalysts ───────────────────────────────────────────────────────
+        catalysts_raw = data.get("catalysts")
+        if isinstance(catalysts_raw, list):
+            catalysts = [str(r).strip() for r in catalysts_raw if str(r).strip()]
+        elif isinstance(catalysts_raw, str):
+            catalysts = [r.strip() for r in re.split(r"[,\n]+", catalysts_raw) if r.strip()]
+        else:
+            catalysts = []
+
+        # ── 多因子评分 ──────────────────────────────────────────────────────
+        def _parse_score(key: str, default: Optional[float] = None) -> Optional[float]:
+            v = data.get(key)
+            if v is not None:
+                try:
+                    f = float(v)
+                    return max(0.0, min(100.0, f))
+                except (ValueError, TypeError):
+                    return default
+            return default
+
+        kwargs = {
+            "valuation_score":        _parse_score("valuation_score"),
+            "fundamental_score":      _parse_score("fundamental_score"),
+            "technical_score":        _parse_score("technical_score"),
+            "sentiment_score":        _parse_score("sentiment_score"),
+            "capital_flow_score":     _parse_score("capital_flow_score"),
+            "macro_score":            _parse_score("macro_score"),
+        }
+
         logger.info(
             f"[TA决策解析] JSON 结构化解析成功 | signal={signal.value} "
             f"confidence={confidence}"
@@ -302,59 +464,40 @@ class DecisionAdapter:
             horizon=None,
             thesis=thesis,
             risks=risks,
+            invalidations=invalidations,
+            entry_zone=entry_zone,
+            target_price=target_price,
+            stop_loss=stop_loss,
+            expected_holding_period=holding_period,
+            catalysts=catalysts,
+            **kwargs,
         )
 
-    # ── 子解析方法 ──────────────────────────────────────────────────────────
+    # ── 文本路径提取方法 ──────────────────────────────────────────────────
 
     def _extract_thesis(self, text: str) -> str:
-        """
-        提取 Investment Thesis 或 Executive Summary 作为 thesis。
-
-        优先级：
-          1. **Investment Thesis** 段落（正则 _RE_THESIS）
-          2. **Executive Summary** 段落（正则 _RE_SUMMARY）
-          3. 第一句话（中文句号 / 感叹号 / 换行切分）
-
-        长度限制：最多 THESIS_TRUNCATE_LEN（300）字符，
-        兜底路径限制 200 字符。
-        """
         m = self._RE_THESIS.search(text)
         if m:
             return m.group(1).strip()[:THESIS_TRUNCATE_LEN]
         m = self._RE_SUMMARY.search(text)
         if m:
             return m.group(1).strip()[:THESIS_TRUNCATE_LEN]
-        # fallback: 取第一句话
         first_sentence = re.split(r"[。！？\n]", text.strip())
         return first_sentence[0][:200] if first_sentence else ""
 
     def _extract_risks(self, text: str) -> list[str]:
-        """
-        从文本中提取风险点列表。
-
-        解析逻辑：
-          1. 定位首个风险上下文标记（中英文：风险/风险点/担忧/压力/隐患/不利因素等）
-          2. 截取标记后 800 字符作为候选块
-          3. 按行拆分，去除 bullet 标记（支持 "- "、"* "、"• "、数字列表）
-          4. 过滤：长度 10~120 字符，去重，最多保留 8 条
-
-        返回的风险列表顺序与原文出现顺序一致。
-        """
         risks: list[str] = []
-        # 找风险上下文位置（中英文）
         risk_marker_pos = -1
         for kw in ["风险", "风险点", "担忧", "压力", "隐患", "不利因素", "risks", "Risks", " Risks ", " risk "]:
             pos = text.find(kw)
             if pos >= 0 and (risk_marker_pos < 0 or pos < risk_marker_pos):
                 risk_marker_pos = pos
-
         if risk_marker_pos >= 0:
             chunk = text[risk_marker_pos : risk_marker_pos + 800]
             for line in chunk.split("\n"):
                 line = line.strip()
                 if not line:
                     continue
-                # 去除 bullet 标记（支持 "- "、"* "、"• "、数字列表）
                 stripped = re.sub(r"^[\s]*[-•*]?\s*\d+[.）)]?\s*", "", line)
                 stripped = re.sub(r"^[\s]*[-•*]\s*", "", stripped)
                 stripped = stripped.strip()
@@ -366,8 +509,6 @@ class DecisionAdapter:
     def _extract_expected_return(
         self, text: str, signal: Signal
     ) -> Optional[float]:
-        """从文本中提取预期收益率。排除 PE/PEG/股息率等财务比率行。"""
-        # 用单词边界匹配英文财务比率，避免 "pe" 误匹配 "expect" 等词
         _FIN_RATIO_RE = re.compile(r'\b(pe|peg|pb|eps|roe|roa)\b', re.IGNORECASE)
         _FIN_RATIO_CN = frozenset({"股息率", "毛利率"})
         for line in text.split("\n"):
@@ -386,7 +527,6 @@ class DecisionAdapter:
         return None
 
     def _extract_position_size(self, text: str) -> Optional[float]:
-        """从文本中提取建议仓位比例。"""
         m = self._RE_POS_SIZE.search(text)
         if m:
             try:
@@ -395,15 +535,124 @@ class DecisionAdapter:
                 pass
         return None
 
-    def _fallback_signal_from_rating(self, rating_str: str) -> tuple[Signal, float]:
-        """
-        未命中预定义映射时的兜底信号解析。
+    def _extract_invalidations(self, text: str) -> list[str]:
+        """提取失效条件列表。"""
+        result: list[str] = []
 
-        置信度分配（低于正式映射的置信度，反映解析不确定性）：
-          BUY   → 70.0  （含 "buy"/"overweight"/"strong" 词根）
-          SELL  → 35.0  （含 "sell"/"underweight" 词根）
-          HOLD  → 50.0  （其余所有情况）
+        # 尝试结构化标记
+        m = self._RE_INVALIDATIONS.search(text)
+        if m:
+            block = m.group(1).strip()
+            for line in block.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                stripped = re.sub(r"^[\s]*[-•*]?\s*\d+[.）)]?\s*", "", line)
+                stripped = re.sub(r"^[\s]*[-•*]\s*", "", stripped)
+                if 5 <= len(stripped) <= 120:
+                    if stripped not in result and len(result) < 8:
+                        result.append(stripped)
+
+        # 也检查常见的中文表述
+        if not result:
+            for pattern in [
+                r"(?:如果|若|一旦).+?(?:就|便|则)?.+?(?:卖出|止损|放弃)",
+            ]:
+                for m2 in re.finditer(pattern, text):
+                    stmt = m2.group(0).strip()
+                    if 10 <= len(stmt) <= 150 and stmt not in result:
+                        result.append(stmt)
+                        if len(result) >= 5:
+                            break
+
+        return result[:8]
+
+    def _extract_price_range(
+        self, text: str, pattern: re.Pattern, key: str
+    ) -> Optional[list[float]]:
         """
+        从文本中提取价格区间或单一价格。
+
+        Returns
+        -------
+        [low, high] 或 [single, single] 或 None
+        """
+        m = pattern.search(text)
+        if not m:
+            return None
+        raw = m.group(1).strip()
+        # 区间格式: "148-152" / "148至152" / "148~152"
+        separators = r"[-–—~到至]"
+        parts = re.split(separators, raw)
+        if len(parts) == 2:
+            try:
+                return [float(parts[0].strip()), float(parts[1].strip())]
+            except (ValueError, TypeError):
+                pass
+        elif len(parts) == 1:
+            # 单一价格
+            try:
+                val = float(parts[0].strip())
+                return [val, val]
+            except (ValueError, TypeError):
+                pass
+        return None
+
+    def _extract_holding_period(self, text: str) -> Optional[int]:
+        m = self._RE_HOLDING_PERIOD.search(text)
+        if m:
+            try:
+                return int(m.group(1))
+            except (ValueError, TypeError):
+                pass
+        return None
+
+    def _extract_catalysts(self, text: str) -> list[str]:
+        result: list[str] = []
+        m = self._RE_CATALYSTS.search(text)
+        if m:
+            block = m.group(1).strip()
+            for line in block.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                stripped = re.sub(r"^[\s]*[-•*]?\s*\d+[.）)]?\s*", "", line)
+                stripped = re.sub(r"^[\s]*[-•*]\s*", "", stripped)
+                if 5 <= len(stripped) <= 150:
+                    if stripped not in result and len(result) < 8:
+                        result.append(stripped)
+        return result
+
+    def _extract_scores(self, text: str) -> dict[str, Optional[float]]:
+        """提取多因子评分。"""
+        score_map: dict[str, Optional[float]] = {
+            "valuation_score":    None,
+            "fundamental_score":  None,
+            "technical_score":    None,
+            "sentiment_score":    None,
+            "capital_flow_score": None,
+            "macro_score":        None,
+        }
+        _PATTERNS = {
+            "valuation_score":    r"估值[:：]?\s*(\d+(?:\.\d+)?)",
+            "fundamental_score":  r"基本面[:：]?\s*(\d+(?:\.\d+)?)",
+            "technical_score":    r"技术面[:：]?\s*(\d+(?:\.\d+)?)",
+            "sentiment_score":    r"情绪[:：]?\s*(\d+(?:\.\d+)?)",
+            "capital_flow_score": r"资金流向[:：]?\s*(\d+(?:\.\d+)?)",
+            "macro_score":        r"宏观[:：]?\s*(\d+(?:\.\d+)?)",
+        }
+        for key, pat in _PATTERNS.items():
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                try:
+                    score_map[key] = float(m.group(1))
+                except (ValueError, TypeError):
+                    pass
+        return score_map
+
+    # ── 兜底解析 ──────────────────────────────────────────────────────────
+
+    def _fallback_signal_from_rating(self, rating_str: str) -> tuple[Signal, float]:
         s = rating_str.lower()
         if any(k in s for k in ("buy", "overweight", "strong")):
             return Signal.BUY, 70.0
@@ -413,14 +662,6 @@ class DecisionAdapter:
 
     @staticmethod
     def _has_negative_before(words: list[str], target: str, window: int = 10) -> bool:
-        """
-        检查 target 词前 window 个词内是否存在否定词。
-
-        否定词集合（_NEG_WORDS）：
-          NOT, NO, NEVER, FAIL, FAILS, FAILED, NEITHER, NON, UNLIKELY, NEGATIVE
-
-        用于负上下文感知：如 "NOT BUY" 不应视为买入信号。
-        """
         upper = [w.upper() for w in words]
         idx = None
         for i, w in enumerate(upper):
@@ -434,19 +675,6 @@ class DecisionAdapter:
 
     @classmethod
     def _keyword_fallback(cls, text: str) -> tuple[Signal, float]:
-        """
-        无 Rating 字段时，负上下文感知的关键词兜底。
-
-        搜索策略（按信号强度排序）：
-          BUY    → "BUY"     无否定 → 75.0
-          BUY    → "OVERWEIGHT" 无否定 → 65.0
-          SELL   → "SELL"    无否定 → 30.0
-          SELL   → "UNDERWEIGHT" 无否定 → 40.0
-          HOLD   → "HOLD"/"NEUTRAL" 无否定 → 50.0
-
-        每个信号检查其前面 window=10 个词内是否有否定词（_has_negative_before），
-        有则跳过该信号。首个匹配的信号即为结果。
-        """
         words = text.split()
         upper_words = [w.upper() for w in words]
 
