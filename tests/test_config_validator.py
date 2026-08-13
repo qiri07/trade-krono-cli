@@ -31,10 +31,46 @@ def _make_settings(**overrides) -> SimpleNamespace:
         kronos_T=1.0,
         kronos_top_p=0.9,
         kronos_use_sample_confidence=False,
+        kronos_batch_size=8,
         default_min_confidence=55.0,
         default_allowed_signals=["BUY", "HOLD"],
+        # 新增股票过滤配置（默认空，不触发校验错误）
+        filter_market_cap_range="",
+        filter_industry_whitelist="",
+        filter_industry_blacklist="",
+        filter_pe_range="",
+        filter_pb_range="",
+        filter_max_risk_score="",
+        filter_min_volume_ratio="",
+        filter_exclude_st=True,
+        # 新增异常股票处理配置（默认值，不触发校验错误）
+        filter_skip_suspended=True,
+        filter_skip_new_stock=True,
+        filter_new_stock_min_days=60,
+        filter_kline_min_completeness=0.85,
+        filter_abnormality_risk_boost_enabled=True,
         baostock_sleep_sec=1.0,
         memory_log_path=Path("/tmp/test-project/outputs/memory_log.jsonl"),
+        # 评分策略配置（默认值，不触发校验错误）
+        scoring_strategy="linear",
+        risk_boost_strategy="fixed_boost",
+        risk_boost_multiplier=1.0,
+        risk_boost_diminishing_power=0.5,
+        # 数据源配置（默认值）
+        data_provider="baostock",
+        data_fallback="akshare,mootdx,tushare",
+        akshare_enabled=True,
+        mootdx_enabled=True,
+        # 重试策略配置（默认值，不触发校验错误）
+        retry_max_attempts=3,
+        retry_base_delay=2.0,
+        retry_jitter=True,
+        retry_rate_limit_backoff=True,
+        retry_rate_limit_max_wait=60.0,
+        # 降级策略配置（默认值，不触发校验错误）
+        degrade_mode="strict",
+        ta_cache_fallback_enabled=False,
+        ta_cache_max_age_days=7,
     )
     for k, v in overrides.items():
         setattr(defaults, k, v)
@@ -68,6 +104,15 @@ def test_default_settings_pass():
     ("output_language",    "",  "output_language"),
     ("kronos_model",       "",  "kronos_model"),
     ("default_allowed_signals", [], "default_allowed_signals"),
+    ("scoring_strategy",   "invalid_xyz", "SCORING_STRATEGY"),
+    ("risk_boost_strategy", "bad_strategy", "RISK_BOOST_STRATEGY"),
+    ("risk_boost_multiplier", 0.0, "RISK_BOOST_MULTIPLIER"),
+    ("risk_boost_multiplier", 6.0, "RISK_BOOST_MULTIPLIER"),
+    ("risk_boost_diminishing_power", 0.0, "RISK_BOOST_DIMINISHING_POWER"),
+    ("risk_boost_diminishing_power", 1.5, "RISK_BOOST_DIMINISHING_POWER"),
+    ("degrade_mode", "invalid_mode", "DEGRADE_MODE"),
+    ("ta_cache_max_age_days", 0, "TA_CACHE_MAX_AGE_DAYS"),
+    ("ta_cache_max_age_days", 400, "TA_CACHE_MAX_AGE_DAYS"),
 ])
 def test_validation_errors(field, value, error_sub):
     """各非法字段应产生对应的错误消息。"""
@@ -122,3 +167,11 @@ def test_print_validation_report_warnings_only(capsys):
     assert print_validation_report([], ["missing directory"]) is True
     captured = capsys.readouterr()
     assert "missing directory" in captured.out
+
+
+def test_warning_ta_cache_fallback_mismatch():
+    """ta_cache_fallback_enabled=True 但 degrade_mode 不匹配时应产生警告。"""
+    s = _make_settings(ta_cache_fallback_enabled=True, degrade_mode="strict")
+    errors, warnings = validate_settings(s)
+    assert errors == []
+    assert any("TA_CACHE_FALLBACK_ENABLED" in w for w in warnings)

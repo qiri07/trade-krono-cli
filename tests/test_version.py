@@ -81,8 +81,9 @@ def test_llm_version():
 def test_ta_prompt_version():
     v = get_ta_prompt_version(max_debate_rounds=1,
                                max_risk_discuss_rounds=1,
-                               output_language="Chinese")
-    assert "ta-v1r1-chinese" == v
+                               output_language="Chinese",
+                               structured_output=True)
+    assert v == "ta-v1r1-chinese-json"
 
 
 def test_collect_model_versions():
@@ -131,7 +132,7 @@ def test_build_run_snapshot():
     assert snapshot["data_version"] == "baostock-2026-08-11"
     assert "kronos" in snapshot["model_versions"]
     assert "llm" in snapshot["model_versions"]
-    assert snapshot["prompt_version"] == "ta-v1r1-chinese"
+    assert snapshot["prompt_version"] == "ta-v1r1-chinese-json"
     assert snapshot["strategy_version"] == get_project_version()
     assert len(snapshot["config_hash"]) == 16  # SHA256 前16位
 

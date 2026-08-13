@@ -157,6 +157,29 @@ class HorizonMetrics:
     combined_buy_up_avg_return: float = 0.0
     high_conf_win_rate: float = 0.0
     high_conf_avg_return: float = 0.0
+    # ── 增强指标（回测引擎补充）─────────────────────────────────────────────
+    win_rate_pct: float = 0.0           # 综合胜率
+    avg_return_pct: float = 0.0         # 平均收益
+    profit_factor: float = 0.0          # 盈亏比
+    max_drawdown_pct: float = 0.0       # 最大回撤（%）
+    sharpe_ratio: float = 0.0           # 夏普比率
+
+
+@dataclass
+class BacktestResult:
+    """单次完整回测的结果。"""
+    initial_capital: float = 1_000_000.0
+    final_value: float = 0.0
+    total_return_pct: float = 0.0
+    metrics: dict = field(default_factory=dict)
+    equity_curve: list[tuple[str, float]] = field(default_factory=list)
+    n_trades: int = 0
+    rebal_mode: str = "fixed_horizon"
+    records: list = field(default_factory=list)  # 回测使用的 BacktestRecord 列表
+
+    @staticmethod
+    def empty() -> "BacktestResult":
+        return BacktestResult()
 
 
 @dataclass
@@ -175,3 +198,10 @@ class EvaluationSummary:
     # 按 horizon 分组的指标
     horizons: dict[int, HorizonMetrics] = field(default_factory=dict)
     records: list[EvalRecord] = field(default_factory=list)
+    # ── 回测结果 ────────────────────────────────────────────────────────────
+    backtest: Optional[BacktestResult] = None
+    # ── 基准对比 ────────────────────────────────────────────────────────────
+    benchmark_cum_return_pct: float = 0.0
+    excess_return_pct: float = 0.0
+    benchmark_curve: dict[str, float] = field(default_factory=dict)
+    excess_curve: dict[str, float] = field(default_factory=dict)

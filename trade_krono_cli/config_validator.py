@@ -28,6 +28,8 @@ def validate_settings(s: "Settings") -> tuple[List[str], List[str]]:
         errors.append(f"kronos_pred_len={s.kronos_pred_len} 必须 >= 1")
     if s.kronos_sample_count < 1:
         errors.append(f"kronos_sample_count={s.kronos_sample_count} 必须 >= 1")
+    if s.kronos_batch_size < 1:
+        errors.append(f"kronos_batch_size={s.kronos_batch_size} 必须 >= 1")
     if s.max_debate_rounds < 1:
         errors.append(f"max_debate_rounds={s.max_debate_rounds} 必须 >= 1")
     if s.max_risk_discuss_rounds < 1:
@@ -61,6 +63,127 @@ def validate_settings(s: "Settings") -> tuple[List[str], List[str]]:
     if not s.default_allowed_signals:
         errors.append("default_allowed_signals 不能为空")
 
+    # ── 过滤配置校验 ────────────────────────────────────────────────────────
+    # market_cap_range: "low,high"
+    if s.filter_market_cap_range:
+        parts = [p.strip() for p in s.filter_market_cap_range.split(",") if p.strip()]
+        if len(parts) != 2:
+            errors.append(
+                f"FILTER_MARKET_CAP_RANGE={s.filter_market_cap_range} "
+                f"格式应为 \"low,high\""
+            )
+        else:
+            try:
+                lo, hi = float(parts[0]), float(parts[1])
+                if lo >= hi:
+                    errors.append(
+                        f"FILTER_MARKET_CAP_RANGE 下限({lo})必须小于上限({hi})"
+                    )
+            except ValueError:
+                errors.append(
+                    f"FILTER_MARKET_CAP_RANGE={s.filter_market_cap_range} "
+                    f"包含非法数值"
+                )
+
+    # pe_range / pb_range: same format
+    for name, val in [
+        ("FILTER_PE_RANGE", s.filter_pe_range),
+        ("FILTER_PB_RANGE", s.filter_pb_range),
+    ]:
+        if val:
+            parts = [p.strip() for p in val.split(",") if p.strip()]
+            if len(parts) != 2:
+                errors.append(f"{name}={val} 格式应为 \"low,high\"")
+            else:
+                try:
+                    lo, hi = float(parts[0]), float(parts[1])
+                    if lo >= hi:
+                        errors.append(
+                            f"{name} 下限({lo})必须小于上限({hi})"
+                        )
+                except ValueError:
+                    errors.append(f"{name}={val} 包含非法数值")
+
+    # max_risk_score: 0–1
+    if s.filter_max_risk_score:
+        try:
+            v = float(s.filter_max_risk_score)
+            if not (0 <= v <= 1):
+                errors.append(
+                    f"FILTER_MAX_RISK_SCORE={v} 必须在 [0, 1] 范围内"
+                )
+        except ValueError:
+            errors.append(f"FILTER_MAX_RISK_SCORE={s.filter_max_risk_score} 不是合法数值")
+
+    # min_volume_ratio: > 0
+    if s.filter_min_volume_ratio:
+        try:
+            v = float(s.filter_min_volume_ratio)
+            if v <= 0:
+                errors.append(
+                    f"FILTER_MIN_VOLUME_RATIO={v} 必须 > 0"
+                )
+        except ValueError:
+            errors.append(f"FILTER_MIN_VOLUME_RATIO={s.filter_min_volume_ratio} 不是合法数值")
+
+    # ── 异常股票配置校验 ────────────────────────────────────────
+    if s.filter_new_stock_min_days < 5:
+        errors.append(
+            f"FILTER_NEW_STOCK_MIN_DAYS={s.filter_new_stock_min_days} 必须 >= 5"
+        )
+
+    kc = s.filter_kline_min_completeness
+    if not (0 < kc <= 1.0):
+        errors.append(
+            f"FILTER_KLINE_MIN_COMPLETENESS={kc} 必须在 (0, 1.0] 范围内"
+        )
+
+    # ── 评分策略配置校验 ─────────────────────────────────────────────
+    valid_scorers = {"linear", "multiplicative", "rank_based"}
+    if s.scoring_strategy not in valid_scorers:
+        errors.append(
+            f"SCORING_STRATEGY={s.scoring_strategy} 必须是以下之一: "
+            f"{', '.join(sorted(valid_scorers))}"
+        )
+
+    valid_boosters = {"fixed_boost", "scaled_boost", "diminishing_boost"}
+    if s.risk_boost_strategy not in valid_boosters:
+        errors.append(
+            f"RISK_BOOST_STRATEGY={s.risk_boost_strategy} 必须是以下之一: "
+            f"{', '.join(sorted(valid_boosters))}"
+        )
+
+    if not (0 < s.risk_boost_multiplier <= 5.0):
+        errors.append(
+            f"RISK_BOOST_MULTIPLIER={s.risk_boost_multiplier} 必须在 (0, 5.0] 范围内"
+        )
+
+    if not (0 < s.risk_boost_diminishing_power <= 1.0):
+        errors.append(
+            f"RISK_BOOST_DIMINISHING_POWER={s.risk_boost_diminishing_power} 必须在 (0, 1.0] 范围内"
+        )
+
+    # ── 数据源配置校验 ─────────────────────────────────────────────────────
+    valid_sources = {"baostock", "akshare", "mootdx", "tushare"}
+    primary = s.data_provider.strip().lower() if s.data_provider else "baostock"
+    if primary not in valid_sources:
+        errors.append(
+            f"DATA_PROVIDER={s.data_provider} 必须是以下之一: {', '.join(sorted(valid_sources))}"
+        )
+
+    if s.data_fallback:
+        fallbacks = [f.strip() for f in s.data_fallback.split(",") if f.strip()]
+        for fb in fallbacks:
+            if fb.lower() not in valid_sources:
+                errors.append(
+                    f"DATA_FALLBACK 包含未知源: '{fb}'，合法值: {', '.join(sorted(valid_sources))}"
+                )
+        # 不能包含主源自身
+        if primary in [f.lower() for f in fallbacks]:
+            errors.append(
+                f"DATA_FALLBACK 不能包含主数据源 '{primary}'"
+            )
+
     # ── 外部依赖目录（警告级，不影响核心流程）────────────────────────────────
     if s.tradingagents_root and not s.tradingagents_root.is_dir():
         warnings.append(
@@ -80,8 +203,47 @@ def validate_settings(s: "Settings") -> tuple[List[str], List[str]]:
                 f"provider={s.llm_provider} 对应的环境变量 {env_key} 未设置"
             )
 
+    # ── 重试策略校验 ───────────────────────────────────────────────────────
+    errors.extend(_validate_retry_policy(s))
+
+    # ── 降级策略校验 ───────────────────────────────────────────────────────
+    valid_degrade_modes = {"strict", "ta_only_on_kronos_fail", "ta_cache_fallback"}
+    if s.degrade_mode not in valid_degrade_modes:
+        errors.append(
+            f"DEGRADE_MODE={s.degrade_mode} 必须是以下之一: "
+            f"{', '.join(sorted(valid_degrade_modes))}"
+        )
+    if s.ta_cache_max_age_days < 1:
+        errors.append("TA_CACHE_MAX_AGE_DAYS 必须 >= 1")
+    elif s.ta_cache_max_age_days > 365:
+        errors.append("TA_CACHE_MAX_AGE_DAYS 不应超过 365（避免缓存过期时间过长）")
+    # 语义校验：ta_cache_fallback_enabled 仅在 ta_cache_fallback 模式下有意义
+    if s.ta_cache_fallback_enabled and s.degrade_mode != "ta_cache_fallback":
+        warnings.append(
+            f"TA_CACHE_FALLBACK_ENABLED=true 但 DEGRADE_MODE={s.degrade_mode}，"
+            f"TA 缓存回退仅在 degrade_mode=ta_cache_fallback 时生效"
+        )
+
     all_messages = [f"❌ {e}" for e in errors] + [f"⚠️  {w}" for w in warnings]
     return errors, warnings
+
+
+def _validate_retry_policy(s: "Settings") -> list[str]:
+    """校验重试策略参数。"""
+    errs: list[str] = []
+    if s.retry_max_attempts < 1:
+        errs.append("RETRY_MAX_ATTEMPTS 必须 >= 1")
+    elif s.retry_max_attempts > 10:
+        errs.append("RETRY_MAX_ATTEMPTS 不应超过 10（避免无限重试）")
+    if s.retry_base_delay <= 0:
+        errs.append("RETRY_BASE_DELAY 必须 > 0")
+    elif s.retry_base_delay > 60:
+        errs.append("RETRY_BASE_DELAY 不应超过 60s")
+    if s.retry_rate_limit_max_wait <= 0:
+        errs.append("RETRY_RATE_LIMIT_MAX_WAIT 必须 > 0")
+    elif s.retry_rate_limit_max_wait > 300:
+        errs.append("RETRY_RATE_LIMIT_MAX_WAIT 不应超过 300s")
+    return errs
 
 
 # ── 内部：provider → 环境变量名映射（复用 security.py 的约定）────────────────

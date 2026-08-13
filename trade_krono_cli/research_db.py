@@ -183,24 +183,26 @@ class ResearchDatabase:
 
                 -- 预留表
                 CREATE TABLE IF NOT EXISTS backtest_results (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    job_id     TEXT NOT NULL,
-                    strategy   TEXT NOT NULL,
-                    symbols    TEXT,
-                    start_date TEXT,
-                    end_date   TEXT,
-                    results    TEXT,
-                    created_at REAL NOT NULL
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id         TEXT NOT NULL,
+                    strategy       TEXT NOT NULL,
+                    symbols        TEXT,
+                    start_date     TEXT,
+                    end_date       TEXT,
+                    results        TEXT,
+                    created_at     REAL NOT NULL,
+                    scoring_strategy TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS strategy_runs (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_at     REAL NOT NULL,
-                    strategy   TEXT NOT NULL,
-                    params     TEXT,
-                    tickers    TEXT,
-                    results    TEXT,
-                    notes      TEXT
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_at         REAL NOT NULL,
+                    strategy       TEXT NOT NULL,
+                    params         TEXT,
+                    tickers        TEXT,
+                    results        TEXT,
+                    notes          TEXT,
+                    config_hash    TEXT
                 );
             """)
 
@@ -236,6 +238,32 @@ class ResearchDatabase:
                         logger.debug(f"📐 Schema 迁移: jobs.{col}")
                     except sqlite3.OperationalError:
                         pass
+
+            # 迁移 backtest_results.scoring_strategy 列
+            bt_cols = {row[1] for row in conn.execute(
+                "PRAGMA table_info(backtest_results)"
+            ).fetchall()}
+            if "scoring_strategy" not in bt_cols:
+                try:
+                    conn.execute(
+                        "ALTER TABLE backtest_results ADD COLUMN scoring_strategy TEXT"
+                    )
+                    logger.debug("📐 Schema 迁移: backtest_results.scoring_strategy")
+                except sqlite3.OperationalError:
+                    pass
+
+            # 迁移 strategy_runs.config_hash 列
+            sr_cols = {row[1] for row in conn.execute(
+                "PRAGMA table_info(strategy_runs)"
+            ).fetchall()}
+            if "config_hash" not in sr_cols:
+                try:
+                    conn.execute(
+                        "ALTER TABLE strategy_runs ADD COLUMN config_hash TEXT"
+                    )
+                    logger.debug("📐 Schema 迁移: strategy_runs.config_hash")
+                except sqlite3.OperationalError:
+                    pass
 
             # 确保其他表存在
             for table in ("ta_analysis", "kronos_forecast", "signals",
@@ -416,15 +444,60 @@ class ResearchDatabase:
     def get_ta_by_job(self, job_id: str) -> list[dict]:
         with self._conn as conn:
             rows = conn.execute(
-                "SELECT ticker, signal, confidence, error, elapsed "
+                "SELECT ticker, signal, confidence, thesis, risks, error, elapsed "
                 "FROM ta_analysis WHERE job_id=? ORDER BY ticker",
                 (job_id,),
             ).fetchall()
         return [
             {"ticker": r[0], "signal": r[1], "confidence": r[2],
-             "error": r[3], "elapsed": r[4]}
+             "thesis": r[3], "risks": r[4], "error": r[5], "elapsed": r[6]}
             for r in rows
         ]
+
+    def get_latest_ta_for_ticker(
+        self, ticker: str, max_age_days: int = 7,
+    ) -> Optional[dict]:
+        """
+        查询最近一次成功的 TA 分析结果（不限定 job_id）。
+
+        Parameters
+        ----------
+        ticker      : 股票代码
+        max_age_days : 最大年龄（天），超过则视为过期
+
+        Returns
+        -------
+        dict with keys: ticker, signal, confidence, thesis, risks, date, job_id
+        or None if no suitable record found.
+        """
+        import time
+        cutoff = time.time() - max_age_days * 86400
+        with self._conn as conn:
+            row = conn.execute(
+                """
+                SELECT ta.ticker, ta.signal, ta.confidence, ta.thesis, ta.risks,
+                       j.date, j.job_id
+                FROM ta_analysis ta
+                JOIN jobs j ON ta.job_id = j.job_id
+                WHERE ta.ticker = ?
+                  AND ta.error IS NULL
+                  AND j.run_at >= ?
+                ORDER BY j.run_at DESC
+                LIMIT 1
+                """,
+                (ticker, cutoff),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "ticker": row[0],
+            "signal": row[1],
+            "confidence": row[2],
+            "thesis": row[3],
+            "risks": row[4],
+            "date": row[5],
+            "job_id": row[6],
+        }
 
     # ── Kronos Forecast ───────────────────────────────
 
@@ -614,6 +687,119 @@ class ResearchDatabase:
             }
             for r in rows
         ]
+
+    # ── Strategy Run History ────────────────────────────────────────
+
+    def insert_strategy_run(
+        self,
+        run_at: float,
+        strategy: str,
+        params: dict,
+        tickers: list[str],
+        results: list[dict],
+        notes: Optional[str] = None,
+        config_hash: Optional[str] = None,
+    ) -> int:
+        """
+        记录一次评分策略运行结果到 strategy_runs 表。
+
+        Parameters
+        ----------
+        run_at      : 运行时间戳（epoch seconds）
+        strategy    : 策略名称，如 "linear" / "multiplicative"
+        params      : 策略参数 dict（JSON 序列化）
+        tickers     : 本次运行涉及的股票代码列表
+        results     : 合并结果列表，每项含 ticker + composite_score
+        notes       : 备注（可选）
+        config_hash : 配置哈希（可选）
+
+        Returns
+        -------
+        int : 插入的行 ID
+        """
+        with self._conn as conn:
+            cursor = conn.execute(
+                "INSERT INTO strategy_runs "
+                "(run_at, strategy, params, tickers, results, notes, config_hash) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run_at,
+                    strategy,
+                    json.dumps(params, ensure_ascii=False),
+                    json.dumps(tickers, ensure_ascii=False),
+                    json.dumps(results, ensure_ascii=False, default=str),
+                    notes,
+                    config_hash,
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def query_strategy_history(
+        self,
+        strategy: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """
+        查询评分策略历史运行记录。
+
+        Parameters
+        ----------
+        strategy : 筛选特定策略（None = 查全部）
+        limit    : 最多返回条数
+
+        Returns
+        -------
+        list[dict] : 按 run_at 降序排列的历史记录
+        """
+        with self._conn as conn:
+            if strategy:
+                rows = conn.execute(
+                    "SELECT run_at, strategy, params, tickers, results, "
+                    "       notes, config_hash "
+                    "FROM strategy_runs "
+                    "WHERE strategy = ? "
+                    "ORDER BY run_at DESC LIMIT ?",
+                    (strategy, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT run_at, strategy, params, tickers, results, "
+                    "       notes, config_hash "
+                    "FROM strategy_runs "
+                    "ORDER BY run_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return [
+            {
+                "run_at": r[0],
+                "strategy": r[1],
+                "params": json.loads(r[2]) if r[2] else {},
+                "tickers": json.loads(r[3]) if r[3] else [],
+                "n_results": len(json.loads(r[4])) if r[4] else 0,
+                "avg_score": self._safe_avg_score(r[4]),
+                "notes": r[5],
+                "config_hash": r[6],
+            }
+            for r in rows
+        ]
+
+    @staticmethod
+    def _safe_avg_score(results_json: Optional[str]) -> Optional[float]:
+        """从 JSON 字符串中提取平均 composite_score，非法时返回 None。"""
+        if not results_json:
+            return None
+        try:
+            results = json.loads(results_json)
+            scores = [
+                r.get("composite_score") for r in results
+                if isinstance(r, dict) and r.get("composite_score") is not None
+            ]
+            if not scores:
+                return None
+            return round(sum(scores) / len(scores), 2)
+        except (ValueError, TypeError):
+            return None
 
 
 # ═══════════════════════════════════════════════════════

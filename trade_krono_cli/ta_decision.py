@@ -1,10 +1,15 @@
 """
 InvestmentDecision — TradingAgents 决策标准化适配器。
 
-LLM 输出（自由文本）→ DecisionAdapter → 结构化 InvestmentDecision
+LLM 输出（结构化 JSON 或自由文本）→ DecisionAdapter → 结构化 InvestmentDecision
+
+解析优先级：
+  1. JSON 结构化输出（主动约束格式，准确率最高）
+  2. Rating 字段正则 → 负向关键词匹配 → 兜底（自由文本，兼容旧版 prompt）
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, asdict, field
 from enum import Enum
@@ -89,13 +94,13 @@ class InvestmentDecision:
 
 class DecisionAdapter:
     """
-    将 TradingAgents 自由文本输出解析为结构化 InvestmentDecision。
+    将 TradingAgents 输出解析为结构化 InvestmentDecision。
 
     解析优先级：
-      1. **Rating**: <value> 结构化字段 → 信号 + 基础置信度
-      2. **Investment Thesis** / **Executive Summary** → thesis 摘要
-      3. 百分比数字模式 → expected_return（如有）
-      4. 风险关键词 + 列表格式 → risks
+      1. JSON 结构化输出 → 直接映射字段（signal, confidence, thesis, risks, expected_return）
+      2. **Rating**: <value> 结构化字段 → 信号 + 基础置信度
+      3. **Investment Thesis** / **Executive Summary** → thesis 摘要
+      4. 百分比数字模式 → expected_return（如有）
       5. keyword fallback（负上下文感知）→ 兜底信号
       6. fallback → HOLD, 50
     """
@@ -121,9 +126,29 @@ class DecisionAdapter:
     _RE_POS_SIZE = re.compile(r"仓位[:：]?\s*(\d+(?:\.\d+)?)\s*[%‰]?\s*(?:以上|左右|)")
 
     def parse(self, decision_text: str) -> InvestmentDecision:
-        """主入口：解析 LLM 输出文本 → InvestmentDecision。"""
+        """
+        主入口：解析 LLM 输出 → InvestmentDecision。
+
+        优先尝试 JSON 结构化解析，失败后回退到自由文本正则解析。
+        回退时记录 warning 日志，便于监控 prompt 质量。
+        """
+        from loguru import logger
+
         if not decision_text or not decision_text.strip():
             return InvestmentDecision.fallback()
+
+        # ── 0. JSON 结构化解析（优先路径）────────────────────────────────────
+        decision_text_stripped = decision_text.strip()
+        json_decision = self._try_parse_json(decision_text_stripped)
+        if json_decision is not None:
+            return json_decision
+
+        # ── JSON 解析失败，回退到文本正则解析 ────────────────────────────────
+        logger.warning(
+            f"[TA决策解析] JSON 结构化解析失败，回退到文本正则解析。"
+            f"请检查 LLM prompt 是否要求返回标准 JSON 格式。\n"
+            f"  原始输出前200字: {decision_text_stripped[:200]!r}"
+        )
 
         # ── 1. Rating 结构化解析 ────────────────────────────────────────────
         rating_match = self._RE_RATING.search(decision_text)
@@ -155,6 +180,120 @@ class DecisionAdapter:
         # ── 5. Position size ───────────────────────────────────────────────
         position_size = self._extract_position_size(decision_text)
 
+        return InvestmentDecision(
+            signal=signal,
+            confidence=round(confidence, 1),
+            expected_return=expected_return,
+            position_size=position_size,
+            horizon=None,
+            thesis=thesis,
+            risks=risks,
+        )
+
+    # ── JSON 结构化解析 ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _try_parse_json(text: str) -> Optional[InvestmentDecision]:
+        """
+        尝试将输入解析为 JSON 结构化决策。
+
+        支持的字段（全部可选，缺失时使用默认值）：
+          signal           "BUY"/"HOLD"/"SELL"（不区分大小写）
+          confidence       0–100 浮点数
+          thesis           投资论点字符串
+          risks            风险列表（字符串数组）
+          expected_return  预期收益率（百分比）
+          position_size    建议仓位比例（0–1）
+
+        Returns
+        -------
+        InvestmentDecision 或 None（解析失败时返回 None，由调用方回退到文本解析）
+        """
+        from loguru import logger
+
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            # 不是合法 JSON，回退到文本解析
+            return None
+
+        if not isinstance(data, dict):
+            logger.warning(
+                f"[TA决策解析] JSON 解析成功但非对象类型（{type(data).__name__}），"
+                f"回退到文本正则解析。"
+            )
+            return None
+
+        # ── signal ──────────────────────────────────────────────────────────
+        signal_raw = data.get("signal", "HOLD")
+        if isinstance(signal_raw, str):
+            try:
+                signal = Signal(signal_raw)
+            except ValueError:
+                # 容忍大小写不敏感
+                try:
+                    signal = Signal(signal_raw.upper())
+                except ValueError:
+                    logger.warning(
+                        f"[TA决策解析] 未知 signal 值 '{signal_raw}'，回退到 HOLD"
+                    )
+                    signal = Signal.HOLD
+        else:
+            signal = Signal.HOLD
+
+        # ── confidence ──────────────────────────────────────────────────────
+        confidence = data.get("confidence")
+        if confidence is not None:
+            try:
+                confidence = float(confidence)
+                confidence = max(0.0, min(100.0, confidence))
+            except (ValueError, TypeError):
+                confidence = 50.0
+        else:
+            # 根据 signal 赋予默认置信度
+            confidence = {Signal.BUY: 80.0, Signal.HOLD: 50.0, Signal.SELL: 30.0}[signal]
+
+        # ── thesis ──────────────────────────────────────────────────────────
+        thesis = data.get("thesis", "")
+        if isinstance(thesis, str):
+            thesis = thesis.strip()[:THESIS_TRUNCATE_LEN]
+        else:
+            thesis = ""
+
+        # ── risks ───────────────────────────────────────────────────────────
+        risks_raw = data.get("risks")
+        if isinstance(risks_raw, list):
+            risks = [str(r).strip() for r in risks_raw if str(r).strip()]
+        elif isinstance(risks_raw, str):
+            # 兼容单字符串格式（逗号分隔或换行分隔）
+            risks = [
+                r.strip() for r in re.split(r"[,\n]+", risks_raw) if r.strip()
+            ]
+        else:
+            risks = []
+        risks = risks[:8]  # 最多保留 8 条
+
+        # ── expected_return ─────────────────────────────────────────────────
+        expected_return = data.get("expected_return")
+        if expected_return is not None:
+            try:
+                expected_return = float(expected_return)
+            except (ValueError, TypeError):
+                expected_return = None
+
+        # ── position_size ───────────────────────────────────────────────────
+        position_size = data.get("position_size")
+        if position_size is not None:
+            try:
+                position_size = float(position_size)
+                position_size = max(-1.0, min(1.0, position_size))
+            except (ValueError, TypeError):
+                position_size = None
+
+        logger.info(
+            f"[TA决策解析] JSON 结构化解析成功 | signal={signal.value} "
+            f"confidence={confidence}"
+        )
         return InvestmentDecision(
             signal=signal,
             confidence=round(confidence, 1),

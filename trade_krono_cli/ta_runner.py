@@ -1,9 +1,14 @@
 """
-TradingAgents-Astock 封装层：
-  • 安全初始化（密钥校验 + 配置隔离）
-  • 批量分析（失败隔离、进度回调）
-  • checkpoint 自动管理
-  • 结构化输出（StockAnalysisResult）
+TradingAgents-Astock 封装层（业务逻辑层）。
+
+职责边界：
+  · 股票分析调度（analyze_one / analyze_batch）
+  · 报告提取与截断（_extract_reports）
+  · 决策解析（_extract_decision → InvestmentDecision）
+  · 缓存读写
+  · 结果落盘（save_results / save_raw_reports）
+
+资源管理（LLM 密钥校验 / 适配器懒加载 / graph 初始化）由 TASession 负责。
 """
 from __future__ import annotations
 
@@ -23,9 +28,15 @@ from trade_krono_cli.security import (
     validate_date,
     retry,
     sanitize_for_log,
-    ensure_import_path,
+)
+from trade_krono_cli.retry_policy import (
+    smart_retry,
+    RetryPolicy,
+    classify_error,
+    get_failure_store,
 )
 from trade_krono_cli.cache import get_cache
+from trade_krono_cli.version import compute_config_hash, get_ta_prompt_version
 from trade_krono_cli.ta_decision import InvestmentDecision, Signal, DecisionAdapter
 from trade_krono_cli.errors import ModelLoadError, TradeKronoError
 from trade_krono_cli.adapters import TradingAgentsAdapterImpl
@@ -129,16 +140,20 @@ class StockAnalysisResult:
 
 class TradingAgentsRunner:
     """
-    生产级 TradingAgents 封装。
+    生产级 TradingAgents 封装（业务逻辑层）。
 
-    设计要点：
-    - 懒加载 TradingAgentsGraph（首次调用才 import）
-    - 复用同一 graph 实例，多只股票顺序跑
-    - 单只失败不影响整体
+    特点：
+    - 批量分析（失败隔离、进度回调）
+    - checkpoint 自动管理
+    - 结构化输出（StockAnalysisResult）
+    - 缓存支持
+
+    资源管理（LLM 密钥校验 / 适配器懒加载）由 TASession 负责。
     """
 
     def __init__(
         self,
+        session: Optional[Any] = None,
         llm_provider: Optional[str] = None,
         deep_think_llm: Optional[str] = None,
         quick_think_llm: Optional[str] = None,
@@ -149,7 +164,9 @@ class TradingAgentsRunner:
         safe_mode: bool = True,
         no_cache: bool = False,
         settings: Optional[Settings] = None,
+        retry_policy: Optional[RetryPolicy] = None,
     ):
+        self._session = session
         self._settings = settings or get_settings()
         self._cache = None if no_cache else get_cache()
 
@@ -170,17 +187,43 @@ class TradingAgentsRunner:
         )
         self.output_language = output_language
 
-        if safe_mode:
+        if safe_mode and self._session is None:
             self._validate_provider()
 
-        self._adapter = None
+        # 重试策略：CLI 参数 > Settings 默认
+        self._retry_policy = retry_policy or RetryPolicy(
+            max_attempts=get_settings().retry_max_attempts,
+            base_delay=get_settings().retry_base_delay,
+            jitter=get_settings().retry_jitter,
+            rate_limit_backoff=get_settings().retry_rate_limit_backoff,
+            rate_limit_max_wait=get_settings().retry_rate_limit_max_wait,
+        )
+
         logger.info(
             f"🤖 TradingAgentsRunner 就绪 | provider={self.llm_provider} "
             f"deep={self.deep_think_llm}"
         )
 
+    # ── 资源访问（委托给 session）────────────────────────────────────────────
+
+    @property
+    def adapter(self) -> Any:
+        """返回底层 adapter 实例（供测试注入或外部访问）。"""
+        if self._session is not None:
+            return self._session.adapter
+        # 无 session 时直接创建（向后兼容）
+        return self._make_adapter()
+
+    def _make_adapter(self) -> Any:
+        """创建新的 adapter 实例（供 session 或测试使用）。"""
+        adapter = TradingAgentsAdapterImpl()
+        adapter.load(self._settings)
+        return adapter
+
+    # ── 资源管理（仅在没有 session 时生效）──────────────────────────────────
+
     def _validate_provider(self) -> None:
-        """检查 LLM 密钥是否可用。"""
+        """检查 LLM 密钥是否可用（仅在无 session 时调用）。"""
         from trade_krono_cli.security import KeyVault
         vault = KeyVault()
         available = vault.available_providers()
@@ -195,6 +238,8 @@ class TradingAgentsRunner:
                 f"回退到: {available[0]}"
             )
             self.llm_provider = available[0]
+
+    # ── 业务逻辑 ─────────────────────────────────────────────────────────────
 
     def _build_config(self) -> dict:
         s = self._settings
@@ -219,19 +264,6 @@ class TradingAgentsRunner:
         if self.backend_url:
             cfg["backend_url"] = self.backend_url
         return cfg
-
-    def _get_adapter(self):
-        """懒加载 TradingAgentsAdapter。"""
-        if self._adapter is not None:
-            return self._adapter
-        self._adapter = TradingAgentsAdapterImpl()
-        self._adapter.load(self._settings)
-        return self._adapter
-
-    @property
-    def adapter(self):
-        """暴露适配器实例，供测试注入或外部访问。"""
-        return self._get_adapter()
 
     def _extract_reports(self, state: dict) -> tuple[dict[str, str], dict[str, str]]:
         """
@@ -287,8 +319,17 @@ class TradingAgentsRunner:
         }
         return legacy, inv_decision
 
-    @retry(max_attempts=3, base_delay=5.0, exceptions=(RuntimeError, ConnectionError, TimeoutError))
+    @smart_retry  # uses self._retry_policy via closure below
+    def _analyze_one_retriable(self, ticker: str, date: str) -> StockAnalysisResult:
+        """内部方法：带智能重试的 TA 分析（装饰器作用于此处）。"""
+        return self._analyze_one_impl(ticker, date)
+
     def analyze_one(self, ticker: str, date: str) -> StockAnalysisResult:
+        """
+        TA 单只股票分析入口。
+
+        通过 _analyze_one_retriable 调用，自动处理重试与失败记录。
+        """
         ticker = validate_ticker(ticker)
         date = validate_date(date)
         result = StockAnalysisResult(ticker=ticker, date=date)
@@ -296,7 +337,12 @@ class TradingAgentsRunner:
 
         # 缓存检查
         if self._cache:
-            cached = self._cache.get_ta(ticker, date)
+            _ch = compute_config_hash(self._settings)
+            _pv = get_ta_prompt_version(
+                self.max_debate_rounds, self._settings.max_risk_discuss_rounds,
+                self.output_language, structured_output=True,
+            )
+            cached = self._cache.get_ta(ticker, date, config_hash=_ch, prompt_ver=_pv)
             if cached:
                 logger.debug(f"📦 TA 缓存命中: {ticker}")
                 for k, v in cached.items():
@@ -307,8 +353,25 @@ class TradingAgentsRunner:
                 result.elapsed_sec = 0.0
                 return result
 
+        # 使用智能重试执行分析
         try:
-            adapter = self._get_adapter()
+            inner_result = self._analyze_one_retriable(ticker, date)
+            return inner_result
+        except Exception as e:
+            # 重试耗尽，记录失败
+            result.error = f"{type(e).__name__}: {e}"
+            category, desc = classify_error(e)
+            store = get_failure_store()
+            store.record(ticker, date, "ta", e)
+            safe_msg = sanitize_for_log(str(e))
+            logger.error(f"❌ {ticker} TA 分析失败 [{category}]: {safe_msg}")
+            return result
+
+    def _analyze_one_impl(self, ticker: str, date: str) -> StockAnalysisResult:
+        """实际的 TA 分析逻辑（无重试装饰，供重试装饰器调用）。"""
+        result = StockAnalysisResult(ticker=ticker, date=date)
+        try:
+            adapter = self.adapter
             config = adapter.build_config(
                 ticker=ticker,
                 trade_date=date,
@@ -367,7 +430,11 @@ class TradingAgentsRunner:
 
             # 写缓存
             if self._cache:
-                self._cache.set_ta(ticker, date, result.to_dict())
+                _ch = compute_config_hash(self._settings)
+                _pv = get_ta_prompt_version(
+                    self.max_debate_rounds, self._settings.max_risk_discuss_rounds, self.output_language
+                )
+                self._cache.set_ta(ticker, date, result.to_dict(), config_hash=_ch, prompt_ver=_pv)
 
         except TradeKronoError as e:
             # 已知业务错误：记录完整信息

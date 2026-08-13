@@ -21,9 +21,44 @@ from trade_krono_cli.configs.schema import (
     ConstraintConfig as SchemaConstraintConfig,
     RiskConfig as SchemaRiskConfig,
     ScoringConfig as SchemaScoringConfig,
+    ScoringStrategyConfig,
+    RiskBoostStrategyConfig,
 )
 from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.config import get_settings, Settings
+from trade_krono_cli.stock_filter import FilterRule
+
+
+# ── 配置解析辅助函数 ─────────────────────────────────────────────────────────
+
+def _parse_range(s: str) -> tuple[float, float] | None:
+    """解析格式为 \"low,high\" 的字符串，返回 (low, high) 或 None。"""
+    if not s or not s.strip():
+        return None
+    parts = [p.strip() for p in s.split(",") if p.strip()]
+    if len(parts) != 2:
+        return None
+    try:
+        return float(parts[0]), float(parts[1])
+    except ValueError:
+        return None
+
+
+def _parse_comma_list(s: str) -> list[str]:
+    """解析逗号分隔字符串，返回去重非空列表。"""
+    if not s or not s.strip():
+        return []
+    return [p.strip() for p in s.split(",") if p.strip()]
+
+
+def _parse_float(s: str) -> float | None:
+    """解析浮点数字符串，返回 None 表示未设置。"""
+    if not s or not s.strip():
+        return None
+    try:
+        return float(s.strip())
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -67,6 +102,10 @@ class PipelineConfig:
 
     # ── 综合打分配置 ────────────────────────────────────────
     scoring: SchemaScoringConfig = field(default_factory=SchemaScoringConfig)
+    scoring_strategy: ScoringStrategyConfig = field(default_factory=ScoringStrategyConfig)
+
+    # ── 风险加分策略配置 ────────────────────────────────────────
+    risk_boost_strategy: RiskBoostStrategyConfig = field(default_factory=RiskBoostStrategyConfig)
 
     # ── 风险引擎配置 ────────────────────────────────────────
     risk: SchemaRiskConfig = field(default_factory=SchemaRiskConfig)
@@ -74,6 +113,22 @@ class PipelineConfig:
     # ── 过滤 ────────────────────────────────────────────────
     min_confidence: float = 55.0
     allowed_signals: tuple[str, ...] = field(default=("BUY", "HOLD"))
+    # ── 股票过滤 ─────────────────────────────────────────────
+    market_cap_range: tuple[float, float] | None = None
+    industry_whitelist: list[str] = field(default_factory=list)
+    industry_blacklist: list[str] = field(default_factory=list)
+    pe_range: tuple[float, float] | None = None
+    pb_range: tuple[float, float] | None = None
+    max_risk_score: float | None = None
+    min_volume_ratio: float | None = None
+    min_turnover_rate: float | None = None
+    exclude_st: bool = True
+    filter_rules: list[FilterRule] = field(default_factory=list)
+    # ── 异常股票处理 ──────────────────────────────────────────
+    skip_new_stock: bool = True
+    new_stock_min_days: int = 60
+    kline_min_completeness: float = 0.85
+    abnormality_risk_boost_enabled: bool = True
 
     # ── 输出 ────────────────────────────────────────────────
     output_dir: Path = field(default_factory=lambda: Path("outputs"))
@@ -83,6 +138,21 @@ class PipelineConfig:
     # ── 日志 ────────────────────────────────────────────────
     log_level: str = "INFO"
     log_json: bool = False  # 是否输出 JSON 结构化日志
+
+    # ── 重试策略 ──────────────────────────────────────────
+    retry_max_attempts: int = 3
+    retry_base_delay: float = 2.0
+    retry_jitter: bool = True
+    retry_rate_limit_backoff: bool = True
+    retry_rate_limit_max_wait: float = 60.0
+
+    # ── 降级策略 ──────────────────────────────────────────
+    degrade_mode: str = "strict"
+    """降级策略：strict / ta_only_on_kronos_fail / ta_cache_fallback"""
+    ta_cache_fallback_enabled: bool = False
+    """是否允许在 TA 失败时回退到最近一次缓存的 TA 结果。"""
+    ta_cache_max_age_days: int = 7
+    """TA 缓存结果最大有效期（天）。"""
 
     # ── 缓存 ────────────────────────────────────────────────
     no_cache: bool = False
@@ -107,9 +177,37 @@ class PipelineConfig:
             max_debate_rounds=s.max_debate_rounds,
             output_language=s.output_language,
             scoring=SchemaScoringConfig(),
+            scoring_strategy=ScoringStrategyConfig(
+                strategy=s.scoring_strategy,
+            ),
+            risk_boost_strategy=RiskBoostStrategyConfig(
+                strategy=s.risk_boost_strategy,
+                multiplier=s.risk_boost_multiplier,
+                diminishing_power=s.risk_boost_diminishing_power,
+            ),
             risk=SchemaRiskConfig(),
             min_confidence=s.default_min_confidence,
             allowed_signals=tuple(s.default_allowed_signals),
+            market_cap_range=_parse_range(s.filter_market_cap_range),
+            industry_whitelist=_parse_comma_list(s.filter_industry_whitelist),
+            industry_blacklist=_parse_comma_list(s.filter_industry_blacklist),
+            pe_range=_parse_range(s.filter_pe_range),
+            pb_range=_parse_range(s.filter_pb_range),
+            max_risk_score=_parse_float(s.filter_max_risk_score),
+            min_volume_ratio=_parse_float(s.filter_min_volume_ratio),
+            exclude_st=s.filter_exclude_st,
+            skip_new_stock=s.filter_skip_new_stock,
+            new_stock_min_days=s.filter_new_stock_min_days,
+            kline_min_completeness=s.filter_kline_min_completeness,
+            abnormality_risk_boost_enabled=s.filter_abnormality_risk_boost_enabled,
+            retry_max_attempts=s.retry_max_attempts,
+            retry_base_delay=s.retry_base_delay,
+            retry_jitter=s.retry_jitter,
+            retry_rate_limit_backoff=s.retry_rate_limit_backoff,
+            retry_rate_limit_max_wait=s.retry_rate_limit_max_wait,
+            degrade_mode=s.degrade_mode,
+            ta_cache_fallback_enabled=s.ta_cache_fallback_enabled,
+            ta_cache_max_age_days=s.ta_cache_max_age_days,
             output_dir=s.results_dir.parent,
         )
 
@@ -122,6 +220,24 @@ class PipelineConfig:
             current["constraints"] = ConstraintConfig(**kwargs["constraints"])
         elif "constraints" not in kwargs:
             current["constraints"] = self.constraints
+        if "scoring_strategy" in kwargs and isinstance(kwargs["scoring_strategy"], dict):
+            base = self.scoring_strategy
+            current["scoring_strategy"] = ScoringStrategyConfig(
+                strategy=kwargs["scoring_strategy"].get("strategy", base.strategy),
+                params=kwargs["scoring_strategy"].get("params", base.params),
+            )
+        elif "scoring_strategy" not in kwargs:
+            current["scoring_strategy"] = self.scoring_strategy
+        if "risk_boost_strategy" in kwargs and isinstance(kwargs["risk_boost_strategy"], dict):
+            base = self.risk_boost_strategy
+            rb_override = kwargs["risk_boost_strategy"]
+            current["risk_boost_strategy"] = RiskBoostStrategyConfig(
+                strategy=rb_override.get("strategy", base.strategy),
+                multiplier=rb_override.get("multiplier", base.multiplier),
+                diminishing_power=rb_override.get("diminishing_power", base.diminishing_power),
+            )
+        elif "risk_boost_strategy" not in kwargs:
+            current["risk_boost_strategy"] = self.risk_boost_strategy
         return PipelineConfig(**current)
 
     def to_dict(self) -> dict:
@@ -159,6 +275,10 @@ class PipelineConfig:
             copy["constraints"] = ConstraintConfig(**copy["constraints"])
         if "scoring" in copy and isinstance(copy["scoring"], dict):
             copy["scoring"] = SchemaScoringConfig(**copy["scoring"])
+        if "scoring_strategy" in copy and isinstance(copy["scoring_strategy"], dict):
+            copy["scoring_strategy"] = ScoringStrategyConfig(**copy["scoring_strategy"])
+        if "risk_boost_strategy" in copy and isinstance(copy["risk_boost_strategy"], dict):
+            copy["risk_boost_strategy"] = RiskBoostStrategyConfig(**copy["risk_boost_strategy"])
         if "risk" in copy and isinstance(copy["risk"], dict):
             copy["risk"] = SchemaRiskConfig(**copy["risk"])
         return cls(**copy)

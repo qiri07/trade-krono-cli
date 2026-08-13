@@ -115,6 +115,8 @@ def compute_config_hash(
         "default_min_confidence",
         "output_language",
         "checkpoint_enabled",
+        "scoring_strategy",
+        "risk_boost_strategy",
     ]
     for k in strategy_keys:
         val = getattr(settings, k, None)
@@ -146,7 +148,8 @@ def get_data_version(ticker: str, query_date: str, source: str = "baostock") -> 
     格式: {source}-{date}
     例如: baostock-20260811
 
-    如果未来引入多个数据源，可升级为: baostock-20260811|tushare-20260810
+    多数据源场景下，调用方可传入实际使用的源名称。
+    工厂层会在运行时自动选择最优数据源并传回此标识。
     """
     return f"{source}-{query_date}"
 
@@ -201,13 +204,20 @@ def get_ta_prompt_version(
     max_debate_rounds: int,
     max_risk_discuss_rounds: int,
     output_language: str,
+    structured_output: bool = True,
 ) -> str:
     """
     生成 TA 提示词版本标识。
     实际 prompt 模板版本需从 TradingAgents-astock 获取。
     此处使用关键参数组合作为 proxy。
+
+    Parameters
+    ----------
+    structured_output : bool
+        是否要求 LLM 返回结构化 JSON 输出。默认为 True。
     """
-    return f"ta-v{max_debate_rounds}r{max_risk_discuss_rounds}-{output_language.lower()}"
+    fmt_tag = "json" if structured_output else "text"
+    return f"ta-v{max_debate_rounds}r{max_risk_discuss_rounds}-{output_language.lower()}-{fmt_tag}"
 
 
 # ═══════════════════════════════════════════════════════
@@ -270,6 +280,8 @@ def build_run_snapshot(
         "prompt_version": prompt_version,
         "strategy_version": get_project_version(),
         "config_hash": config_hash,
+        "scoring_strategy": getattr(settings, "scoring_strategy", "linear"),
+        "risk_boost_strategy": getattr(settings, "risk_boost_strategy", "fixed_boost"),
         "external_repos": external_repos,
     }
 

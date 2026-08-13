@@ -36,6 +36,7 @@ Results are automatically merged after both complete, producing a ranked report.
 - [Three-Tier Raw Report Storage](#three-tier-raw-report-storage)
 - [InvestmentDecision Standardization](#investmentdecision-standardization)
 - [Security Notes](#security-notes)
+- [Degradation & Fallback](#degradation--fallback)
 - [Changelog](#changelog)
 - [Notes](#notes)
 
@@ -77,6 +78,27 @@ EOF
 
 ## Installation
 
+### Install by Feature (Recommended, Significantly Reduces Install Size)
+
+```bash
+# TA-only mode: no PyTorch, ~200MB install vs ~2GB+ full install
+pip install -e ".[ta]"
+
+# Full install: TA + Kronos prediction + all data sources
+pip install -e ".[full]"
+
+# Kronos only (includes PyTorch)
+pip install -e ".[kronos]"
+
+# Data sources only (combinable)
+pip install -e ".[data,akshare]"
+pip install -e ".[data,mootdx]"
+pip install -e ".[data,tushare]"
+
+# Development dependencies
+pip install -e ".[dev]"
+```
+
 ### Method 1: uv Virtual Environment (Recommended)
 
 ```bash
@@ -88,7 +110,7 @@ uv pip install -e ".[dev]"
 
 > **Note**: This project requires **Python 3.12**. Python 3.14 is not yet supported (no torch wheel for cp314, and PEP 668 blocks system-wide pip installs).
 
-### Method 2: pip Install
+### Full Install (All Features)
 
 ```bash
 cd trade-krono-cli
@@ -118,7 +140,7 @@ The install script will:
 | Dependency | Minimum Version | Notes |
 |------|----------|------|
 | Python | 3.12 | Python 3.14 not yet supported (no torch wheel) |
-| PyTorch | 2.13+ (cu130) | Kronos model inference; install via `.venv/bin/uv pip install torch` |
+| PyTorch | 2.13+ (cu130) | **Optional**: Kronos model inference (`pip install -e ".[kronos]"`) |
 | Typer | 0.9+ | CLI framework |
 | Rich | 13+ | Terminal beautification output |
 | Python-dotenv | 1.0+ | .env file loading |
@@ -205,6 +227,22 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock request interval (seconds)
 |------|--------|------|
 | `MIN_CONFIDENCE` | `55.0` | Stocks below this TA confidence are excluded from ranking |
 | `ALLOWED_SIGNALS` | `BUY,HOLD` | Only keep stocks with signals in this list |
+
+#### Degradation Strategy
+
+When Kronos is unavailable or TA analysis fails, the pipeline degrades gracefully instead of aborting:
+
+| Variable | Default | Description |
+|------|--------|------|
+| `DEGRADE_MODE` | `strict` | Degradation policy: `strict` / `ta_only_on_kronos_fail` / `ta_cache_fallback` |
+| `TA_CACHE_FALLBACK_ENABLED` | `false` | Allow falling back to the latest cached TA result when TA analysis fails (requires `--ta-cache-fallback` flag) |
+| `TA_CACHE_MAX_AGE_DAYS` | `7` | Maximum age (days) of a cached TA result before it is considered expired |
+
+- **`strict`** — default; any TA or Kronos error causes that stock to be excluded from the final report.
+- **`ta_only_on_kronos_fail`** — if Kronos prediction fails for a stock, the TA result is still included (marked as `⚠ TA-only` in reports).
+- **`ta_cache_fallback`** — if TA analysis fails, the system looks up the most recent successful TA result from the research database (marked as `📦 缓存TA`). Requires `--ta-cache-fallback` CLI flag.
+
+> **Note**: A semantic warning is emitted when `TA_CACHE_FALLBACK_ENABLED=true` but `DEGRADE_MODE` is not `ta_cache_fallback`.
 
 #### Path Configuration
 
@@ -392,6 +430,8 @@ EOF
 | `--json` | `outputs/results.json` | JSON report output path |
 | `--html` | `outputs/report.html` | HTML report output path |
 | `--no-cache` | `false` | Disable cache |
+| `--degrade-mode` | `strict` | Degradation strategy: `strict` / `ta_only_on_kronos_fail` / `ta_cache_fallback` |
+| `--ta-cache-fallback` | `false` | Enable TA cache fallback (requires `--degrade-mode ta_cache_fallback`) |
 
 ### `ta` — TradingAgents Only
 
@@ -942,9 +982,9 @@ EOF
 | `loguru` | Logging |
 | `python-dotenv` | .env loading |
 | `pyyaml` | YAML config file read/write |
-| `pandas` + `baostock` | A-share data fetching |
-| `torch` | Kronos model inference |
-| `pytest` | Test framework (dev dependency) |
+| `pandas` + `numpy` + `baostock` | A-share data fetching and processing |
+| `torch` | **Optional**: Kronos model inference (`[kronos]` group) |
+| `pytest` | Test framework (`[dev]` group) |
 
 ### External Project Call Path
 
@@ -1147,7 +1187,53 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | baostock Login | Global singleton + thread lock to avoid concurrent conflicts | `data.py::_ensure_bs_login` |
 | Log Sanitization | Exception logs auto-sanitize API keys (regex replace sk-xxx / Bearer xxx) | `security.py::sanitize_for_log` |
 
+---
+
+## Degradation & Fallback
+
+When a stock fails to produce results from either TA or Kronos, the pipeline now degrades gracefully instead of discarding the entire entry.
+
+### Degradation Modes
+
+| Mode | CLI Flag | Behavior |
+|------|----------|----------|
+| `strict` | (default) | Any TA or Kronos error → stock excluded from final report |
+| `ta_only_on_kronos_fail` | `--degrade-mode ta_only_on_kronos_fail` | Kronos failure → TA result kept; TA failure → stock excluded |
+| `ta_cache_fallback` | `--degrade-mode ta_cache_fallback --ta-cache-fallback` | TA/Kronos failure → look up latest cached TA result from the research database |
+
+### Report Markers
+
+Degraded stocks are visually distinguished across all output channels:
+
+- **JSON report**: `degradation_mode` field set to `"kronos_degraded"` or `"ta_cache_fallback"`
+- **HTML table**: Badge appended next to the ticker — `⚠ TA-only` or `📦 缓存TA`
+- **Console table**: Dedicated "降级模式" column shows the same markers
+- **Summary**: Counts of degraded and cache-fallback stocks printed alongside the top recommendation
+
+### TA Cache Fallback
+
+When enabled (`--ta-cache-fallback`), failed TA analyses are automatically resolved by querying the research database for the most recent successful TA result for that ticker. The lookup respects:
+
+- `TA_CACHE_MAX_AGE_DAYS` (default: 7) — results older than this are considered expired
+- Only records with `error IS NULL` are eligible
+- The fallback updates `signal`, `confidence`, and `reasoning` in-place so downstream merge/scoring proceeds normally
+
 ## Changelog
+
+### v0.1.4 — 2026-08-13
+
+**Graceful degradation mechanism:**
+- Three degradation modes: `strict` (default), `ta_only_on_kronos_fail`, `ta_cache_fallback`
+- When Kronos is unavailable, TA-only results are preserved in `ta_only_on_kronos_fail` mode
+- When TA analysis fails, the pipeline can fall back to the most recent cached TA result from the research database (`ta_cache_fallback` mode)
+- Degraded stocks are visually marked in JSON reports (`degradation_mode` field), HTML badges (`⚠ TA-only` / `📦 缓存TA`), and console tables ("降级模式" column)
+- New CLI flags: `--degrade-mode` and `--ta-cache-fallback`
+- New env vars: `DEGRADE_MODE`, `TA_CACHE_FALLBACK_ENABLED`, `TA_CACHE_MAX_AGE_DAYS`
+- Config validator emits a semantic warning when `TA_CACHE_FALLBACK_ENABLED=true` but `DEGRADE_MODE` is not `ta_cache_fallback`
+- Extracted `_apply_ta_cache_fallback()` helper in orchestrator, `_degradation_badge()` in reporter, `_build_degrade_overrides()` in cli_commands
+- Test count: **468** (up from 459); added `tests/test_degradation.py` with 33 tests
+
+---
 
 ### v0.1.3 — 2026-08-13
 

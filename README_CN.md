@@ -36,6 +36,7 @@
 - [原始报告三层存储](#原始报告三层存储)
 - [投资决断标准化（InvestmentDecision）](#投资决断标准化investmentdecision)
 - [安全说明](#安全说明)
+- [优雅降级与缓存回退](#优雅降级与缓存回退)
 - [更新日志](#更新日志)
 - [注意事项](#注意事项)
 
@@ -75,7 +76,28 @@ trade-krono-cli run --tickers "600519,000858,600036" --date 2026-08-11
 
 ## 安装
 
-### 方式一：uv 虚拟环境（推荐）
+### 按需安装（推荐，大幅降低安装体积）
+
+```bash
+# TA 分析模式：不含 PyTorch，安装包约 200MB（vs 全量 2GB+）
+pip install -e ".[ta]"
+
+# 完整安装：TA + Kronos 预测 + 所有数据源
+pip install -e ".[full]"
+
+# 仅加 Kronos（含 PyTorch）
+pip install -e ".[kronos]"
+
+# 仅加数据源（可选组合）
+pip install -e ".[data,akshare]"
+pip install -e ".[data,mootdx]"
+pip install -e ".[data,tushare]"
+
+# 开发模式
+pip install -e ".[dev]"
+```
+
+### uv 虚拟环境（推荐）
 
 ```bash
 cd trade-krono-cli
@@ -86,7 +108,7 @@ uv pip install -e ".[dev]"
 
 > **注意**：本项目使用 Python 3.12。Python 3.14 暂不被支持（torch 尚无 cp314 wheel，且 PEP 668 禁止系统 pip 安装）。
 
-### 方式二：pip 安装
+### 完整安装（含所有功能）
 
 ```bash
 cd trade-krono-cli
@@ -116,7 +138,7 @@ bash scripts/install.sh
 | 依赖 | 最低版本 | 说明 |
 |------|----------|------|
 | Python | 3.12 | 3.14 暂不支持（torch 无 wheel） |
-| PyTorch | 2.13+ (cu130) | Kronos 模型推理；通过 uv 安装 `.venv/bin/uv pip install torch` |
+| PyTorch | 2.13+ (cu130) | **可选**：Kronos 模型推理（`pip install -e ".[kronos]"`） |
 | Typer | 0.9+ | CLI 框架 |
 | Rich | 13+ | 终端美化输出 |
 | Python-dotenv | 1.0+ | .env 文件加载 |
@@ -199,10 +221,28 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock 请求间隔（秒）
 
 #### 过滤配置
 
+#### 过滤配置
+
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `MIN_CONFIDENCE` | `55.0` | TA 置信度低于此值的股票不参与综合排名 |
 | `ALLOWED_SIGNALS` | `BUY,HOLD` | 只保留信号在此列表中的股票 |
+
+#### 降级策略
+
+当 Kronos 不可用或 TA 分析失败时，流水线会优雅降级而非直接丢弃该股票：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `DEGRADE_MODE` | `strict` | 降级策略：`strict` / `ta_only_on_kronos_fail` / `ta_cache_fallback` |
+| `TA_CACHE_FALLBACK_ENABLED` | `false` | 允许在 TA 失败时回退到最近一次缓存的 TA 结果（需配合 `--ta-cache-fallback` 参数） |
+| `TA_CACHE_MAX_AGE_DAYS` | `7` | TA 缓存结果最大有效期（天），超过则视为过期 |
+
+- **`strict`** — 默认；任何 TA 或 Kronos 错误会导致该股票从最终报告中排除。
+- **`ta_only_on_kronos_fail`** — 若 Kronos 预测失败，保留 TA 结果；TA 失败则股票被排除。
+- **`ta_cache_fallback`** — TA/Kronos 失败时，从研究数据库中查找最近一次成功的 TA 结果（报告中标记为 `📦 缓存TA`）。需配合 `--ta-cache-fallback` CLI 参数启用。
+
+> **注意**：当 `TA_CACHE_FALLBACK_ENABLED=true` 但 `DEGRADE_MODE` 不是 `ta_cache_fallback` 时，校验器会发出语义警告。
 
 #### 路径配置
 
@@ -390,6 +430,8 @@ trade-krono-cli run --tickers "600519" --date 2026-08-11 --no-cache
 | `--json` | `outputs/results.json` | JSON 报告输出路径 |
 | `--html` | `outputs/report.html` | HTML 报告输出路径 |
 | `--no-cache` | `false` | 禁用缓存 |
+| `--degrade-mode` | `strict` | 降级策略：`strict` / `ta_only_on_kronos_fail` / `ta_cache_fallback` |
+| `--ta-cache-fallback` | `false` | 启用 TA 缓存回退（需配合 `--degrade-mode ta_cache_fallback`） |
 
 ### `ta` — 仅 TradingAgents
 
@@ -940,9 +982,9 @@ trade-krono-cli repo doctor
 | `loguru` | 日志 |
 | `python-dotenv` | .env 加载 |
 | `pyyaml` | YAML 配置文件读写 |
-| `pandas` + `baostock` | A 股数据获取 |
-| `torch` | Kronos 模型推理 |
-| `pytest` | 测试框架（开发依赖） |
+| `pandas` + `numpy` + `baostock` | A 股数据获取与数据处理 |
+| `torch` | **可选**：Kronos 模型推理（`[kronos]` 组） |
+| `pytest` | 测试框架（`[dev]` 组） |
 
 ### 外部项目调用路径
 
@@ -1145,7 +1187,52 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | baostock 登录 | 全局单例 + 线程锁，避免并发冲突 | `data.py::_ensure_bs_login` |
 | 日志脱敏 | 异常日志自动脱敏 API key（正则替换 sk-xxx / Bearer xxx） | `security.py::sanitize_for_log` |
 
+---
+
+## 优雅降级与缓存回退
+
+当 TA 或 Kronos 分析失败时，流水线会优雅降级，而非直接丢弃该股票。
+
+### 降级策略
+
+| 策略 | CLI 参数 | 行为 |
+|------|----------|------|
+| `strict` | （默认） | TA 或 Kronos 任意失败 → 股票从报告中排除 |
+| `ta_only_on_kronos_fail` | `--degrade-mode ta_only_on_kronos_fail` | Kronos 失败 → 保留 TA 结果；TA 失败 → 股票被排除 |
+| `ta_cache_fallback` | `--degrade-mode ta_cache_fallback --ta-cache-fallback` | TA/Kronos 失败 → 从研究数据库查找最近一次成功的 TA 结果 |
+
+### 报告标记
+
+降级股票在所有输出渠道中均有视觉区分：
+
+- **JSON 报告**：`degradation_mode` 字段设为 `"kronos_degraded"` 或 `"ta_cache_fallback"`
+- **HTML 表格**：股票代码旁附加徽章 — `⚠ TA-only` 或 `📦 缓存TA`
+- **控制台表格**：新增"降级模式"列显示相同标记
+- **摘要输出**：在最佳推荐旁打印降级和缓存回退股票计数
+
+### TA 缓存回退
+
+启用后（`--ta-cache-fallback`），失败的 TA 分析会自动查询研究数据库，查找该股票代码最近一次成功的 TA 结果。查找规则：
+
+- `TA_CACHE_MAX_AGE_DAYS`（默认：7）— 超过此时限的缓存结果视为过期
+- 仅查询 `error IS NULL` 的记录
+- 回退结果会原地更新 `signal`、`confidence` 和 `reasoning`，确保后续合并打分流程正常执行
+
 ## 更新日志
+
+### v0.1.4 — 2026-08-13
+
+**优雅降级机制：**
+- 三种降级模式：`strict`（默认）、`ta_only_on_kronos_fail`、`ta_cache_fallback`
+- Kronos 不可用时，TA-only 结果仍保留在报告中（标记为 `⚠ TA-only`）
+- TA 分析失败时，可回退到研究数据库中最近一次成功的缓存 TA 结果（标记为 `📦 缓存TA`）
+- 新增 CLI 参数：`--degrade-mode` 和 `--ta-cache-fallback`
+- 新增环境变量：`DEGRADE_MODE`、`TA_CACHE_FALLBACK_ENABLED`、`TA_CACHE_MAX_AGE_DAYS`
+- 配置校验器在 `TA_CACHE_FALLBACK_ENABLED=true` 但 `DEGRADE_MODE` 不匹配时发出语义警告
+- 提取了 orchestrator 中的 `_apply_ta_cache_fallback()`、reporter 中的 `_degradation_badge()`、cli_commands 中的 `_build_degrade_overrides()` 辅助函数
+- 测试数量：**468**（从 459 增长）；新增 `tests/test_degradation.py`，共 33 项测试
+
+---
 
 ### v0.1.3 — 2026-08-13
 

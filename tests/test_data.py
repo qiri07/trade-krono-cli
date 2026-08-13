@@ -94,11 +94,118 @@ def test_cache_ttl_expiration():
     ticker, date = "sh.600519", "2026-08-11"
 
     data = {"test": True}
-    cache.set_ta(ticker, date, data, ttl=0)  # 立即过期
-    time.sleep(0.1)
-
+    cache.set_ta(ticker, date, data, ttl=0)  # ttl=0 表示永久（不 expire）→ 应该能读出来
     result = cache.get_ta(ticker, date)
-    assert result is None
+    assert result == data  # 永久缓存应始终可用
+
+
+# ── cache key with config_hash / model_ver / prompt_ver ─────────────────────
+
+class TestCacheConfigHashInvalidation:
+    """配置哈希变更后缓存应失效。"""
+
+    def test_ta_different_config_hash_miss(self):
+        """不同 config_hash 应返回 None（缓存未命中）。"""
+        from trade_krono_cli.cache import Cache
+        cache = Cache()
+        cache.clear_all()
+        ticker, date = "sh.600519", "2026-08-12"
+        data = {"signal": "BUY"}
+        cache.set_ta(ticker, date, data, config_hash="abc123", prompt_ver="p1", model_ver="m1")
+        assert cache.get_ta(ticker, date, config_hash="abc123", prompt_ver="p1", model_ver="m1") == data
+        assert cache.get_ta(ticker, date, config_hash="different", prompt_ver="p1", model_ver="m1") is None
+
+    def test_ta_different_prompt_ver_miss(self):
+        """不同 prompt_ver 应返回 None。"""
+        from trade_krono_cli.cache import Cache
+        cache = Cache()
+        cache.clear_all()
+        ticker, date = "sh.600519", "2026-08-12"
+        data = {"signal": "BUY"}
+        cache.set_ta(ticker, date, data, config_hash="h", prompt_ver="v1", model_ver="m")
+        assert cache.get_ta(ticker, date, config_hash="h", prompt_ver="v1", model_ver="m") == data
+        assert cache.get_ta(ticker, date, config_hash="h", prompt_ver="v2", model_ver="m") is None
+
+    def test_kronos_different_model_ver_miss(self):
+        """不同 model_ver 应返回 None。"""
+        from trade_krono_cli.cache import Cache
+        cache = Cache()
+        cache.clear_all()
+        ticker, date = "sh.600519", "2026-08-12"
+        pred_len = 30
+        data = {"direction": "UP"}
+        cache.set_kronos(ticker, date, pred_len, data, config_hash="h", model_ver="v1")
+        assert cache.get_kronos(ticker, date, pred_len, config_hash="h", model_ver="v1") == data
+        assert cache.get_kronos(ticker, date, pred_len, config_hash="h", model_ver="v2") is None
+
+    def test_kronos_different_config_hash_miss(self):
+        """Kronos 不同 config_hash 应返回 None。"""
+        from trade_krono_cli.cache import Cache
+        cache = Cache()
+        cache.clear_all()
+        ticker, date = "sh.600519", "2026-08-12"
+        data = {"direction": "UP"}
+        cache.set_kronos(ticker, date, 30, data, config_hash="hash_a", model_ver="m1")
+        assert cache.get_kronos(ticker, date, 30, config_hash="hash_a", model_ver="m1") == data
+        assert cache.get_kronos(ticker, date, 30, config_hash="hash_b", model_ver="m1") is None
+
+
+# ── warm_history ────────────────────────────────────────────────────────────
+
+class TestWarmHistory:
+    """Cache.warm_history 测试。"""
+
+    def test_warm_history_splits_history_and_recent(self):
+        """历史段永久，近期段 1h TTL。"""
+        from trade_krono_cli.cache import Cache, _KLINE_HISTORICAL_TTL, _KLINE_RECENT_TTL
+        cache = Cache()
+        cache.clear_all()
+        ticker = "sh.600519"
+
+        import pandas as pd
+        from datetime import datetime, timedelta
+        end_date = "2026-08-12"
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        lookback_days = 730
+        start_dt = end_dt - timedelta(days=lookback_days)
+        recent_cutoff_dt = end_dt - timedelta(days=30)  # 默认 _KLINE_HISTORY_WINDOW_DAYS=30
+
+        rows = []
+        current = start_dt
+        while current <= end_dt:
+            rows.append({
+                "timestamps": current,
+                "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
+                "volume": 1e6, "amount": 1e8,
+            })
+            current += timedelta(days=1)
+        df = pd.DataFrame(rows)
+
+        with patch("trade_krono_cli.data.fetch_kline", return_value=df):
+            fetched, cached = cache.warm_history(ticker, end_date, lookback_days=lookback_days)
+
+        assert fetched == len(df)
+        assert cached == 2  # 历史 + 近期各一段
+
+        # 历史段应为永久（ttl=0），近期段为 1h
+        import sqlite3
+        with cache._conn as conn:
+            rows_hist = conn.execute(
+                "SELECT ttl FROM kline_cache WHERE ticker=?", (ticker,)
+            ).fetchall()
+            ttls = [r[0] for r in rows_hist]
+            assert _KLINE_HISTORICAL_TTL in ttls
+            assert _KLINE_RECENT_TTL in ttls
+
+    def test_warm_history_empty_returns_zero(self):
+        """无数据时应返回 (0, 0)。"""
+        from trade_krono_cli.cache import Cache
+        cache = Cache()
+        cache.clear_all()
+        with patch("trade_krono_cli.data.fetch_kline", return_value=None):
+            fetched, cached = cache.warm_history("sh.600519", "2026-08-12")
+        assert fetched == 0
+        assert cached == 0
 
 
 # ── validate_data_freshness ──────────────────────────────────────────────────

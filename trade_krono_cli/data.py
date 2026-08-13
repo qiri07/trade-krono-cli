@@ -1,6 +1,9 @@
 """
 数据层 — A 股 K 线获取 + Kronos 格式转换。
-使用 baostock 作为数据源（免费、无需 key）。
+
+支持多数据源（baostock / akshare / mootdx / tushare），
+通过 DataProviderFactory 自动降级。
+保留原有 baostock 直调接口作为兼容层。
 """
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ from loguru import logger
 from trade_krono_cli.config import get_settings, Settings
 from trade_krono_cli.security import TokenBucket, validate_ticker, validate_date, retry
 from trade_krono_cli.cache import get_cache
+from trade_krono_cli.data_providers import get_data_factory
 
 # baostock 惰性导入
 _bs = None
@@ -102,6 +106,9 @@ def fetch_kline(
     """
     拉取 A 股 K 线并转为 Kronos 标准格式。
 
+    优先使用 DataProviderFactory（多数据源自动降级），
+    失败时回退到原有 baostock 直调逻辑。
+
     Returns
     -------
     DataFrame with columns: open, high, low, close, volume, amount, timestamps
@@ -110,6 +117,7 @@ def fetch_kline(
     start_date = validate_date(start_date)
     end_date = validate_date(end_date)
 
+    from trade_krono_cli.cache import get_cache
     cache = get_cache()
     if use_cache:
         cached = cache.get_kline(ticker, start_date, end_date, frequency)
@@ -117,14 +125,34 @@ def fetch_kline(
             logger.debug(f"📦 K线缓存命中: {ticker} {start_date}~{end_date}")
             return cached
 
+    # ── 路径 1：通过工厂（多数据源 + 自动降级）──────────────────────────
+    try:
+        factory = get_data_factory()
+        kline_data = factory.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
+        if kline_data is not None and not kline_data.is_empty:
+            out = kline_data.to_dataframe()
+            # 写缓存
+            from trade_krono_cli.cache import (
+                _KLINE_RECENT_TTL, _KLINE_HISTORY_WINDOW_DAYS,
+            )
+            from datetime import timedelta
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            recent_cutoff = (end_dt - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime("%Y-%m-%d")
+            ttl = _KLINE_RECENT_TTL if start_date >= recent_cutoff else 0.0
+            cache.set_kline(ticker, start_date, end_date, frequency, out, ttl=ttl)
+            logger.debug(f"✅ K 线就绪（via {kline_data.source if hasattr(kline_data, 'source') else 'factory'}）: {ticker} 共 {len(out)} 行")
+            return out
+    except Exception as e:
+        logger.warning(f"Factory K 线拉取失败 {ticker}: {str(e)[:150]}，回退 baostock 直调")
+
+    # ── 路径 2：直接调用 baostock（兼容层）──────────────────────────────
     _ensure_bs_import()
     _get_limiter().acquire()
     _ensure_bs_login()
 
-    # baostock 格式: sh.600519 / sz.000858
-    bs_code = ticker  # 已经是 sh.600519 或 sz.000858 格式
+    bs_code = ticker
 
-    logger.debug(f"📥 拉取 K 线: {bs_code} {start_date}~{end_date} freq={frequency}")
+    logger.debug(f"📥 拉取 K 线（baostock 直调）: {bs_code} {start_date}~{end_date} freq={frequency}")
 
     rs = _bs.query_history_k_data_plus(  # type: ignore
         bs_code,
@@ -158,8 +186,14 @@ def fetch_kline(
         "amount": df["amount"].astype(float),
     }).reset_index(drop=True)
 
-    # 写缓存
-    ttl = 3600 if frequency in ("5min", "15min", "30min", "60min") else 86400
+    # 写缓存：历史数据（>30天前）永久缓存，近期数据 1h TTL
+    from trade_krono_cli.cache import (
+        _KLINE_RECENT_TTL, _KLINE_HISTORY_WINDOW_DAYS,
+    )
+    from datetime import timedelta
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    recent_cutoff = (end_dt - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime("%Y-%m-%d")
+    ttl = _KLINE_RECENT_TTL if start_date >= recent_cutoff else 0.0
     cache.set_kline(ticker, start_date, end_date, frequency, out, ttl=ttl)
     logger.debug(f"✅ K 线就绪: {ticker} 共 {len(out)} 行")
 

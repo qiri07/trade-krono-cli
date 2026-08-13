@@ -16,7 +16,7 @@ Prediction Evaluation — 预测评估模块入口。
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, NamedTuple
 
 from loguru import logger
@@ -25,6 +25,7 @@ from trade_krono_cli.eval_data import (
     EvalRecord,
     EvaluationSummary,
     HorizonMetrics,
+    BacktestResult,
     get_close_price,
     get_kline_window,
     calc_return,
@@ -40,6 +41,13 @@ from trade_krono_cli.eval_report import (
     print_report,
 )
 from trade_krono_cli.constraints_config import ConstraintConfig
+from trade_krono_cli.backtest_engine import (
+    BacktestEngine,
+    BacktestRecord,
+    build_backtest_records,
+    compute_benchmark_returns,
+    compute_excess_curve,
+)
 
 # ── 向后兼容别名（测试通过 patch("trade_krono_cli.prediction_eval.*") 使用）──
 # fetch_kline 是测试直接 patch 的模块级依赖，需在此重新绑定
@@ -95,6 +103,9 @@ class PredictionEvaluator:
         to_date: Optional[str] = None,
         tickers: Optional[list[str]] = None,
         store: bool = True,
+        backtest: bool = False,
+        rebal_mode: str = "fixed_horizon",
+        fixed_horizon: int = 5,
     ) -> EvaluationSummary:
         """
         执行预测评估。
@@ -109,6 +120,12 @@ class PredictionEvaluator:
             只评估指定股票，默认全部
         store : bool
             是否将评估结果写入 research database
+        backtest : bool
+            是否运行回测引擎并计算绩效指标（年化收益、夏普、最大回撤等）
+        rebal_mode : str
+            调仓模式：fixed_horizon / rebal_weekly / rebal_monthly
+        fixed_horizon : int
+            固定持仓周期（天数），仅 rebal_mode=fixed_horizon 时生效
 
         Returns
         -------
@@ -158,7 +175,7 @@ class PredictionEvaluator:
         eval_records: list[EvalRecord] = []
         summary = EvaluationSummary()
 
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
         for i, sig in enumerate(records_to_eval, 1):
             entry_price = _get_close_price(sig.ticker, sig.eval_date)
@@ -264,6 +281,46 @@ class PredictionEvaluator:
         full_summary.exit_limit_down_blocked = summary.exit_limit_down_blocked
         full_summary.cost_applied_n = summary.cost_applied_n
 
+        # 4b. 回测引擎 + 基准对比
+        if backtest and eval_records:
+            logger.info("📈 启动回测引擎...")
+            bt_result = self._run_backtest(eval_records, rebal_mode, fixed_horizon)
+            full_summary.backtest = bt_result
+
+            # 基准对比
+            bench_ret = compute_benchmark_returns(bt_result.records, {})
+            full_summary.benchmark_curve = bench_ret
+            full_summary.benchmark_cum_return_pct = round(
+                list(bench_ret.values())[-1] if bench_ret else 0.0, 2
+            )
+            if bt_result.total_return_pct != 0.0:
+                full_summary.excess_return_pct = round(
+                    bt_result.total_return_pct - full_summary.benchmark_cum_return_pct, 2
+                )
+            full_summary.excess_curve = {
+                d: round(bt_val - bench_val, 4)
+                for d, (bt_val, bench_val) in zip(
+                    [d for d, _ in bt_result.equity_curve],
+                    [v for _, v in bt_result.equity_curve],
+                )
+            } if bt_result.equity_curve else {}
+
+            # 将回测增强指标写入 horizon 汇总
+            for horizon in self.HORIZONS:
+                h_metrics = full_summary.horizons.get(horizon)
+                if h_metrics is None:
+                    continue
+                h_metrics.win_rate_pct = bt_result.metrics.get("win_rate_pct", 0.0)
+                h_metrics.max_drawdown_pct = bt_result.metrics.get("max_drawdown_pct", 0.0)
+                h_metrics.sharpe_ratio = bt_result.metrics.get("sharpe_ratio", 0.0)
+                h_metrics.profit_factor = bt_result.metrics.get("profit_factor", 0.0)
+
+            logger.info(
+                f"✅ 回测完成: 总收益 {bt_result.total_return_pct:+.2f}%, "
+                f"夏普 {bt_result.metrics.get('sharpe_ratio', 0):.2f}, "
+                f"最大回撤 {bt_result.metrics.get('max_drawdown_pct', 0):.1f}%"
+            )
+
         # 5. 存储到 research DB
         if store:
             self._store_summary(full_summary, jobs[0]["date"] if jobs else None)
@@ -292,6 +349,56 @@ class PredictionEvaluator:
 
         return summary
 
+    def _run_backtest(
+        self,
+        records: list[EvalRecord],
+        rebal_mode: str = "fixed_horizon",
+        fixed_horizon: int = 5,
+    ) -> BacktestResult:
+        """
+        运行回测引擎，基于 EvalRecord 重建交易日序列。
+
+        简化版：使用 EvalRecord 中的 entry/exit 价格直接模拟，
+        不实时获取 K 线（性能优先），约束通过 is_blocked 字段判断。
+        """
+        # 选择主要 horizon（优先 5 日）
+        primary_horizon = fixed_horizon
+        bt_records = build_backtest_records(records, horizon=primary_horizon)
+        if not bt_records:
+            # fallback: 用最小 horizon
+            horizons_sorted = sorted({r.horizon_days for r in records})
+            if horizons_sorted:
+                bt_records = build_backtest_records(records, horizon=horizons_sorted[0])
+        if not bt_records:
+            return BacktestResult.empty()
+
+        engine = BacktestEngine(
+            rebal_mode=rebal_mode,
+            fixed_horizon=primary_horizon,
+        )
+
+        # 将 EvalRecord 的价格信息注入到 BacktestRecord
+        record_price_map: dict[tuple[str, str], tuple[float, float]] = {}
+        for r in records:
+            key = (r.ticker, r.eval_date)
+            entry = _get_close_price(r.ticker, r.eval_date)
+            eval_date_h = (
+                datetime.strptime(r.eval_date, "%Y-%m-%d")
+                + timedelta(days=r.horizon_days)
+            ).strftime("%Y-%m-%d")
+            exit = _get_close_price(r.ticker, eval_date_h)
+            if entry and exit:
+                record_price_map[key] = (entry, exit)
+
+        for bt_r in bt_records:
+            key = (bt_r.ticker, bt_r.date)
+            prices = record_price_map.get(key)
+            if prices:
+                bt_r.entry_price = prices[0]
+                bt_r.exit_price = prices[1]
+
+        return engine.run(bt_records)
+
     def _store_summary(
         self, summary: EvaluationSummary, eval_date_range: Optional[str],
     ) -> None:
@@ -319,6 +426,8 @@ def run_evaluation(
     to_date: Optional[str] = None,
     tickers: Optional[list[str]] = None,
     latest: bool = False,
+    backtest: bool = False,
+    rebal_mode: str = "fixed_horizon",
 ) -> None:
     """执行预测评估并打印报告。"""
     evaluator = PredictionEvaluator()
@@ -341,6 +450,8 @@ def run_evaluation(
         _print_latest_kronos(summary)
         _print_latest_ta(summary)
         _print_latest_combined(summary)
+        if backtest and hasattr(summary, 'backtest') and summary.backtest:
+            _print_latest_backtest(summary)
         return
 
     # 完整评估
@@ -349,8 +460,12 @@ def run_evaluation(
         to_date=to_date,
         tickers=tickers,
         store=True,
+        backtest=backtest,
+        rebal_mode=rebal_mode,
     )
     evaluator.print_report(summary)
+    if backtest and summary.backtest:
+        _print_backtest_report(summary)
 
 
 def _print_latest_kronos(summary: dict) -> None:
@@ -393,3 +508,66 @@ def _print_latest_combined(summary: dict) -> None:
               f"平均收益: {avg_ret:+.2f}%                    │")
     print("└" + "─" * 58 + "┘")
     print()
+
+
+# ── 回测报告打印 ─────────────────────────────────────────────────────────────
+
+def _print_backtest_report(summary: EvaluationSummary) -> None:
+    """打印回测绩效报告。"""
+    bt = summary.backtest
+    if not bt:
+        return
+    m = bt.metrics
+
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║              📈 回测绩效报告（增强版）                    ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print(f"║  模式: {bt.rebal_mode:<44} ║")
+    print(f"║  交易次数: {bt.n_trades:<45} ║")
+    print(f"║  交易日数: {m.get('n_days', 0):<45} ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print(f"║  总收益率:   {m.get('total_return_pct', 0):>+7.2f}%{'':>30} ║")
+    print(f"║  年化收益:   {m.get('annualized_return_pct', 0):>+7.2f}%{'':>30} ║")
+    print(f"║  波动率(年): {m.get('volatility_annual_pct', 0):>7.2f}%{'':>30} ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print(f"║  夏普比率:   {m.get('sharpe_ratio', 0):>7.3f}{'':>30} ║")
+    print(f"║  卡玛比率:   {m.get('calmar_ratio', 0):>7.3f}{'':>30} ║")
+    print(f"║  最大回撤:   {m.get('max_drawdown_pct', 0):>+7.2f}%{'':>30} ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print(f"║  胜率:       {m.get('win_rate_pct', 0):>7.1f}%{'':>30} ║")
+    print(f"║  盈亏比:     {m.get('profit_factor', 0):>7.3f}{'':>30} ║")
+    print(f"║  平均盈利:   {m.get('avg_win', 0):>+7.2f}%{'':>30} ║")
+    print(f"║  平均亏损:   {m.get('avg_loss', 0):>+7.2f}%{'':>30} ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print(f"║  收益偏度:   {m.get('skewness', 0):>7.3f}{'':>30} ║")
+    print(f"║  收益峰度:   {m.get('kurtosis', 0):>7.3f}{'':>30} ║")
+    print(f"║  最佳日:     {m.get('best_day_pct', 0):>+7.2f}%{'':>30} ║")
+    print(f"║  最差日:     {m.get('worst_day_pct', 0):>+7.2f}%{'':>30} ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    if summary.benchmark_cum_return_pct != 0.0:
+        print(f"║  基准累计收益: {summary.benchmark_cum_return_pct:>+7.2f}%{'':>24} ║")
+        print(f"║  超额收益:    {summary.excess_return_pct:>+7.2f}%{'':>24} ║")
+    else:
+        print(f"║  基准收益: 无数据{'':>40} ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print()
+
+
+def _print_latest_backtest(summary: dict) -> None:
+    """打印最新评估中的回测报告（dict 格式）。"""
+    bt = summary.get("backtest")
+    if not bt:
+        return
+    m = bt.get("metrics", {})
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║              📈 回测绩效报告                              ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print(f"║  总收益率:   {m.get('total_return_pct', 0):>+7.2f}%{'':>30} ║")
+    print(f"║  年化收益:   {m.get('annualized_return_pct', 0):>+7.2f}%{'':>30} ║")
+    print(f"║  夏普比率:   {m.get('sharpe_ratio', 0):>7.3f}{'':>30} ║")
+    print(f"║  最大回撤:   {m.get('max_drawdown_pct', 0):>+7.2f}%{'':>30} ║")
+    print(f"║  胜率:       {m.get('win_rate_pct', 0):>7.1f}%{'':>30} ║")
+    print(f"║  盈亏比:     {m.get('profit_factor', 0):>7.3f}{'':>30} ║")
+    print("╚══════════════════════════════════════════════════════════╝")

@@ -20,6 +20,29 @@ console = Console()
 
 
 # ═══════════════════════════════════════════════════════
+# 降级标记 helpers
+# ═══════════════════════════════════════════════════════
+
+def _degradation_badge(dmg: Optional[str]) -> tuple[str, str]:
+    """返回 (html_badge, rich_console_str) 降级标记。
+
+    html_badge   — HTML <span> 片段，用于 save_html_report
+    rich_console — Rich console markup 字符串，用于 print_results_table / summary
+    """
+    if dmg == "kronos_degraded":
+        return (
+            '<span style="background:#fff3cd;color:#856404;padding:2px 6px;border-radius:3px;font-size:.8em;margin-left:6px">⚠ TA-only</span>',
+            "[yellow]⚠ TA-only[/yellow]",
+        )
+    if dmg == "ta_cache_fallback":
+        return (
+            '<span style="background:#d1ecf1;color:#0c5460;padding:2px 6px;border-radius:3px;font-size:.8em;margin-left:6px">📦 缓存TA</span>',
+            "[cyan]📦 缓存TA[/cyan]",
+        )
+    return ("", "—")
+
+
+# ═══════════════════════════════════════════════════════
 # JSON 报告
 # ═══════════════════════════════════════════════════════
 
@@ -35,6 +58,9 @@ def save_json_report(merged: list[dict], path: str) -> str:
                 "close": fd.get("close", [])[:5],
                 "note": f"截断显示，共 {len(fd.get('close', []))} 个预测点",
             }
+        # 确保 degradation_mode 字段存在
+        if "degradation_mode" not in c:
+            c["degradation_mode"] = None
         clean.append(c)
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -65,10 +91,12 @@ def save_html_report(merged: list[dict], path: str, date: str) -> str:
         pd_str = f"{pd_val:.4f}" if pd_val is not None else "N/A"
         dc = pu.get("direction_confidence")
         dc_str = f"{dc:.3f}" if dc is not None else "-"
+        dmg = m.get("degradation_mode")
+        badge, _ = _degradation_badge(dmg)
         rows.append(f"""
             <tr>
               <td>{i}</td>
-              <td><b>{m['ticker']}</b></td>
+              <td><b>{m['ticker']}</b>{badge}</td>
               <td>{m.get('ta_signal') or '-'}</td>
               <td>{m.get('ta_confidence') or '-'}</td>
               <td>{m.get('kronos_direction') or '-'}</td>
@@ -127,13 +155,15 @@ save_html = save_html_report
 def print_results_table(merged: list[dict]) -> None:
     """在控制台输出富文本表格。"""
     table = Table(title="📊 综合排名", header_style="bold magenta")
-    for col in ("排名", "代码", "TA信号", "置信度", "Kronos方向", "预期涨幅%", "Kronos置信", "综合分"):
+    for col in ("排名", "代码", "TA信号", "置信度", "Kronos方向", "预期涨幅%", "Kronos置信", "综合分", "降级模式"):
         table.add_column(col, justify="right" if col != "代码" else "left")
 
     for m in merged[:20]:
         pu = m.get("kronos_prediction_uncertainty") or {}
         cs = pu.get("confidence_score")
         cs_str = f"{cs:.1f}" if cs is not None else "-"
+        dmg = m.get("degradation_mode")
+        _, dmg_str = _degradation_badge(dmg)
         table.add_row(
             str(m.get("rank", "-")),
             m.get("ticker", "-"),
@@ -143,6 +173,7 @@ def print_results_table(merged: list[dict]) -> None:
             f"{m.get('kronos_change_pct') or 0:.2f}",
             cs_str,
             f"[bold]{m.get('composite_score') or '-'}[/bold]",
+            dmg_str,
         )
     console.print(table)
 
@@ -156,15 +187,34 @@ def print_results_summary(merged: list[dict], date: str) -> None:
     console.print(f"\n[bold cyan]📅 分析日期: {date}[/bold cyan]")
     console.print(f"[bold cyan]📈 共分析 {len(merged)} 只股票[/bold cyan]\n")
 
+    # 统计降级情况
+    n_degraded = sum(1 for m in merged if m.get("degradation_mode"))
+    n_kronos_degraded = sum(
+        1 for m in merged if m.get("degradation_mode") == "kronos_degraded"
+    )
+    n_cache_fallback = sum(
+        1 for m in merged if m.get("degradation_mode") == "ta_cache_fallback"
+    )
+    if n_degraded:
+        parts = []
+        if n_kronos_degraded:
+            parts.append(f"[yellow]⚠️  {n_kronos_degraded} 只 Kronos 不可用（TA-only）[/yellow]")
+        if n_cache_fallback:
+            parts.append(f"[cyan]📦 {n_cache_fallback} 只 TA 使用缓存回退[/cyan]")
+        console.print("  ".join(parts))
+
     if merged:
         best = merged[0]
         pu = best.get("kronos_prediction_uncertainty") or {}
         cs = pu.get("confidence_score")
         cs_str = f" (Kronos置信={cs:.1f})" if cs is not None else ""
+        dmg = best.get("degradation_mode")
+        _, dmg_rich = _degradation_badge(dmg)
+        dmg_note = f" {dmg_rich}" if dmg_rich != "—" else ""
         console.print(
             f"[bold green]🥇 最佳推荐: {best['ticker']} "
             f"(TA={best.get('ta_signal')}  Kronos={best.get('kronos_direction')} "
-            f"综合分={best.get('composite_score')}{cs_str})[/bold green]"
+            f"综合分={best.get('composite_score')}{cs_str}){dmg_note}[/bold green]"
         )
 
     buys = [m for m in merged if m.get("ta_signal") == "BUY"]

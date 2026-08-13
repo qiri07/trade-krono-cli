@@ -369,3 +369,141 @@ def test_results_dir_contains_raw_subdir(tmp_path):
     assert raw_dir.exists()
     assert (raw_dir / "sh.600519.json").exists()
 
+
+# ── JSON 结构化解析 ───────────────────────────────────────────────────────────
+
+def test_json_full_fields(adapter):
+    """完整 JSON 应正确映射所有字段。"""
+    import json
+    text = json.dumps({
+        "signal": "BUY",
+        "confidence": 85.0,
+        "thesis": "基本面强劲，估值合理",
+        "risks": ["估值偏高", "宏观波动"],
+        "expected_return": 15.0,
+    })
+    dec = adapter.parse(text)
+    assert dec.signal == Signal.BUY
+    assert dec.confidence == 85.0
+    assert dec.thesis == "基本面强劲，估值合理"
+    assert dec.risks == ["估值偏高", "宏观波动"]
+    assert dec.expected_return == 15.0
+
+
+def test_json_partial_fields(adapter):
+    """部分 JSON 字段缺失时应使用默认值。"""
+    import json
+    text = json.dumps({"signal": "SELL", "confidence": 25.0})
+    dec = adapter.parse(text)
+    assert dec.signal == Signal.SELL
+    assert dec.confidence == 25.0
+    assert dec.thesis == ""
+    assert dec.risks == []
+    assert dec.expected_return is None
+
+
+def test_json_unknown_signal_fallback(adapter):
+    """JSON 中未知 signal 值应回退到 HOLD。"""
+    import json
+    text = json.dumps({"signal": "STRONG_BUY", "confidence": 90.0})
+    dec = adapter.parse(text)
+    assert dec.signal == Signal.HOLD
+    assert dec.confidence == 90.0  # confidence 仍使用 JSON 中的值
+
+
+def test_json_risks_as_string(adapter):
+    """risks 为逗号分隔字符串时应正确拆分。"""
+    import json
+    text = json.dumps({
+        "signal": "HOLD",
+        "risks": "流动性不足, 政策不确定性, 汇率波动",
+    })
+    dec = adapter.parse(text)
+    assert dec.risks == ["流动性不足", "政策不确定性", "汇率波动"]
+
+
+def test_json_max_risks_cap(adapter):
+    """risks 超过 8 条应截断。"""
+    import json
+    risks = [f"risk_{i}" for i in range(12)]
+    text = json.dumps({"signal": "BUY", "risks": risks})
+    dec = adapter.parse(text)
+    assert len(dec.risks) == 8
+
+
+def test_json_case_insensitive_signal(adapter):
+    """signal 大小写不敏感。"""
+    import json
+    for raw in ("buy", "Buy", "BUY", "buY"):
+        text = json.dumps({"signal": raw})
+        dec = adapter.parse(text)
+        assert dec.signal == Signal.BUY, f"failed for {raw!r}"
+
+
+def test_json_invalid_fallback_to_text(adapter, caplog):
+    """非法 JSON 应回退到文本正则解析，并记录 warning。"""
+    import logging
+    text = "这是一段自由文本，包含 BUY 关键词。"
+    dec = adapter.parse(text)
+    assert dec.signal == Signal.BUY  # 回退后正常解析
+
+
+def test_json_non_dict_fallback(adapter):
+    """JSON 数组应回退到文本正则解析。"""
+    import json
+    text = json.dumps(["BUY", 80.0])
+    dec = adapter.parse(text)
+    # 数组不是 dict，应回退到文本解析；文本中含 "BUY" → BUY
+    assert dec.signal == Signal.BUY
+
+
+def test_json_confidence_clamped(adapter):
+    """confidence 超出 [0, 100] 应被截断。"""
+    import json
+    text = json.dumps({"signal": "BUY", "confidence": 150.0})
+    dec = adapter.parse(text)
+    assert dec.confidence == 100.0
+
+    text = json.dumps({"signal": "SELL", "confidence": -10.0})
+    dec = adapter.parse(text)
+    assert dec.confidence == 0.0
+
+
+def test_json_position_size_clamped(adapter):
+    """position_size 超出 [-1, 1] 应被截断。"""
+    import json
+    text = json.dumps({"signal": "BUY", "position_size": 2.0})
+    dec = adapter.parse(text)
+    assert dec.position_size == 1.0
+
+    text = json.dumps({"signal": "SELL", "position_size": -3.0})
+    dec = adapter.parse(text)
+    assert dec.position_size == -1.0
+
+
+def test_json_with_thesis_truncation(adapter):
+    """thesis 超过 THESIS_TRUNCATE_LEN 应被截断。"""
+    import json
+    long_thesis = "x" * 500
+    text = json.dumps({"signal": "BUY", "thesis": long_thesis})
+    dec = adapter.parse(text)
+    assert len(dec.thesis) == 300  # THESIS_TRUNCATE_LEN
+
+
+def test_json_empty_object(adapter):
+    """空 JSON 对象应使用 signal 默认置信度。"""
+    import json
+    text = json.dumps({})
+    dec = adapter.parse(text)
+    assert dec.signal == Signal.HOLD
+    assert dec.confidence == 50.0  # HOLD 默认置信度
+
+
+def test_json_only_signal(adapter):
+    """仅含 signal 字段时，confidence 应使用 signal 默认值。"""
+    import json
+    text = json.dumps({"signal": "SELL"})
+    dec = adapter.parse(text)
+    assert dec.signal == Signal.SELL
+    assert dec.confidence == 30.0  # SELL 默认置信度
+

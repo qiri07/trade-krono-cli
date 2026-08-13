@@ -322,7 +322,7 @@ def test_create_job_with_version_snapshot(research_db):
     assert job["data_version"] == "baostock-2026-08-11"
     assert "kronos" in job["model_versions"]
     assert "llm" in job["model_versions"]
-    assert job["prompt_version"] == "ta-v1r1-chinese"
+    assert job["prompt_version"] == "ta-v1r1-chinese-json"
     assert job["strategy_version"] == "0.1.0"
     assert len(job["config_hash"]) == 16
 

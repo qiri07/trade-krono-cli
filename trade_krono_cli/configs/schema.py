@@ -119,6 +119,86 @@ class ScoringConfig:
 
 
 # ═══════════════════════════════════════════════════════
+# 评分策略配置
+# ═══════════════════════════════════════════════════════
+
+@dataclass(frozen=True)
+class ScoringStrategyConfig:
+    """
+    综合打分策略配置。
+
+    参数：
+      strategy : 策略名称
+        - "linear"       : 加权线性组合（默认）
+        - "multiplicative": 乘法衰减型（高风险→分数压缩）
+        - "rank_based"    : 百分位排名转换
+      params : 策略特定参数（JSON 序列化的 dict）
+    """
+    strategy: str = "linear"
+    params: dict = field(default_factory=dict)
+
+    def validate(self) -> list[str]:
+        errors: list[str] = []
+        valid_strategies = {"linear", "multiplicative", "rank_based"}
+        if self.strategy not in valid_strategies:
+            errors.append(
+                f"SCORING_STRATEGY={self.strategy} 必须是以下之一: "
+                f"{', '.join(sorted(valid_strategies))}"
+            )
+        return errors
+
+    def merge(self, **overrides) -> "ScoringStrategyConfig":
+        current = {"strategy": self.strategy, "params": dict(self.params)}
+        current.update(overrides)
+        return ScoringStrategyConfig(**current)
+
+
+@dataclass(frozen=True)
+class RiskBoostStrategyConfig:
+    """
+    异常标记风险加分策略配置。
+
+    参数：
+      strategy : 策略名称
+        - "fixed_boost"       : 固定值叠加（默认）
+        - "scaled_boost"      : 按比例缩放
+        - "diminishing_boost" : 边际递减（√n 缩放）
+      multiplier     : scaled_boost 倍率，默认 1.0
+      diminishing_power : diminishing_boost 幂次，默认 0.5（即 √n）
+    """
+    strategy: str = "fixed_boost"
+    multiplier: float = 1.0
+    diminishing_power: float = 0.5
+
+    def validate(self) -> list[str]:
+        errors: list[str] = []
+        valid = {"fixed_boost", "scaled_boost", "diminishing_boost"}
+        if self.strategy not in valid:
+            errors.append(
+                f"RISK_BOOST_STRATEGY={self.strategy} 必须是以下之一: "
+                f"{', '.join(sorted(valid))}"
+            )
+        if not (0 < self.multiplier <= 5.0):
+            errors.append(
+                f"RISK_BOOST_MULTIPLIER={self.multiplier} 必须在 (0, 5.0] 范围内"
+            )
+        if not (0 < self.diminishing_power <= 1.0):
+            errors.append(
+                f"RISK_BOOST_DIMINISHING_POWER={self.diminishing_power} 必须在 (0, 1.0] 范围内"
+            )
+        return errors
+
+    def merge(self, **overrides) -> "RiskBoostStrategyConfig":
+        current = {
+            "strategy": self.strategy,
+            "multiplier": self.multiplier,
+            "diminishing_power": self.diminishing_power,
+        }
+        current.update(overrides)
+        return RiskBoostStrategyConfig(**current)
+
+
+# ═══════════════════════════════════════════════════════
 # 风险引擎配置
 # ═══════════════════════════════════════════════════════
 

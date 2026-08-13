@@ -21,6 +21,8 @@ def clear_all_globals() -> None:
       - data._bs / _HAS_BS / _bs_logged_in / _bs_limiter — baostock 状态
       - ta_runner._TRADINGAGENTS_IMPORTED — TradingAgents 懒加载标志
       - kronos_runner._KRONOS_IMPORTED     — Kronos 懒加载标志
+      - kronos_session._cache  — KronosSession 进程级单例缓存
+      - ta_session._cache      — TASession 进程级单例缓存
     """
     from trade_krono_cli.config import clear_settings
     from trade_krono_cli.cache import clear_cache_singleton
@@ -35,3 +37,7 @@ def clear_all_globals() -> None:
     clear_baostock_globals()
     clear_tradingagents_imported()
     clear_kronos_imported()
+    from trade_krono_cli.models.kronos_session import KronosSession
+    from trade_krono_cli.models.ta_session import TASession
+    KronosSession.clear_cache()
+    TASession.clear_cache()

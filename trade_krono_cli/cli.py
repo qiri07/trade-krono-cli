@@ -57,7 +57,8 @@ app.add_typer(repo_app, name="repo")
 # ═══════════════════════════════════════════════════════
 from trade_krono_cli.cli_commands import (  # noqa: E402
     repo_status, repo_doctor, repo_update, repo_pin,
-    run, ta, kronos, status, clear_cache, history, eval_prediction,
+    run, ta, kronos, status, clear_cache, history, eval_prediction, warm_cache,
+    retry_failed,
 )
 
 repo_app.command()(repo_status)
@@ -70,8 +71,10 @@ app.command()(ta)
 app.command()(kronos)
 app.command()(status)
 app.command()(clear_cache)
+app.command()(warm_cache)
 app.command()(history)
 app.command()(eval_prediction)
+app.command()(retry_failed)
 
 
 # ═══════════════════════════════════════════════════════

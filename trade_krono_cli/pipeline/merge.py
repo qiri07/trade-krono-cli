@@ -14,7 +14,8 @@ from typing import Callable, Optional
 import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.configs.schema import ScoringConfig, RiskConfig
+from trade_krono_cli.configs.schema import ScoringConfig, RiskConfig, ScoringStrategyConfig
+from trade_krono_cli.scoring.registry import get_scorer_registry
 from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.risk.risk_engine import RiskEngine
@@ -210,6 +211,8 @@ def merge_results(
     t1_tracker: Optional[T1Tracker] = None,
     scoring_config: Optional[ScoringConfig] = None,
     risk_config: Optional[RiskConfig] = None,
+    scoring_strategy: Optional[ScoringStrategyConfig] = None,
+    degrade_mode: str = "strict",
 ) -> list[dict]:
     """
     将 TA 分析结果和 Kronos 预测结果合并。
@@ -225,13 +228,30 @@ def merge_results(
     t1_tracker     : T+1 买入跟踪器（可选，跨股票共享）
     scoring_config : 综合打分配置（可选，默认使用 ScoringConfig 默认值）
     risk_config    : 风险引擎配置（可选，默认使用 RiskConfig 默认值）
+    scoring_strategy : 评分策略配置（可选）
+    degrade_mode   : 降级策略，可选值：
+      - strict            ：任何模块失败则整条记录标记为失败（默认）
+      - ta_only_on_kronos_fail ：Kronos 失败时保留仅 TA 结果，标记 degradation_mode
+      - ta_cache_fallback ：TA 失败时回退到历史缓存结果
 
     Returns
     -------
     排序后的综合结果列表（按 composite_score 降序）
     """
     if scorer is None:
-        scorer = lambda m: default_scorer(m, scoring=scoring_config)
+        from trade_krono_cli.scoring.scorers import LinearScorer
+        # 优先使用注册的策略，其次 fallback 到 LinearScorer
+        if scoring_strategy:
+            registry = get_scorer_registry()
+            registered = registry.get(scoring_strategy.strategy)
+            if registered:
+                scorer = registered.score
+                logger.debug(f"📊 使用打分策略: {registered.name}")
+            else:
+                scorer = LinearScorer().score
+                logger.warning(f"⚠️  未找到打分策略 '{scoring_strategy.strategy}'，fallback 到 linear")
+        else:
+            scorer = LinearScorer().score
 
     if constraints_config is None:
         constraints_config = ConstraintConfig()
@@ -244,6 +264,17 @@ def merge_results(
     for ta in ta_results:
         kr = kronos_map.get(ta.ticker)
         item = _make_empty_merged(ta.ticker, ta, kr)
+
+        # ── 降级模式标记 ──────────────────────────────────────────
+        item["degradation_mode"] = None
+        if degrade_mode == "ta_only_on_kronos_fail":
+            if ta.error is None and (kr is None or kr.error is not None):
+                # TA 成功但 Kronos 失败 → 仅 TA 降级模式
+                item["degradation_mode"] = "kronos_degraded"
+                logger.info(
+                    f"⚠️  {ta.ticker} Kronos 不可用，降级为「仅 TA 评分」模式"
+                )
+        # ta_cache_fallback 在 orchestrator 层处理（注入缓存 TA 结果）
 
         # ── A 股交易约束检查 ──────────────────────────────────────
         if constraints_config.enable_limit_check or constraints_config.enable_t1:

@@ -188,18 +188,28 @@ class TestTradingAgentsRunnerCacheHit:
         assert result.elapsed_sec == 0.0
         assert result.investment_decision is not None
 
-    def test_cache_miss_calls_get_graph(self):
-        """缓存未命中时应尝试加载 graph。"""
+    def test_cache_miss_calls_adapter(self):
+        """缓存未命中时应调用 adapter。"""
         from trade_krono_cli.ta_runner import TradingAgentsRunner
         runner = _make_ta_runner()
         runner._cache = MagicMock()
         runner._cache.get_ta.return_value = None
 
-        with patch.object(runner, "_get_adapter") as mock_adapter:
-            mock_adapter.side_effect = RuntimeError("adapter init failed")
-            result = runner.analyze_one("sh.600519", "2026-08-12")
-            assert result.error is not None
-            assert "RuntimeError" in result.error
+        mock_adapter = MagicMock()
+        mock_adapter.build_config.return_value = {"trade_date": "2026-08-12"}
+        mock_adapter.run_analysis.return_value = {
+            "success": True,
+            "final_state": {
+                "final_trade_decision": "BUY",
+                "market_report": "text",
+            },
+        }
+        # 通过设置 _session 来提供 adapter（避免 patch.object 对 property 失效）
+        mock_session = MagicMock()
+        mock_session.adapter = mock_adapter
+        runner._session = mock_session
+        result = runner.analyze_one("sh.600519", "2026-08-12")
+        mock_adapter.run_analysis.assert_called_once()
 
 
 class TestTradingAgentsRunnerAnalyzeError:
@@ -209,12 +219,15 @@ class TestTradingAgentsRunnerAnalyzeError:
         """分析过程失败时应记录 error。"""
         from trade_krono_cli.ta_runner import TradingAgentsRunner
         runner = _make_ta_runner()
-        with patch.object(runner, "_get_adapter") as mock_adapter:
-            mock_adapter.side_effect = RuntimeError("adapter init failed")
-            result = runner.analyze_one("sh.600519", "2026-08-12")
-            assert result.error is not None
-            assert result.ticker == "sh.600519"
-            assert result.elapsed_sec >= 0
+        mock_adapter = MagicMock()
+        mock_adapter.run_analysis.side_effect = RuntimeError("adapter init failed")
+        mock_session = MagicMock()
+        mock_session.adapter = mock_adapter
+        runner._session = mock_session
+        result = runner.analyze_one("sh.600519", "2026-08-12")
+        assert result.error is not None
+        assert result.ticker == "sh.600519"
+        assert result.elapsed_sec >= 0
 
     def test_validation_error_raises(self):
         """无效 ticker 应抛出 ValueError（validate_ticker 在 try 之前调用）。"""
@@ -271,7 +284,7 @@ class TestTradingAgentsRunnerBuildConfig:
 
 
 class TestTradingAgentsRunnerValidateProvider:
-    """_validate_provider 测试。"""
+    """_validate_provider 测试（仅在无 session 时生效）。"""
 
     def test_no_available_providers_raises(self):
         from trade_krono_cli.ta_runner import TradingAgentsRunner
@@ -294,26 +307,28 @@ class TestTradingAgentsRunnerValidateProvider:
             assert runner.llm_provider == "openai"
 
 
-class TestTradingAgentsRunnerGetAdapter:
-    """_get_adapter 懒加载测试。"""
+class TestTradingAgentsRunnerAdapter:
+    """adapter 属性测试。"""
 
-    def test_get_adapter_lazy_load(self):
+    def test_adapter_creates_new_when_no_session(self):
+        """无 session 时 adapter 属性创建新实例。"""
+        from trade_krono_cli.ta_runner import TradingAgentsRunner
         runner = _make_ta_runner()
-        assert runner._adapter is None
         with patch("trade_krono_cli.ta_runner.TradingAgentsAdapterImpl") as MockAdapter:
             mock_adapter = MagicMock()
             MockAdapter.return_value = mock_adapter
-            adapter = runner._get_adapter()
-            assert runner._adapter is mock_adapter
+            adapter = runner.adapter
+            assert adapter is mock_adapter
             MockAdapter.assert_called_once()
-            mock_adapter.load.assert_called_once()
 
-    def test_get_adapter_already_loaded_returns_cached(self):
-        runner = _make_ta_runner()
-        mock_adapter = MagicMock()
-        runner._adapter = mock_adapter
-        result = runner._get_adapter()
-        assert result is mock_adapter
+    def test_adapter_uses_session_when_available(self):
+        """有 session 时 adapter 从 session 获取。"""
+        from trade_krono_cli.ta_runner import TradingAgentsRunner
+        from trade_krono_cli.models.ta_session import TASession
+        mock_session = MagicMock()
+        mock_session.adapter = "session_adapter"
+        runner = TradingAgentsRunner(session=mock_session)
+        assert runner.adapter == "session_adapter"
 
 
 class TestTradingAgentsRunnerAnalyzeBatch:

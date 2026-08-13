@@ -44,24 +44,24 @@ class TestKronosSampleCount:
                 runner._cache = MagicMock()
                 runner._cache.get_kronos.return_value = None
 
-                with patch.object(runner, "_load"):
-                    with patch.object(runner, "_get_adapter") as mock_get_adapter:
-                        mock_adapter = MagicMock()
-                        mock_get_adapter.return_value = mock_adapter
-                        with patch.object(mock_adapter, "predict") as mock_pred:
-                            import numpy as np
-                            pred_df = MagicMock()
-                            pred_df.__getitem__ = lambda self, key: (
-                                np.array([101.0, 102.0, 103.0]) if key == "close" else MagicMock()
-                            )
-                            mock_pred.return_value = pred_df
+                mock_adapter = MagicMock()
+                import numpy as np
+                pred_df = MagicMock()
+                pred_df.__getitem__ = lambda self, key: (
+                    np.array([101.0, 102.0, 103.0]) if key == "close" else MagicMock()
+                )
+                mock_adapter.predict.return_value = pred_df
 
-                        result = runner.predict_one("sh.600519", "2026-08-12")
+                mock_session = MagicMock()
+                mock_session.adapter = mock_adapter
+                runner._session = mock_session
 
-                        # 验证缓存查询传入了 sample_count=5
-                        runner._cache.get_kronos.assert_called_once()
-                        call_args = runner._cache.get_kronos.call_args
-                        assert call_args[0][3] == 5  # sample_count 参数
+                result = runner.predict_one("sh.600519", "2026-08-12")
+
+                # 验证缓存查询传入了 sample_count=5
+                runner._cache.get_kronos.assert_called_once()
+                call_args = runner._cache.get_kronos.call_args
+                assert call_args[0][3] == 5  # sample_count 参数
 
     def test_cache_key_differs_by_sample_count(self):
         """不同 sample_count 产生不同的缓存 key。"""
@@ -88,24 +88,25 @@ class TestKronosSampleCount:
                     mock_p1.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
                     mock_p2.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
 
-                    with patch.object(runner_1, "_get_adapter") as mock_get1:
-                        mock_ad1 = MagicMock()
-                        mock_get1.return_value = mock_ad1
-                        with patch.object(mock_ad1, "predict") as mock_pred1:
-                            mock_pred1.return_value = pred_df_1
-                            with patch.object(runner_1, "_pred_df_to_dict") as mock_dict1:
-                                mock_dict1.return_value = {"close": [101.0, 102.0]}
-                                r1 = runner_1.predict_one("sh.600519", "2026-08-12")
+                    mock_ad1 = MagicMock()
+                    mock_ad1.predict.return_value = pred_df_1
+                    mock_session_1 = MagicMock()
+                    mock_session_1.adapter = mock_ad1
+                    runner_1._session = mock_session_1
 
-                    with patch.object(runner_5, "_get_adapter") as mock_get5:
-                        mock_ad5 = MagicMock()
-                        mock_get5.return_value = mock_ad5
-                        with patch.object(mock_ad5, "predict") as mock_pred5:
-                            # 5次采样都返回相同结果
-                            mock_pred5.return_value = pred_df_5
-                            with patch.object(runner_5, "_pred_df_to_dict") as mock_dict5:
-                                mock_dict5.return_value = {"close": [101.0, 102.0]}
-                                r5 = runner_5.predict_one("sh.600519", "2026-08-12")
+                    with patch.object(runner_1, "_pred_df_to_dict") as mock_dict1:
+                        mock_dict1.return_value = {"close": [101.0, 102.0]}
+                        r1 = runner_1.predict_one("sh.600519", "2026-08-12")
+
+                    mock_ad5 = MagicMock()
+                    mock_ad5.predict.return_value = pred_df_5
+                    mock_session_5 = MagicMock()
+                    mock_session_5.adapter = mock_ad5
+                    runner_5._session = mock_session_5
+
+                    with patch.object(runner_5, "_pred_df_to_dict") as mock_dict5:
+                        mock_dict5.return_value = {"close": [101.0, 102.0]}
+                        r5 = runner_5.predict_one("sh.600519", "2026-08-12")
 
                     # 两次缓存写入应使用不同的 sample_count
                     write_calls_1 = runner_1._cache.set_kronos.call_args_list

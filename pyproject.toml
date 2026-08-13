@@ -13,20 +13,51 @@ authors = [
     {name = "trade-krono-cli"}
 ]
 dependencies = [
+    # ── 核心运行时（TA 分析、数据获取、风险引擎均依赖）────────────────
     "typer>=0.9.0",
     "rich>=13.0.0",
     "loguru>=0.7.0",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
     "pandas>=2.0.0",
+    "numpy>=1.24.0",
     "baostock>=0.8.8",
-    "torch>=2.0.0",
     # cli-anything-tradingagents 已移至外部项目管理（external/repos.yaml + repo.lock）
     # 不再作为 PyPI 依赖引入，避免与 TradingAgents-astock 产生包级耦合
 ]
 
 [project.optional-dependencies]
+# ── TA 分析模式（不含 Kronos 预测，不装 torch）──────────────────────
+ta = []
+# 空组：安装 pip install trade-krono-cli[ta] 时仅安装核心依赖
+
+# ── Kronos 预测模式（需 PyTorch，GPU 推理可选）──────────────────────
+kronos = [
+    "torch>=2.0.0",
+]
+
+# ── 数据源扩展（可选，按需安装）────────────────────────────────────
+akshare = ["akshare>=1.10.0"]
+mootdx = ["mootdx>=1.60.0"]
+tushare = ["tushare>=1.2.0"]
+data = [
+    "akshare>=1.10.0",
+    "mootdx>=1.60.0",
+    "tushare>=1.2.0",
+]
+
+# ── 开发工具 ───────────────────────────────────────────────────────
 dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+# ── 完整安装（所有功能 + 开发工具）─────────────────────────────────
+full = [
+    "torch>=2.0.0",
+    "akshare>=1.10.0",
+    "mootdx>=1.60.0",
+    "tushare>=1.2.0",
     "pytest>=7.0",
     "pytest-cov>=4.0",
 ]
