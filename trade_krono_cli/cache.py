@@ -51,7 +51,9 @@ class Cache:
 
     @property
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path, check_same_thread=True)
+        conn = sqlite3.connect(
+            self._db_path, check_same_thread=False, timeout=10.0
+        )
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 

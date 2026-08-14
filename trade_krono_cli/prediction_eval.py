@@ -35,6 +35,7 @@ from trade_krono_cli.eval_data import (
 from trade_krono_cli.eval_kronos import compute_kronos_accuracy
 from trade_krono_cli.eval_ta import compute_ta_metrics
 from trade_krono_cli.eval_combined import compute_combined_metrics, compute_high_conf_metrics
+from trade_krono_cli.eval_ic import compute_ic_metrics
 from trade_krono_cli.eval_report import (
     store_summary,
     get_latest_evaluation,
@@ -345,7 +346,18 @@ class PredictionEvaluator:
             summary.combined_buy_up_n += compute_combined_metrics(h_records, metrics)
             summary.high_conf_n += compute_high_conf_metrics(h_records, metrics)
 
+            # IC 评估（截面 rank IC）
+            compute_ic_metrics(h_records, metrics)
+
             summary.horizons[horizon] = metrics
+
+        # 聚合 IC 到 summary 顶层（取最小 horizon 的结果）
+        if 5 in summary.horizons:
+            m5 = summary.horizons[5]
+            summary.ic_composite_rank_mean = m5.rank_ic_composite_mean
+            summary.ic_composite_rank_ir = m5.rank_ic_composite_ir
+            summary.ic_kronos_rank_mean = m5.rank_ic_kronos_mean
+            summary.ic_ta_rank_mean = m5.rank_ic_ta_mean
 
         return summary
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from functools import wraps
@@ -361,6 +362,7 @@ class FailureStore:
         )
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._records: list[FailureRecord] = []
+        self._lock = threading.Lock()
         self._load()
 
     def _load(self) -> None:
@@ -373,6 +375,11 @@ class FailureStore:
             self._records = []
 
     def _save(self) -> None:
+        with self._lock:
+            self._save_unlocked()
+
+    def _save_unlocked(self) -> None:
+        """内部写操作，调用方必须已持有锁。"""
         self._path.write_text(
             json.dumps(
                 [r.to_dict() for r in self._records],
@@ -405,19 +412,20 @@ class FailureStore:
             timestamp=time.time(),
             attempt_count=attempt_count,
         )
-        # 更新已有记录
-        for r in self._records:
-            if r.ticker == ticker and r.date == date and r.module == module:
-                r.error_category = record.error_category
-                r.error_type = record.error_type
-                r.error_message = record.error_message
-                r.attempt_count = record.attempt_count
-                r.timestamp = record.timestamp
-                self._save()
-                return r
-        self._records.append(record)
-        self._save()
-        return record
+        with self._lock:
+            # 更新已有记录
+            for r in self._records:
+                if r.ticker == ticker and r.date == date and r.module == module:
+                    r.error_category = record.error_category
+                    r.error_type = record.error_type
+                    r.error_message = record.error_message
+                    r.attempt_count = record.attempt_count
+                    r.timestamp = record.timestamp
+                    self._save_unlocked()
+                    return r
+            self._records.append(record)
+            self._save_unlocked()
+            return record
 
     def list_fails(
         self,

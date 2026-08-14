@@ -372,6 +372,7 @@ class TradingAgentsRunner:
     def _analyze_one_impl(self, ticker: str, date: str) -> StockAnalysisResult:
         """实际的 TA 分析逻辑（无重试装饰，供重试装饰器调用）。"""
         result = StockAnalysisResult(ticker=ticker, date=date)
+        t0 = time.time()
         try:
             adapter = self.adapter
             config = adapter.build_config(
@@ -390,6 +391,7 @@ class TradingAgentsRunner:
             analysis_result = adapter.run_analysis(
                 ticker, {
                     **config,
+                    "trade_date": date,
                     "extra_kwargs": {
                         "analysts": [
                             "market", "social", "news",

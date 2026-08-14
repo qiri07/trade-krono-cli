@@ -521,7 +521,7 @@ class DecisionAdapter:
                     if signal == Signal.BUY and 5 <= pct <= 30:
                         return pct
                     if signal == Signal.SELL and -20 <= pct <= -1:
-                        return -pct
+                        return pct
                     if signal == Signal.HOLD and abs(pct) <= 5:
                         return round(pct, 2)
         return None

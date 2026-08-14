@@ -256,8 +256,8 @@ def run(
         None, "--tickers", "-t",
         help="逗号分隔的股票代码，如 600519,000858,600036"
     ),
-    config: Optional[str] = typer.Option(
-        None, "--config", "-c",
+    stock_file: Optional[str] = typer.Option(
+        None, "--stock-file", "-f",
         help="股票列表文件路径（每行一只，支持 # 注释）"
     ),
     date: str = typer.Option(
@@ -401,11 +401,11 @@ def run(
     from trade_krono_cli.pipeline import QuantPipeline
     from trade_krono_cli.pipeline_config import PipelineConfig
 
-    tk_list = _load_tickers(tickers, config)
+    tk_list = _load_tickers(tickers, stock_file)
     if not tk_list:
         console.print(
             "[red]❌ 股票列表为空"
-            "（请通过 --tickers 或 --config 提供）[/red]"
+            "（请通过 --tickers 或 --stock-file 提供）[/red]"
         )
         raise typer.Exit(1)
 
@@ -612,6 +612,11 @@ def kronos(
         help="降级策略：strict / ta_only_on_kronos_fail / ta_cache_fallback",
         rich_help_panel="降级策略",
     ),
+    ta_cache_fallback: bool = typer.Option(
+        False, "--ta-cache-fallback",
+        help="启用 TA 缓存回退（需配合 --degrade-mode ta_cache_fallback）",
+        rich_help_panel="降级策略",
+    ),
 ) -> None:
     """仅运行 Kronos 批量预测。"""
     _load_env()
@@ -636,7 +641,7 @@ def kronos(
     if no_jitter:
         retry_overrides["retry_jitter"] = False
     cfg = PipelineConfig.default().override(**retry_overrides) if retry_overrides else None
-    degrade_overrides = _build_degrade_overrides(degrade_mode, ta_cache_fallback=False)
+    degrade_overrides = _build_degrade_overrides(degrade_mode, ta_cache_fallback)
     if degrade_overrides:
         cfg = (cfg or PipelineConfig.default()).override(**degrade_overrides)
     pipeline = QuantPipeline(

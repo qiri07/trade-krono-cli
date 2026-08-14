@@ -169,6 +169,32 @@ class HorizonMetrics:
     profit_factor: float = 0.0          # 盈亏比
     max_drawdown_pct: float = 0.0       # 最大回撤（%）
     sharpe_ratio: float = 0.0           # 夏普比率
+    # ── IC 评估指标（eval_ic 动态写入，默认 0.0）──────────────────────────
+    ic_composite_mean: float = 0.0
+    ic_composite_std: float = 0.0
+    ic_composite_ir: float = 0.0
+    rank_ic_composite_mean: float = 0.0
+    rank_ic_composite_std: float = 0.0
+    rank_ic_composite_ir: float = 0.0
+    ic_positive_pct: float = 0.0
+    ic_kronos_mean: float = 0.0
+    ic_kronos_std: float = 0.0
+    ic_kronos_ir: float = 0.0
+    rank_ic_kronos_mean: float = 0.0
+    rank_ic_kronos_std: float = 0.0
+    rank_ic_kronos_ir: float = 0.0
+    ic_ta_mean: float = 0.0
+    ic_ta_std: float = 0.0
+    ic_ta_ir: float = 0.0
+    rank_ic_ta_mean: float = 0.0
+    rank_ic_ta_std: float = 0.0
+    rank_ic_ta_ir: float = 0.0
+    # ── 额外回测指标（backtest_engine 动态写入，默认 0.0）──────────────────
+    sortino_ratio: float = 0.0
+    calmar_ratio: float = 0.0
+    turnover: float = 0.0
+    alpha_vs_benchmark: float = 0.0
+    benchmark_return_pct: float = 0.0
 
 
 @dataclass
@@ -211,3 +237,13 @@ class EvaluationSummary:
     excess_return_pct: float = 0.0
     benchmark_curve: dict[str, float] = field(default_factory=dict)
     excess_curve: dict[str, float] = field(default_factory=dict)
+    # ── IC 聚合指标（eval_ic 写入）─────────────────────────────────────────
+    ic_composite_rank_mean: float = 0.0
+    ic_composite_rank_ir: float = 0.0
+    ic_kronos_rank_mean: float = 0.0
+    ic_ta_rank_mean: float = 0.0
+    # ── Alpha / 基准 ────────────────────────────────────────────────────────
+    alpha_best_benchmark: str = ""
+    alpha_best_value: float = 0.0
+    alpha_all: dict[str, float] = field(default_factory=dict)
+    benchmark_results: dict[str, dict] = field(default_factory=dict)

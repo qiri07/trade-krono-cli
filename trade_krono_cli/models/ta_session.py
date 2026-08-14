@@ -35,14 +35,18 @@ class TASession:
 
     进程级单例：相同配置的调用会复用同一实例，避免重复初始化 adapter。
     """
-    # 类级别缓存，key = (llm_provider,)
+    # 类级别缓存，key = (llm_provider, max_debate_rounds, output_language)
     _cache: dict[tuple, "TASession"] = {}
 
     def __new__(cls, *args, **kwargs):
         # 跳过显式传入 runner 的测试场景（不命中缓存）
         if kwargs.get("runner") is not None:
             return super().__new__(cls)
-        key = (kwargs.get("llm_provider", None),)
+        key = (
+            kwargs.get("llm_provider", None),
+            kwargs.get("max_debate_rounds", None),
+            kwargs.get("output_language", None),
+        )
         if key in cls._cache:
             return cls._cache[key]
         instance = super().__new__(cls)

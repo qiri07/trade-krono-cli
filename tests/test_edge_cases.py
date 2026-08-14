@@ -41,7 +41,7 @@ class TestInvalidTickers:
         config_file.write_text("# 只有注释\n# 第二行注释\n")
         with patch("trade_krono_cli.cli._load_env"):
             result = runner.invoke(app, [
-                "run", "--config", str(config_file), "--date", "2026-08-11",
+                "run", "--stock-file", str(config_file), "--date", "2026-08-11",
             ])
             assert result.exit_code != 0
             assert "股票列表为空" in result.output

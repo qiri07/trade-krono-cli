@@ -38,18 +38,22 @@ class KronosSession:
     进程级单例：相同 (device, model_name, sample_count) 配置的调用会复用同一实例，
     避免多次 run() 时重复加载模型到显存。
     """
-    # 类级别缓存，key = (device, model_name, sample_count)
+    # 类级别缓存，key = (device, model_name, sample_count, T, top_p, lookback)
     _cache: dict[tuple, "KronosSession"] = _SESSION_CACHE
 
     def __new__(cls, *args, **kwargs):
         # 跳过显式传入 runner 的测试场景（不命中缓存）
         if kwargs.get("runner") is not None:
             return super().__new__(cls)
-        # 计算缓存 key
+        # 计算缓存 key（纳入所有影响推理行为的参数）
         device = kwargs.get("device", "cpu")
         model_name = kwargs.get("model_name", "kronos-base")
         sample_count = kwargs.get("sample_count", None)
-        key = (device.lower(), model_name, sample_count)
+        # T / top_p / lookback 直接影响适配器行为，纳入 key
+        T = kwargs.get("T", None)
+        top_p = kwargs.get("top_p", None)
+        lookback = kwargs.get("lookback", None)
+        key = (device.lower(), model_name, sample_count, T, top_p, lookback)
         if key in cls._cache:
             return cls._cache[key]
         instance = super().__new__(cls)
@@ -63,6 +67,9 @@ class KronosSession:
         sample_count: Optional[int] = None,
         runner: Optional[KronosRunner] = None,
         no_cache: bool = False,
+        T: Optional[float] = None,
+        top_p: Optional[float] = None,
+        lookback: Optional[int] = None,
     ):
         # 跳过 __new__ 缓存路径下的重复初始化（同一实例已初始化过）
         if hasattr(self, "_initialized"):
@@ -72,10 +79,9 @@ class KronosSession:
         self._model_name = model_name or "kronos-base"
         self._sample_count = sample_count
         self._runner = runner or KronosRunner(
-            model_name=model_name,
-            device=device,
-            sample_count=sample_count,
+            session=self,
             no_cache=no_cache,
+            sample_count=sample_count,
         )
         self._kronos_adapter: Optional[Any] = None
         self._predictor: Optional[Any] = None

@@ -1331,6 +1331,25 @@ When enabled (`--ta-cache-fallback`), failed TA analyses are automatically resol
 
 ## Changelog
 
+### v0.1.6 — 2026-08-14
+
+**Bug fixes and concurrency hardening:**
+
+- **Fixed `KronosSession` constructor error**: `KronosRunner` doesn't accept `model_name`/`device` kwargs; now passes `session=self` (`models/kronos_session.py`)
+- **Fixed `ta_runner.py` variable scope bug**: `t0` referenced in `finally` block was defined in outer method; lifted into `_analyze_one_impl`
+- **Fixed missing `trade_date`**: `build_config` return value doesn't include `trade_date`; now explicitly injected before adapter call
+- **Fixed missing dynamic attributes on `HorizonMetrics`**: Added default values (0.0) for `rank_ic_*`, `ic_*`, `sortino_ratio`, `calmar_ratio`, `turnover`, `alpha_vs_benchmark` fields
+- **Fixed missing IC aggregation fields on `EvaluationSummary`**: Added `ic_composite_rank_mean`, `ic_kronos_rank_mean`, `alpha_best_benchmark` etc.; `_compute_summary` now calls `compute_ic_metrics`
+- **Fixed `FailureStore` thread race condition**: Added `threading.Lock` to protect `record()` and `_save()` operations
+- **Extended Session cache keys**: `KronosSession` now includes `T`/`top_p`/`lookback`; `TASession` now includes `max_debate_rounds`/`output_language`
+- **Fixed SELL signal `expected_return` sign inversion**: Removed incorrect `-pct` negation
+- **Fixed `run` command `--config` parameter conflict**: Stock list file parameter renamed to `--stock-file`/`-f`; pipeline config retains `--config`/`-c`
+- **Fixed missing `ta_cache_fallback` on `kronos` command**: Added CLI parameter parity with `run` and `ta`
+- **SQLite connection timeout**: Added `timeout=10.0` to `cache.py` `connect()` call
+- **Test count: 1164 passed** (up from 1106), 0 failures
+
+---
+
 ### v0.1.5 — 2026-08-14
 
 **Domain layer & code quality:**

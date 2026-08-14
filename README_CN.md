@@ -1356,6 +1356,25 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 
 ## 更新日志
 
+### v0.1.6 — 2026-08-14
+
+**Bug 修复与并发安全加固：**
+
+- **修复 `KronosSession` 构造参数错误**：`KronosRunner` 不接受 `model_name`/`device` 参数，改为传递 `session=self`（`models/kronos_session.py`）
+- **修复 `ta_runner.py` 变量作用域 Bug**：`_analyze_one_impl` 的 `finally` 块引用了外层方法定义的 `t0`，将其提升到 `_analyze_one_impl` 方法内部
+- **修复 `trade_date` 缺失问题**：`build_config` 返回值不含 `trade_date`，在调用适配器前显式注入
+- **修复 `HorizonMetrics` 缺少动态属性**：为 `eval_data.py` 添加 `rank_ic_*`、`ic_*`、`sortino_ratio`、`calmar_ratio`、`turnover`、`alpha_vs_benchmark` 等字段的默认值 0.0
+- **修复 `EvaluationSummary` 缺少 IC 聚合字段**：新增 `ic_composite_rank_mean`、`ic_kronos_rank_mean`、`alpha_best_benchmark` 等字段，并在 `_compute_summary` 中调用 `compute_ic_metrics`
+- **修复 `FailureStore` 多线程竞态**：添加 `threading.Lock` 保护 `record()` 和 `_save()` 操作
+- **扩展 Session 缓存 key**：`KronosSession` 纳入 `T`/`top_p`/`lookback`，`TASession` 纳入 `max_debate_rounds`/`output_language`
+- **修复 SELL 信号 `expected_return` 符号反转**：移除 `-pct` 的负号操作
+- **修复 `run` 命令 `--config` 参数冲突**：股票列表文件参数改为 `--stock-file`/`-f`，Pipeline 配置文件保持 `--config`/`-c`
+- **修复 `kronos` 命令缺少 `ta_cache_fallback` 参数**：补齐降级策略 CLI 接口
+- **SQLite 连接添加 timeout**：`cache.py` 中 `connect()` 增加 `timeout=10.0`
+- **测试数量**：**1164 项通过**（从 1106 增长），0 失败
+
+---
+
 ### v0.1.5 — 2026-08-14
 
 **领域层重构与代码质量提升：**
