@@ -13,7 +13,7 @@ class TestPredictionUncertainty:
         pu = PredictionUncertainty(
             expected_return=3.2,
             direction="UP",
-            direction_confidence=0.85,
+            direction_score=0.85,
             volatility=1.23,
             path_dispersion=0.045,
             confidence_score=78.5,
@@ -30,7 +30,7 @@ class TestPredictionUncertainty:
         d = {
             "expected_return": -2.1,
             "direction": "DOWN",
-            "direction_confidence": 0.6,
+            "direction_score": 0.6,
             "volatility": 0.8,
             "path_dispersion": 0.02,
             "confidence_score": 55.0,
@@ -47,7 +47,7 @@ class TestPredictionUncertainty:
         d = {
             "expected_return": 1.0,
             "direction": "UP",
-            "direction_confidence": 0.5,
+            "direction_score": 0.5,
             "volatility": 0.1,
             "path_dispersion": None,
             "confidence_score": 50.0,
@@ -57,6 +57,31 @@ class TestPredictionUncertainty:
         pu = PredictionUncertainty.from_dict(d)
         assert pu.expected_return == 1.0
         assert not hasattr(pu, "extra_field") or pu.__dict__.get("extra_field") is None
+
+    def test_percentile_fields(self):
+        """PredictionDistribution 应包含 p10/p25/p50/p75/p90 分位数字段。"""
+        from trade_krono_cli.kronos_runner import PredictionDistribution
+        pd_obj = PredictionDistribution(
+            expected_return=2.0, direction="UP", confidence_score=72.0,
+            p10=1700.0, p25=1750.0, p50=1800.0, p75=1850.0, p90=1900.0,
+        )
+        d = pd_obj.to_dict()
+        assert d["p10"] == 1700.0
+        assert d["p25"] == 1750.0
+        assert d["p50"] == 1800.0
+        assert d["p75"] == 1850.0
+        assert d["p90"] == 1900.0
+        restored = PredictionDistribution.from_dict(d)
+        assert restored.p50 == 1800.0
+        assert restored.p90 == 1900.0
+
+    def test_percentiles_default_to_none(self):
+        """未设置百分位时应为 None。"""
+        from trade_krono_cli.kronos_runner import PredictionDistribution
+        pd_obj = PredictionDistribution(expected_return=1.0, direction="UP")
+        assert pd_obj.p10 is None
+        assert pd_obj.p50 is None
+        assert pd_obj.p90 is None
 
 
 class TestKronosForecastResult:
@@ -138,12 +163,12 @@ class TestKronosRunnerParsePredDf:
         with pytest.raises(RuntimeError, match="空预测"):
             runner._parse_pred_df(pred_df, last_close=100.0)
 
-    def test_direction_confidence_bounds(self):
-        """direction_confidence 应在 [0, 1] 区间内。"""
+    def test_direction_score_bounds(self):
+        """direction_score 应在 [0, 1] 区间内。"""
         runner = self._make_runner()
         pred_df = pd.DataFrame({"close": [100.0, 150.0, 200.0]})
         result = runner._parse_pred_df(pred_df, last_close=100.0)
-        dc = result["prediction_uncertainty"]["direction_confidence"]
+        dc = result["prediction_uncertainty"]["direction_score"]
         assert 0.0 <= dc <= 1.0
 
     def test_confidence_score_clamped_0_100(self):
@@ -155,12 +180,27 @@ class TestKronosRunnerParsePredDf:
         assert 0.0 <= cs <= 100.0
 
     def test_multi_sample_path_dispersion(self):
-        """多样本时应计算 path_dispersion。"""
-        runner = self._make_runner()
-        pred_df = pd.DataFrame({"close": [100.0, 101.0, 102.0]})
-        result = runner._parse_pred_df(pred_df, last_close=100.0, sample_count=5)
+        """多样本时应计算 path_dispersion（通过 build_result_dict 传入 stacked）。"""
+        from trade_krono_cli.prediction_distribution import build_result_dict
+        import numpy as np
+        # 模拟 5 条不同路径
+        stacked = np.array([
+            [100.0, 101.0, 102.0],
+            [100.0, 100.5, 101.0],
+            [100.0, 101.5, 103.0],
+            [100.0, 99.5,  99.0],
+            [100.0, 100.0, 100.5],
+        ])
+        result = build_result_dict(
+            stacked.mean(axis=0), last_close=100.0,
+            stacked=stacked, sample_count=5,
+        )
         assert result["prediction_uncertainty"]["path_dispersion"] is not None
         assert isinstance(result["prediction_uncertainty"]["path_dispersion"], float)
+        # 验证百分位存在
+        pd = result["prediction_distribution"]
+        assert pd["p10"] is not None
+        assert pd["p90"] is not None
 
 
 class TestKronosRunnerPredDfToDict:
@@ -232,7 +272,7 @@ class TestKronosRunnerApplyUncertainty:
             "direction": "UP",
             "prediction_uncertainty": {
                 "expected_return": 2.5, "direction": "UP",
-                "direction_confidence": 0.8, "volatility": 1.0,
+                "direction_score": 0.8, "volatility": 1.0,
                 "path_dispersion": None, "confidence_score": 80.0,
                 "sample_count_used": 1,
             },
@@ -259,7 +299,7 @@ class TestKronosRunnerPredictOneErrorPaths:
                 "expected_change_pct": 2.0, "direction": "UP",
                 "prediction_uncertainty": {
                     "expected_return": 2.0, "direction": "UP",
-                    "direction_confidence": 0.8, "volatility": 1.0,
+                    "direction_score": 0.8, "volatility": 1.0,
                     "path_dispersion": None, "confidence_score": 80.0,
                     "sample_count_used": 1,
                 },
@@ -281,7 +321,7 @@ class TestKronosRunnerPredictOneErrorPaths:
                 "expected_change_pct": 1.5, "direction": "UP",
                 "prediction_uncertainty": {
                     "expected_return": 1.5, "direction": "UP",
-                    "direction_confidence": 0.7, "volatility": 0.5,
+                    "direction_score": 0.7, "volatility": 0.5,
                     "path_dispersion": None, "confidence_score": 70.0,
                     "sample_count_used": 1,
                 },
@@ -336,7 +376,7 @@ class TestKronosRunnerPredictBatch:
                 "direction": "UP",
                 "prediction_uncertainty": {
                     "expected_return": 2.0, "direction": "UP",
-                    "direction_confidence": 0.8, "volatility": 1.0,
+                    "direction_score": 0.8, "volatility": 1.0,
                     "path_dispersion": None, "confidence_score": 80.0,
                     "sample_count_used": 1,
                 },
@@ -584,7 +624,7 @@ class TestKronosBatchInference:
                 "direction": "UP",
                 "prediction_uncertainty": {
                     "expected_return": 2.0, "direction": "UP",
-                    "direction_confidence": 0.8, "volatility": 1.0,
+                    "direction_score": 0.8, "volatility": 1.0,
                     "path_dispersion": None, "confidence_score": 80.0,
                     "sample_count_used": 1,
                 },

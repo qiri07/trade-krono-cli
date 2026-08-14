@@ -31,6 +31,7 @@ Results are automatically merged after both complete, producing a ranked report.
 - [Scoring Formula](#scoring-formula)
 - [Risk Engine](#risk-engine)
 - [External Repo Manager](#external-repo-manager)
+- [Domain Layer](#domain-layer)
 - [Testing](#testing)
 - [TA Decision Extraction Logic](#ta-decision-extraction-logic)
 - [Three-Tier Raw Report Storage](#three-tier-raw-report-storage)
@@ -627,9 +628,32 @@ trade-krono-cli
 │   ├── batch/                  # Batch prediction
 │   │   └── batch_runner.py     # Async semaphore-based batch Kronos predictions
 │   └── risk/                   # Risk engine (volatility/drawdown/liquidity/concentration/regime/gap/event/valuation)
+│   ├── domain/                 # Domain model layer (SignalAssessment / InvestmentDecision / Experiment / Evaluation)
+│   │   ├── types.py            # Shared enums (Direction, Signal, ExperimentType)
+│   │   ├── signal.py           # SignalAssessment + signal conflict detection + EV calculation
+│   │   ├── decision.py         # InvestmentDecision
+│   │   ├── prediction.py       # TAAnalysis / KronosPrediction / PredictionDistribution
+│   │   ├── experiment.py       # Experiment / Hypothesis
+│   │   ├── evaluation.py       # EvalRecord / EvaluationSummary / HorizonMetrics
+│   │   ├── risk.py             # RiskAssessment
+│   │   ├── market.py           # MarketSnapshot
+│   │   ├── stock.py            # Stock model
+│   │   └── factory.py          # build_* domain object constructors
+│   ├── pipeline/               # Pipeline package — unified orchestration entry
+│   │   ├── orchestrator.py     # QuantPipeline + PipelineFactory (ThreadPoolExecutor parallel TA+Kronos)
+│   │   ├── data_fetcher.py     # Parallel K-line fetching + cache write
+│   │   ├── merge.py            # merge_results / filter_pool / default_scorer / run_risk_assessment
+│   │   ├── reporter.py         # save_json_report / save_html_report / print_results_table / print_results_summary
+│   │   ├── resource_manager.py # Per-stock resource lifecycle manager
+│   │   └── resource_pool.py    # Shared resource pool (LLM clients, GPU sessions)
+│   ├── models/                 # Session state models
+│   │   ├── kronos_session.py   # Kronos model session lifecycle (lazy-load, device selection)
+│   │   └── ta_session.py       # TradingAgents session state (provider, debate rounds)
+│   ├── batch/                  # Batch prediction
+│   │   └── batch_runner.py     # Async semaphore-based batch Kronos predictions
 ├── scripts/
 │   └── install.sh              # One-click install script
-├── tests/                      # Test suite (459 tests, 87% coverage, mypy clean)
+├── tests/                      # Test suite (1106 tests, 87%+ coverage, mypy clean)
 └── external/                   # External project configs (repos.yaml + repo.lock)
 ```
 
@@ -1058,13 +1082,48 @@ trade-krono-cli calls only the `cli_anything.*` paths via `sys.path` injection; 
 
 Called exclusively via `cli_anything.*` namespace imports (from `agent-harness/` subdirs); **neither project's source code is modified or directly imported**.
 
+## Domain Layer
+
+The `domain/` package defines pure domain objects with no I/O dependencies, enabling clean separation between business logic and persistence.
+
+### Key Modules
+
+| Module | Description |
+|--------|-------------|
+| `types.py` | Shared enums: `Direction` (UP/DOWN/FLAT), `Signal` (BUY/HOLD/SELL), `ExperimentType` |
+| `signal.py` | `SignalAssessment` — merges TA + Kronos signals; signal conflict detection; `_compute_ev()` expected value calculation |
+| `decision.py` | `InvestmentDecision` — structured decision with signal, confidence, thesis, risks, invalidations |
+| `prediction.py` | `TAAnalysis`, `KronosPrediction`, `PredictionDistribution` — structured prediction data |
+| `experiment.py` | `Experiment`, `Hypothesis` — hypothesis-driven experiment tracking |
+| `evaluation.py` | `EvalRecord`, `EvaluationSummary`, `HorizonMetrics` — prediction evaluation results |
+| `risk.py` | `RiskAssessment`, `RiskFactor` — risk scoring data |
+| `market.py` | `MarketSnapshot` — market context data |
+| `stock.py` | `Stock` — stock metadata model |
+| `factory.py` | `build_*` constructors for creating domain objects from raw data |
+
+### Usage Example
+
+```python
+from trade_krono_cli.domain import SignalAssessment, build_signal_assessment
+from trade_krono_cli.domain.prediction import TAAnalysis, KronosPrediction
+from trade_krono_cli.domain import Direction, Signal
+
+ta = TAAnalysis(ticker="sh.600519", eval_date="2026-08-11",
+                signal=Signal.BUY, confidence=80.0, thesis="Strong fundamentals")
+kp = KronosPrediction(ticker="sh.600519", eval_date="2026-08-11", horizon=30,
+                      direction=Direction.UP, expected_return=3.2, predicted_close=1837.73)
+sa = build_signal_assessment("sh.600519", "2026-08-11", ta=ta, kronos=kp)
+# sa.conflict == SignalConflict.NO_CONFLICT
+# sa.expected_value == 2.56 (computed via _compute_ev)
+```
+
 ## Testing
 
 ```bash
 pytest tests/ -v
 ```
 
-Test Results: **468/468 all passing** · **87% overall coverage** · **mypy clean**
+Test Results: **1106 passed** · **87%+ overall coverage** · **mypy clean**
 
 | File | Coverage |
 |------|----------|
@@ -1076,13 +1135,22 @@ Test Results: **468/468 all passing** · **87% overall coverage** · **mypy clea
 | `test_security.py` | Key validation, input validation, retry, rate limiting |
 | `test_ta_decision.py` | DecisionAdapter structured parsing, InvestmentDecision dataclass, raw report storage |
 | `test_research_db.py` | ResearchDatabase full-table CRUD, jobs lifecycle, schema migration, cache/research isolation |
+| `test_research_engine.py` | Research database integration (jobs, signals, experiments, walkforward) |
 | `test_version.py` | run_id generation, version snapshot construction, config_hash, backward-compatible migration |
 | `test_prediction_eval.py` | EvalRecord, EvaluationSummary, HorizonMetrics, statistical calculation logic |
+| `test_prediction_eval_ic.py` | IC/rank-IC evaluation metrics |
 | `test_risk.py` | Risk Engine (multi-dimensional scores + VaR/CVaR/Beta + RiskMetrics) full-dimension tests |
 | `test_risk_models.py` | Risk models (VaR/CVaR/Beta/Sharpe/expected return adj/gap/event/valuation) unit tests |
 | `test_external.py` | External repo management (config I/O, status, pin, lock drift detection) |
-| `test_kronos_runner.py` | Device resolution (CPU/CUDA/large-model warning), result save |
+| `test_kronos_runner.py` | Device resolution (CPU/CUDA/large-model warning), result save, slots cleanup |
 | `test_ta_runner.py` | BuildConfig, provider validation, graph lazy-load, batch analysis, raw report I/O |
+| `test_committee.py` | Investment Committee LLM deliberation stub |
+| `test_signal_lifecycle.py` | Signal state transition tracking |
+| `test_resource_manager.py` | Per-stock resource lifecycle |
+| `test_resource_pool.py` | Shared resource pool (LLM/GPU) |
+| `test_analytics_db.py` | Analytics database operations |
+| `test_artifact_manifest.py` | Experiment artifact manifest |
+| `test_llm_request.py` | LLM request handling |
 | `test_batch_runner.py` | Async semaphore-based batch prediction |
 | `integration/test_pipeline_integration.py` | End-to-end pipeline integration |
 | `test_config_validator.py` | Settings validation (15 checks: types, ranges, required keys) + new config schema defaults |
@@ -1090,6 +1158,8 @@ Test Results: **468/468 all passing** · **87% overall coverage** · **mypy clea
 | `test_merge_edge_cases.py` | Merge boundary conditions (constraints, T+1, mixed signals) |
 | `test_merge_uncertainty.py` | Uncertainty confidence bonus regression tests |
 | `test_pipeline_config.py` | PipelineConfig defaults, override, JSON/YAML roundtrip, scoring & risk schema validation |
+| `test_degradation.py` | Degradation modes (strict / ta_only / cache fallback) |
+| `test_scoring_plugins.py` | Custom scorer registration and invocation |
 
 ## TA Decision Extraction Logic
 
@@ -1260,6 +1330,22 @@ When enabled (`--ta-cache-fallback`), failed TA analyses are automatically resol
 - The fallback updates `signal`, `confidence`, and `reasoning` in-place so downstream merge/scoring proceeds normally
 
 ## Changelog
+
+### v0.1.5 — 2026-08-14
+
+**Domain layer & code quality:**
+- **New `domain/` layer**: `SignalAssessment`, `InvestmentDecision`, `Experiment`, `Evaluation`, `PredictionDistribution`, `RiskAssessment` as pure domain objects (no I/O, no SQLite coupling)
+- **Eliminated duplicate code**: Removed duplicated `SignalConflict` enum, `_compute_ev` function, and `ExperimentType`/`Hypothesis` classes — all now imported from `domain/`
+- **Cleaned up `kronos_runner.py`**: Removed duplicate `prediction_distribution` field; unified uncertainty path through `prediction_uncertainty` module only
+- **Removed orphan methods from `research_db.py`**: Deleted un-called `insert_signal_assessment`, `insert_decision_domain`, `insert_experiment_domain` (~103 lines removed)
+- **New pipeline resource management**: `resource_manager.py` and `resource_pool.py` for LLM client and GPU session lifecycle
+- **New `signal_lifecycle.py`**: Track signal state transitions across runs
+- **New `experiment_registry.py`**: Hypothesis-driven experiment tracking with pass/fail evaluation
+- **New `committee.py`**: LLM-powered Investment Committee deliberation stub
+- **New analytics & evaluation**: `analytics_db.py`, `artifact_manifest.py`, `eval_ic.py`, `eval_benchmark.py`, `eval_walkforward.py`
+- **Test count**: **1106 passed** (up from 468)
+
+---
 
 ### v0.1.4 — 2026-08-13
 

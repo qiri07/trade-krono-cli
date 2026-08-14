@@ -16,10 +16,12 @@ from typing import Optional
 import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.data import fetch_kline as _fetch_kline_ref
+from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.security import validate_ticker, validate_date
+from trade_krono_cli.trading_constraints import compute_limit_prices
 
 # 向后兼容：测试通过 patch("trade_krono_cli.eval_data.fetch_kline") 注入
+from trade_krono_cli.data import fetch_kline as _fetch_kline_ref
 fetch_kline = _fetch_kline_ref
 
 
@@ -33,8 +35,6 @@ def _resolve_fetch_kline(custom=None):
     if mod is not None and hasattr(mod, "fetch_kline") and mod.fetch_kline is not _fetch_kline_ref:
         return mod.fetch_kline
     return _fetch_kline_ref
-from trade_krono_cli.constraints_config import ConstraintConfig
-from trade_krono_cli.trading_constraints import compute_limit_prices
 
 
 # ═══════════════════════════════════════════════════════
@@ -137,6 +137,12 @@ class EvalRecord:
     actual_direction: str           # UP / DOWN / FLAT
     is_direction_correct: bool      # 方向是否预测正确
     error_pct: float                # 预测误差 = 预测 - 实际
+    # ── 分布分位数（来自 PredictionDistribution，可选）──────────────────
+    p10: Optional[float] = None
+    p25: Optional[float] = None
+    p50: Optional[float] = None
+    p75: Optional[float] = None
+    p90: Optional[float] = None
     # 附加上下文（用于分组统计）
     ta_signal: Optional[str] = None
     composite_score: Optional[float] = None

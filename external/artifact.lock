@@ -1,0 +1,2630 @@
+{
+  "schema_version": "2.0",
+  "entries": [
+    {
+      "experiment_id": "2e3057fe46a025d8",
+      "run_id": "20260812-110634-001",
+      "job_id": "71461622-b41",
+      "created_at": "2026-08-14T03:06:38.903258+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:06:38.903154+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:06:38.903154+00:00"
+        },
+        "experiment_id": "2e3057fe46a025d8"
+      }
+    },
+    {
+      "experiment_id": "5e31779045783647",
+      "run_id": "20260812-110638-002",
+      "job_id": "55f3f953-eaf",
+      "created_at": "2026-08-14T03:06:40.011773+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:06:40.010044+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:06:40.010044+00:00"
+        },
+        "experiment_id": "5e31779045783647"
+      }
+    },
+    {
+      "experiment_id": "39e84e892369b199",
+      "run_id": "20260812-110640-003",
+      "job_id": "45eab213-6b5",
+      "created_at": "2026-08-14T03:06:43.941321+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:06:43.941088+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:06:43.941088+00:00"
+        },
+        "experiment_id": "39e84e892369b199"
+      }
+    },
+    {
+      "experiment_id": "7e424088af665a85",
+      "run_id": "20260812-110643-004",
+      "job_id": "89235b35-69d",
+      "created_at": "2026-08-14T03:07:05.759178+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:07:05.758935+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:07:05.758935+00:00"
+        },
+        "experiment_id": "7e424088af665a85"
+      }
+    },
+    {
+      "experiment_id": "ba192857cf1b56b8",
+      "run_id": "20260812-110739-001",
+      "job_id": "7a0f6274-1f2",
+      "created_at": "2026-08-14T03:07:43.453912+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:07:43.453698+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:07:43.453698+00:00"
+        },
+        "experiment_id": "ba192857cf1b56b8"
+      }
+    },
+    {
+      "experiment_id": "13aa807c5e99290f",
+      "run_id": "20260812-110743-002",
+      "job_id": "6d7f6248-087",
+      "created_at": "2026-08-14T03:07:44.578415+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:07:44.574761+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:07:44.574761+00:00"
+        },
+        "experiment_id": "13aa807c5e99290f"
+      }
+    },
+    {
+      "experiment_id": "ad02b2c2207784b8",
+      "run_id": "20260812-110744-003",
+      "job_id": "2b00c22f-8c2",
+      "created_at": "2026-08-14T03:07:47.269240+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:07:47.269083+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:07:47.269083+00:00"
+        },
+        "experiment_id": "ad02b2c2207784b8"
+      }
+    },
+    {
+      "experiment_id": "f199f99268ef660b",
+      "run_id": "20260812-110747-004",
+      "job_id": "9baf04e8-100",
+      "created_at": "2026-08-14T03:07:55.478323+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:07:55.478234+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:07:55.478234+00:00"
+        },
+        "experiment_id": "f199f99268ef660b"
+      }
+    },
+    {
+      "experiment_id": "a39a887473b57fd0",
+      "run_id": "20260811-111305-001",
+      "job_id": "9d46ded7-b0e",
+      "created_at": "2026-08-14T03:13:23.946341+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:13:23.946183+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:13:23.946183+00:00"
+        },
+        "experiment_id": "a39a887473b57fd0"
+      }
+    },
+    {
+      "experiment_id": "5e196e7288d4aec5",
+      "run_id": "20260811-111323-002",
+      "job_id": "1e3870df-241",
+      "created_at": "2026-08-14T03:13:25.046465+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:13:25.043042+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:13:25.043042+00:00"
+        },
+        "experiment_id": "5e196e7288d4aec5"
+      }
+    },
+    {
+      "experiment_id": "d952e9a3c3c74a8f",
+      "run_id": "20260811-111325-003",
+      "job_id": "850c2ba8-c5e",
+      "created_at": "2026-08-14T03:13:29.812306+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:13:29.812214+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:13:29.812214+00:00"
+        },
+        "experiment_id": "d952e9a3c3c74a8f"
+      }
+    },
+    {
+      "experiment_id": "804af4fba7228706",
+      "run_id": "20260812-111337-001",
+      "job_id": "516f611d-06d",
+      "created_at": "2026-08-14T03:13:41.681108+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:13:41.681019+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:13:41.681019+00:00"
+        },
+        "experiment_id": "804af4fba7228706"
+      }
+    },
+    {
+      "experiment_id": "c76a7017ba99d804",
+      "run_id": "20260812-111341-002",
+      "job_id": "74addf2e-08e",
+      "created_at": "2026-08-14T03:13:52.676867+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:13:52.676631+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:13:52.676631+00:00"
+        },
+        "experiment_id": "c76a7017ba99d804"
+      }
+    },
+    {
+      "experiment_id": "cb03fcc7ccef9429",
+      "run_id": "20260812-113419-001",
+      "job_id": "f9d0cc92-5a1",
+      "created_at": "2026-08-14T03:34:23.354346+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:34:23.354249+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:34:23.354249+00:00"
+        },
+        "experiment_id": "cb03fcc7ccef9429"
+      }
+    },
+    {
+      "experiment_id": "288ef7f7f10aca41",
+      "run_id": "20260812-113423-002",
+      "job_id": "af1a86f3-c35",
+      "created_at": "2026-08-14T03:34:24.300117+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:34:24.297395+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:34:24.297395+00:00"
+        },
+        "experiment_id": "288ef7f7f10aca41"
+      }
+    },
+    {
+      "experiment_id": "d2c27eb8e27f43b0",
+      "run_id": "20260812-113424-003",
+      "job_id": "b2b8d2ac-c2b",
+      "created_at": "2026-08-14T03:35:36.796537+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:35:36.796445+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:35:36.796445+00:00"
+        },
+        "experiment_id": "d2c27eb8e27f43b0"
+      }
+    },
+    {
+      "experiment_id": "12fa3c8d23fb70e8",
+      "run_id": "20260811-113802-002",
+      "job_id": "4765a3f1-728",
+      "created_at": "2026-08-14T03:38:13.976621+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:38:13.976527+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:38:13.976527+00:00"
+        },
+        "experiment_id": "12fa3c8d23fb70e8"
+      }
+    },
+    {
+      "experiment_id": "71abde32950f12d9",
+      "run_id": "20260811-113813-003",
+      "job_id": "bad3af13-e27",
+      "created_at": "2026-08-14T03:38:14.932973+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:38:14.929912+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:38:14.929912+00:00"
+        },
+        "experiment_id": "71abde32950f12d9"
+      }
+    },
+    {
+      "experiment_id": "d4ddcff76eb31a80",
+      "run_id": "20260811-113814-004",
+      "job_id": "e2b0474b-d6e",
+      "created_at": "2026-08-14T03:40:18.527794+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:40:18.527705+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T03:40:18.527705+00:00"
+        },
+        "experiment_id": "d4ddcff76eb31a80"
+      }
+    },
+    {
+      "experiment_id": "fc4f5445d76383a0",
+      "run_id": "20260811-124131-001",
+      "job_id": "392e8f0a-264",
+      "created_at": "2026-08-14T04:41:32.887100+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T04:41:32.884816+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T04:41:32.884816+00:00"
+        },
+        "experiment_id": "fc4f5445d76383a0"
+      }
+    },
+    {
+      "experiment_id": "8311c182d0eee32e",
+      "run_id": "20260811-124431-001",
+      "job_id": "166e818c-6db",
+      "created_at": "2026-08-14T04:44:38.945805+00:00",
+      "manifest": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0cc50d"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T04:44:38.945563+00:00"
+        }
+      },
+      "summary": {
+        "code": {
+          "trade_krono_cli": {},
+          "tradingagents": {
+            "commit": "5c307ef8a4390a3642fdc34a675087fac40a564a",
+            "commit_short": "5c307ef8a439",
+            "dirty": false
+          },
+          "kronos": {
+            "commit": "2b16bc31141fccd682bfc631741d6fea93c95fd4",
+            "commit_short": "2b16bc31141f",
+            "dirty": true
+          }
+        },
+        "model": {
+          "name": "Kronos-base",
+          "tokenizer": "Kronos-Tokenizer-base",
+          "device": "cpu",
+          "sample_count": 5,
+          "pred_len": 30,
+          "torch_version": null,
+          "cuda_available": false,
+          "cuda_version": null,
+          "gpu_model": null
+        },
+        "llm": {
+          "provider": "agnes",
+          "deep_think_model": "agnes-2.5-flash",
+          "quick_think_model": "agnes-2.5-flash",
+          "backend_url": "https://apihub.agnes-ai.cn/v1"
+        },
+        "data": {
+          "source": "baostock",
+          "latest_date": null
+        },
+        "prompt": {
+          "max_debate_rounds": 1,
+          "max_risk_discuss_rounds": 1,
+          "output_language": "Chinese",
+          "structured_output": true
+        },
+        "strategy": {
+          "scoring_strategy": "linear",
+          "risk_boost_strategy": "fixed_boost",
+          "min_confidence": 55.0,
+          "allowed_signals": [
+            "BUY",
+            "HOLD"
+          ],
+          "config_hash": "eebd3a08ed0c"
+        },
+        "environment": {
+          "python_version": "3.14.4",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "hostname": "onai-HP99",
+          "timestamp": "2026-08-14T04:44:38.945563+00:00"
+        },
+        "experiment_id": "8311c182d0eee32e"
+      }
+    }
+  ]
+}

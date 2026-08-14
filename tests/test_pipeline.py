@@ -18,7 +18,7 @@ def test_pipeline_run_parallel():
     ]
 
     pu = PredictionUncertainty(
-        expected_return=3.2, direction="UP", direction_confidence=0.8,
+        expected_return=3.2, direction="UP", direction_score=0.8,
         confidence_score=75.0, sample_count_used=1,
     )
     mock_kr = MagicMock()
@@ -32,7 +32,7 @@ def test_pipeline_run_parallel():
             ticker="sz.000858", eval_date="2026-08-11", horizon=30,
             direction="DOWN", expected_change_pct=-1.5, last_close=25.3,
             prediction_uncertainty=PredictionUncertainty(
-                expected_return=-1.5, direction="DOWN", direction_confidence=0.6,
+                expected_return=-1.5, direction="DOWN", direction_score=0.6,
                 confidence_score=60.0, sample_count_used=1,
             ),
         ),

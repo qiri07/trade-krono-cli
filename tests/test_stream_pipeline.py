@@ -268,7 +268,7 @@ class TestQuantPipelineStreaming:
             StockAnalysisResult(ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0),
         ]
         pu = PredictionUncertainty(
-            expected_return=2.0, direction="UP", direction_confidence=0.8,
+            expected_return=2.0, direction="UP", direction_score=0.8,
             confidence_score=75.0, sample_count_used=1,
         )
         mock_kr = MagicMock()
@@ -311,7 +311,7 @@ class TestQuantPipelineStreaming:
             StockAnalysisResult(ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0),
         ]
         pu = PredictionUncertainty(
-            expected_return=2.0, direction="UP", direction_confidence=0.8,
+            expected_return=2.0, direction="UP", direction_score=0.8,
             confidence_score=75.0, sample_count_used=1,
         )
         mock_kr = MagicMock()

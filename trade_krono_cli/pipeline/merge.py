@@ -2,10 +2,16 @@
 pipeline.merge — 结果合并 + 综合打分。
 
 从 trade_krono_cli.merge 收敛而来，职责明确：
-  - default_scorer   ：综合打分函数（满分 100）
-  - merge_results    ：TA + Kronos 结果合并 + 约束 + 风险评分
+  - default_scorer   ：综合打分函数（满分 100），输出 ranking_score
+  - merge_results    ：TA + Kronos 结果合并 + 约束 + 风险评分 + EV 计算
   - filter_pool      ：按信号/置信度过滤股票池
   - run_risk_assessment ：单只股票风险引擎
+
+V0.3 语义升级：
+  - ranking_score（原 composite_score）：辅助排序分 0-100
+  - expected_value：P(up)×Gain − P(down)×Loss − cost（主要决策依据）
+  - sort_primary   ：按 expected_value 降序（金融意义优先）
+  - sort_secondary ：按 ranking_score 降序（辅助）
 """
 from __future__ import annotations
 
@@ -26,25 +32,14 @@ from trade_krono_cli.trading_constraints import (
     check_all_constraints,
 )
 from trade_krono_cli.constraints_config import ConstraintConfig
+from trade_krono_cli.domain.signal import _compute_ev as _domain_compute_ev
 
-# ── 截断长度 ──────────────────────────────────────────────────────────────────
 REASONING_TRUNCATE_LEN = 500
+DEFAULT_COST_BPS = 17.0
 
-
-# ═══════════════════════════════════════════════════════
-# 不确定性置信度映射
-# ═══════════════════════════════════════════════════════
 
 def _uncertainty_confidence_bonus(pu: Optional[dict], scoring: ScoringConfig) -> float:
-    """
-    基于预测不确定性的置信度加分/减分。
-
-    映射规则：
-      confidence_score >= scoring.uncertainty_high_threshold → 高置信  +scoring.uncertainty_high_bonus 分
-      scoring.uncertainty_med_threshold <= cs < high_threshold → 中置信  +scoring.uncertainty_med_bonus 分
-      confidence_score < scoring.uncertainty_med_threshold   → 低置信  +scoring.uncertainty_low_penalty 分
-      无不确定性数据          → 0 分
-    """
+    """基于预测不确定性的置信度加分/减分。"""
     if not pu:
         return 0.0
     cs = pu.get("confidence_score")
@@ -58,44 +53,56 @@ def _uncertainty_confidence_bonus(pu: Optional[dict], scoring: ScoringConfig) ->
         return scoring.uncertainty_low_penalty
 
 
-# ═══════════════════════════════════════════════════════
-# 综合打分
-# ═══════════════════════════════════════════════════════
+def _compute_ev_for_merged(
+    kronos: Optional[KronosForecastResult],
+    cost_bps: float = DEFAULT_COST_BPS,
+) -> tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+    """
+    从 KronosForecastResult 计算 EV 指标（委托给领域层 _compute_ev）。
+
+    Returns
+    -------
+    (prob_win, prob_loss, expected_value, risk_adjusted_ev)
+    """
+    if kronos is None:
+        return None, None, None, None
+
+    ret = kronos.expected_change_pct
+    if ret is None:
+        return None, None, None, None
+    try:
+        ret = float(ret)
+        if not (ret == ret):  # NaN check
+            return None, None, None, None
+    except (TypeError, ValueError):
+        return None, None, None, None
+
+    dist = getattr(kronos, "prediction_distribution", None)
+    if dist is not None and type(dist).__name__ == "MagicMock":
+        dist = None
+    p10 = float(getattr(dist, "p10", None)) if dist is not None else None
+    p90 = float(getattr(dist, "p90", None)) if dist is not None else None
+
+    prob_win, prob_loss, _, _, ev, raev = _domain_compute_ev(
+        direction=None, expected_return=ret, p10=p10, p90=p90, cost_bps=cost_bps,
+    )
+    return prob_win, prob_loss, ev, raev
+
 
 def default_scorer(merged: dict, scoring: Optional[ScoringConfig] = None) -> float:
     """
-    综合打分（满分 100）。
+    综合打分（满分 100），输出 ranking_score。
 
-    各子项得分范围及权重：
-
-    ┌──────────────────────┬───────────┬──────────────────────────────────┐
-    │ 子项                 │ 权重      │ 映射逻辑                         │
-    ├──────────────────────┼───────────┼──────────────────────────────────┤
-    │ TA 置信度            │ 40%       │ clamped(0,100) × 0.4             │
-    │ 预期涨跌幅（净）     │ 30%       │ (chg+50) clamped(0,100) × 0.3    │
-    │ 方向加成             │ 10%（基） │ UP:+1 / DOWN:-1 / FLAT:0         │
-    │ 预测不确定性         │ 10%（基） │ confidence_score × 0.1           │
-    │ 置信度 bonus/penalty │ ±3/±1/-2  │ >=70:+3 / 50-70:+1 / <50:-2     │
-    │ 风险惩罚             │ 内置      │ adjusted_expected_return 或      │
-    │                      │           │ -(risk_score/100) × 15 (fallback)│
-    └──────────────────────┴───────────┴──────────────────────────────────┘
-
-    Risk Engine v2 集成：
-      - 若 merged 包含 adjusted_expected_return（风险模型已调整预期收益），
-        直接使用调整后的收益率，风险已融入收益率无需额外扣分。
-      - 否则回退到旧线性惩罚：-(risk_score/100) × 15。
+    ranking_score 是辅助排序分，不是收益率、Alpha、Sharpe 或 EV。
+    真正的决策依据是 merged["expected_value"]。
     """
     s = scoring or ScoringConfig()
 
-    score = 0.0
+    raw_score = 0.0
 
-    # TA 部分（0-40）
     ta_conf = merged.get("ta_confidence") or 0
-    score += s.ta_confidence_weight * max(0, min(100, ta_conf))
+    raw_score += s.ta_confidence_weight * max(0, min(100, ta_conf))
 
-    # 预期涨跌幅（0-30）
-    # Risk Engine v2：优先使用调整后的预期收益（风险模型已整合 VaR/CVaR/Beta）
-    # 否则回退到原始收益率
     adj_ret = merged.get("adjusted_expected_return")
     if adj_ret is not None:
         chg = adj_ret
@@ -103,34 +110,27 @@ def default_scorer(merged: dict, scoring: Optional[ScoringConfig] = None) -> flo
         chg = merged.get("kronos_change_pct") or merged.get(
             "kronos_change_pct_gross"
         ) or 0
-    score += s.change_pct_weight * max(0, min(100, chg + s.change_pct_offset))
+    raw_score += s.change_pct_weight * max(0, min(100, chg + s.change_pct_offset))
 
-    # 方向加成（-base_weight*bonus ~ +base_weight*bonus）
     direction = merged.get("kronos_direction")
     if direction == "UP":
-        score += s.direction_base_weight * s.direction_bonus_point   # +1
+        raw_score += s.direction_base_weight * s.direction_bonus_point
     elif direction == "DOWN":
-        score += s.direction_base_weight * (-s.direction_bonus_point)  # -1
+        raw_score += s.direction_base_weight * (-s.direction_bonus_point)
 
-    # 预测不确定性加成（0-base）+ 置信度微调
     pu = merged.get("kronos_prediction_uncertainty")
     if pu:
         cs = pu.get("confidence_score") or 0
-        score += s.uncertainty_base_weight * max(0, min(100, cs))
-        score += _uncertainty_confidence_bonus(pu, s)
+        raw_score += s.uncertainty_base_weight * max(0, min(100, cs))
+        raw_score += _uncertainty_confidence_bonus(pu, s)
 
-    # 风险惩罚（仅在没有 adjusted_expected_return 时应用，避免双重惩罚）
     if merged.get("adjusted_expected_return") is None:
         total_risk = merged.get("risk_score_total", 0) or 0
         risk_penalty = (total_risk / 100.0) * s.risk_penalty_weight * 100
-        score -= risk_penalty
+        raw_score -= risk_penalty
 
-    return round(max(0, min(100, score)), 2)
+    return round(max(0, min(100, raw_score)), 2)
 
-
-# ═══════════════════════════════════════════════════════
-# 合并辅助函数
-# ═══════════════════════════════════════════════════════
 
 def _make_empty_merged(
     ticker: str,
@@ -160,12 +160,19 @@ def _make_empty_merged(
         "kronos_confidence_band": kronos.confidence_band if kronos else None,
         "kronos_prediction_uncertainty": pu,
         "kronos_error": kronos.error if kronos else None,
+        # V0.3: ranking_score（原 composite_score 降级）
+        "ranking_score": None,
+        # 向后兼容 key
         "composite_score": None,
         "forecast_dict": kronos.forecast_dict if kronos else None,
         "risk_score_total": None,
         "risk_scores": None,
-        "risk_metrics": None,       # new: RiskMetrics dict for VaR/CVaR/beta/adj_return
-        "adjusted_expected_return": None,  # new: raw return × (1 + return_adj)
+        "risk_metrics": None,
+        "adjusted_expected_return": None,
+        # V0.3: EV 指标
+        "expected_value": None,
+        "prob_win": None,
+        "risk_adjusted_ev": None,
     }
 
 
@@ -177,26 +184,7 @@ def run_risk_assessment(
     ta_result: Optional[StockAnalysisResult] = None,
     risk_config: Optional[RiskConfig] = None,
 ) -> tuple[float, dict, dict]:
-    """
-    对单只股票运行风险引擎，返回 (total_risk, risk_scores_dict, risk_metrics_dict)。
-
-    Parameters
-    ----------
-    ticker      : 股票代码
-    date        : 评估日期
-    kline_df    : K 线 DataFrame
-    quote_data  : 实时估值数据（可选）
-    ta_result   : TA 分析结果（可选）
-    risk_config : 风险配置（可选，默认使用 RiskConfig 默认值）
-
-    Returns
-    -------
-    (total_risk, risk_scores, risk_metrics)
-      total_risk   : 综合风险分 0-100
-      risk_scores  : {volatility, drawdown, liquidity, ..., gap_risk, event_risk, ...}
-      risk_metrics : {var_95, cvar_95, beta, annualized_vol, max_drawdown,
-                     return_adjustment, ...}（供 Scorers 做预期收益调整）
-    """
+    """对单只股票运行风险引擎。"""
     engine = RiskEngine(risk_config=risk_config)
     risk_score, risk_metrics = engine.assess(
         ticker, date, kline_df, quote_data, ta_result
@@ -214,13 +202,8 @@ def run_risk_assessment(
     }
 
     metrics_dict = risk_metrics.to_dict()
-
     return risk_score.total_risk, scores, metrics_dict
 
-
-# ═══════════════════════════════════════════════════════
-# 合并 + 打分主函数
-# ═══════════════════════════════════════════════════════
 
 def merge_results(
     ta_results: list[StockAnalysisResult],
@@ -238,30 +221,12 @@ def merge_results(
     """
     将 TA 分析结果和 Kronos 预测结果合并。
 
-    Parameters
-    ----------
-    ta_results     : TA 分析结果列表
-    kronos_results : Kronos 预测结果列表
-    scorer         : 自定义打分函数，默认为 default_scorer
-    kline_data     : {ticker: kline_df} 字典（可选，用于风险引擎）
-    quote_data     : {ticker: quote_dict} 字典（可选，用于流动性风险计算）
-    constraints_config : A 股交易约束配置（可选，默认启用全部约束）
-    t1_tracker     : T+1 买入跟踪器（可选，跨股票共享）
-    scoring_config : 综合打分配置（可选，默认使用 ScoringConfig 默认值）
-    risk_config    : 风险引擎配置（可选，默认使用 RiskConfig 默认值）
-    scoring_strategy : 评分策略配置（可选）
-    degrade_mode   : 降级策略，可选值：
-      - strict            ：任何模块失败则整条记录标记为失败（默认）
-      - ta_only_on_kronos_fail ：Kronos 失败时保留仅 TA 结果，标记 degradation_mode
-      - ta_cache_fallback ：TA 失败时回退到历史缓存结果
-
-    Returns
-    -------
-    排序后的综合结果列表（按 composite_score 降序）
+    V0.3 排序逻辑：
+      primary  ：expected_value 降序（金融意义最大）
+      secondary：ranking_score 降序（辅助排序）
     """
     if scorer is None:
         from trade_krono_cli.scoring.scorers import LinearScorer
-        # 优先使用注册的策略，其次 fallback 到 LinearScorer
         if scoring_strategy:
             registry = get_scorer_registry()
             registered = registry.get(scoring_strategy.strategy)
@@ -290,12 +255,10 @@ def merge_results(
         item["degradation_mode"] = None
         if degrade_mode == "ta_only_on_kronos_fail":
             if ta.error is None and (kr is None or kr.error is not None):
-                # TA 成功但 Kronos 失败 → 仅 TA 降级模式
                 item["degradation_mode"] = "kronos_degraded"
                 logger.info(
                     f"⚠️  {ta.ticker} Kronos 不可用，降级为「仅 TA 评分」模式"
                 )
-        # ta_cache_fallback 在 orchestrator 层处理（注入缓存 TA 结果）
 
         # ── A 股交易约束检查 ──────────────────────────────────────
         if constraints_config.enable_limit_check or constraints_config.enable_t1:
@@ -324,7 +287,6 @@ def merge_results(
             item["constraint_limit_up"] = constraint_result.limit_up_price
             item["constraint_limit_down"] = constraint_result.limit_down_price
 
-            # 若被约束拦截，标记信号为 HOLD 并记录原因
             if not constraint_result.allowed:
                 item["ta_signal"] = "HOLD"
                 item["ta_confidence"] = 0.0
@@ -357,7 +319,6 @@ def merge_results(
                 item["risk_scores"] = risk_scores
                 item["risk_metrics"] = risk_metrics
 
-                # 预期收益调整：raw_return × (1 + return_adj)
                 raw_ret = item.get("kronos_change_pct") or item.get(
                     "kronos_change_pct_gross"
                 )
@@ -377,10 +338,28 @@ def merge_results(
             item["risk_metrics"] = None
             item["adjusted_expected_return"] = None
 
-        item["composite_score"] = scorer(item)
+        # ── 计算 ranking_score ────────────────────────────────────
+        item["ranking_score"] = scorer(item)
+        # 向后兼容：同时写入 composite_score key
+        item["composite_score"] = item["ranking_score"]
+
+        # ── 计算 EV 指标 ──────────────────────────────────────────
+        cost_bps = item.get("cost_bps_applied", DEFAULT_COST_BPS)
+        prob_win, prob_loss, ev, raev = _compute_ev_for_merged(kr, cost_bps=cost_bps)
+        item["expected_value"] = ev
+        item["prob_win"] = prob_win
+        item["risk_adjusted_ev"] = raev
+
         merged.append(item)
 
-    merged.sort(key=lambda x: (x.get("composite_score") or 0), reverse=True)
+    # V0.3: 主要按 expected_value 降序，次要按 ranking_score 降序
+    merged.sort(
+        key=lambda x: (
+            x.get("expected_value") or float("-inf"),
+            x.get("ranking_score") or 0,
+        ),
+        reverse=True,
+    )
     for i, item in enumerate(merged, 1):
         item["rank"] = i
 
@@ -397,9 +376,7 @@ def filter_pool(
     min_confidence: float = 55.0,
     allowed_signals: tuple[str, ...] = ("BUY", "HOLD"),
 ) -> list[StockAnalysisResult]:
-    """
-    按信号 + 置信度过滤出可行股票池。
-    """
+    """按信号 + 置信度过滤出可行股票池。"""
     pool: list[StockAnalysisResult] = []
     for r in ta_results:
         if r.error:

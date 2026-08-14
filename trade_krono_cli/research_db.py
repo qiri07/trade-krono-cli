@@ -49,7 +49,8 @@ _RESEARCH_TABLES: frozenset[str] = frozenset({
     "jobs", "ta_analysis", "kronos_forecast",
     "signals", "decisions", "raw_reports",
     "backtest_results", "strategy_runs",
-    "evaluation_results",
+    "evaluation_results", "signal_history", "committee_deliberations",
+    "data_snapshots", "walkforward_runs", "experiments",
 })
 
 
@@ -204,6 +205,86 @@ class ResearchDatabase:
                     notes          TEXT,
                     config_hash    TEXT
                 );
+
+                -- 信号生命周期表（同一 ticker 跨多次运行的状态演变）
+                CREATE TABLE IF NOT EXISTS signal_history (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticker              TEXT NOT NULL,
+                    date                TEXT NOT NULL,
+                    signal              TEXT NOT NULL,
+                    confidence          REAL NOT NULL,
+                    composite_score     REAL NOT NULL,
+                    lifecycle_state     TEXT NOT NULL,
+                    previous_state      TEXT,
+                    transition_reason   TEXT,
+                    job_id              TEXT,
+                    run_id              TEXT,
+                    thesis_snapshot     TEXT,
+                    created_at          REAL NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES jobs(job_id)
+                );
+
+                -- 委员会审议记录（Investment Committee  deliberation results）
+                CREATE TABLE IF NOT EXISTS committee_deliberations (
+                    id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id                    TEXT NOT NULL,
+                    ticker                    TEXT NOT NULL,
+                    date                      TEXT NOT NULL,
+                    bull_case                 TEXT,
+                    bear_case                 TEXT,
+                    recommendation            TEXT,
+                    recommendation_confidence REAL,
+                    reasoning                 TEXT,
+                    agent_consensus           TEXT,
+                    created_at                REAL NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES jobs(job_id),
+                    UNIQUE (job_id, ticker)
+                );
+
+                -- Point-in-Time 数据快照
+                CREATE TABLE IF NOT EXISTS data_snapshots (
+                    snapshot_id   TEXT PRIMARY KEY,
+                    cut_date      TEXT NOT NULL,
+                    effective_cut TEXT NOT NULL,
+                    sources       TEXT NOT NULL,
+                    description   TEXT,
+                    created_at    REAL NOT NULL
+                );
+
+                -- Walk-Forward 评估结果
+                CREATE TABLE IF NOT EXISTS walkforward_runs (
+                    run_id         TEXT PRIMARY KEY,
+                    experiment_id  TEXT,
+                    ticker         TEXT NOT NULL,
+                    config_json    TEXT NOT NULL,
+                    total_windows  INTEGER,
+                    valid_windows  INTEGER,
+                    win_rate       REAL,
+                    avg_return     REAL,
+                    sharpe_annual  REAL,
+                    n_records      INTEGER,
+                    elapsed_sec    REAL,
+                    snapshot_id    TEXT,
+                    created_at     REAL NOT NULL,
+                    FOREIGN KEY (experiment_id) REFERENCES experiments(experiment_id),
+                    FOREIGN KEY (snapshot_id)   REFERENCES data_snapshots(snapshot_id)
+                );
+
+                -- 实验注册表
+                CREATE TABLE IF NOT EXISTS experiments (
+                    experiment_id   TEXT PRIMARY KEY,
+                    full_id         TEXT NOT NULL,
+                    experiment_type TEXT NOT NULL,
+                    hypothesis_json TEXT NOT NULL,
+                    description     TEXT,
+                    config_json     TEXT,
+                    data_snapshot_id TEXT,
+                    run_ids         TEXT,
+                    result_summary  TEXT,
+                    passed          INTEGER,
+                    notes           TEXT,
+                    created_at      REAL NOT NULL
+                );
             """)
 
     def _migrate_schema(self) -> None:
@@ -262,6 +343,32 @@ class ResearchDatabase:
                         "ALTER TABLE strategy_runs ADD COLUMN config_hash TEXT"
                     )
                     logger.debug("📐 Schema 迁移: strategy_runs.config_hash")
+                except sqlite3.OperationalError:
+                    pass
+
+            # 迁移 signals 表新增领域字段
+            sig_cols = {row[1] for row in conn.execute(
+                "PRAGMA table_info(signals)"
+            ).fetchall()}
+            for col in ("signal_assessment_json", "expected_value", "conflict"):
+                if col not in sig_cols:
+                    try:
+                        conn.execute(f"ALTER TABLE signals ADD COLUMN {col} TEXT")
+                        logger.debug(f"📐 Schema 迁移: signals.{col}")
+                    except sqlite3.OperationalError:
+                        pass
+            # 迁移：ranking_score 列（若 composite_score 已存在但 ranking_score 缺失）
+            if "ranking_score" not in sig_cols and "composite_score" in sig_cols:
+                try:
+                    conn.execute(
+                        "ALTER TABLE signals ADD COLUMN ranking_score REAL"
+                    )
+                    # 将 composite_score 复制到 ranking_score
+                    conn.execute(
+                        "UPDATE signals SET ranking_score = composite_score "
+                        "WHERE ranking_score IS NULL"
+                    )
+                    logger.debug("📐 Schema 迁移: signals.ranking_score")
                 except sqlite3.OperationalError:
                     pass
 
@@ -550,13 +657,15 @@ class ResearchDatabase:
         for item in merged_items:
             pu = item.get("kronos_prediction_uncertainty")
             uncertainty = json.dumps(pu) if pu else None
+            ev = item.get("expected_value")
             with self._conn as conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO signals "
                     "(job_id, ticker, rank, composite_score, ta_signal, "
                     " ta_confidence, ta_reasoning, kronos_direction, "
-                    " kronos_change, uncertainty, ta_error, kronos_error) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    " kronos_change, uncertainty, ta_error, kronos_error, "
+                    " signal_assessment_json, expected_value, conflict) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         job_id, item["ticker"], item.get("rank"),
                         item.get("composite_score"),
@@ -566,6 +675,9 @@ class ResearchDatabase:
                         item.get("kronos_change_pct"),
                         uncertainty,
                         item.get("ta_error"), item.get("kronos_error"),
+                        json.dumps(item.get("signal_assessment") or {}, ensure_ascii=False),
+                        ev,
+                        item.get("conflict", ""),
                     ),
                 )
                 conn.commit()
@@ -574,7 +686,8 @@ class ResearchDatabase:
         with self._conn as conn:
             rows = conn.execute(
                 "SELECT ticker, rank, composite_score, ta_signal, ta_confidence, "
-                "       kronos_direction, kronos_change, ta_error, kronos_error "
+                "       kronos_direction, kronos_change, ta_error, kronos_error, "
+                "       expected_value, conflict "
                 "FROM signals WHERE job_id=? ORDER BY rank",
                 (job_id,),
             ).fetchall()
@@ -584,6 +697,8 @@ class ResearchDatabase:
                 "ta_signal": r[3], "ta_confidence": r[4],
                 "kronos_direction": r[5], "kronos_change": r[6],
                 "ta_error": r[7], "kronos_error": r[8],
+                "expected_value": r[9],
+                "conflict": r[10],
             }
             for r in rows
         ]
@@ -644,7 +759,9 @@ class ResearchDatabase:
             for table in ("jobs", "ta_analysis", "kronos_forecast",
                           "signals", "decisions", "raw_reports",
                           "backtest_results", "strategy_runs",
-                          "evaluation_results"):
+                          "evaluation_results", "signal_history",
+                          "committee_deliberations",
+                          "data_snapshots", "walkforward_runs", "experiments"):
                 validated = _validate_table_name(table, _RESEARCH_TABLES)
                 try:
                     count = conn.execute(
@@ -687,6 +804,101 @@ class ResearchDatabase:
             }
             for r in rows
         ]
+
+    def get_latest_signal_for_ticker(self, ticker: str) -> Optional[dict]:
+        """
+        获取某只股票在 signal_history 表中的最新生命周期记录。
+
+        Returns
+        -------
+        dict with keys: ticker, date, signal, confidence, composite_score,
+            lifecycle_state, previous_state, transition_reason, job_id, run_id
+            or None if no record exists.
+        """
+        with self._conn as conn:
+            row = conn.execute(
+                """
+                SELECT ticker, date, signal, confidence, composite_score,
+                       lifecycle_state, previous_state, transition_reason,
+                       job_id, run_id
+                FROM signal_history
+                WHERE ticker = ?
+                ORDER BY date DESC
+                LIMIT 1
+                """,
+                (ticker,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "ticker": row[0],
+            "date": row[1],
+            "signal": row[2],
+            "confidence": row[3],
+            "composite_score": row[4],
+            "lifecycle_state": row[5],
+            "previous_state": row[6],
+            "transition_reason": row[7],
+            "job_id": row[8],
+            "run_id": row[9],
+        }
+
+    # ── Committee Deliberations ─────────────────────────────────────────
+
+    def insert_committee_deliberation(
+        self, job_id: str, ticker: str, date: str,
+        bull_case: str, bear_case: str,
+        recommendation: str, recommendation_confidence: float,
+        reasoning: str, agent_consensus: dict,
+    ) -> None:
+        """写入委员会审议记录。"""
+        consensus_json = json.dumps(agent_consensus, ensure_ascii=False)
+        with self._conn as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO committee_deliberations "
+                "(job_id, ticker, date, bull_case, bear_case, "
+                " recommendation, recommendation_confidence, reasoning, agent_consensus, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    job_id, ticker, date,
+                    bull_case[:2000], bear_case[:2000],
+                    recommendation, recommendation_confidence,
+                    reasoning[:2000], consensus_json,
+                    time.time(),
+                ),
+            )
+            conn.commit()
+
+    def get_committee_for_ticker(
+        self, ticker: str, limit: int = 5,
+    ) -> Optional[dict]:
+        """获取某只股票最近一次委员会审议结果。"""
+        with self._conn as conn:
+            row = conn.execute(
+                """
+                SELECT ticker, date, bull_case, bear_case,
+                       recommendation, recommendation_confidence,
+                       reasoning, agent_consensus, created_at
+                FROM committee_deliberations
+                WHERE ticker = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (ticker,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "ticker": row[0],
+            "date": row[1],
+            "bull_case": row[2],
+            "bear_case": row[3],
+            "recommendation": row[4],
+            "recommendation_confidence": row[5],
+            "reasoning": row[6],
+            "agent_consensus": json.loads(row[7]) if row[7] else {},
+            "created_at": row[8],
+        }
 
     # ── Strategy Run History ────────────────────────────────────────
 
@@ -800,6 +1012,217 @@ class ResearchDatabase:
             return round(sum(scores) / len(scores), 2)
         except (ValueError, TypeError):
             return None
+
+    # ── Data Snapshots ────────────────────────────────────────────────────
+
+    def insert_data_snapshot(
+        self,
+        snapshot_id: str,
+        cut_date: str,
+        effective_cut: str,
+        sources: list[dict],
+        description: str = "",
+    ) -> None:
+        """写入 Point-in-Time 数据快照。"""
+        with self._conn as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO data_snapshots "
+                "(snapshot_id, cut_date, effective_cut, sources, description, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (
+                    snapshot_id, cut_date, effective_cut,
+                    json.dumps(sources, ensure_ascii=False),
+                    description,
+                    time.time(),
+                ),
+            )
+            conn.commit()
+
+    def get_data_snapshot(self, snapshot_id: str) -> Optional[dict]:
+        with self._conn as conn:
+            row = conn.execute(
+                "SELECT snapshot_id, cut_date, effective_cut, sources, description, created_at "
+                "FROM data_snapshots WHERE snapshot_id=?",
+                (snapshot_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "snapshot_id": row[0],
+            "cut_date": row[1],
+            "effective_cut": row[2],
+            "sources": json.loads(row[3]) if row[3] else [],
+            "description": row[4],
+            "created_at": row[5],
+        }
+
+    # ── Walk-Forward Runs ────────────────────────────────────────────────
+
+    def insert_walkforward_run(
+        self,
+        run_id: str,
+        experiment_id: Optional[str],
+        ticker: str,
+        config: dict,
+        total_windows: int,
+        valid_windows: int,
+        win_rate: float,
+        avg_return: float,
+        sharpe_annual: float,
+        n_records: int,
+        elapsed_sec: float,
+        snapshot_id: Optional[str] = None,
+    ) -> None:
+        """写入 walk-forward 评估结果。"""
+        with self._conn as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO walkforward_runs "
+                "(run_id, experiment_id, ticker, config_json, total_windows, valid_windows, "
+                " win_rate, avg_return, sharpe_annual, n_records, elapsed_sec, snapshot_id, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    run_id, experiment_id, ticker,
+                    json.dumps(config, ensure_ascii=False),
+                    total_windows, valid_windows,
+                    win_rate, avg_return, sharpe_annual,
+                    n_records, elapsed_sec,
+                    snapshot_id, time.time(),
+                ),
+            )
+            conn.commit()
+
+    def get_walkforward_runs(
+        self,
+        experiment_id: Optional[str] = None,
+        ticker: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """查询 walk-forward 运行记录。"""
+        conditions = []
+        params: list[Any] = []
+        if experiment_id:
+            conditions.append("experiment_id = ?")
+            params.append(experiment_id)
+        if ticker:
+            conditions.append("ticker = ?")
+            params.append(ticker)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        with self._conn as conn:
+            rows = conn.execute(
+                f"SELECT run_id, experiment_id, ticker, total_windows, valid_windows, "
+                f" win_rate, avg_return, sharpe_annual, n_records, elapsed_sec, snapshot_id, created_at "
+                f"FROM walkforward_runs {where} ORDER BY created_at DESC LIMIT ?",
+                [*params, limit],
+            ).fetchall()
+        return [
+            {
+                "run_id": r[0], "experiment_id": r[1], "ticker": r[2],
+                "total_windows": r[3], "valid_windows": r[4],
+                "win_rate": r[5], "avg_return": r[6],
+                "sharpe_annual": r[7], "n_records": r[8],
+                "elapsed_sec": r[9], "snapshot_id": r[10],
+                "created_at": r[11],
+            }
+            for r in rows
+        ]
+
+    # ── Experiments ───────────────────────────────────────────────────────
+
+    def insert_experiment(
+        self,
+        experiment_id: str,
+        full_id: str,
+        experiment_type: str,
+        hypothesis: dict,
+        description: str = "",
+        config: Optional[dict] = None,
+        data_snapshot_id: Optional[str] = None,
+        run_ids: Optional[list[str]] = None,
+        result_summary: Optional[dict] = None,
+        passed: Optional[bool] = None,
+        notes: str = "",
+    ) -> None:
+        """写入实验记录。"""
+        with self._conn as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO experiments "
+                "(experiment_id, full_id, experiment_type, hypothesis_json, "
+                " description, config_json, data_snapshot_id, run_ids, "
+                " result_summary, passed, notes, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    experiment_id, full_id, experiment_type,
+                    json.dumps(hypothesis, ensure_ascii=False),
+                    description,
+                    json.dumps(config or {}, ensure_ascii=False),
+                    data_snapshot_id,
+                    json.dumps(run_ids or [], ensure_ascii=False),
+                    json.dumps(result_summary or {}, ensure_ascii=False),
+                    1 if passed is True else (0 if passed is False else None),
+                    notes,
+                    time.time(),
+                ),
+            )
+            conn.commit()
+
+    def get_experiment(self, experiment_id: str) -> Optional[dict]:
+        with self._conn as conn:
+            row = conn.execute(
+                "SELECT experiment_id, full_id, experiment_type, hypothesis_json, "
+                " description, config_json, data_snapshot_id, run_ids, "
+                " result_summary, passed, notes, created_at "
+                "FROM experiments WHERE experiment_id=?",
+                (experiment_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "experiment_id": row[0], "full_id": row[1],
+            "experiment_type": row[2],
+            "hypothesis": json.loads(row[3]) if row[3] else {},
+            "description": row[4], "config": json.loads(row[5]) if row[5] else {},
+            "data_snapshot_id": row[6],
+            "run_ids": json.loads(row[7]) if row[7] else [],
+            "result_summary": json.loads(row[8]) if row[8] else {},
+            "passed": bool(row[9]) if row[9] is not None else None,
+            "notes": row[10], "created_at": row[11],
+        }
+
+    def list_experiments(
+        self,
+        experiment_type: Optional[str] = None,
+        only_passed: Optional[bool] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        conditions = []
+        params: list[Any] = []
+        if experiment_type:
+            conditions.append("experiment_type = ?")
+            params.append(experiment_type)
+        if only_passed is not None:
+            conditions.append("passed = ?")
+            params.append(1 if only_passed else 0)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        with self._conn as conn:
+            rows = conn.execute(
+                f"SELECT experiment_id, full_id, experiment_type, hypothesis_json, "
+                f" description, data_snapshot_id, run_ids, result_summary, passed, created_at "
+                f"FROM experiments {where} ORDER BY created_at DESC LIMIT ?",
+                [*params, limit],
+            ).fetchall()
+        return [
+            {
+                "experiment_id": r[0], "full_id": r[1],
+                "experiment_type": r[2],
+                "hypothesis": json.loads(r[3]) if r[3] else {},
+                "description": r[4], "data_snapshot_id": r[5],
+                "run_ids": json.loads(r[6]) if r[6] else [],
+                "result_summary": json.loads(r[7]) if r[7] else {},
+                "passed": bool(r[8]) if r[8] is not None else None,
+                "created_at": r[9],
+            }
+            for r in rows
+        ]
 
 
 # ═══════════════════════════════════════════════════════

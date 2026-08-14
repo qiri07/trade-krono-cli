@@ -76,7 +76,7 @@ def _make_kronos_result(
     r.confidence_band = [1750.0, 1970.0]
     r.forecast_dict = {"timestamps": [], "close": []}
     pu = MagicMock()
-    pu.to_dict.return_value = {"confidence_score": 80.0, "path_dispersion": 0.03, "direction_confidence": 0.85}
+    pu.to_dict.return_value = {"confidence_score": 80.0, "path_dispersion": 0.03, "direction_score": 0.85}
     r.prediction_uncertainty = pu
     return r
 
@@ -256,7 +256,7 @@ class TestConsoleOutput:
         print_results_table(items)
         captured = capsys.readouterr()
         assert "降级" in captured.out
-        assert "TA-on" in captured.out
+        assert "⚠" in captured.out  # 降级标记符号不会截断
 
     def test_summary_shows_degradation_stats(self, capsys):
         items = [

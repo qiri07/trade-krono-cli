@@ -109,6 +109,8 @@ class StockAnalysisResult:
 
     # 新增：标准化投资决断（由 DecisionAdapter 解析生成）
     investment_decision: Optional[InvestmentDecision] = None
+    # 新增：TradingAgents 原始 final_state（供 Committee 使用）
+    final_state: Optional[dict] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -403,6 +405,7 @@ class TradingAgentsRunner:
                 )
 
             final_state = analysis_result.get("final_state", {})
+            result.final_state = final_state  # 保存原始状态供委员会使用
             legacy, inv_decision = self._extract_decision(final_state)
 
             result.signal = legacy["signal"]

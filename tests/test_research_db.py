@@ -113,7 +113,7 @@ def test_insert_kronos(research_db):
         predicted_close_final=1837.73,
         prediction_uncertainty=PredictionUncertainty(
             expected_return=3.2, direction="UP",
-            direction_confidence=0.72, confidence_score=72.0,
+            direction_score=0.72, confidence_score=72.0,
         ),
     )
     research_db.insert_kronos(job_id, result)

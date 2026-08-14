@@ -31,6 +31,7 @@
 - [综合打分公式](#综合打分公式)
 - [风险引擎（Risk Engine）](#风险引擎risk-engine)
 - [外部项目管理（External Repo Manager）](#外部项目管理external-repo-manager)
+- [领域层（Domain Layer）](#领域层domain-layer)
 - [测试](#测试)
 - [TA 决策提取逻辑](#ta-决策提取逻辑)
 - [原始报告三层存储](#原始报告三层存储)
@@ -652,9 +653,32 @@ trade-krono-cli
 │   ├── batch/              # 批量预测
 │   │   └── batch_runner.py # 异步信号量控制批量 Kronos 预测
 │   └── risk/               # 风险引擎（波动率/回撤/流动性/集中度/市场环境/缺口/事件/估值）
+│   ├── domain/                 # 领域模型层（SignalAssessment / InvestmentDecision / Experiment / Evaluation）
+│   │   ├── types.py            # 共享枚举（Direction, Signal, ExperimentType）
+│   │   ├── signal.py           # SignalAssessment + 信号冲突检测 + EV 计算
+│   │   ├── decision.py         # InvestmentDecision
+│   │   ├── prediction.py       # TAAnalysis / KronosPrediction / PredictionDistribution
+│   │   ├── experiment.py       # Experiment / Hypothesis
+│   │   ├── evaluation.py       # EvalRecord / EvaluationSummary / HorizonMetrics
+│   │   ├── risk.py             # RiskAssessment
+│   │   ├── market.py           # MarketSnapshot
+│   │   ├── stock.py            # Stock 模型
+│   │   └── factory.py          # build_* 领域对象构造器
+│   ├── pipeline/               # 流水线包 — 统一编排入口
+│   │   ├── orchestrator.py     # QuantPipeline + PipelineFactory（ThreadPoolExecutor 并行 TA+Kronos）
+│   │   ├── data_fetcher.py     # 并行 K 线获取 + 缓存写入
+│   │   ├── merge.py            # merge_results / filter_pool / default_scorer / run_risk_assessment
+│   │   ├── reporter.py         # save_json_report / save_html_report / print_results_table / print_results_summary
+│   │   ├── resource_manager.py # 单只股票资源生命周期管理器
+│   │   └── resource_pool.py    # 共享资源池（LLM 客户端、GPU 会话）
+│   ├── models/             # 会话状态模型
+650→│   │   ├── kronos_session.py # Kronos 模型会话生命周期（懒加载、设备选择）
+│   │   └── ta_session.py     # TradingAgents 会话状态（供应商、辩论轮次）
+│   ├── batch/              # 批量预测
+│   │   └── batch_runner.py # 异步信号量控制批量 Kronos 预测
 ├── scripts/
 │   └── install.sh          # 一键安装脚本
-├── tests/                  # 测试套件（941 项全部通过，87% 覆盖，mypy 零错误）
+├── tests/                  # 测试套件（1106 项，87%+ 覆盖，mypy 零错误）
 └── external/               # 外部项目配置（repos.yaml + repo.lock）
 ```
 
@@ -1083,13 +1107,48 @@ trade-krono-cli 仅通过 `sys.path` 注入调用 `cli_anything.*` 路径；Trad
 
 仅通过 `cli_anything.*` 命名空间导入调用（来自 `agent-harness/` 子目录）；**两个项目的源代码均不被修改或直接导入**。
 
+## 领域层（Domain Layer）
+
+`domain/` 包定义了纯领域对象，无 I/O 依赖，实现业务逻辑与持久化层的清晰分离。
+
+### 核心模块
+
+| 模块 | 说明 |
+|------|------|
+| `types.py` | 共享枚举：`Direction`（UP/DOWN/FLAT）、`Signal`（BUY/HOLD/SELL）、`ExperimentType` |
+| `signal.py` | `SignalAssessment` — 合并 TA + Kronos 信号；信号冲突检测；`_compute_ev()` 期望值计算 |
+| `decision.py` | `InvestmentDecision` — 结构化决策（信号、置信度、论点、风险、失效条件） |
+| `prediction.py` | `TAAnalysis`、`KronosPrediction`、`PredictionDistribution` — 结构化预测数据 |
+| `experiment.py` | `Experiment`、`Hypothesis` — 基于假设的实验追踪 |
+| `evaluation.py` | `EvalRecord`、`EvaluationSummary`、`HorizonMetrics` — 预测评估结果 |
+| `risk.py` | `RiskAssessment`、`RiskFactor` — 风险评分数据 |
+| `market.py` | `MarketSnapshot` — 市场环境快照 |
+| `stock.py` | `Stock` — 股票元数据模型 |
+| `factory.py` | `build_*` 构造函数，从原始数据创建领域对象 |
+
+### 使用示例
+
+```python
+from trade_krono_cli.domain import SignalAssessment, build_signal_assessment
+from trade_krono_cli.domain.prediction import TAAnalysis, KronosPrediction
+from trade_krono_cli.domain import Direction, Signal
+
+ta = TAAnalysis(ticker="sh.600519", eval_date="2026-08-11",
+                signal=Signal.BUY, confidence=80.0, thesis="基本面良好")
+kp = KronosPrediction(ticker="sh.600519", eval_date="2026-08-11", horizon=30,
+                      direction=Direction.UP, expected_return=3.2, predicted_close=1837.73)
+sa = build_signal_assessment("sh.600519", "2026-08-11", ta=ta, kronos=kp)
+# sa.conflict == SignalConflict.NO_CONFLICT
+# sa.expected_value == 2.56（通过 _compute_ev 计算）
+```
+
 ## 测试
 
 ```bash
 pytest tests/ -v
 ```
 
-测试结果：**468/468 全部通过** · **87% 整体覆盖** · **mypy 零错误**
+测试结果：**1106 项通过** · **87%+ 整体覆盖** · **mypy 零错误**
 
 | 文件 | 覆盖模块 |
 |------|----------|
@@ -1101,13 +1160,22 @@ pytest tests/ -v
 | `test_security.py` | 密钥校验、输入校验、重试、限流 |
 | `test_ta_decision.py` | DecisionAdapter 结构化解析、InvestmentDecision 数据类、raw 报告存储 |
 | `test_research_db.py` | ResearchDatabase 全表 CRUD、jobs 生命周期、schema 迁移、cache/research 隔离 |
+| `test_research_engine.py` | 研究数据库集成（jobs、signals、experiments、walkforward） |
 | `test_version.py` | run_id 生成、版本快照构建、config_hash、向后兼容迁移 |
 | `test_prediction_eval.py` | EvalRecord、EvaluationSummary、HorizonMetrics、统计计算逻辑 |
+| `test_prediction_eval_ic.py` | IC/ rank-IC 评估指标 |
 | `test_risk.py` | 风险引擎（多维度风险评分 + VaR/CVaR/Beta + RiskMetrics）全维度测试 |
 | `test_risk_models.py` | 风险模型（VaR/CVaR/Beta/Sharpe/预期收益调整/缺口/事件/估值）专项测试 |
 | `test_external.py` | 外部项目管理（config I/O、status、pin、lock 漂移检测） |
-| `test_kronos_runner.py` | 设备解析（CPU/CUDA/大模型警告）、结果保存 |
+| `test_kronos_runner.py` | 设备解析（CPU/CUDA/大模型警告）、结果保存、slots 清理 |
 | `test_ta_runner.py` | BuildConfig、provider 校验、图懒加载、批量分析、raw 报告读写 |
+| `test_committee.py` | 投资委员会 LLM 审议存根 |
+| `test_signal_lifecycle.py` | 信号状态流转追踪 |
+| `test_resource_manager.py` | 单只股票资源生命周期 |
+| `test_resource_pool.py` | 共享资源池（LLM/GPU） |
+| `test_analytics_db.py` | 分析数据库操作 |
+| `test_artifact_manifest.py` | 实验产物清单 |
+| `test_llm_request.py` | LLM 请求处理 |
 | `test_batch_runner.py` | 异步信号量控制批量预测 |
 | `integration/test_pipeline_integration.py` | 端到端流水线集成测试 |
 | `test_config_validator.py` | 配置校验（15项检查：类型、范围、必填字段）+ 新配置 schema 默认值验证 |
@@ -1115,6 +1183,8 @@ pytest tests/ -v
 | `test_merge_edge_cases.py` | 合并边界条件（约束、T+1、混合信号） |
 | `test_merge_uncertainty.py` | 不确定性置信度映射回归测试 |
 | `test_pipeline_config.py` | PipelineConfig 默认值、覆盖、JSON/YAML 往返、scoring & risk schema 校验 |
+| `test_degradation.py` | 降级模式（strict / ta_only / cache fallback） |
+| `test_scoring_plugins.py` | 自定义打分插件注册与调用 |
 
 ## TA 决策提取逻辑
 
@@ -1285,6 +1355,22 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 - 回退结果会原地更新 `signal`、`confidence` 和 `reasoning`，确保后续合并打分流程正常执行
 
 ## 更新日志
+
+### v0.1.5 — 2026-08-14
+
+**领域层重构与代码质量提升：**
+- **新增 `domain/` 领域层**：`SignalAssessment`、`InvestmentDecision`、`Experiment`、`Evaluation`、`PredictionDistribution`、`RiskAssessment` 均为纯领域对象（无 I/O，无 SQLite 耦合）
+- **消除重复代码**：移除重复的 `SignalConflict` 枚举、`_compute_ev` 函数、`ExperimentType`/`Hypothesis` 类，统一从 `domain/` 导入
+- **清理 `kronos_runner.py`**：移除重复的 `prediction_distribution` 字段，统一通过 `prediction_uncertainty` 模块处理不确定性
+- **删除 `research_db.py` 中未使用的方法**：移除未被调用的 `insert_signal_assessment`、`insert_decision_domain`、`insert_experiment_domain`（减少约 103 行）
+- **新增流水线资源管理**：`resource_manager.py` 和 `resource_pool.py`，管理 LLM 客户端和 GPU 会话生命周期
+- **新增 `signal_lifecycle.py`**：追踪信号跨次运行的状态演变
+- **新增 `experiment_registry.py`**：基于假设的实验追踪，支持通过/失败评估
+- **新增 `committee.py`**：LLM 驱动的投资委员会审议存根
+- **新增分析与评估模块**：`analytics_db.py`、`artifact_manifest.py`、`eval_ic.py`、`eval_benchmark.py`、`eval_walkforward.py`
+- **测试数量**：**1106 项通过**（从 468 增长）
+
+---
 
 ### v0.1.4 — 2026-08-13
 

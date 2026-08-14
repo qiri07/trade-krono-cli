@@ -39,10 +39,15 @@ from trade_krono_cli.cache import get_cache
 from trade_krono_cli.data import fetch_lookback, next_business_days
 from trade_krono_cli.version import compute_config_hash, get_kronos_model_version
 from trade_krono_cli.errors import ModelLoadError, DataError
-from trade_krono_cli.prediction_uncertainty import (
-    PredictionUncertainty,
+from trade_krono_cli.prediction_distribution import (
+    PredictionDistribution,
     build_result_dict,
+    compute_single_sample,
+    compute_multi_sample,
 )
+
+# 向后兼容：PredictionUncertainty 是 PredictionDistribution 的别名
+PredictionUncertainty = PredictionDistribution
 
 # 向后兼容：保持从 kronos_runner 导入 PredictionUncertainty 的能力
 __all__ = ("KronosRunner", "KronosForecastResult", "PredictionUncertainty")
@@ -101,7 +106,7 @@ class KronosForecastResult:
         model_name: Optional[str] = None,
         error: Optional[str] = None,
         elapsed_sec: float = 0.0,
-        prediction_uncertainty: Optional[PredictionUncertainty] = None,
+        prediction_uncertainty: Optional[PredictionDistribution] = None,
     ):
         self.ticker = ticker
         self.eval_date = eval_date
@@ -313,17 +318,6 @@ class KronosRunner:
 
         result = build_result_dict(closes, last_close, sample_count=sample_count)
 
-        # 当 sample_count > 1 时，补填 path_dispersion（基于路径内波动）
-        if sample_count > 1:
-            mean_close = float(np.mean(closes))
-            vol = float(np.std(closes))
-            if abs(mean_close) > 1e-8:
-                result["prediction_uncertainty"]["path_dispersion"] = round(
-                    vol / abs(mean_close), 6
-                )
-            else:
-                result["prediction_uncertainty"]["path_dispersion"] = 0.0
-
         return result
 
     def _pred_df_to_dict(self, pred_df: pd.DataFrame) -> dict:
@@ -342,12 +336,14 @@ class KronosRunner:
     def _apply_parsed_to_result(
         self, res: KronosForecastResult, parsed: dict,
     ) -> None:
-        """将 parsed dict 写入 result，单独处理 prediction_uncertainty。"""
+        """将 parsed dict 写入 result，单独处理 prediction_uncertainty 字段。"""
+        # 兼容旧键 prediction_uncertainty 和新键 prediction_distribution
         pu_dict = parsed.pop("prediction_uncertainty", None)
+        parsed.pop("prediction_distribution", None)  # 也移除新键（不写入 slot）
         for k, v in parsed.items():
             setattr(res, k, v)
         if pu_dict:
-            res.prediction_uncertainty = PredictionUncertainty(**pu_dict)
+            res.prediction_uncertainty = PredictionDistribution(**pu_dict)
 
     # 向后兼容别名
     _apply_uncertainty = _apply_parsed_to_result
@@ -380,7 +376,7 @@ class KronosRunner:
                 for k, v in cached.items():
                     setattr(res, k, v)
                 if isinstance(res.prediction_uncertainty, dict):
-                    res.prediction_uncertainty = PredictionUncertainty.from_dict(
+                    res.prediction_uncertainty = PredictionDistribution.from_dict(
                         res.prediction_uncertainty
                     )
                 res.elapsed_sec = 0.0
@@ -511,12 +507,12 @@ class KronosRunner:
             stacked = avg_close.reshape(1, -1)
 
         if n_samples > 1:
-            from trade_krono_cli.prediction_uncertainty import (
-                compute_multi_sample, build_uncertainty,
+            from trade_krono_cli.prediction_distribution import (
+                compute_multi_sample, build_distribution,
             )
             (
                 change_pct, direction, vol, path_dispersion,
-                direction_confidence, conf_score,
+                direction_score, conf_score, percentiles,
             ) = compute_multi_sample(avg_close, stacked, last_close)
             res.predicted_close_mean = round(float(np.mean(avg_close)), 4)
             res.predicted_close_final = round(float(avg_close[-1]), 4)
@@ -527,13 +523,15 @@ class KronosRunner:
                 "low": round(float(np.percentile(avg_close, 25)), 4),
                 "high": round(float(np.percentile(avg_close, 75)), 4),
             }
-            res.prediction_uncertainty = build_uncertainty(
+            _pd = build_distribution(
                 change_pct=change_pct, direction=direction, vol=vol,
                 path_dispersion=path_dispersion,
-                direction_confidence=direction_confidence,
+                direction_score=direction_score,
                 confidence_score=conf_score,
                 sample_count=n_samples,
+                percentiles=percentiles,
             )
+            res.prediction_uncertainty = _pd
         else:
             parsed = self._parse_pred_df(
                 pd.DataFrame({"close": avg_close}), last_close, sample_count=1
@@ -593,7 +591,7 @@ class KronosRunner:
                     for k, v in cached.items():
                         setattr(res, k, v)
                     if isinstance(res.prediction_uncertainty, dict):
-                        res.prediction_uncertainty = PredictionUncertainty.from_dict(
+                        res.prediction_uncertainty = PredictionDistribution.from_dict(
                             res.prediction_uncertainty
                         )
                     results.append(res)
@@ -675,12 +673,12 @@ class KronosRunner:
                 if n_samples > 1 and close_vals.ndim == 2:
                     avg_close = close_vals.mean(axis=0)
                     stacked = close_vals
-                    from trade_krono_cli.prediction_uncertainty import (
-                        compute_multi_sample, build_uncertainty,
+                    from trade_krono_cli.prediction_distribution import (
+                        compute_multi_sample, build_distribution,
                     )
                     (
                         change_pct, direction, vol, path_dispersion,
-                        direction_confidence, conf_score,
+                        direction_score, conf_score, percentiles,
                     ) = compute_multi_sample(avg_close, stacked, lc)
 
                     res.predicted_close_mean = round(float(np.mean(avg_close)), 4)
@@ -692,12 +690,14 @@ class KronosRunner:
                         "low": round(float(np.percentile(avg_close, 25)), 4),
                         "high": round(float(np.percentile(avg_close, 75)), 4),
                     }
-                    res.prediction_uncertainty = build_uncertainty(
+                    _pd = build_distribution(
                         change_pct=change_pct, direction=direction,
                         vol=vol, path_dispersion=path_dispersion,
-                        direction_confidence=direction_confidence,
-                        confidence_score=conf_score, sample_count=n_samples,
+                        direction_score=direction_score,
+                        confidence_score=conf_score,
+                        sample_count=n_samples, percentiles=percentiles,
                     )
+                    res.prediction_uncertainty = _pd
                     res.forecast_dict = self._pred_df_to_dict(pred_df)
                 else:
                     parsed = self._parse_pred_df(

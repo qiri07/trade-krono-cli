@@ -4,6 +4,9 @@ pipeline.reporter — 报告输出（JSON / HTML / 控制台表格）。
 原 trade_krono_cli.report 收敛至此。
 所有函数以 _report 后缀命名，保持与 orchestrator 的调用一致；
 旧名称作为别名保留，避免测试导入失效。
+
+V0.3: 报告新增 EV 列（expected_value, prob_win, risk_adjusted_ev），
+      ranking_score 标注为辅助排序分。
 """
 from __future__ import annotations
 
@@ -20,15 +23,11 @@ console = Console()
 
 
 # ═══════════════════════════════════════════════════════
-# 降级标记 helpers
+#  降级标记 helpers
 # ═══════════════════════════════════════════════════════
 
 def _degradation_badge(dmg: Optional[str]) -> tuple[str, str]:
-    """返回 (html_badge, rich_console_str) 降级标记。
-
-    html_badge   — HTML <span> 片段，用于 save_html_report
-    rich_console — Rich console markup 字符串，用于 print_results_table / summary
-    """
+    """返回 (html_badge, rich_console_str) 降级标记。"""
     if dmg == "kronos_degraded":
         return (
             '<span style="background:#fff3cd;color:#856404;padding:2px 6px;border-radius:3px;font-size:.8em;margin-left:6px">⚠ TA-only</span>',
@@ -58,7 +57,6 @@ def save_json_report(merged: list[dict], path: str) -> str:
                 "close": fd.get("close", [])[:5],
                 "note": f"截断显示，共 {len(fd.get('close', []))} 个预测点",
             }
-        # 确保 degradation_mode 字段存在
         if "degradation_mode" not in c:
             c["degradation_mode"] = None
         clean.append(c)
@@ -70,7 +68,6 @@ def save_json_report(merged: list[dict], path: str) -> str:
     return path
 
 
-# save_json 别名（向后兼容）
 save_json = save_json_report
 
 
@@ -79,18 +76,24 @@ save_json = save_json_report
 # ═══════════════════════════════════════════════════════
 
 def save_html_report(merged: list[dict], path: str, date: str) -> str:
-    """生成 HTML 报告。"""
+    """生成 HTML 报告（含 EV 指标列）。"""
     rows = []
     for i, m in enumerate(merged, 1):
-        score = m.get("composite_score") or 0
-        color = "#28a745" if score >= 70 else "#ffc107" if score >= 50 else "#dc3545"
+        rs = m.get("ranking_score") or m.get("composite_score") or 0
+        color = "#28a745" if rs >= 70 else "#ffc107" if rs >= 50 else "#dc3545"
         pu = m.get("kronos_prediction_uncertainty") or {}
         cs = pu.get("confidence_score")
         cs_str = f"{cs:.1f}" if cs is not None else "-"
         pd_val = pu.get("path_dispersion")
         pd_str = f"{pd_val:.4f}" if pd_val is not None else "N/A"
-        dc = pu.get("direction_confidence")
+        dc = pu.get("direction_score")
         dc_str = f"{dc:.3f}" if dc is not None else "-"
+        ev = m.get("expected_value")
+        ev_str = f"{ev:+.3f}%" if ev is not None else "-"
+        pw = m.get("prob_win")
+        pw_str = f"{pw:.1%}" if pw is not None else "-"
+        raev = m.get("risk_adjusted_ev")
+        raev_str = f"{raev:.3f}" if raev is not None else "-"
         dmg = m.get("degradation_mode")
         badge, _ = _degradation_badge(dmg)
         rows.append(f"""
@@ -103,8 +106,10 @@ def save_html_report(merged: list[dict], path: str, date: str) -> str:
               <td>{m.get('kronos_change_pct') or 0:.2f}%</td>
               <td>{m.get('kronos_last_close') or '-'}</td>
               <td>{m.get('kronos_pred_close') or '-'}</td>
-              <td title="方向置信度={dc_str}<br>路径分散={pd_str}<br>综合置信={cs_str}">{cs_str}</td>
-              <td style="color:{color};font-weight:bold">{score:.1f}</td>
+              <td title="方向评分={dc_str}<br>路径分散={pd_str}<br>综合置信={cs_str}">{cs_str}</td>
+              <td title="EV={ev_str}<br>P(win)={pw_str}<br>RA-EV={raev_str}">{rs:.1f}</td>
+              <td style="color:#0066cc;font-weight:bold">{ev_str}</td>
+              <td style="color:{color};font-weight:bold">{rs:.1f}</td>
             </tr>""")
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -122,6 +127,8 @@ tr:hover {{background:#f1f3f5}}
 .signal-BUY {{color:#28a745;font-weight:bold}}
 .signal-SELL {{color:#dc3545;font-weight:bold}}
 .signal-HOLD {{color:#ffc107;font-weight:bold}}
+.ev-pos {{color:#0066cc}}
+.ev-neg {{color:#cc0000}}
 </style>
 </head><body>
 <h1>📊 trade-krono-cli 投研报告</h1>
@@ -131,7 +138,8 @@ tr:hover {{background:#f1f3f5}}
   <th>排名</th><th>代码</th><th>TA信号</th><th>置信度</th>
   <th>Kronos方向</th><th>预期涨幅%</th><th>现价</th><th>预测价</th>
   <th title="Kronos综合置信度（0-100，含方向+路径分散）">置信度</th>
-  <th>综合分</th>
+  <th title="Expected Value = P(win)×Gain − P(loss)×Loss − cost">EV(%)</th>
+  <th title="辅助排序分 0-100（原 composite_score 降级）">Ranking</th>
 </tr>
 {''.join(rows)}
 </table>
@@ -144,7 +152,6 @@ tr:hover {{background:#f1f3f5}}
     return path
 
 
-# save_html 别名（向后兼容）
 save_html = save_html_report
 
 
@@ -153,9 +160,9 @@ save_html = save_html_report
 # ═══════════════════════════════════════════════════════
 
 def print_results_table(merged: list[dict]) -> None:
-    """在控制台输出富文本表格。"""
-    table = Table(title="📊 综合排名", header_style="bold magenta")
-    for col in ("排名", "代码", "TA信号", "置信度", "Kronos方向", "预期涨幅%", "Kronos置信", "综合分", "降级模式"):
+    """在控制台输出富文本表格（含 EV 列）。"""
+    table = Table(title="📊 综合排名（EV 优先）", header_style="bold magenta")
+    for col in ("排名", "代码", "TA信号", "置信度", "Kronos方向", "预期涨幅%", "Kronos置信", "EV(%)", "Ranking", "降级模式"):
         table.add_column(col, justify="right" if col != "代码" else "left")
 
     for m in merged[:20]:
@@ -164,6 +171,9 @@ def print_results_table(merged: list[dict]) -> None:
         cs_str = f"{cs:.1f}" if cs is not None else "-"
         dmg = m.get("degradation_mode")
         _, dmg_str = _degradation_badge(dmg)
+        ev = m.get("expected_value")
+        ev_str = f"{ev:+.3f}" if ev is not None else "-"
+        rs = m.get("ranking_score") or m.get("composite_score")
         table.add_row(
             str(m.get("rank", "-")),
             m.get("ticker", "-"),
@@ -172,22 +182,21 @@ def print_results_table(merged: list[dict]) -> None:
             str(m.get("kronos_direction") or "-"),
             f"{m.get('kronos_change_pct') or 0:.2f}",
             cs_str,
-            f"[bold]{m.get('composite_score') or '-'}[/bold]",
+            f"[bold cyan]{ev_str}[/bold cyan]",
+            f"[bold]{rs or '-'}[/bold]",
             dmg_str,
         )
     console.print(table)
 
 
-# print_table 别名（向后兼容）
 print_table = print_results_table
 
 
 def print_results_summary(merged: list[dict], date: str) -> None:
-    """打印简要摘要。"""
+    """打印简要摘要（含 EV 统计）。"""
     console.print(f"\n[bold cyan]📅 分析日期: {date}[/bold cyan]")
     console.print(f"[bold cyan]📈 共分析 {len(merged)} 只股票[/bold cyan]\n")
 
-    # 统计降级情况
     n_degraded = sum(1 for m in merged if m.get("degradation_mode"))
     n_kronos_degraded = sum(
         1 for m in merged if m.get("degradation_mode") == "kronos_degraded"
@@ -211,10 +220,14 @@ def print_results_summary(merged: list[dict], date: str) -> None:
         dmg = best.get("degradation_mode")
         _, dmg_rich = _degradation_badge(dmg)
         dmg_note = f" {dmg_rich}" if dmg_rich != "—" else ""
+        ev = best.get("expected_value")
+        ev_str = f" EV={ev:+.3f}%" if ev is not None else ""
+        pw = best.get("prob_win")
+        pw_str = f" P(win)={pw:.0%}" if pw is not None else ""
         console.print(
             f"[bold green]🥇 最佳推荐: {best['ticker']} "
             f"(TA={best.get('ta_signal')}  Kronos={best.get('kronos_direction')} "
-            f"综合分={best.get('composite_score')}{cs_str}){dmg_note}[/bold green]"
+            f"综合分={best.get('ranking_score') or best.get('composite_score')}{ev_str}{pw_str}{cs_str}){dmg_note}[/bold green]"
         )
 
     buys = [m for m in merged if m.get("ta_signal") == "BUY"]
@@ -224,13 +237,14 @@ def print_results_summary(merged: list[dict], date: str) -> None:
             pu = m.get("kronos_prediction_uncertainty") or {}
             cs = pu.get("confidence_score")
             cs_str = f" Kronos置信={cs:.1f}" if cs is not None else ""
+            ev = m.get("expected_value")
+            ev_str = f" EV={ev:+.3f}%" if ev is not None else ""
             console.print(
                 f"   • {m['ticker']}: 置信度={m.get('ta_confidence')} "
-                f"Kronos预期={m.get('kronos_change_pct') or 0:.2f}%{cs_str}"
+                f"Kronos预期={m.get('kronos_change_pct') or 0:.2f}%{ev_str}{cs_str}"
             )
 
     console.print()
 
 
-# print_summary 别名（向后兼容）
 print_summary = print_results_summary

@@ -21,7 +21,7 @@ def sample_merged():
             "kronos_prediction_uncertainty": {
                 "expected_return": 3.2,
                 "direction": "UP",
-                "direction_confidence": 0.72,
+                "direction_score": 0.72,
                 "volatility": 12.5,
                 "path_dispersion": None,
                 "confidence_score": 72.0,
@@ -43,7 +43,7 @@ def sample_merged():
             "kronos_prediction_uncertainty": {
                 "expected_return": -1.5,
                 "direction": "DOWN",
-                "direction_confidence": 0.55,
+                "direction_score": 0.55,
                 "volatility": 0.8,
                 "path_dispersion": None,
                 "confidence_score": 55.0,

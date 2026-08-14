@@ -19,7 +19,7 @@ class TestPipelineOrchestrator:
         ]
 
         pu = PredictionUncertainty(
-            expected_return=3.0, direction="UP", direction_confidence=0.8,
+            expected_return=3.0, direction="UP", direction_score=0.8,
             volatility=1.0, path_dispersion=None, confidence_score=75.0,
         )
         mock_kr = MagicMock()

@@ -171,7 +171,7 @@ class TestMergeCostAdjustment:
             last_close=100.0,
             prediction_uncertainty=PredictionUncertainty(
                 expected_return=5.0, direction="UP",
-                direction_confidence=0.8, volatility=1.0,
+                direction_score=0.8, volatility=1.0,
                 path_dispersion=None, confidence_score=80.0,
             ),
         )
