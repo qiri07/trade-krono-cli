@@ -447,16 +447,16 @@ def run_evaluation(
     if latest:
         result = evaluator.get_latest_evaluation()
         if not result:
-            print("⚠️  暂无评估结果，请先运行完整评估")
+            logger.warning("⚠️  暂无评估结果，请先运行完整评估")
             return
-        print()
-        print("=" * 60)
-        print("  📊 最新评估结果")
-        print("=" * 60)
-        print(f"  评估时间: {datetime.fromtimestamp(result['eval_at']).strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"  评估日期范围: {result['eval_date_range'] or '全部'}")
-        print(f"  评估记录数: {result['n_records']}")
-        print()
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("  📊 最新评估结果")
+        logger.info("=" * 60)
+        logger.info(f"  评估时间: {datetime.fromtimestamp(result['eval_at']).strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"  评估日期范围: {result['eval_date_range'] or '全部'}")
+        logger.info(f"  评估记录数: {result['n_records']}")
+        logger.info("")
         summary = result["summary"]
 
         _print_latest_kronos(summary)
@@ -481,45 +481,45 @@ def run_evaluation(
 
 
 def _print_latest_kronos(summary: dict) -> None:
-    print("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
-    print(f"│  样本数: {summary.get('kronos_n', 0)}                              │")
+    logger.info("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
+    logger.info(f"│  样本数: {summary.get('kronos_n', 0)}                              │")
     for h in [5, 10, 20]:
         acc = summary.get("kronos_dir_accuracy", {}).get(str(h), 0)
         marker = "✅" if acc > 55 else "⚠️" if acc > 50 else "❌"
-        print(f"│  {marker} {h}D 准确率: {acc:5.1f}%                       │")
-    print("└" + "─" * 58 + "┘")
-    print()
+        logger.info(f"│  {marker} {h}D 准确率: {acc:5.1f}%                       │")
+    logger.info("└" + "─" * 58 + "┘")
+    logger.info("")
 
 
 def _print_latest_ta(summary: dict) -> None:
-    print("┌─ TA BUY 信号表现 ───────────────────────────────────┐")
+    logger.info("┌─ TA BUY 信号表现 ───────────────────────────────────┐")
     ta_buy_n = sum(1 for r in summary.get("records", []) if r.ta_signal == "BUY")
-    print(f"│  样本数: {ta_buy_n}                             │")
+    logger.info(f"│  样本数: {ta_buy_n}                             │")
     for h in [5, 10, 20]:
         wr = summary.get("ta_buy_win_rate", {}).get(str(h), 0)
         avg_ret = summary.get("ta_buy_avg_return", {}).get(str(h), 0)
         marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
-        print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
+        logger.info(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
               f"平均收益: {avg_ret:+.2f}%                    │")
-    print("└" + "─" * 58 + "┘")
-    print()
+    logger.info("└" + "─" * 58 + "┘")
+    logger.info("")
 
 
 def _print_latest_combined(summary: dict) -> None:
-    print("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
+    logger.info("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
     combined_n = sum(
         1 for r in summary.get("records", [])
         if r.ta_signal == "BUY" and r.pred_direction == "UP"
     )
-    print(f"│  样本数: {combined_n}                          │")
+    logger.info(f"│  样本数: {combined_n}                          │")
     for h in [5, 10, 20]:
         wr = summary.get("combined_buy_up_win_rate", {}).get(str(h), 0)
         avg_ret = summary.get("combined_buy_up_avg_return", {}).get(str(h), 0)
         marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
-        print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
+        logger.info(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
               f"平均收益: {avg_ret:+.2f}%                    │")
-    print("└" + "─" * 58 + "┘")
-    print()
+    logger.info("└" + "─" * 58 + "┘")
+    logger.info("")
 
 
 # ── 回测报告打印 ─────────────────────────────────────────────────────────────
@@ -531,39 +531,39 @@ def _print_backtest_report(summary: EvaluationSummary) -> None:
         return
     m = bt.metrics
 
-    print()
-    print("╔══════════════════════════════════════════════════════════╗")
-    print("║              📈 回测绩效报告（增强版）                    ║")
-    print("╠══════════════════════════════════════════════════════════╣")
-    print(f"║  模式: {bt.rebal_mode:<44} ║")
-    print(f"║  交易次数: {bt.n_trades:<45} ║")
-    print(f"║  交易日数: {m.get('n_days', 0):<45} ║")
-    print("╠══════════════════════════════════════════════════════════╣")
-    print(f"║  总收益率:   {m.get('total_return_pct', 0):>+7.2f}%{'':>30} ║")
-    print(f"║  年化收益:   {m.get('annualized_return_pct', 0):>+7.2f}%{'':>30} ║")
-    print(f"║  波动率(年): {m.get('volatility_annual_pct', 0):>7.2f}%{'':>30} ║")
-    print("╠══════════════════════════════════════════════════════════╣")
-    print(f"║  夏普比率:   {m.get('sharpe_ratio', 0):>7.3f}{'':>30} ║")
-    print(f"║  卡玛比率:   {m.get('calmar_ratio', 0):>7.3f}{'':>30} ║")
-    print(f"║  最大回撤:   {m.get('max_drawdown_pct', 0):>+7.2f}%{'':>30} ║")
-    print("╠══════════════════════════════════════════════════════════╣")
-    print(f"║  胜率:       {m.get('win_rate_pct', 0):>7.1f}%{'':>30} ║")
-    print(f"║  盈亏比:     {m.get('profit_factor', 0):>7.3f}{'':>30} ║")
-    print(f"║  平均盈利:   {m.get('avg_win', 0):>+7.2f}%{'':>30} ║")
-    print(f"║  平均亏损:   {m.get('avg_loss', 0):>+7.2f}%{'':>30} ║")
-    print("╠══════════════════════════════════════════════════════════╣")
-    print(f"║  收益偏度:   {m.get('skewness', 0):>7.3f}{'':>30} ║")
-    print(f"║  收益峰度:   {m.get('kurtosis', 0):>7.3f}{'':>30} ║")
-    print(f"║  最佳日:     {m.get('best_day_pct', 0):>+7.2f}%{'':>30} ║")
-    print(f"║  最差日:     {m.get('worst_day_pct', 0):>+7.2f}%{'':>30} ║")
-    print("╠══════════════════════════════════════════════════════════╣")
+    logger.info("")
+    logger.info("╔══════════════════════════════════════════════════════════╗")
+    logger.info("║              📈 回测绩效报告（增强版）                    ║")
+    logger.info("╠══════════════════════════════════════════════════════════╣")
+    logger.info(f"║  模式: {bt.rebal_mode:<44} ║")
+    logger.info(f"║  交易次数: {bt.n_trades:<45} ║")
+    logger.info(f"║  交易日数: {m.get('n_days', 0):<45} ║")
+    logger.info("╠══════════════════════════════════════════════════════════╣")
+    logger.info(f"║  总收益率:   {m.get('total_return_pct', 0):>+7.2f}%{'':>30} ║")
+    logger.info(f"║  年化收益:   {m.get('annualized_return_pct', 0):>+7.2f}%{'':>30} ║")
+    logger.info(f"║  波动率(年): {m.get('volatility_annual_pct', 0):>7.2f}%{'':>30} ║")
+    logger.info("╠══════════════════════════════════════════════════════════╣")
+    logger.info(f"║  夏普比率:   {m.get('sharpe_ratio', 0):>7.3f}{'':>30} ║")
+    logger.info(f"║  卡玛比率:   {m.get('calmar_ratio', 0):>7.3f}{'':>30} ║")
+    logger.info(f"║  最大回撤:   {m.get('max_drawdown_pct', 0):>+7.2f}%{'':>30} ║")
+    logger.info("╠══════════════════════════════════════════════════════════╣")
+    logger.info(f"║  胜率:       {m.get('win_rate_pct', 0):>7.1f}%{'':>30} ║")
+    logger.info(f"║  盈亏比:     {m.get('profit_factor', 0):>7.3f}{'':>30} ║")
+    logger.info(f"║  平均盈利:   {m.get('avg_win', 0):>+7.2f}%{'':>30} ║")
+    logger.info(f"║  平均亏损:   {m.get('avg_loss', 0):>+7.2f}%{'':>30} ║")
+    logger.info("╠══════════════════════════════════════════════════════════╣")
+    logger.info(f"║  收益偏度:   {m.get('skewness', 0):>7.3f}{'':>30} ║")
+    logger.info(f"║  收益峰度:   {m.get('kurtosis', 0):>7.3f}{'':>30} ║")
+    logger.info(f"║  最佳日:     {m.get('best_day_pct', 0):>+7.2f}%{'':>30} ║")
+    logger.info(f"║  最差日:     {m.get('worst_day_pct', 0):>+7.2f}%{'':>30} ║")
+    logger.info("╠══════════════════════════════════════════════════════════╣")
     if summary.benchmark_cum_return_pct != 0.0:
-        print(f"║  基准累计收益: {summary.benchmark_cum_return_pct:>+7.2f}%{'':>24} ║")
-        print(f"║  超额收益:    {summary.excess_return_pct:>+7.2f}%{'':>24} ║")
+        logger.info(f"║  基准累计收益: {summary.benchmark_cum_return_pct:>+7.2f}%{'':>24} ║")
+        logger.info(f"║  超额收益:    {summary.excess_return_pct:>+7.2f}%{'':>24} ║")
     else:
-        print(f"║  基准收益: 无数据{'':>40} ║")
-    print("╚══════════════════════════════════════════════════════════╝")
-    print()
+        logger.info(f"║  基准收益: 无数据{'':>40} ║")
+    logger.info("╚══════════════════════════════════════════════════════════╝")
+    logger.info("")
 
 
 def _print_latest_backtest(summary: dict) -> None:
@@ -572,14 +572,14 @@ def _print_latest_backtest(summary: dict) -> None:
     if not bt:
         return
     m = bt.get("metrics", {})
-    print()
-    print("╔══════════════════════════════════════════════════════════╗")
-    print("║              📈 回测绩效报告                              ║")
-    print("╠══════════════════════════════════════════════════════════╣")
-    print(f"║  总收益率:   {m.get('total_return_pct', 0):>+7.2f}%{'':>30} ║")
-    print(f"║  年化收益:   {m.get('annualized_return_pct', 0):>+7.2f}%{'':>30} ║")
-    print(f"║  夏普比率:   {m.get('sharpe_ratio', 0):>7.3f}{'':>30} ║")
-    print(f"║  最大回撤:   {m.get('max_drawdown_pct', 0):>+7.2f}%{'':>30} ║")
-    print(f"║  胜率:       {m.get('win_rate_pct', 0):>7.1f}%{'':>30} ║")
-    print(f"║  盈亏比:     {m.get('profit_factor', 0):>7.3f}{'':>30} ║")
-    print("╚══════════════════════════════════════════════════════════╝")
+    logger.info("")
+    logger.info("╔══════════════════════════════════════════════════════════╗")
+    logger.info("║              📈 回测绩效报告                              ║")
+    logger.info("╠══════════════════════════════════════════════════════════╣")
+    logger.info(f"║  总收益率:   {m.get('total_return_pct', 0):>+7.2f}%{'':>30} ║")
+    logger.info(f"║  年化收益:   {m.get('annualized_return_pct', 0):>+7.2f}%{'':>30} ║")
+    logger.info(f"║  夏普比率:   {m.get('sharpe_ratio', 0):>7.3f}{'':>30} ║")
+    logger.info(f"║  最大回撤:   {m.get('max_drawdown_pct', 0):>+7.2f}%{'':>30} ║")
+    logger.info(f"║  胜率:       {m.get('win_rate_pct', 0):>7.1f}%{'':>30} ║")
+    logger.info(f"║  盈亏比:     {m.get('profit_factor', 0):>7.3f}{'':>30} ║")
+    logger.info("╚══════════════════════════════════════════════════════════╝")

@@ -133,7 +133,8 @@ class TestBacktestEngineBasic:
             return None
 
         with patch("trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close):
-            summary = evaluator.evaluate(store=False, backtest=True)
+            with patch("trade_krono_cli.prediction_eval._get_kline_window", return_value=None):
+                summary = evaluator.evaluate(store=False, backtest=True)
 
         # 应有回测结果
         assert summary.backtest is not None
@@ -352,7 +353,8 @@ class TestEndToEnd:
             return None
 
         with patch("trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close):
-            summary = evaluator.evaluate(store=False, backtest=True)
+            with patch("trade_krono_cli.prediction_eval._get_kline_window", return_value=None):
+                summary = evaluator.evaluate(store=False, backtest=True)
 
         assert summary.backtest is not None
         assert isinstance(summary.backtest.total_return_pct, float)
@@ -384,14 +386,21 @@ class TestEndToEnd:
         summary = evaluator.evaluate(store=False, backtest=False)
         assert summary.backtest is None
 
-    def test_run_evaluation_with_backtest_cli(self, capsys):
+    def test_run_evaluation_with_backtest_cli(self, caplog):
         """run_evaluation(backtest=True) 应打印回测报告。"""
         from trade_krono_cli.prediction_eval import run_evaluation
         from trade_krono_cli.prediction_eval import PredictionEvaluator
+        from loguru import logger
+
+        captured_lines: list[str] = []
+        original_info = logger.info
+
+        def capture_info(*args, **kwargs):
+            if args:
+                captured_lines.append(str(args[0]))
 
         with patch.object(PredictionEvaluator, '__init__', lambda self, **kw: None):
             fake_eval = MagicMock()
-            # 使用真实的 EvaluationSummary 而非 MagicMock
             fake_summary = EvaluationSummary()
             from trade_krono_cli.eval_data import BacktestResult
             fake_summary.backtest = BacktestResult(
@@ -413,7 +422,7 @@ class TestEndToEnd:
             fake_eval.evaluate.return_value = fake_summary
             fake_eval.print_report = MagicMock()
             with patch("trade_krono_cli.prediction_eval.PredictionEvaluator", return_value=fake_eval):
-                run_evaluation(backtest=True)
-            captured = capsys.readouterr()
-            # 应包含回测报告关键词
-            assert "回测" in captured.out or "总收益率" in captured.out
+                with patch.object(logger, "info", capture_info):
+                    run_evaluation(backtest=True)
+            full_output = "\n".join(captured_lines)
+            assert "回测" in full_output or "总收益率" in full_output

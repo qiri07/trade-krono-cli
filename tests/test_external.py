@@ -323,3 +323,61 @@ class TestLockFile:
 
             assert st.lock_mismatch is True
             assert st.error is None  # error 在 status() 中设置，这里直接测试字段即可
+
+
+# ── Doctor Issues ─────────────────────────────────────────────────────────────
+
+
+def test_doctor_path_not_exists(tmp_path):
+    """路径不存在时 doctor 应报告问题。"""
+    from trade_krono_cli.external import save_config, doctor
+
+    save_config({
+        "missing_repo": {
+            "path": str(tmp_path / "nonexistent_path"),
+            "branch": "main", "url": "", "commit": None,
+        }
+    }, tmp_path)
+    issues = doctor(tmp_path)
+    assert any("路径不存在" in i for i in issues)
+
+
+def test_doctor_not_git_repo(tmp_path):
+    """非 git 目录应报告问题。"""
+    from trade_krono_cli.external import save_config, doctor
+
+    not_git = tmp_path / "not_git"
+    not_git.mkdir()
+    save_config({
+        "not_git": {
+            "path": str(not_git),
+            "branch": "main", "url": "", "commit": None,
+        }
+    }, tmp_path)
+    issues = doctor(tmp_path)
+    assert any("不是 git repo" in i for i in issues)
+
+
+def test_doctor_clean_repo_no_issues(tmp_path):
+    """干净的有效 git repo 不应报告问题。"""
+    from trade_krono_cli.external import save_config, doctor
+
+    repo_dir = _make_mock_repo(tmp_path, "clean_repo")
+    save_config({
+        "clean_repo": {
+            "path": str(repo_dir),
+            "branch": "main", "url": "", "commit": None,
+        }
+    }, tmp_path)
+    with patch("trade_krono_cli.external._git") as mock_git:
+        mock_git.side_effect = [
+            (0, "main", ""),
+            (0, "abc123def456", ""),
+            (0, "abc123def456", ""),
+            (0, "", ""),
+            (0, "https://example.com/test", ""),
+            (0, "0", ""),
+            (0, "0", ""),
+        ]
+        issues = doctor(tmp_path)
+    assert issues == []

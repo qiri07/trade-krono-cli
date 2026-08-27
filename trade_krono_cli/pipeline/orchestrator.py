@@ -13,7 +13,7 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Any, Optional, Callable
 
 from loguru import logger
 from trade_krono_cli.config import get_settings, Settings

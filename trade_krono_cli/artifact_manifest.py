@@ -469,4 +469,5 @@ def describe(manifest: Optional[ArtifactManifest] = None) -> str:
 
 
 def print_manifest(manifest: Optional[ArtifactManifest] = None) -> None:
-    print(describe(manifest))
+    from loguru import logger
+    logger.info(describe(manifest))

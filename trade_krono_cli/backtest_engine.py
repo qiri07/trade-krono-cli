@@ -23,6 +23,17 @@ from trade_krono_cli.eval_data import BacktestResult, HorizonMetrics
 from trade_krono_cli.trading_constraints import compute_limit_prices
 
 
+# ── 平仓结果 ─────────────────────────────────────────────────────────────────
+
+@dataclass
+class CloseLog:
+    """单次平仓操作的执行日志。"""
+    blocked: bool = False
+    blocked_reason: str = ""
+    trade_log: dict | None = None
+    net_proceeds: float = 0.0
+
+
 # ── 交易日辅助 ────────────────────────────────────────────────────────────────
 
 def _next_trading_day(d: datetime, kline_dates: list[str]) -> Optional[str]:

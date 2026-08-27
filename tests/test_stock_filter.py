@@ -171,6 +171,22 @@ class TestStockFilterApply:
         # 这里只是确保不崩溃
         assert isinstance(result, bool)
 
+    def test_unknown_op_falls_through(self):
+        """未知操作符应返回 True（不拦截）。"""
+        # 直接构造一个带 .value 属性的对象，绕过 Enum 校验
+        class _UnknownOp:
+            value = "unknown"
+        rule = FilterRule(field="signal", op=_UnknownOp(), value="x", label="custom")
+        f = StockFilter([rule])
+        assert f.apply(_meta(signal="BUY")) is True
+
+    def test_min_turnover_rate_from_config(self):
+        f = StockFilter.from_config(min_turnover_rate=0.5)
+        rules = [r for r in f.rules if r.field == "turnover_rate"]
+        assert len(rules) == 1
+        assert rules[0].op == FilterOp.MIN
+        assert rules[0].value == 0.5
+
 
 # ═══════════════════════════════════════════════════════
 # StockFilter.apply_batch()

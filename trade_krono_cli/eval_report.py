@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Optional
 
 from trade_krono_cli.eval_data import EvaluationSummary, HorizonMetrics
+from loguru import logger
 
 
 def store_summary(
@@ -133,11 +134,11 @@ def get_latest_evaluation(db_path: str) -> Optional[dict]:
 
 def print_report(summary: EvaluationSummary, horizons: list[int] = (5, 10, 20)) -> None:
     """打印评估报告到控制台。"""
-    print()
-    print("=" * 60)
-    print("  📊 预测评估报告")
-    print("=" * 60)
-    print()
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("  📊 预测评估报告")
+    logger.info("=" * 60)
+    logger.info("")
 
     _print_kronos_section(summary, horizons)
     _print_ta_section(summary, horizons)
@@ -148,74 +149,74 @@ def print_report(summary: EvaluationSummary, horizons: list[int] = (5, 10, 20)) 
 
 
 def _print_kronos_section(summary: EvaluationSummary, horizons: list[int]) -> None:
-    print("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
-    print(f"│  样本数: {summary.kronos_n}                              │")
+    logger.info("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
+    logger.info(f"│  样本数: {summary.kronos_n}                              │")
     for h in horizons:
         m = summary.horizons.get(h)
         acc = m.kronos_dir_accuracy if m else 0.0
         marker = "✅" if acc > 55 else "⚠️" if acc > 50 else "❌"
-        print(f"│  {marker} {h}D 准确率: {acc:5.1f}%                       │")
-    print("└" + "─" * 58 + "┘")
-    print()
+        logger.info(f"│  {marker} {h}D 准确率: {acc:5.1f}%                       │")
+    logger.info("└" + "─" * 58 + "┘")
+    logger.info("")
 
 
 def _print_ta_section(summary: EvaluationSummary, horizons: list[int]) -> None:
-    print("┌─ TA BUY 信号表现 ───────────────────────────────────┐")
-    print(f"│  样本数: {summary.ta_buy_n}                              │")
+    logger.info("┌─ TA BUY 信号表现 ───────────────────────────────────┐")
+    logger.info(f"│  样本数: {summary.ta_buy_n}                              │")
     for h in horizons:
         m = summary.horizons.get(h)
         wr = m.ta_buy_win_rate if m else 0.0
         avg_ret = m.ta_buy_avg_return if m else 0.0
         marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
-        print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
+        logger.info(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
               f"平均收益: {avg_ret:+.2f}%                    │")
-    print("└" + "─" * 58 + "┘")
-    print()
+    logger.info("└" + "─" * 58 + "┘")
+    logger.info("")
 
 
 def _print_combined_section(summary: EvaluationSummary, horizons: list[int]) -> None:
-    print("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
-    print(f"│  样本数: {summary.combined_buy_up_n}                          │")
+    logger.info("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
+    logger.info(f"│  样本数: {summary.combined_buy_up_n}                          │")
     for h in horizons:
         m = summary.horizons.get(h)
         wr = m.combined_buy_up_win_rate if m else 0.0
         avg_ret = m.combined_buy_up_avg_return if m else 0.0
         marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
-        print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
+        logger.info(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
               f"平均收益: {avg_ret:+.2f}%                    │")
-    print("└" + "─" * 58 + "┘")
-    print()
+    logger.info("└" + "─" * 58 + "┘")
+    logger.info("")
 
 
 def _print_high_conf_section(summary: EvaluationSummary, horizons: list[int]) -> None:
-    print("┌─ 高置信信号（综合分 ≥ 70）──────────────────────────┐")
-    print(f"│  样本数: {summary.high_conf_n}                              │")
+    logger.info("┌─ 高置信信号（综合分 ≥ 70）──────────────────────────┐")
+    logger.info(f"│  样本数: {summary.high_conf_n}                              │")
     for h in horizons:
         m = summary.horizons.get(h)
         wr = m.high_conf_win_rate if m else 0.0
         avg_ret = m.high_conf_avg_return if m else 0.0
         marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
-        print(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
+        logger.info(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
               f"平均收益: {avg_ret:+.2f}%                    │")
-    print("└" + "─" * 58 + "┘")
-    print()
+    logger.info("└" + "─" * 58 + "┘")
+    logger.info("")
 
 
 def _print_constraints_section(summary: EvaluationSummary) -> None:
     if summary.entry_limit_up_blocked or summary.exit_limit_down_blocked or summary.cost_applied_n:
-        print("┌─ 交易约束统计 ──────────────────────────────────────┐")
-        print(f"│  交易成本已扣减: {summary.cost_applied_n} 条记录                 │")
+        logger.info("┌─ 交易约束统计 ──────────────────────────────────────┐")
+        logger.info(f"│  交易成本已扣减: {summary.cost_applied_n} 条记录                 │")
         if summary.entry_limit_up_blocked:
-            print(f"│  🚫 买入日涨停拦截: {summary.entry_limit_up_blocked} 条                  │")
+            logger.info(f"│  🚫 买入日涨停拦截: {summary.entry_limit_up_blocked} 条                  │")
         if summary.exit_limit_down_blocked:
-            print(f"│  🚫 退出日跌停拦截: {summary.exit_limit_down_blocked} 条                  │")
-        print("└" + "─" * 58 + "┘")
-        print()
+            logger.info(f"│  🚫 退出日跌停拦截: {summary.exit_limit_down_blocked} 条                  │")
+        logger.info("└" + "─" * 58 + "┘")
+        logger.info("")
 
 
 def _print_baseline_section() -> None:
-    print("┌─ 基准对比（50% 随机基准）───────────────────────────┐")
-    print("│  方向准确率 > 50% = 超越随机                          │")
-    print("│  胜率 > 50% = 正向 alpha                              │")
-    print("└" + "─" * 58 + "┘")
-    print()
+    logger.info("┌─ 基准对比（50% 随机基准）───────────────────────────┐")
+    logger.info("│  方向准确率 > 50% = 超越随机                          │")
+    logger.info("│  胜率 > 50% = 正向 alpha                              │")
+    logger.info("└" + "─" * 58 + "┘")
+    logger.info("")

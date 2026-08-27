@@ -215,7 +215,7 @@ def _compute_ev(
     p10: Optional[float],
     p90: Optional[float],
     cost_bps: float,
-) -> tuple[float | None, float | None, float | None, float | None, float | None]:
+) -> tuple[float | None, float | None, float | None, float | None, float | None, float | None]:
     """
     基于分位数计算 EV 指标。
 
@@ -224,7 +224,7 @@ def _compute_ev(
     (prob_win, prob_loss, avg_win_return, avg_loss_return, expected_value)
     """
     if expected_return is None:
-        return None, None, None, None, None
+        return None, None, None, None, None, None
 
     ret = expected_return
     p10_val = p10 or (ret * -0.5 if ret > 0 else ret * 0.5)

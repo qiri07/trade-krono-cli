@@ -446,3 +446,71 @@ def test_schema_migration_old_db(tmp_path):
     new_job = research.get_job(new_job_id)
     assert new_job["run_id"] is not None
     assert new_job["config_hash"] is not None
+
+
+# ── Committee Deliberations ──────────────────────────────────────────────────
+
+def test_insert_committee_deliberation(research_db):
+    job_id = research_db.create_job("2026-08-11", ["sh.600519"])
+    research_db.insert_committee_deliberation(
+        job_id=job_id, ticker="sh.600519", date="2026-08-11",
+        bull_case="业绩超预期", bear_case="估值偏高",
+        recommendation="BUY", recommendation_confidence=75.0,
+        reasoning="综合判断", agent_consensus={"fundamental": "BUY"},
+    )
+    result = research_db.get_committee_for_ticker("sh.600519")
+    assert result is not None
+    assert result["ticker"] == "sh.600519"
+    assert result["recommendation"] == "BUY"
+    assert result["bull_case"] == "业绩超预期"
+    assert result["agent_consensus"] == {"fundamental": "BUY"}
+
+
+def test_get_committee_for_ticker_miss(research_db):
+    result = research_db.get_committee_for_ticker("sh.600519")
+    assert result is None
+
+
+# ── Stats Edge Cases ────────────────────────────────────────────────────────
+
+def test_stats_all_tables_empty(research_db):
+    stats = research_db.stats()
+    assert stats["research_jobs"] == 0
+    assert stats["research_ta_analysis"] == 0
+    # committee 表可能不存在（迁移前），stats 应返回 0
+    assert "research_committee_deliberations" in stats
+
+
+# ── Signal History ───────────────────────────────────────────────────────────
+
+def test_get_latest_signal_for_ticker(research_db):
+    j1 = research_db.create_job("2026-08-10", ["sh.600519"])
+    j2 = research_db.create_job("2026-08-11", ["sh.600519"])
+    # signal_history 由 signal_lifecycle 写入，测试直接插入
+    with research_db._conn as conn:
+        conn.execute(
+            "INSERT INTO signal_history "
+            "(ticker, date, signal, confidence, composite_score, "
+            " lifecycle_state, previous_state, transition_reason, job_id, run_id, thesis_snapshot, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("sh.600519", "2026-08-10", "HOLD", 55.0, 70.0,
+             "HOLD", None, "initial", j1, None, "", 0.0),
+        )
+        conn.execute(
+            "INSERT INTO signal_history "
+            "(ticker, date, signal, confidence, composite_score, "
+            " lifecycle_state, previous_state, transition_reason, job_id, run_id, thesis_snapshot, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("sh.600519", "2026-08-11", "BUY", 80.0, 80.0,
+             "BUY", "HOLD", "improvement", j2, None, "", 0.0),
+        )
+        conn.commit()
+    latest = research_db.get_latest_signal_for_ticker("sh.600519")
+    assert latest is not None
+    assert latest["signal"] == "BUY"
+    assert latest["composite_score"] == 80.0
+
+
+def test_get_latest_signal_for_ticker_miss(research_db):
+    result = research_db.get_latest_signal_for_ticker("sh.600519")
+    assert result is None

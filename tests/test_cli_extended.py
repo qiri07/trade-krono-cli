@@ -303,7 +303,9 @@ class TestRepoCommands:
     def test_repo_pin_success(self, runner):
         with patch("trade_krono_cli.cli._load_env"), \
              patch("trade_krono_cli.external.pin") as mock_pin:
-            result = runner.invoke(app, ["repo", "repo-pin", "tradingagents", "abc123def"])
+            result = runner.invoke(app, [
+                "repo", "repo-pin", "--name", "tradingagents", "--commit", "abc123def"
+            ])
             assert result.exit_code == 0
             assert "已 pin" in result.output
             mock_pin.assert_called_once_with("tradingagents", "abc123def")
@@ -312,7 +314,9 @@ class TestRepoCommands:
         with patch("trade_krono_cli.cli._load_env"), \
              patch("trade_krono_cli.external.pin",
                    side_effect=ValueError("未知 repo: nonexistent")):
-            result = runner.invoke(app, ["repo", "repo-pin", "nonexistent", "abc123"])
+            result = runner.invoke(app, [
+                "repo", "repo-pin", "--name", "nonexistent", "--commit", "abc123"
+            ])
             assert result.exit_code != 0
             assert "未知 repo" in result.output
 

@@ -10,7 +10,9 @@ import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import Optional
+
+from trade_krono_cli.config import Settings
 
 
 @dataclass
@@ -128,8 +130,8 @@ def check_disk_space(path: Path, min_gb: float = 0.5) -> HealthResult:
 
 
 def health_summary(
-    settings: "Settings",
-) -> List[HealthResult]:
+    settings: Settings,
+) -> list[HealthResult]:
     """
     运行所有健康检查，按顺序返回结果列表。
 
@@ -142,7 +144,7 @@ def health_summary(
     # 延迟导入避免循环依赖
     from trade_krono_cli.research_db import get_research
 
-    results: List[HealthResult] = []
+    results: list[HealthResult] = []
     results.append(check_llm_api())
     results.append(check_kronos_import())
 
@@ -160,7 +162,7 @@ def health_summary(
     return results
 
 
-def print_health_report(results: List[HealthResult]) -> bool:
+def print_health_report(results: list[HealthResult]) -> bool:
     """
     打印健康检查报告到控制台，返回是否有失败项。
 

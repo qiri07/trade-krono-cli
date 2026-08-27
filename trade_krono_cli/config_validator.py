@@ -6,20 +6,22 @@ validate_settings() 返回错误列表；空列表表示配置合法。
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
+
+from loguru import logger
 
 if TYPE_CHECKING:
     from trade_krono_cli.config import Settings
 
 
-def validate_settings(s: "Settings") -> tuple[List[str], List[str]]:
+def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
     """
     校验配置合法性，返回 (errors, warnings) 元组。
     errors   — 致命问题，程序应终止
     warnings — 非致命问题，记录但不阻塞运行
     """
-    errors: List[str] = []
-    warnings: List[str] = []
+    errors: list[str] = []
+    warnings: list[str] = []
 
     # ── 整型 / 数值下限 ─────────────────────────────────────────────────────
     if s.kronos_lookback < 10:
@@ -257,7 +259,7 @@ _PROVIDER_ENV_KEY = {
 
 
 def print_validation_report(
-    errors: List[str], warnings: List[str]
+    errors: list[str], warnings: list[str]
 ) -> bool:
     """
     打印校验报告到控制台，返回是否通过（无错误 = True）。
@@ -268,12 +270,12 @@ def print_validation_report(
         return True
 
     if errors:
-        print("❌ 配置校验失败，请修复以下问题后再运行：")
+        logger.error("❌ 配置校验失败，请修复以下问题后再运行：")
         for e in errors:
-            print(f"  ❌ {e}")
+            logger.error(f"  ❌ {e}")
     if warnings:
-        print("⚠️  配置存在以下警告（不影响运行，建议修复）：")
+        logger.warning("⚠️  配置存在以下警告（不影响运行，建议修复）：")
         for w in warnings:
-            print(f"  ⚠️  {w}")
+            logger.warning(f"  ⚠️  {w}")
 
     return not errors

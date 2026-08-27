@@ -35,7 +35,7 @@ import time
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from loguru import logger
 

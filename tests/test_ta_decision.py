@@ -679,21 +679,21 @@ Target: 170 yuan"""
 
 
 def test_text_extract_target_price(adapter):
-    """目标价应从文本中提取（单一价格返回 [val, val]）。"""
+    """目标价应从文本中提取，返回标量值（domain model 字段类型为 float）。"""
     text = """**Rating**: Buy
 Target price: 170 yuan"""
     dec = adapter.parse(text)
     assert dec.target_price is not None
-    assert dec.target_price == [170.0, 170.0]
+    assert dec.target_price == 170.0
 
 
 def test_text_extract_stop_loss(adapter):
-    """止损价应从文本中提取（单一价格返回 [val, val]）。"""
+    """止损价应从文本中提取，返回标量值（domain model 字段类型为 float）。"""
     text = """**Rating**: Buy
 Stop loss: 140 yuan"""
     dec = adapter.parse(text)
     assert dec.stop_loss is not None
-    assert dec.stop_loss == [140.0, 140.0]
+    assert dec.stop_loss == 140.0
 
 
 def test_text_extract_holding_period(adapter):

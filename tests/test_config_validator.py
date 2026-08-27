@@ -2,6 +2,7 @@
 import pytest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from trade_krono_cli.config_validator import validate_settings, print_validation_report
 
@@ -154,19 +155,38 @@ def test_print_validation_report_no_errors():
     assert print_validation_report([], ["some warning"]) is True
 
 
-def test_print_validation_report_with_errors(capsys):
+def test_print_validation_report_with_errors():
     """含错误时应返回 False 并打印消息。"""
-    assert print_validation_report(["config error"], ["some warning"]) is False
-    captured = capsys.readouterr()
-    assert "❌ config error" in captured.out
-    assert "⚠️  some warning" in captured.out
+    from loguru import logger
+
+    captured: list[str] = []
+    def _capture(*args, **kwargs):
+        if args:
+            captured.append(str(args[0]))
+
+    with patch.object(logger, "error", _capture), \
+         patch.object(logger, "warning", _capture):
+        result = print_validation_report(["config error"], ["some warning"])
+    full = "\n".join(captured)
+    assert result is False
+    assert "❌ config error" in full
+    assert "⚠️  some warning" in full
 
 
-def test_print_validation_report_warnings_only(capsys):
+def test_print_validation_report_warnings_only():
     """仅警告时也应打印警告消息并返回 True。"""
-    assert print_validation_report([], ["missing directory"]) is True
-    captured = capsys.readouterr()
-    assert "missing directory" in captured.out
+    from loguru import logger
+
+    captured: list[str] = []
+    def _capture(*args, **kwargs):
+        if args:
+            captured.append(str(args[0]))
+
+    with patch.object(logger, "warning", _capture):
+        result = print_validation_report([], ["missing directory"])
+    full = "\n".join(captured)
+    assert result is True
+    assert "missing directory" in full
 
 
 def test_warning_ta_cache_fallback_mismatch():
