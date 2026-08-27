@@ -95,6 +95,8 @@ class UniverseEngine:
         provider = get_universe_provider(universe_source)
         if provider is None:
             provider = get_universe_provider("akshare")
+        if provider is None:
+            raise ValueError(f"无法初始化 UniverseProvider，source={universe_source!r}")
 
         stages: list = []
 
