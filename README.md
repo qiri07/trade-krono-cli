@@ -229,6 +229,45 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock request interval (seconds)
 | `MIN_CONFIDENCE` | `55.0` | Stocks below this TA confidence are excluded from ranking |
 | `ALLOWED_SIGNALS` | `BUY,HOLD` | Only keep stocks with signals in this list |
 
+#### Pre-screening Filter (UniverseEngine)
+
+When `--auto-universe` is enabled, the system discovers all A-share stocks and runs them through a multi-stage filter pipeline. Filter parameters can be set via `.env` or CLI:
+
+```bash
+# ── Pre-screening Filter Config (.env) ──────────────────────
+FILTER_EXCLUDE_ST=true               # Exclude ST/*ST stocks
+FILTER_EXCLUDE_LOW_PRICE=true        # Exclude low-price stocks
+FILTER_LOW_PRICE_THRESHOLD=3.0       # Low-price threshold (CNY), stocks below this are excluded
+FILTER_MIN_PB=                       # Minimum PB ratio (empty = no limit)
+FILTER_MARKET_CAP_RANGE=50,5000      # Market cap range (B CNY), format: "min,max"
+FILTER_PE_RANGE=                     # PE range, format: "min,max"
+FILTER_PB_RANGE=                     # PB range, format: "min,max"
+FILTER_INDUSTRY_WHITELIST=           # Industry whitelist, comma-separated
+FILTER_INDUSTRY_BLACKLIST=           # Industry blacklist, comma-separated
+FILTER_MAX_RISK_SCORE=               # Maximum risk score (0-1)
+FILTER_MIN_VOLUME_RATIO=             # Minimum volume ratio
+FILTER_MIN_TURNOVER_RATE=            # Minimum turnover rate (%)
+```
+
+**Filter Stages:**
+
+| Stage | Description | Typical Reduction |
+|-------|-------------|-------------------|
+| `StaticFilterStage` | Exclude ST, suspended, delisted, new stocks (<N days), low-price stocks | ~5212 → ~4500 |
+| `FundamentalFilterStage` | Filter by market cap / PE / PB / industry whitelist-blacklist | ~4500 → ~2000 |
+| `FilterRulesStage` (optional) | User-defined rule chain (supports `<`/`>`/`>=`/`<=`/`==`/`!=`/`in`/`not_in`/`contains`/`match`) | Varies |
+| `FactorFilterStage` | Filter by volume ratio / turnover rate for liquidity | ~2000 → ~844 |
+
+> **Note**: `FILTER_*` env vars only take effect in `--auto-universe` mode; normal `--tickers` mode only uses `MIN_CONFIDENCE` / `ALLOWED_SIGNALS`.
+
+**Data Source Options:**
+
+| `--universe-source` | Data Source | Description |
+|---------------------|-------------|-------------|
+| `akshare` | akshare | Requires `pip install akshare`, some APIs need proxy |
+| `mootdx` | mootdx + baostock | Free, no API key required (recommended) |
+| `baostock` | baostock | Stock list only, no quote data |
+
 #### Degradation Strategy
 
 When Kronos is unavailable or TA analysis fails, the pipeline degrades gracefully instead of aborting:
@@ -414,6 +453,18 @@ EOF
 
 # Disable cache
 .venv/bin/python -m trade_krono_cli.cli run --tickers "600519" --date 2026-08-11 --no-cache
+
+# ── Full-market auto-discovery (--auto-universe) ──────────────
+# Automatically discover all A-share stocks, filter them through multi-stage pipeline,
+# then feed results into TA/Kronos analysis
+.venv/bin/python -m trade_krono_cli.cli run --auto-universe --universe-source mootdx --date 2026-08-11
+
+# Limit to N stocks after filtering (quick verification)
+.venv/bin/python -m trade_krono_cli.cli run --auto-universe --universe-source mootdx --max-tickers 20 --date 2026-08-11
+
+# Override filter conditions via env vars
+FILTER_EXCLUDE_LOW_PRICE=false FILTER_MIN_PB=0.5 \
+  .venv/bin/python -m trade_krono_cli.cli run --auto-universe --universe-source mootdx --date 2026-08-11
 ```
 
 **`run` parameters:**
@@ -433,6 +484,9 @@ EOF
 | `--no-cache` | `false` | Disable cache |
 | `--degrade-mode` | `strict` | Degradation strategy: `strict` / `ta_only_on_kronos_fail` / `ta_cache_fallback` |
 | `--ta-cache-fallback` | `false` | Enable TA cache fallback (requires `--degrade-mode ta_cache_fallback`) |
+| `--auto-universe` | `false` | Auto-discover all A-share stocks and filter (ignores --tickers) |
+| `--universe-source` | `akshare` | Full-market data source: `akshare` / `mootdx` / `baostock` |
+| `--max-tickers` | unlimited | Max stocks to process after filtering (for quick verification) |
 
 ### `ta` — TradingAgents Only
 
@@ -639,6 +693,14 @@ trade-krono-cli
 │   │   ├── market.py           # MarketSnapshot
 │   │   ├── stock.py            # Stock model
 │   │   └── factory.py          # build_* domain object constructors
+│   ├── universe/               # Full-market universe discovery & filtering (~5300 → ~844 candidates)
+│   │   ├── engine.py           # UniverseEngine: multi-stage pipeline orchestration
+│   │   ├── provider.py         # UniverseProvider ABC + data source implementations (akshare/mootdx/baostock)
+│   │   └── stages/             # Individual filter stages
+│   │       ├── static.py       # StaticFilterStage: ST/suspended/new-stock/low-price filtering
+│   │       ├── fundamental.py  # FundamentalFilterStage: PE/PB/market-cap/industry filtering
+│   │       ├── factor.py       # FactorFilterStage: liquidity/volume-ratio/turnover filtering
+│   │       └── rules.py        # FilterRulesStage: user-defined rule chain
 │   ├── pipeline/               # Pipeline package — unified orchestration entry
 │   │   ├── orchestrator.py     # QuantPipeline + PipelineFactory (ThreadPoolExecutor parallel TA+Kronos)
 │   │   ├── data_fetcher.py     # Parallel K-line fetching + cache write
@@ -653,7 +715,7 @@ trade-krono-cli
 │   │   └── batch_runner.py     # Async semaphore-based batch Kronos predictions
 ├── scripts/
 │   └── install.sh              # One-click install script
-├── tests/                      # Test suite (1106 tests, 87%+ coverage, mypy clean)
+├── tests/                      # Test suite (1286 tests, mypy clean)
 └── external/                   # External project configs (repos.yaml + repo.lock)
 ```
 

@@ -211,6 +211,8 @@ def fetch_lookback(
 ) -> pd.DataFrame:
     """
     自动计算 start_date，拉取足够历史数据。
+
+    若缓存中已有部分数据，仅增量拉取缺失区间（避免重复下载）。
     """
     ticker = validate_ticker(ticker)
     end_date = validate_date(end_date)
@@ -222,7 +224,10 @@ def fetch_lookback(
         start = end - timedelta(days=lookback // 48 + 10)
     start_s = start.strftime("%Y-%m-%d")
 
-    df = fetch_kline(ticker, start_s, end_date, frequency=frequency, adjustflag=adjustflag, use_cache=use_cache)
+    df = fetch_kline_incremental(
+        ticker, start_s, end_date,
+        frequency=frequency, adjustflag=adjustflag, use_cache=use_cache,
+    )
     if len(df) < lookback:
         raise RuntimeError(
             f"数据不足: {ticker} 仅 {len(df)} 行 < lookback {lookback}（检查停牌/新上市）"
@@ -230,6 +235,172 @@ def fetch_lookback(
     # 校验数据末尾与评估日期的间隔，防止停牌期间数据过时
     validate_data_freshness(df, end_date, ticker)
     return df
+
+
+def fetch_kline_incremental(
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    frequency: str = "d",
+    adjustflag: str = "1",
+    use_cache: bool = True,
+) -> pd.DataFrame:
+    """
+    增量拉取 K 线数据。
+
+    策略：
+      1. 先查本地缓存，判断已有日期覆盖范围
+      2. 若缓存已完整覆盖 [start_date, end_date]，直接返回缓存数据
+      3. 若缓存有部分数据（覆盖到某个中间日期），仅拉取缺失的尾部区间
+      4. 将新拉取的数据与缓存合并，更新缓存条目
+
+    Returns
+    -------
+    合并后的完整 DataFrame
+    """
+    ticker = validate_ticker(ticker)
+    start_date = validate_date(start_date)
+    end_date = validate_date(end_date)
+
+    cache = get_cache()
+
+    if use_cache:
+        cached_range = cache.get_cached_date_range(ticker, freq=frequency)
+    else:
+        cached_range = None
+
+    if cached_range is not None:
+        cached_start, cached_end = cached_range
+        logger.debug(
+            f"📦 {ticker} 缓存覆盖: {cached_start} ~ {cached_end}"
+        )
+
+        # ── 情况 1：缓存已完整覆盖请求范围，无需重新拉取 ──────────────
+        if cached_start <= start_date and cached_end >= end_date:
+            df = fetch_kline(
+                ticker, start_date, end_date,
+                frequency=frequency, adjustflag=adjustflag, use_cache=True,
+            )
+            logger.info(
+                f"✅ {ticker} 增量拉取: 缓存已完整覆盖，跳过网络请求 "
+                f"({len(df)} 行)"
+            )
+            return df
+
+        # ── 情况 2：缓存有重叠，需补拉缺失区间 ────────────────────────
+        # 需要补拉：从 max(start_date, 缓存end+1天) 到 end_date
+        # 简化：直接从 cached_end 之后开始拉取（含当天以覆盖边界）
+        fetch_start = cached_end
+        # 若缓存完全在请求范围之前，直接拉取整个 range
+        if cached_end < start_date:
+            fetch_start = start_date
+            logger.info(
+                f"🔄 {ticker} 增量拉取: 缓存过期/过期前，重新拉取 "
+                f"{fetch_start} ~ {end_date}"
+            )
+        else:
+            logger.info(
+                f"🔄 {ticker} 增量拉取: 补拉 {fetch_start} ~ {end_date} "
+                f"（已有 {cached_start} ~ {cached_end}）"
+            )
+
+        # 拉取缺失段
+        new_df = fetch_kline(
+            ticker, fetch_start, end_date,
+            frequency=frequency, adjustflag=adjustflag, use_cache=True,
+        )
+
+        # 读取旧缓存数据
+        old_df = fetch_kline(
+            ticker, cached_start, cached_end,
+            frequency=frequency, adjustflag=adjustflag, use_cache=True,
+        )
+
+        # 合并：优先保留新数据（去重）
+        merged = _merge_kline_dfs(old_df, new_df)
+        logger.info(
+            f"✅ {ticker} 增量拉取合并完成: 旧 {len(old_df)} 行 "
+            f"+ 新 {len(new_df)} 行 → 合并后 {len(merged)} 行"
+        )
+
+        # 写回缓存：用完整范围覆盖旧条目，保持历史段永久缓存、近期段 1h TTL
+        _write_merged_cache(cache, ticker, merged, start_date, end_date, frequency)
+        return merged
+
+    # ── 情况 3：无缓存，全量拉取 ────────────────────────────────────
+    logger.info(f"📥 {ticker} 无缓存，全量拉取 {start_date} ~ {end_date}")
+    return fetch_kline(
+        ticker, start_date, end_date,
+        frequency=frequency, adjustflag=adjustflag, use_cache=True,
+    )
+
+
+def _write_merged_cache(
+    cache, ticker: str, df: pd.DataFrame, start_date: str, end_date: str,
+    frequency: str,
+) -> None:
+    """
+    将合并后的 K 线数据写回缓存，按历史/近期分段设置 TTL。
+    历史段（>30天）永久缓存，近期段（≤30天）1h TTL。
+    """
+    from trade_krono_cli.cache import (
+        _KLINE_RECENT_TTL, _KLINE_HISTORY_WINDOW_DAYS,
+        _KLINE_HISTORICAL_TTL,
+    )
+    from datetime import timedelta
+
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    recent_cutoff = (end_dt - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime("%Y-%m-%d")
+
+    hist_mask = pd.to_datetime(df["timestamps"]) < pd.Timestamp(recent_cutoff)
+    recent_mask = ~hist_mask
+
+    for mask, ttl in [(hist_mask, _KLINE_HISTORICAL_TTL), (recent_mask, _KLINE_RECENT_TTL)]:
+        seg = df[mask]
+        if len(seg) == 0:
+            continue
+        seg_start = seg["timestamps"].iloc[0].strftime("%Y-%m-%d")
+        seg_end = seg["timestamps"].iloc[-1].strftime("%Y-%m-%d")
+        cache.set_kline(ticker, seg_start, seg_end, frequency, seg, ttl=ttl)
+        logger.debug(
+            f"📦 {'永久' if ttl == 0 else '1h'} 缓存: "
+            f"{ticker} {seg_start}~{seg_end}"
+        )
+
+
+def _merge_kline_dfs(
+    old_df: pd.DataFrame, new_df: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    合并新旧 K 线 DataFrame，去重并按时间排序。
+
+    去重策略：
+      - 新数据始终优先（覆盖重叠行）
+      - 旧数据中未被新数据覆盖的前段保留
+      - 新数据中超出旧数据范围的后段追加
+    """
+    if old_df is None or len(old_df) == 0:
+        return new_df.copy() if new_df is not None else pd.DataFrame()
+    if new_df is None or len(new_df) == 0:
+        return old_df.copy()
+
+    old_ts = pd.to_datetime(old_df["timestamps"])
+    new_ts = pd.to_datetime(new_df["timestamps"])
+
+    max_new_ts = new_ts.max()
+
+    # 保留旧数据中在「新数据最大时间之前」的部分（新数据未覆盖的前段）
+    keep_old = old_ts < max_new_ts
+    keep_old_df = old_df[keep_old] if keep_old.any() else pd.DataFrame()
+
+    # 组合：旧前段 + 全部新数据（新数据在重叠区间优先，通过 drop_duplicates 保证）
+    parts = [keep_old_df, new_df]
+    merged = pd.concat([p for p in parts if len(p) > 0], ignore_index=True)
+
+    # 按 timestamps 排序并去重（保留最后一条，即新数据优先）
+    merged = merged.sort_values("timestamps").reset_index(drop=True)
+    merged = merged.drop_duplicates(subset=["timestamps"], keep="last").reset_index(drop=True)
+    return merged
 
 
 def next_business_days(last_date: str, n: int) -> list[pd.Timestamp]:

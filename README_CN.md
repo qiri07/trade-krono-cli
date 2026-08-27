@@ -222,12 +222,49 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock 请求间隔（秒）
 
 #### 过滤配置
 
-#### 过滤配置
-
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `MIN_CONFIDENCE` | `55.0` | TA 置信度低于此值的股票不参与综合排名 |
 | `ALLOWED_SIGNALS` | `BUY,HOLD` | 只保留信号在此列表中的股票 |
+
+#### 前置市场范围过滤（UniverseEngine）
+
+通过 `--auto-universe` 启动时，系统会从全市场 A 股中逐层过滤，最终产出让 TA/Kronos 消费的股票列表。过滤参数可通过 `.env` 或 CLI 参数设置：
+
+```bash
+# ── 前置过滤配置（.env）────────────────────────────────────
+FILTER_EXCLUDE_ST=true               # 排除 ST/*ST 股票
+FILTER_EXCLUDE_LOW_PRICE=true        # 排除低价股
+FILTER_LOW_PRICE_THRESHOLD=3.0       # 低价股阈值（元），低于此价排除
+FILTER_MIN_PB=                       # 最低市净率（空=不限制）
+FILTER_MARKET_CAP_RANGE=50,5000      # 市值范围（亿元），格式："min,max"
+FILTER_PE_RANGE=                     # PE 区间，格式："min,max"
+FILTER_PB_RANGE=                     # PB 区间，格式："min,max"
+FILTER_INDUSTRY_WHITELIST=           # 行业白名单，逗号分隔
+FILTER_INDUSTRY_BLACKLIST=           # 行业黑名单，逗号分隔
+FILTER_MAX_RISK_SCORE=               # 风险分上限（0-1）
+FILTER_MIN_VOLUME_RATIO=             # 最小量比
+FILTER_MIN_TURNOVER_RATE=            # 最小换手率（%）
+```
+
+**过滤阶段说明：**
+
+| 阶段 | 说明 | 典型过滤效果 |
+|------|------|-------------|
+| `StaticFilterStage` | 排除 ST、停牌、退市、次新股（上市不足 N 天）、低价股 | ~5212 → ~4500 |
+| `FundamentalFilterStage` | 按市值/PE/PB/行业白黑名单过滤 | ~4500 → ~2000 |
+| `FilterRulesStage`（可选） | 用户自定义规则链（支持 `<`/`>`/`>=`/`<=`/`==`/`!=`/`in`/`not_in`/`contains`/`match`） | 按规则进一步过滤 |
+| `FactorFilterStage` | 按成交量/换手率过滤流动性不足的股票 | ~2000 → ~844 |
+
+> **注意**：`FILTER_*` 环境变量仅在 `--auto-universe` 模式下生效；普通 `--tickers` 模式下仅使用 `MIN_CONFIDENCE` / `ALLOWED_SIGNALS`。
+
+**数据源选项：**
+
+| `--universe-source` | 数据源 | 说明 |
+|---------------------|--------|------|
+| `akshare` | akshare | 需 `pip install akshare`，部分接口需要代理 |
+| `mootdx` | mootdx + baostock | 免费，无需 API Key（推荐） |
+| `baostock` | baostock | 仅获取股票列表，无行情数据 |
 
 #### 降级策略
 
@@ -439,6 +476,18 @@ trade-krono-cli run --config stocks.txt --date 2026-08-11
 
 # 禁用缓存
 trade-krono-cli run --tickers "600519" --date 2026-08-11 --no-cache
+
+# ── 全市场自动筛选（--auto-universe）──────────────────────
+# 自动发现 A 股市场全部股票，经多阶段过滤后送入 TA/Kronos 分析
+trade-krono-cli run --auto-universe --universe-source mootdx --date 2026-08-11
+
+# 限制筛选后最多处理 N 只股票（快速验证）
+trade-krono-cli run --auto-universe --universe-source mootdx --max-tickers 20 --date 2026-08-11
+
+# 通过环境变量控制过滤条件（.env 中设置 FILTER_* 变量）
+# 或临时覆盖：
+FILTER_EXCLUDE_LOW_PRICE=false FILTER_MIN_PB=0.5 \
+  trade-krono-cli run --auto-universe --universe-source mootdx --date 2026-08-11
 ```
 
 **`run` 参数：**
@@ -458,6 +507,9 @@ trade-krono-cli run --tickers "600519" --date 2026-08-11 --no-cache
 | `--no-cache` | `false` | 禁用缓存 |
 | `--degrade-mode` | `strict` | 降级策略：`strict` / `ta_only_on_kronos_fail` / `ta_cache_fallback` |
 | `--ta-cache-fallback` | `false` | 启用 TA 缓存回退（需配合 `--degrade-mode ta_cache_fallback`） |
+| `--auto-universe` | `false` | 自动发现全市场 A 股并筛选（忽略 `--tickers`） |
+| `--universe-source` | `akshare` | 全市场数据源：`akshare` / `mootdx` / `baostock` |
+| `--max-tickers` | 无限制 | 自动筛选后最多处理的股票数量（用于快速验证） |
 
 ### `ta` — 仅 TradingAgents
 
@@ -676,9 +728,17 @@ trade-krono-cli
 │   │   └── ta_session.py     # TradingAgents 会话状态（供应商、辩论轮次）
 │   ├── batch/              # 批量预测
 │   │   └── batch_runner.py # 异步信号量控制批量 Kronos 预测
+├── universe/               # 全市场范围发现与过滤（~5300 → ~844 只候选）
+│   ├── engine.py           # UniverseEngine：多阶段管道编排主入口
+│   ├── provider.py         # UniverseProvider ABC + 各数据源实现（akshare/mootdx/baostock）
+│   └── stages/             # 各过滤阶段
+│       ├── static.py       # StaticFilterStage：ST/停牌/次新/低价股过滤
+│       ├── fundamental.py  # FundamentalFilterStage：PE/PB/市值/行业过滤
+│       ├── factor.py       # FactorFilterStage：流动性/量比/换手率过滤
+│       └── rules.py        # FilterRulesStage：用户自定义规则链
 ├── scripts/
 │   └── install.sh          # 一键安装脚本
-├── tests/                  # 测试套件（1106 项，87%+ 覆盖，mypy 零错误）
+├── tests/                  # 测试套件（1286 项，mypy 零新增错误）
 └── external/               # 外部项目配置（repos.yaml + repo.lock）
 ```
 

@@ -253,6 +253,46 @@ class Cache:
 
     # ── 工具方法 ──────────────────────────────────────
 
+    def get_cached_date_range(
+        self, ticker: str, freq: str = "d"
+    ) -> Optional[tuple[str, str]]:
+        """
+        查询某只股票的已有 K 线缓存覆盖的日期范围。
+
+        该Ticker 的所有缓存条目会被合并成一个连续的 [start, end] 区间。
+        若没有缓存或缓存已过期，返回 None。
+
+        Returns
+        -------
+        (start_date, end_date) 或 None
+        """
+        with self._conn as conn:
+            rows = conn.execute(
+                "SELECT start, end, created, ttl FROM kline_cache "
+                "WHERE ticker=? AND freq=?",
+                (ticker, freq),
+            ).fetchall()
+
+        if not rows:
+            return None
+
+        # 过滤掉已 TTL 过期的条目
+        now = time.time()
+        valid: list[tuple[str, str]] = []
+        for start_s, end_s, created, ttl in rows:
+            if ttl >= 0 and (ttl > 0 and now - created > ttl):
+                continue
+            valid.append((start_s, end_s))
+
+        if not valid:
+            return None
+
+        # 合并连续区间：取最早 start 和最早 end
+        # （K 线缓存通常是连续段，此处简化为直接取 min/max）
+        start_s = min(r[0] for r in valid)
+        end_s = max(r[1] for r in valid)
+        return (start_s, end_s)
+
     def clear_all(self) -> int:
         with self._conn as conn:
             count = 0
