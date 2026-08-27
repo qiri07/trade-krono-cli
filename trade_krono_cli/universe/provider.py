@@ -160,13 +160,17 @@ class MootDxUniverseProvider(UniverseProvider):
                 bs.logout()
                 return []
 
-            rs = bs.query_all_stock(day="2025-08-27")
+            rs = bs.query_stock_basic()
             raw_codes: list[str] = []
             while rs.next():
                 row = rs.get_row_data()
+                # Fields: code, code_name, ipoDate, outDate, type, status
+                if len(row) < 6:
+                    continue
                 code = row[0]  # sh.600519 / sz.000858
-                # 排除指数（sh.000xxx, sz.399xxx）
-                if code.startswith("sh.00") or code.startswith("sz.399"):
+                stock_type = row[4]  # '1' = A-share
+                status = row[5]  # '1' = listed
+                if stock_type != "1" or status != "1":
                     continue
                 raw_codes.append(code)
 
