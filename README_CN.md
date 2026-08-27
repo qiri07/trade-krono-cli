@@ -157,7 +157,7 @@ DEEPSEEK_API_KEY=sk-xxx
 # OPENAI_API_KEY=sk-xxx
 # ANTHROPIC_API_KEY=sk-ant-xxx
 # MINIMAX_API_KEY=xxx
-# AGNES_API_KEY=xxx
+# AGNES_API_KEY=xxx              # Sapiens AI Agnes LLM（可选）
 
 # ── LLM 行为配置 ────────────────────────────────────────
 LLM_PROVIDER=deepseek          # 默认 LLM 供应商
@@ -226,7 +226,7 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock 请求间隔（秒）
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `MIN_CONFIDENCE` | `55.0` | TA 置信度低于此值的股票不参与综合排名 |
-| `ALLOWED_SIGNALS` | `BUY,HOLD` | 只保留信号在此列表中的股票 |
+| `ALLOWED_SIGNALS` | `BUY,HOLD` | 只保留信号在此列表中的股票；可选值：`BUY` / `OVERWEIGHT` / `HOLD` / `SELL`（逗号分隔） |
 
 #### 前置市场范围过滤（UniverseEngine）
 
@@ -1564,6 +1564,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | `DEEPSEEK_API_KEY` | DeepSeek LLM API Key（必须至少配置一个） |
 | `OPENAI_API_KEY` | OpenAI API Key（可选备用） |
 | `ANTHROPIC_API_KEY` | Anthropic API Key（可选备用） |
+| `AGNES_API_KEY` | Sapiens AI Agnes LLM API Key（可选备用，需配合 `LLM_PROVIDER=agnes`） |
 
 **可选 Variables**（同路径下 Variables 标签页）：
 
@@ -1574,10 +1575,11 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | `UNIVERSE_SOURCE` | `mootdx` | 全市场数据源（akshare/mootdx/baostock） |
 | `MAX_TICKERS` | — | 自动筛选后最多处理股票数 |
 | `MIN_CONFIDENCE` | `55.0` | 最低 TA 置信度阈值 |
-| `ALLOWED_SIGNALS` | `BUY,HOLD` | 允许的 TA 信号 |
+| `ALLOWED_SIGNALS` | `BUY,HOLD` | 允许的 TA 信号（支持 BUY / OVERWEIGHT / HOLD / SELL，默认只保留看涨和中性） |
 | `SKIP_KRONOS` | `false` | 是否跳过 Kronos 预测 |
 | `OUTPUT_LANGUAGE` | `Chinese` | 报告语言 |
-| `LLM_PROVIDER` | `deepseek` | LLM 提供商 |
+| `LLM_PROVIDER` | `deepseek` | LLM 提供商（deepseek / openai / anthropic / minimax / agnes） |
+| `BACKEND_URL` | — | LLM 后端 API 地址（Agnes 等供应商需要配置） |
 | `ANALYSIS_TIMEOUT_MINUTES` | `30` | 分析超时时间 |
 
 **配置步骤：**

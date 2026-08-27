@@ -76,3 +76,25 @@ python_files = ["test_*.py"]
 environments = [
     "sys_platform == 'linux'",
 ]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+    "ruff>=0.16.4",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = ["external/**"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I001"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003", "G004"]
+# domain/__init__.py 中 types 枚举必须优先导入以避免循环依赖，跳过 I001 排序检查
+per-file-ignores = { "trade_krono_cli/domain/__init__.py" = ["I001"] }
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+exclude = ["external/", ".venv/"]

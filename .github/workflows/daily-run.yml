@@ -9,6 +9,7 @@
 #   DEEPSEEK_API_KEY   — DeepSeek LLM API Key
 #   OPENAI_API_KEY     — OpenAI API Key（可选，备用）
 #   ANTHROPIC_API_KEY  — Anthropic API Key（可选，备用）
+#   AGNES_API_KEY      — Sapiens AI Agnes LLM API Key（可选，备用）
 #
 # 可选 Variables（同 Secrets 路径，非敏感配置）：
 #   TICKER_LIST        — 默认要分析的股票代码，逗号分隔（如 "600519,000858"）
@@ -131,9 +132,11 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
 
           # ── LLM 行为配置 ──────────────────────────────────────────────
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'deepseek' }}
+          BACKEND_URL: ${{ vars.BACKEND_URL || '' }}
           DEEP_THINK_LLM: ${{ vars.DEEP_THINK_LLM || 'deepseek-chat' }}
           QUICK_THINK_LLM: ${{ vars.QUICK_THINK_LLM || 'deepseek-chat' }}
           MAX_DEBATE_ROUNDS: ${{ vars.MAX_DEBATE_ROUNDS || '1' }}
@@ -191,13 +194,14 @@ jobs:
 
           # ── 检查关键配置 ────────────────────────────────────────────
           echo "【配置检查】"
-          if [ -z "$DEEPSEEK_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "  ❌ 未配置任何 LLM API Key，请设置 DEEPSEEK_API_KEY 或 OPENAI_API_KEY"
+          if [ -z "$DEEPSEEK_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$AGNES_API_KEY" ]; then
+            echo "  ❌ 未配置任何 LLM API Key，请设置 DEEPSEEK_API_KEY 或 OPENAI_API_KEY 或 AGNES_API_KEY"
             exit 1
           fi
           [ -n "$DEEPSEEK_API_KEY" ] && echo "  ✅ DeepSeek API Key: 已配置" || echo "  ⚪ DeepSeek API Key: 未配置"
           [ -n "$OPENAI_API_KEY" ]  && echo "  ✅ OpenAI API Key: 已配置"  || echo "  ⚪ OpenAI API Key: 未配置"
           [ -n "$ANTHROPIC_API_KEY" ] && echo "  ✅ Anthropic API Key: 已配置" || echo "  ⚪ Anthropic API Key: 未配置"
+          [ -n "$AGNES_API_KEY" ]    && echo "  ✅ Agnes API Key: 已配置"    || echo "  ⚪ Agnes API Key: 未配置"
           echo ""
 
           # ── 构建 CLI 命令 ───────────────────────────────────────────

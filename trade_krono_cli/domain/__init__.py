@@ -37,23 +37,48 @@ Domain Model — A 股量化投研系统的核心领域对象。
         build_eval_record,
     )
 """
-from __future__ import annotations
+from __future__ import annotations  # fmt: skip
 
-# ── 枚举 ───────────────────────────────────────────────────────────────────
-from trade_krono_cli.domain.types import Signal, Direction, ExperimentType
+# ── 枚举（必须在其他模块之前导入，避免循环依赖）──────────────────────────
+from trade_krono_cli.domain.types import Direction, ExperimentType, Signal
 
-# ── 基础实体 ───────────────────────────────────────────────────────────────
-from trade_krono_cli.domain.stock import Stock
+# ── 决策 ───────────────────────────────────────────────────────────────────
+from trade_krono_cli.domain.decision import InvestmentDecision
+
+# ── 评估 ───────────────────────────────────────────────────────────────────
+from trade_krono_cli.domain.evaluation import (
+    BacktestResult,
+    EvalRecord,
+    EvaluationSummary,
+    HorizonMetrics,
+)
+
+# ── 实验 ───────────────────────────────────────────────────────────────────
+from trade_krono_cli.domain.experiment import (
+    Experiment,
+    Hypothesis,
+    build_alpha_experiment,
+)
+
+# ── 工厂 ───────────────────────────────────────────────────────────────────
+from trade_krono_cli.domain.factory import (
+    build_eval_record,
+    build_investment_decision,
+    build_signal_assessment,
+)
 
 # ── 市场状态 ───────────────────────────────────────────────────────────────
 from trade_krono_cli.domain.market import MarketSnapshot
 
 # ── 预测 ───────────────────────────────────────────────────────────────────
 from trade_krono_cli.domain.prediction import (
+    KronosPrediction,
     PredictionDistribution,
     TAAnalysis,
-    KronosPrediction,
 )
+
+# ── 风险 ───────────────────────────────────────────────────────────────────
+from trade_krono_cli.domain.risk import RiskAssessment, RiskFactor
 
 # ── 信号 ───────────────────────────────────────────────────────────────────
 from trade_krono_cli.domain.signal import (
@@ -61,33 +86,8 @@ from trade_krono_cli.domain.signal import (
     SignalConflict,
 )
 
-# ── 风险 ───────────────────────────────────────────────────────────────────
-from trade_krono_cli.domain.risk import RiskAssessment, RiskFactor
-
-# ── 决策 ───────────────────────────────────────────────────────────────────
-from trade_krono_cli.domain.decision import InvestmentDecision
-
-# ── 评估 ───────────────────────────────────────────────────────────────────
-from trade_krono_cli.domain.evaluation import (
-    EvalRecord,
-    HorizonMetrics,
-    BacktestResult,
-    EvaluationSummary,
-)
-
-# ── 实验 ───────────────────────────────────────────────────────────────────
-from trade_krono_cli.domain.experiment import (
-    Hypothesis,
-    Experiment,
-    build_alpha_experiment,
-)
-
-# ── 工厂 ───────────────────────────────────────────────────────────────────
-from trade_krono_cli.domain.factory import (
-    build_signal_assessment,
-    build_investment_decision,
-    build_eval_record,
-)
+# ── 基础实体 ───────────────────────────────────────────────────────────────
+from trade_krono_cli.domain.stock import Stock
 
 # ── 统一导出 ───────────────────────────────────────────────────────────────
 __all__ = [
