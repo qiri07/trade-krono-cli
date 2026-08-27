@@ -166,7 +166,7 @@ class TestExternalRepoErrors:
         with patch("trade_krono_cli.cli._load_env"), \
              patch("trade_krono_cli.external.pin",
                    side_effect=ValueError("未知 repo: fake")):
-            result = runner.invoke(app, ["repo", "repo-pin", "fake", "abc123"])
+            result = runner.invoke(app, ["repo", "repo-pin", "--name", "fake", "--commit", "abc123"])
             assert result.exit_code != 0
             assert "未知 repo" in result.output
 
