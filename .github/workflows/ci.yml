@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════════════
+# 持续集成 — lint / type-check / test
+#
+# 触发：每次 push / PR 到 main 分支
+# ═══════════════════════════════════════════════════════
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ${{ matrix.task }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [lint, type-check, test]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 设置 uv 环境（Python 3.12）
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+
+      - name: 安装开发依赖
+        run: uv sync --dev
+
+      - name: Ruff Lint
+        if: matrix.task == 'lint'
+        run: uv run ruff check .
+
+      - name: Ruff Format Check
+        if: matrix.task == 'lint'
+        run: uv run ruff format --check .
+
+      - name: MyPy 类型检查
+        if: matrix.task == 'type-check'
+        run: uv run mypy .
+
+      - name: 运行测试（含覆盖率）
+        if: matrix.task == 'test'
+        run: uv run pytest --cov=trade_krono_cli --cov-report=xml -x
+
+      - name: 上传覆盖率报告
+        if: matrix.task == 'test' && github.event_name == 'push'
+        uses: codecov/codecov-action@v5
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false

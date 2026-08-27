@@ -1,0 +1,281 @@
+# ═══════════════════════════════════════════════════════
+# 每日定时投研分析流水线
+#
+# 触发方式：
+#   1. 定时触发：每个交易日北京时间 15:30（UTC 07:30）
+#   2. 手动触发：workflow_dispatch，可配置股票池、日期等参数
+#
+# 必要 Secrets（GitHub Settings → Secrets and variables → Actions）：
+#   DEEPSEEK_API_KEY   — DeepSeek LLM API Key
+#   OPENAI_API_KEY     — OpenAI API Key（可选，备用）
+#   ANTHROPIC_API_KEY  — Anthropic API Key（可选，备用）
+#
+# 可选 Variables（同 Secrets 路径，非敏感配置）：
+#   TICKER_LIST        — 默认要分析的股票代码，逗号分隔（如 "600519,000858"）
+#   ANALYSIS_DATE      — 分析日期（留空则使用昨天，格式 YYYY-MM-DD）
+#   MIN_CONFIDENCE     — 最低置信度阈值（默认 55.0）
+#   ALLOWED_SIGNALS    — 允许的 TA 信号（默认 BUY,HOLD）
+#   AUTO_UNIVERSE      — 是否启用全市场自动筛选（true/false，默认 false）
+#   UNIVERSE_SOURCE    — 全市场数据源（akshare/mootdx/baostock，默认 mootdx）
+#   MAX_TICKERS        — 自动筛选后最多处理股票数（留空不限）
+#   SKIP_KRONOS        — 是否跳过 Kronos 预测（true/false，默认 false）
+#   OUTPUT_LANGUAGE    — 报告语言（Chinese/English，默认 Chinese）
+#   OUTPUT_DIR         — 输出目录（默认 outputs）
+# ═══════════════════════════════════════════════════════
+
+name: daily-analysis
+
+on:
+  # ── 定时触发：交易日北京时间 15:30（A 股收盘后约 30 分钟）────────────
+  schedule:
+    - cron: '30 7 * * 1-5'
+
+  # ── 手动触发，支持自定义参数 ───────────────────────────────────────
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: '股票代码列表（逗号分隔，留空则使用环境变量 TICKER_LIST）'
+        required: false
+        default: ''
+      date:
+        description: '分析日期 YYYY-MM-DD（留空则使用昨天）'
+        required: false
+        default: ''
+      min_confidence:
+        description: '最低 TA 置信度（默认 55.0）'
+        required: false
+        default: '55.0'
+      signals:
+        description: '允许的 TA 信号（默认 BUY,HOLD）'
+        required: false
+        default: 'BUY,HOLD'
+      auto_universe:
+        description: '启用全市场自动筛选（true/false）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      universe_source:
+        description: '全市场数据源（auto_universe=true 时生效）'
+        required: false
+        default: 'mootdx'
+        type: choice
+        options:
+          - akshare
+          - mootdx
+          - baostock
+      skip_kronos:
+        description: '跳过 Kronos 预测（仅运行 TA）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      max_tickers:
+        description: '自动筛选后最多处理股票数（留空不限）'
+        required: false
+        default: ''
+      output_language:
+        description: '报告语言（Chinese / English）'
+        required: false
+        default: 'Chinese'
+
+# ── 并发控制：同一时间只运行一个分析任务 ──────────────────────────────
+concurrency:
+  group: daily-analysis
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: 投研分析
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── 随机延迟，避免固定时间对数据源的并发访问 ────────────────────
+      - name: 随机延迟启动
+        run: sleep $((RANDOM % 60))
+
+      # ── 检出代码 ─────────────────────────────────────────────────────
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      # ── 设置 uv + Python 环境 ────────────────────────────────────────
+      - name: 设置 uv 环境
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+
+      # ── 克隆外部依赖（GitHub Actions 环境无本地符号链接）──────────────
+      - name: 克隆外部依赖
+        run: |
+          rm -f external/TradingAgents-astock external/Kronos
+          mkdir -p external
+          git clone --depth 1 https://github.com/simonlin1212/TradingAgents-astock external/TradingAgents-astock
+          git clone --depth 1 https://github.com/shiyu-coder/Kronos external/Kronos
+
+      # ── 创建必要目录 ─────────────────────────────────────────────────
+      - name: 创建必要目录
+        run: |
+          mkdir -p outputs/results outputs/cache
+
+      # ── 执行投研分析 ─────────────────────────────────────────────────
+      - name: 运行投研分析流水线
+        env:
+          # ── LLM API Keys（必须至少配置一个）───────────────────────────
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # ── LLM 行为配置 ──────────────────────────────────────────────
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'deepseek' }}
+          DEEP_THINK_LLM: ${{ vars.DEEP_THINK_LLM || 'deepseek-chat' }}
+          QUICK_THINK_LLM: ${{ vars.QUICK_THINK_LLM || 'deepseek-chat' }}
+          MAX_DEBATE_ROUNDS: ${{ vars.MAX_DEBATE_ROUNDS || '1' }}
+          MAX_RISK_DISCUSS_ROUNDS: ${{ vars.MAX_RISK_DISCUSS_ROUNDS || '1' }}
+          OUTPUT_LANGUAGE: ${{ github.event.inputs.output_language || vars.OUTPUT_LANGUAGE || 'Chinese' }}
+
+          # ── Kronos 配置 ───────────────────────────────────────────────
+          KRONOS_MODEL: ${{ vars.KRONOS_MODEL || 'kronos-base' }}
+          KRONOS_TOKENIZER: ${{ vars.KRONOS_TOKENIZER || 'kronos-Tokenizer-base' }}
+          KRONOS_DEVICE: ${{ vars.KRONOS_DEVICE || 'cpu' }}
+          KRONOS_LOOKBACK: ${{ vars.KRONOS_LOOKBACK || '400' }}
+          KRONOS_PRED_LEN: ${{ vars.KRONOS_PRED_LEN || '30' }}
+          KRONOS_SAMPLE_COUNT: ${{ vars.KRONOS_SAMPLE_COUNT || '1' }}
+          KRONOS_USE_SAMPLE_CONFIDENCE: ${{ vars.KRONOS_USE_SAMPLE_CONFIDENCE || 'false' }}
+
+          # ── 过滤配置 ──────────────────────────────────────────────────
+          MIN_CONFIDENCE: ${{ github.event.inputs.min_confidence || vars.MIN_CONFIDENCE || '55.0' }}
+          ALLOWED_SIGNALS: ${{ github.event.inputs.signals || vars.ALLOWED_SIGNALS || 'BUY,HOLD' }}
+
+          # ── 数据源配置 ────────────────────────────────────────────────
+          BAOSTOCK_SLEEP_SEC: ${{ vars.BAOSTOCK_SLEEP_SEC || '1.0' }}
+
+          # ── 外部项目路径（GitHub Actions 环境默认无需修改）─────────────
+          TRADINGAGENTS_ROOT: ${{ vars.TRADINGAGENTS_ROOT || 'external/TradingAgents-astock' }}
+          KRONOS_ROOT: ${{ vars.KRONOS_ROOT || 'external/Kronos' }}
+
+          # ── 自选股列表（优先使用 workflow_dispatch 输入，其次 vars/secrets）─
+          STOCK_LIST_CONFIG: ${{ github.event.inputs.tickers || vars.TICKER_LIST || secrets.TICKER_LIST || '' }}
+        run: |
+          # ── 确定分析日期 ────────────────────────────────────────────
+          ANALYSIS_DATE="${{ github.event.inputs.date }}"
+          if [ -z "$ANALYSIS_DATE" ]; then
+            # 使用昨天的日期（北京时区）
+            ANALYSIS_DATE=$(TZ='Asia/Shanghai' date -d 'yesterday' '+%Y-%m-%d' 2>/dev/null \
+              || date -v-1d '+%Y-%m-%d' 2>/dev/null \
+              || date -d '1 day ago' '+%Y-%m-%d')
+            echo "📅 未指定日期，自动使用昨天: $ANALYSIS_DATE"
+          fi
+
+          # ── 确定股票列表 ────────────────────────────────────────────
+          TICKERS=""
+          if [ -n "$STOCK_LIST_CONFIG" ]; then
+            TICKERS="$STOCK_LIST_CONFIG"
+          fi
+
+          echo "=========================================="
+          echo "🏭 trade-krono-cli 每日投研分析"
+          echo "=========================================="
+          echo "📅 分析日期: $ANALYSIS_DATE"
+          echo "📊 股票列表: ${TICKERS:-（全市场自动筛选）}"
+          echo "🎯 最低置信度: $MIN_CONFIDENCE"
+          echo "📈 允许信号: $ALLOWED_SIGNALS"
+          echo "🔧 LLM 提供商: $LLM_PROVIDER"
+          echo ""
+
+          # ── 检查关键配置 ────────────────────────────────────────────
+          echo "【配置检查】"
+          if [ -z "$DEEPSEEK_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "  ❌ 未配置任何 LLM API Key，请设置 DEEPSEEK_API_KEY 或 OPENAI_API_KEY"
+            exit 1
+          fi
+          [ -n "$DEEPSEEK_API_KEY" ] && echo "  ✅ DeepSeek API Key: 已配置" || echo "  ⚪ DeepSeek API Key: 未配置"
+          [ -n "$OPENAI_API_KEY" ]  && echo "  ✅ OpenAI API Key: 已配置"  || echo "  ⚪ OpenAI API Key: 未配置"
+          [ -n "$ANTHROPIC_API_KEY" ] && echo "  ✅ Anthropic API Key: 已配置" || echo "  ⚪ Anthropic API Key: 未配置"
+          echo ""
+
+          # ── 构建 CLI 命令 ───────────────────────────────────────────
+          CMD="uv run trade-krono-cli run"
+          CMD="$CMD --date $ANALYSIS_DATE"
+
+          # 股票列表
+          if [ -n "$TICKERS" ]; then
+            CMD="$CMD --tickers \"$TICKERS\""
+          else
+            # 没有股票列表时，若启用了自动筛选
+            AUTO_UNIVERSE="${{ github.event.inputs.auto_universe || vars.AUTO_UNIVERSE || 'false' }}"
+            if [ "$AUTO_UNIVERSE" = "true" ]; then
+              UNIVERSE_SOURCE="${{ github.event.inputs.universe_source || vars.UNIVERSE_SOURCE || 'mootdx' }}"
+              CMD="$CMD --auto-universe --universe-source $UNIVERSE_SOURCE"
+              MAX_TICKERS="${{ github.event.inputs.max_tickers || vars.MAX_TICKERS || '' }}"
+              if [ -n "$MAX_TICKERS" ]; then
+                CMD="$CMD --max-tickers $MAX_TICKERS"
+              fi
+            else
+              echo "  ⚠️ 未配置股票列表且未启用自动筛选，请设置 TICKER_LIST 变量或使用 --auto-universe"
+              echo "  ⚠️ 跳过本次分析"
+              exit 0
+            fi
+          fi
+
+          # 置信度和信号
+          CMD="$CMD --min-confidence $MIN_CONFIDENCE --signals \"$ALLOWED_SIGNALS\""
+
+          # 可选：跳过 Kronos
+          SKIP_KRONOS="${{ github.event.inputs.skip_kronos || vars.SKIP_KRONOS || 'false' }}"
+          if [ "$SKIP_KRONOS" = "true" ]; then
+            CMD="$CMD --skip-kronos"
+            echo "  🔧 模式: 仅 TA 分析（跳过 Kronos）"
+          fi
+
+          echo "=========================================="
+          echo "🚀 执行命令:"
+          echo "  $CMD"
+          echo "=========================================="
+          echo ""
+
+          # ── 执行 ────────────────────────────────────────────────────
+          eval "$CMD"
+
+      # ── 上传分析报告和日志（无论成功失败）────────────────────────────
+      - name: 上传分析报告
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: analysis-reports-${{ github.run_number }}
+          path: |
+            outputs/results/
+            outputs/pipeline.log
+            outputs/pipeline.json
+          retention-days: 30
+
+      # ── 显示运行结果摘要 ─────────────────────────────────────────────
+      - name: 显示运行结果
+        if: always()
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "📊 分析完成"
+          echo "=========================================="
+          if [ -f "outputs/results.json" ]; then
+            echo "生成的报告:"
+            ls -la outputs/results/ 2>/dev/null || true
+            echo ""
+            echo "前 5 条结果:"
+            python3 scripts/_gh_summary.py 2>/dev/null || true
+          else
+            echo "⚠️ 未生成 results.json（可能流水线未执行或已跳过）"
+          fi
+          echo ""
+          if [ -f "outputs/pipeline.log" ]; then
+            echo "📜 最近 20 行日志:"
+            tail -20 outputs/pipeline.log
+          fi
+          echo ""
+          echo "=========================================="

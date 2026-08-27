@@ -715,7 +715,7 @@ trade-krono-cli
 │   │   └── batch_runner.py     # Async semaphore-based batch Kronos predictions
 ├── scripts/
 │   └── install.sh              # One-click install script
-├── tests/                      # Test suite (1286 tests, mypy clean)
+├── tests/                      # Test suite (1411 tests, mypy clean)
 └── external/                   # External project configs (repos.yaml + repo.lock)
 ```
 
@@ -1393,6 +1393,23 @@ When enabled (`--ta-cache-fallback`), failed TA analyses are automatically resol
 
 ## Changelog
 
+### v0.1.7 — 2026-08-27
+
+**GitHub Actions CI/CD & test coverage expansion:**
+
+- **Added `.github/workflows/daily-run.yml`**: Daily research pipeline with schedule trigger (UTC 07:30 = 15:30 Beijing time, weekdays) and manual dispatch with 9 configurable inputs (tickers, date, confidence, signals, auto-universe, skip-kronos, etc.)
+- **Added `.github/workflows/ci.yml`**: CI matrix with lint / type-check / test jobs, pytest coverage upload to Codecov
+- **Added `scripts/_gh_summary.py`**: GitHub Actions result summary script for workflow output
+- **Expanded test coverage** from 1324 → **1411 tests** (+87 new):
+  - `test_config_output.py` — `OutputConfig` defaults, merge, roundtrip (6 tests)
+  - `test_config_abnormality.py` — `AbnormalityConfig` defaults, validate, merge edge cases (14 tests)
+  - `test_config_filters.py` — `FilterConfig` validate/merge with all field combinations (22 tests)
+  - `test_prediction_distribution.py` — `compute_single_sample`, `compute_multi_sample`, `build_distribution`, `build_result_dict`, percentile logic (25 tests)
+  - `test_data_snapshot.py` — `DataSourceSnapshot`, `DataSnapshot`, `filter_kline_to_cut_date` including frozen dataclass, future-data detection, copy semantics (20 tests)
+- Updated test counts in both README.md and README_CN.md architecture diagrams
+
+---
+
 ### v0.1.6 — 2026-08-14
 
 **Bug fixes and concurrency hardening:**
@@ -1499,6 +1516,91 @@ When enabled (`--ta-cache-fallback`), failed TA analyses are automatically resol
 - Removed duplicate `@dataclass` decorator on `HorizonMetrics`
 
 **Tests:** 4 new in `test_security.py`, 2 new in `test_prediction_eval.py` — 162 total passing.
+
+---
+
+## GitHub Actions 自动化部署
+
+本项目提供两套 GitHub Actions workflow，支持每日定时自动投研分析和持续集成。
+
+### 工作流文件
+
+| 文件 | 说明 |
+|------|------|
+| `.github/workflows/daily-run.yml` | 每日投研分析流水线（定时 + 手动触发） |
+| `.github/workflows/ci.yml` | 持续集成（lint / type-check / test） |
+
+### 自动分析流水线 (`daily-run.yml`)
+
+**触发方式：**
+- **定时触发**：每个交易日北京时间 15:30（UTC 07:30）自动运行
+- **手动触发**：通过 GitHub Actions 面板手动触发，支持自定义参数
+
+**必要 Secrets**（Settings → Secrets and variables → Actions → Secrets）：
+
+| Secret 名称 | 说明 |
+|------------|------|
+| `DEEPSEEK_API_KEY` | DeepSeek LLM API Key（必须至少配置一个） |
+| `OPENAI_API_KEY` | OpenAI API Key（可选备用） |
+| `ANTHROPIC_API_KEY` | Anthropic API Key（可选备用） |
+
+**可选 Variables**（同路径下 Variables 标签页）：
+
+| Variable 名称 | 默认值 | 说明 |
+|--------------|--------|------|
+| `TICKER_LIST` | — | 默认股票代码，逗号分隔，如 `"600519,000858"` |
+| `AUTO_UNIVERSE` | `false` | 是否启用全市场自动筛选 |
+| `UNIVERSE_SOURCE` | `mootdx` | 全市场数据源（akshare/mootdx/baostock） |
+| `MAX_TICKERS` | — | 自动筛选后最多处理股票数 |
+| `MIN_CONFIDENCE` | `55.0` | 最低 TA 置信度阈值 |
+| `ALLOWED_SIGNALS` | `BUY,HOLD` | 允许的 TA 信号 |
+| `SKIP_KRONOS` | `false` | 是否跳过 Kronos 预测 |
+| `OUTPUT_LANGUAGE` | `Chinese` | 报告语言 |
+| `LLM_PROVIDER` | `deepseek` | LLM 提供商 |
+| `ANALYSIS_TIMEOUT_MINUTES` | `30` | 分析超时时间 |
+
+**配置步骤：**
+```bash
+# 1. 将仓库推送到 GitHub
+git remote add origin https://github.com/YOUR_USERNAME/trade-krono-cli.git
+git push -u origin master
+
+# 2. 在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置：
+#    - Secrets: DEEPSEEK_API_KEY
+#    - Variables: TICKER_LIST=600519,000858
+
+# 3. 在 Actions 面板查看运行状态
+```
+
+**手动触发示例：**
+在 Actions 面板选择 `daily-analysis` → `Run workflow`，可指定：
+- `tickers`: 股票代码列表
+- `date`: 分析日期（留空使用昨天）
+- `auto_universe`: 是否启用全市场筛选
+- `skip_kronos`: 是否跳过 Kronos 预测
+
+**运行结果：**
+- 分析报告上传为 GitHub Actions artifact（保留 30 天）
+- 日志和摘要在 workflow run 页面直接可见
+
+### 持续集成 (`ci.yml`)
+
+**触发方式：** push / PR 到 `main` 或 `master` 分支时自动运行
+
+**测试矩阵：**
+| Job | 内容 |
+|-----|------|
+| `lint` | ruff check + ruff format --check |
+| `type-check` | mypy 类型检查 |
+| `test` | pytest 全量测试 + 覆盖率 |
+
+### 外部依赖说明
+
+GitHub Actions 环境中无本地符号链接，workflow 会自动从 GitHub clone 外部依赖：
+- `TradingAgents-astock` → `https://github.com/simonlin1212/TradingAgents-astock`
+- `Kronos` → `https://github.com/shiyu-coder/Kronos`
+
+如需 pin 特定 commit，修改 `external/repos.yaml` 中的 `commit` 字段并提交。
 
 ---
 
