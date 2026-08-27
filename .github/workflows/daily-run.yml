@@ -22,6 +22,7 @@
 #   SKIP_KRONOS        — 是否跳过 Kronos 预测（true/false，默认 false）
 #   OUTPUT_LANGUAGE    — 报告语言（Chinese/English，默认 Chinese）
 #   OUTPUT_DIR         — 输出目录（默认 outputs）
+#   FEISHU_WEBHOOK_URL — 飞书群机器人 Webhook URL（可选，推送 CI/分析结果到飞书）
 # ═══════════════════════════════════════════════════════
 
 name: daily-analysis
@@ -283,3 +284,18 @@ jobs:
           fi
           echo ""
           echo "=========================================="
+
+      # ── 飞书通知：无论成功失败均推送 ─────────────────────────────
+      - name: 推送飞书通知
+        if: vars.FEISHU_WEBHOOK_URL != ''
+        run: |
+          STATUS="success"
+          if [ "${{ job.status }}" = "failure" ]; then STATUS="failure"; fi
+          if [ "${{ job.status }}" = "cancelled" ]; then STATUS="cancelled"; fi
+          TICKERS_DISPLAY="${TICKERS:-全市场自动筛选}"
+          uv run python scripts/feishu_notify.py daily \
+            --status "$STATUS" \
+            --date "$ANALYSIS_DATE" \
+            --tickers "$TICKERS_DISPLAY" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --url "${{ vars.FEISHU_WEBHOOK_URL }}"

@@ -1581,6 +1581,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | `LLM_PROVIDER` | `deepseek` | LLM 提供商（deepseek / openai / anthropic / minimax / agnes） |
 | `BACKEND_URL` | — | LLM 后端 API 地址（Agnes 等供应商需要配置） |
 | `ANALYSIS_TIMEOUT_MINUTES` | `30` | 分析超时时间 |
+| `FEISHU_WEBHOOK_URL` | — | 飞书群机器人 Webhook URL（可选，用于推送运行结果到飞书群） |
 
 **配置步骤：**
 ```bash
@@ -1617,7 +1618,17 @@ git push -u origin master
 | `type-check` | mypy 类型检查 |
 | `test` | pytest 全量测试 + 覆盖率 |
 
-### 外部依赖说明
+### 飞书通知（可选）
+
+在 GitHub Variables 中设置 `FEISHU_WEBHOOK_URL` 后，每次 CI 或每日分析运行结束后会自动推送结果卡片到飞书群：
+
+| 场景 | 卡片内容 |
+|------|---------|
+| **CI** | 分支、Commit、各 Job 状态（lint/type-check/test ✅/❌）、运行链接 |
+| **每日分析** | 分析日期、股票列表、Top 3 推荐（代码/信号/综合分）、运行链接 |
+
+飞书 Webhook URL 格式：`https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+> 获取方式：飞书群 → 设置 → 群机器人 → 自定义机器人 → 复制 Webhook 地址
 
 GitHub Actions 环境中无本地符号链接，workflow 会自动从 GitHub clone 外部依赖：
 - `TradingAgents-astock` → `https://github.com/simonlin1212/TradingAgents-astock`

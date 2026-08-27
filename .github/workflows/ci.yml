@@ -63,3 +63,52 @@ jobs:
         with:
           file: coverage.xml
           fail_ci_if_error: false
+
+  # ── 飞书通知：所有 Job 完成后统一发送一次 ───────────────────────────
+  notify:
+    name: 飞书通知
+    needs: check
+    if: always() && vars.FEISHU_WEBHOOK_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 判断整体状态
+        id: status
+        run: |
+          if needs.check.result == 'success'; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          elif needs.check.result == 'cancelled'; then
+            echo "status=cancelled" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 汇总 Job 结果
+        id: jobs
+        run: |
+          parts=()
+          for task in lint type-check test; do
+            r="${{ needs.check.result }}"
+            if [ "$r" = "success" ]; then
+              parts+=("${task}✅")
+            elif [ "$r" = "cancelled" ]; then
+              parts+=("${task}⏹️")
+            else
+              parts+=("${task}❌")
+            fi
+          done
+          echo "jobs=$(IFS='  '; echo "${parts[*]}")" >> $GITHUB_OUTPUT
+
+      - name: 推送飞书通知
+        if: vars.FEISHU_WEBHOOK_URL != ''
+        run: |
+          uv run python scripts/feishu_notify.py ci \
+            --status ${{ steps.status.outputs.status }} \
+            --branch "${{ github.ref_name }}" \
+            --commit "${{ github.sha }}" \
+            --jobs "${{ steps.jobs.outputs.jobs }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --url "${{ vars.FEISHU_WEBHOOK_URL }}"
