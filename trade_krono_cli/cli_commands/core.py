@@ -276,6 +276,11 @@ def run(
         help="全市场数据源: akshare / mootdx / baostock",
         rich_help_panel="市场范围",
     ),
+    max_tickers: int = typer.Option(
+        None, "--max-tickers",
+        help="自动筛选后最多处理的股票数量（用于测试/快速验证）",
+        rich_help_panel="市场范围",
+    ),
 ) -> None:
     """🔥 一键运行完整流水线（TA 与 Kronos 并行）。
 
@@ -323,6 +328,11 @@ def run(
         console.print(
             f"[green]✅ 筛选完成: {len(tk_list)} 只股票进入候选池[/green]"
         )
+        if max_tickers is not None and max_tickers < len(tk_list):
+            tk_list = tk_list[:max_tickers]
+            console.print(
+                f"[dim]   受 --max-tickers={max_tickers} 限制，取前 {len(tk_list)} 只[/dim]"
+            )
     else:
         tk_list = _load_tickers(tickers, stock_file)
         if not tk_list:
