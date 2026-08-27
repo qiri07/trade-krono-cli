@@ -189,7 +189,10 @@ class MootDxUniverseProvider(UniverseProvider):
             return []
 
         tickets: list[UniverseTicket] = []
-        batch_size = 500
+        # mootdx quotes API 每请求最多返回 80 行，批量过大会被静默截断。
+        # 使用 20 作为安全批次大小，并加入间隔以避免被服务端限流。
+        batch_size = 20
+        import time as _time
         for batch_start in range(0, len(raw_codes), batch_size):
             batch = raw_codes[batch_start:batch_start + batch_size]
             # mootdx 需要纯数字代码（无 sh./sz. 前缀）
@@ -208,8 +211,15 @@ class MootDxUniverseProvider(UniverseProvider):
                                 price=price,
                                 source=self.name,
                             ))
+                fetched = len(df) if df is not None and not df.empty else 0
+                logger.debug(
+                    f"  mootdx batch [{batch_start}:{batch_start+len(batch)}] "
+                    f"→ {fetched} 行"
+                )
             except Exception as e:
                 logger.warning(f"mootdx 批量获取失败 (batch {batch_start}): {e}")
+            # 批次间隔，避免被服务端限流
+            _time.sleep(0.3)
 
         logger.info(f"📡 MootDx 全市场获取: {len(tickets)} 只 A 股")
         return tickets

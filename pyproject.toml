@@ -7,7 +7,7 @@ name = "trade-krono-cli"
 version = "0.1.0"
 description = "A股投研+预测一体化流水线 — TradingAgents + Kronos 并行分析"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 license = {text = "MIT"}
 authors = [
     {name = "trade-krono-cli"}
@@ -38,11 +38,11 @@ kronos = [
 
 # ── 数据源扩展（可选，按需安装）────────────────────────────────────
 akshare = ["akshare>=1.10.0"]
-mootdx = ["mootdx>=1.60.0"]
+mootdx = ["mootdx>=0.11.0"]
 tushare = ["tushare>=1.2.0"]
 data = [
     "akshare>=1.10.0",
-    "mootdx>=1.60.0",
+    "mootdx>=0.11.0",
     "tushare>=1.2.0",
 ]
 
@@ -56,7 +56,7 @@ dev = [
 full = [
     "torch>=2.0.0",
     "akshare>=1.10.0",
-    "mootdx>=1.60.0",
+    "mootdx>=0.11.0",
     "tushare>=1.2.0",
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -71,3 +71,8 @@ include = ["trade_krono_cli*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.uv]
+environments = [
+    "sys_platform == 'linux'",
+]
