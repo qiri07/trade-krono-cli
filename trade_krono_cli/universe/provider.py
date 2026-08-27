@@ -1,7 +1,7 @@
 """
 Universe Provider — 全市场股票列表获取接口。
 
-定义 UniverseProvider ABC 以及基于 akshare 的实现。
+定义 UniverseProvider ABC 以及基于 akshare / mootdx 的实现。
 """
 from __future__ import annotations
 
@@ -138,10 +138,85 @@ class AkshareUniverseProvider(UniverseProvider):
             return None
 
 
+# ── MootDx Provider ───────────────────────────────────────────────────────────
+
+class MootDxUniverseProvider(UniverseProvider):
+    """
+    基于 baostock 获取股票列表 + mootdx 获取实时行情的 Provider。
+
+    依赖：baostock（股票列表）、mootdx（实时报价）。
+    无需 API Key，完全免费。
+    """
+
+    name = "mootdx"
+
+    def get_universe(self) -> list[UniverseTicket]:
+        # 1. 从 baostock 获取 A 股代码列表
+        try:
+            import baostock as bs  # type: ignore
+            lg = bs.login()
+            if lg.error_code != "0":
+                logger.error(f"baostock login failed: {lg.error_msg}")
+                bs.logout()
+                return []
+
+            rs = bs.query_all_stock(day="2025-08-27")
+            raw_codes: list[str] = []
+            while rs.next():
+                row = rs.get_row_data()
+                code = row[0]  # sh.600519 / sz.000858
+                # 排除指数（sh.000xxx, sz.399xxx）
+                if code.startswith("sh.00") or code.startswith("sz.399"):
+                    continue
+                raw_codes.append(code)
+
+            bs.logout()
+            logger.info(f"📋 Baostock 获取到 {len(raw_codes)} 只 A 股代码")
+        except Exception as e:
+            logger.error(f"baostock 获取失败: {e}")
+            return []
+
+        # 2. 用 mootdx 批量获取实时行情
+        try:
+            from mootdx.quotes import Quotes  # type: ignore
+            q = Quotes.factory(market="std")
+        except Exception as e:
+            logger.error(f"mootdx 初始化失败: {e}")
+            return []
+
+        tickets: list[UniverseTicket] = []
+        batch_size = 500
+        for batch_start in range(0, len(raw_codes), batch_size):
+            batch = raw_codes[batch_start:batch_start + batch_size]
+            # mootdx 需要纯数字代码（无 sh./sz. 前缀）
+            plain_codes = [c.split(".")[-1] for c in batch]
+            try:
+                df = q.quotes(symbol=plain_codes)
+                if df is not None and not df.empty:
+                    for _, row in df.iterrows():
+                        code = str(row.get("code", ""))
+                        market = int(row.get("market", 0))
+                        price = float(row.get("price", 0))
+                        if price > 0:
+                            ticker = f"{'sh' if market == 1 else 'sz'}.{code}"
+                            tickets.append(UniverseTicket(
+                                ticker=ticker,
+                                price=price,
+                                source=self.name,
+                            ))
+            except Exception as e:
+                logger.warning(f"mootdx 批量获取失败 (batch {batch_start}): {e}")
+
+        logger.info(f"📡 MootDx 全市场获取: {len(tickets)} 只 A 股")
+        return tickets
+
+
 # ── 工厂函数 ──────────────────────────────────────────────────────────────────
 
 _PROVIDER_REGISTRY: dict[str, type[UniverseProvider]] = {
     "akshare": AkshareUniverseProvider,
+    "mootdx": MootDxUniverseProvider,
+    # 其他 provider 可通过 _PROVIDER_REGISTRY["name"] = ClassName 注册
 }
 
 

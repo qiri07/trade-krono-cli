@@ -266,25 +266,28 @@ def run(
         help="启用 TA 缓存回退（需配合 --degrade-mode ta_cache_fallback）",
         rich_help_panel="降级策略",
     ),
+    auto_universe: bool = typer.Option(
+        False, "--auto-universe",
+        help="自动发现全市场 A 股并筛选（忽略 --tickers）",
+        rich_help_panel="市场范围",
+    ),
+    universe_source: str = typer.Option(
+        "akshare", "--universe-source",
+        help="全市场数据源: akshare / mootdx / baostock",
+        rich_help_panel="市场范围",
+    ),
 ) -> None:
     """🔥 一键运行完整流水线（TA 与 Kronos 并行）。
 
     --streaming 时启用流式模式：数据拉取与模型推理重叠执行，
     总耗时从 T_fetch + T_compute 缩短为 max(T_fetch, T_compute)。
+
+    --auto-universe 时自动从全市场 A 股中筛选候选股票，
+    忽略 --tickers / --stock-file 参数。
     """
     _load_env()
 
     from trade_krono_cli.pipeline import QuantPipeline
-
-    tk_list = _load_tickers(tickers, stock_file)
-    if not tk_list:
-        console.print(
-            "[red]❌ 股票列表为空"
-            "（请通过 --tickers 或 --stock-file 提供）[/red]"
-        )
-        raise typer.Exit(1)
-
-    signals_tuple = tuple(x.strip().upper() for x in signals.split(","))
 
     # 解析过滤配置（CLI 参数优先，其次 fallback 到 Settings 默认）
     from trade_krono_cli.pipeline_config import _parse_comma_list, _parse_range
@@ -293,6 +296,43 @@ def run(
     ind_blacklist = _parse_comma_list(industry_blacklist) if industry_blacklist else None
     pe_r = _parse_range(pe_range) if pe_range else None
     pb_r = _parse_range(pb_range) if pb_range else None
+
+    # ── 股票列表来源 ───────────────────────────────────────────────
+    if auto_universe:
+        console.print("[bold cyan]🔍 自动发现全市场 A 股 ...[/bold cyan]")
+        from trade_krono_cli.universe.engine import UniverseEngine
+        from trade_krono_cli.configs.filters import FilterConfig
+
+        fc_overrides: dict = {}
+        if mc_range: fc_overrides["market_cap_range"] = mc_range
+        if ind_whitelist: fc_overrides["industry_whitelist"] = ind_whitelist
+        if ind_blacklist: fc_overrides["industry_blacklist"] = ind_blacklist
+        if not exclude_st: fc_overrides["exclude_st"] = False
+
+        fc = FilterConfig(**fc_overrides)
+        engine = UniverseEngine.from_config(fc, universe_source=universe_source)
+        console.print(
+            f"   数据源: {universe_source} | "
+            f"过滤: exclude_st={fc.exclude_st}, "
+            f"低价阈值={fc.low_price_threshold}元"
+        )
+        tk_list = engine.run(eval_date=date)
+        if not tk_list:
+            console.print("[red]❌ 全市场筛选后无候选股票[/red]")
+            raise typer.Exit(1)
+        console.print(
+            f"[green]✅ 筛选完成: {len(tk_list)} 只股票进入候选池[/green]"
+        )
+    else:
+        tk_list = _load_tickers(tickers, stock_file)
+        if not tk_list:
+            console.print(
+                "[red]❌ 股票列表为空"
+                "（请通过 --tickers 或 --stock-file 提供）[/red]"
+            )
+            raise typer.Exit(1)
+
+    signals_tuple = tuple(x.strip().upper() for x in signals.split(","))
 
     # 构建覆盖配置的 override dict
     filter_overrides: dict = {}
