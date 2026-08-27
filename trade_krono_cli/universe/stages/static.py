@@ -30,12 +30,16 @@ class StaticFilterStage(FilterStage):
         skip_new_stock: bool = True,
         new_stock_min_days: int = 60,
         batch_size: int = 200,
+        exclude_low_price: bool = True,
+        low_price_threshold: float = 3.0,
     ):
         self.exclude_st = exclude_st
         self.skip_suspended = skip_suspended
         self.skip_new_stock = skip_new_stock
         self.new_stock_min_days = new_stock_min_days
         self.batch_size = batch_size
+        self.exclude_low_price = exclude_low_price
+        self.low_price_threshold = low_price_threshold
 
     def filter(self, tickets: list[UniverseTicket]) -> list[UniverseTicket]:
         if not tickets:
@@ -82,10 +86,29 @@ class StaticFilterStage(FilterStage):
                 if blocked_flags & flag_set:
                     rejected_count += 1
                     continue
+                # 低价股过滤
+                if self.exclude_low_price and ticket.price is not None:
+                    if ticket.price < self.low_price_threshold:
+                        rejected_count += 1
+                        continue
                 kept.append(ticket)
 
         logger.info(
             f"📋 Static stage: {len(tickets)} → {len(kept)} "
-            f"(排除 {rejected_count} 只: ST/停牌/次新)"
+            f"(排除 {rejected_count} 只: ST/停牌/次新/低价)"
         )
+
+        # 低价股过滤（独立于 precheck，确保始终生效）
+        if self.exclude_low_price:
+            pre_lp = len(kept)
+            kept = [
+                t for t in kept
+                if t.price is None or t.price >= self.low_price_threshold
+            ]
+            rejected_count += pre_lp - len(kept)
+            logger.info(
+                f"📋 Static stage low-price: {pre_lp} → {len(kept)} "
+                f"(排除 {pre_lp - len(kept)} 只 < {self.low_price_threshold}元)"
+            )
+
         return kept

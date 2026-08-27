@@ -7,17 +7,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from trade_krono_cli.configs.filters import FilterConfig
+from trade_krono_cli.stock_filter import MinValueRule, MaxValueRule
 from trade_krono_cli.universe.engine import UniverseEngine, get_universe
 from trade_krono_cli.universe.provider import (
+    AkshareUniverseProvider,
     UniverseProvider,
     UniverseTicket,
-    AkshareUniverseProvider,
     get_universe_provider,
 )
-from trade_krono_cli.universe.stages.static import StaticFilterStage
-from trade_krono_cli.universe.stages.fundamental import FundamentalFilterStage
 from trade_krono_cli.universe.stages.factor import FactorFilterStage
-from trade_krono_cli.configs.filters import FilterConfig
+from trade_krono_cli.universe.stages.fundamental import FundamentalFilterStage
+from trade_krono_cli.universe.stages.rules import FilterRulesStage
+from trade_krono_cli.universe.stages.static import StaticFilterStage
 
 
 # ═══════════════════════════════════════════════════════
@@ -85,6 +87,33 @@ class TestAkshareUniverseProvider:
         p = AkshareUniverseProvider()
         assert p.health_check() is False
 
+    @patch.object(AkshareUniverseProvider, "get_universe")
+    def test_health_check_exception(self, mock_get):
+        mock_get.side_effect = RuntimeError("network down")
+        p = AkshareUniverseProvider()
+        assert p.health_check() is False
+
+    def test_get_universe_import_error(self):
+        """akshare 未安装时返回空列表。"""
+        import sys
+        with pytest.MonkeyPatch().context() as mp:
+            mp.delitem(sys.modules, "akshare", raising=False)
+            p = AkshareUniverseProvider()
+            result = p.get_universe()
+            assert result == []
+
+    def test_get_universe_runtime_error(self):
+        """akshare 抛出异常时返回空列表。"""
+        import sys
+        import types
+        fake_ak = types.ModuleType("akshare")
+        fake_ak.stock_zh_a_spot_em = lambda: (_ for _ in []).throw(RuntimeError("timeout"))
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setitem(sys.modules, "akshare", fake_ak)
+            p = AkshareUniverseProvider()
+            result = p.get_universe()
+            assert result == []
+
 
 class TestGetUniverseProvider:
     def test_akshare(self):
@@ -133,6 +162,45 @@ class TestStaticFilterStage:
         tickets = _make_tickets(5)
         result = stage.filter(tickets)
         assert len(result) == 5
+
+    def test_exclude_low_price(self):
+        """低价股（price < threshold）被排除。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", price=2.0),
+            UniverseTicket(ticker="sh.600002", price=50.0),
+            UniverseTicket(ticker="sh.600003", price=1.5),
+            UniverseTicket(ticker="sh.600004", price=None),  # None 不拦截
+        ]
+        stage = StaticFilterStage(
+            exclude_st=False, skip_suspended=False, skip_new_stock=False,
+            exclude_low_price=True, low_price_threshold=3.0,
+        )
+        with patch(
+            "trade_krono_cli.universe.stages.static.precheck_stock_status"
+        ) as mock_precheck:
+            mock_precheck.side_effect = Exception("mock error")
+            result = stage.filter(tickets)
+        # precheck fails, but low-price filter still applies
+        assert len(result) == 2
+        assert result[0].ticker == "sh.600002"
+        assert result[1].ticker == "sh.600004"
+
+    def test_exclude_low_price_disabled(self):
+        """exclude_low_price=False 时不过滤低价股。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", price=2.0),
+            UniverseTicket(ticker="sh.600002", price=50.0),
+        ]
+        stage = StaticFilterStage(
+            exclude_st=False, skip_suspended=False, skip_new_stock=False,
+            exclude_low_price=False,
+        )
+        with patch(
+            "trade_krono_cli.universe.stages.static.precheck_stock_status"
+        ) as mock_precheck:
+            mock_precheck.return_value = {}
+            result = stage.filter(tickets)
+        assert len(result) == 2
 
 
 class TestFundamentalFilterStage:
@@ -186,6 +254,28 @@ class TestFundamentalFilterStage:
         tickets = _make_tickets(3)
         result = stage.filter(tickets)
         assert len(result) == 3
+
+    def test_min_pb_filter(self):
+        """PB < min_pb 的股票被排除（资不抵债风险）。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", pb=0.5, market_cap=100.0),
+            UniverseTicket(ticker="sh.600002", pb=1.5, market_cap=200.0),
+            UniverseTicket(ticker="sh.600003", pb=3.0, market_cap=300.0),
+        ]
+        stage = FundamentalFilterStage(min_pb=1.0)
+        result = stage.filter(tickets)
+        assert len(result) == 2
+        assert all(t.ticker != "sh.600001" for t in result)
+
+    def test_min_pb_none_ignores(self):
+        """min_pb=None 时不做 PB 下限过滤。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", pb=0.3, market_cap=100.0),
+            UniverseTicket(ticker="sh.600002", pb=2.0, market_cap=200.0),
+        ]
+        stage = FundamentalFilterStage(min_pb=None)
+        result = stage.filter(tickets)
+        assert len(result) == 2
 
 
 class TestFactorFilterStage:
@@ -291,6 +381,17 @@ class TestUniverseEngine:
         assert "fundamental" in names
         assert "factor" in names
 
+    def test_stage_summary_with_rules(self):
+        """含 filter_rules 时 stages 包含 rules。"""
+        from trade_krono_cli.stock_filter import MinValueRule
+        fc = FilterConfig(
+            universe_source="akshare",
+            filter_rules=[MinValueRule("price", 3.0)],
+        )
+        engine = UniverseEngine.from_config(fc)
+        names = [s["name"] for s in engine.stage_summary()]
+        assert "rules" in names
+
     def test_cache_key_deterministic(self):
         mock_provider = MagicMock(spec=UniverseProvider)
         mock_provider.name = "mock"
@@ -331,3 +432,67 @@ class TestGetUniverse:
             tickers = get_universe(fc, universe_source="mock", eval_date="2026-08-13")
         assert len(tickers) == 3
         assert all(isinstance(t, str) for t in tickers)
+
+
+class TestFilterRulesStage:
+    def test_empty_input(self):
+        stage = FilterRulesStage()
+        assert stage.filter([]) == []
+
+    def test_no_rules(self):
+        """无规则时所有 tickets 通过。"""
+        stage = FilterRulesStage(rules=[])
+        tickets = [
+            UniverseTicket(ticker="sh.600001", price=2.0),
+            UniverseTicket(ticker="sh.600002", price=50.0),
+        ]
+        assert len(stage.filter(tickets)) == 2
+
+    def test_min_price_rule(self):
+        """price >= 5.0 的规则。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", price=2.0),
+            UniverseTicket(ticker="sh.600002", price=50.0),
+            UniverseTicket(ticker="sh.600003", price=5.0),
+        ]
+        rules = [MinValueRule("price", 5.0)]
+        stage = FilterRulesStage(rules=rules)
+        result = stage.filter(tickets)
+        assert len(result) == 2
+        assert result[0].ticker == "sh.600002"
+        assert result[1].ticker == "sh.600003"
+
+    def test_max_pe_rule(self):
+        """pe <= 50 的规则（PE 别名映射）。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", pe=10.0),
+            UniverseTicket(ticker="sh.600002", pe=80.0),
+            UniverseTicket(ticker="sh.600003", pe=50.0),
+        ]
+        rules = [MaxValueRule("pe", 50.0)]
+        stage = FilterRulesStage(rules=rules)
+        result = stage.filter(tickets)
+        assert len(result) == 2
+
+    def test_none_field_skips_rule(self):
+        """price=None 时跳过依赖 price 的规则。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", price=None),
+            UniverseTicket(ticker="sh.600002", price=50.0),
+        ]
+        rules = [MinValueRule("price", 5.0)]
+        stage = FilterRulesStage(rules=rules)
+        result = stage.filter(tickets)
+        assert len(result) == 2
+
+    def test_market_cap_billion_alias(self):
+        """market_cap_billion 别名映射到 market_cap。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", market_cap=10.0),
+            UniverseTicket(ticker="sh.600002", market_cap=100.0),
+        ]
+        rules = [MinValueRule("market_cap_billion", 50.0)]
+        stage = FilterRulesStage(rules=rules)
+        result = stage.filter(tickets)
+        assert len(result) == 1
+        assert result[0].ticker == "sh.600002"

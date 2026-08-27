@@ -22,6 +22,7 @@ class FundamentalFilterStage(FilterStage):
       - market_cap_range: 总市值 [low, high] 亿元
       - pe_range: PE(TTM) [low, high]
       - pb_range: PB [low, high]
+      - min_pb: 最低市净率（PB < min_pb 视为资不抵债风险）
       - industry_whitelist: 行业白名单（精确匹配）
       - industry_blacklist: 行业黑名单（精确匹配）
     """
@@ -33,12 +34,14 @@ class FundamentalFilterStage(FilterStage):
         market_cap_range: Optional[tuple[float, float]] = None,
         pe_range: Optional[tuple[float, float]] = None,
         pb_range: Optional[tuple[float, float]] = None,
-        industry_whitelist: list[str] = None,
-        industry_blacklist: list[str] = None,
+        min_pb: Optional[float] = None,
+        industry_whitelist: list[str] | None = None,
+        industry_blacklist: list[str] | None = None,
     ):
         self.market_cap_range = market_cap_range
         self.pe_range = pe_range
         self.pb_range = pb_range
+        self.min_pb = min_pb
         self.industry_whitelist = industry_whitelist or []
         self.industry_blacklist = industry_blacklist or []
 
@@ -66,6 +69,11 @@ class FundamentalFilterStage(FilterStage):
             if self.pb_range and t.pb is not None:
                 low, high = self.pb_range
                 if not (low <= t.pb <= high):
+                    continue
+
+            # ── 最低 PB（资不抵债风险过滤）───────────────────────
+            if self.min_pb is not None and t.pb is not None:
+                if t.pb < self.min_pb:
                     continue
 
             # ── 行业过滤（当前 tickets 暂无 industry 字段，

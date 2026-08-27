@@ -13,7 +13,17 @@ class FilterConfig:
     min_confidence: float = 55.0
     allowed_signals: tuple[str, ...] = field(default=("BUY", "HOLD"))
 
-    # ── 股票基本面过滤 ────────────────────────────────────────
+    # ── 前置市场范围过滤（UniverseEngine）────────────────
+    exclude_st: bool = True
+    """是否排除 ST / *ST 股票。"""
+    exclude_low_price: bool = True
+    """是否排除低价股（股价低于阈值）。"""
+    low_price_threshold: float = 3.0
+    """低价股阈值（元），低于此价的股票被排除。"""
+    min_pb: Optional[float] = None
+    """最低市净率，PB 低于此值视为资不抵债风险，默认不过滤。"""
+
+    # ── 基本面过滤 ────────────────────────────────────────
     market_cap_range: Optional[tuple[float, float]] = None
     industry_whitelist: list[str] = field(default_factory=list)
     industry_blacklist: list[str] = field(default_factory=list)
@@ -22,8 +32,10 @@ class FilterConfig:
     max_risk_score: Optional[float] = None
     min_volume_ratio: Optional[float] = None
     min_turnover_rate: Optional[float] = None
-    exclude_st: bool = True
+
+    # ── 自定义规则（应用于 Universe 和 StockFilter）────────
     filter_rules: list[FilterRule] = field(default_factory=list)
+
     universe_source: str = "akshare"
     """全市场数据源：akshare / baostock / mootdx / tushare。"""
 
@@ -40,4 +52,12 @@ class FilterConfig:
             )
         if not self.allowed_signals:
             errors.append("filter.allowed_signals 不能为空")
+        if self.exclude_low_price and self.low_price_threshold <= 0:
+            errors.append(
+                f"filter.low_price_threshold={self.low_price_threshold} 必须 > 0"
+            )
+        if self.min_pb is not None and self.min_pb < 0:
+            errors.append(
+                f"filter.min_pb={self.min_pb} 必须 >= 0"
+            )
         return errors

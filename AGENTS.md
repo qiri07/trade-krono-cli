@@ -64,6 +64,16 @@ trade_krono_cli/
 │   ├── walkforward.py    # Walk-Forward Runs 表读写
 │   └── experiments.py    # Experiments 表读写
 
+├── universe/             # 前置股票池过滤引擎
+│   ├── provider.py       # UniverseProvider ABC + AkshareUniverseProvider
+│   ├── engine.py         # UniverseEngine（多阶段管道编排）
+│   └── stages/           # 过滤阶段
+│       ├── __init__.py   # FilterStage ABC
+│       ├── static.py     # ST/停牌/次新/低价股静态过滤
+│       ├── fundamental.py # PE/PB/市值/行业基本面过滤
+│       ├── factor.py     # 量比/换手率流动性过滤
+│       └── rules.py      # 自定义规则链过滤（FilterRulesStage）
+
 external/TradingAgents-astock | external/Kronos  # 符号链接，gitignore
 tests/conftest.py            # 共享 fixture（make_mock_settings）+ clear_all_globals hook
 outputs/                     # 运行时产物（gitignore）
@@ -72,11 +82,14 @@ outputs/                     # 运行时产物（gitignore）
 ### 核心数据流
 ```
 [tickers + date]
-  → [UniverseEngine]（可选自动发现）
-  → [AbnormalStock Precheck]（退市/停牌/次新/K线不完整过滤）
+  → [UniverseEngine]（可选自动发现，多阶段过滤）
+       ├─ StaticFilterStage    → 排除 ST / 停牌 / 次新 / 低价股
+       ├─ FundamentalFilterStage → 排除 PE/PB/市值异常（含 min_pb 资不抵债过滤）
+       ├─ FilterRulesStage      → 应用自定义规则链（filter_rules）
+       └─ FactorFilterStage     → 排除低流动性
   → [DataProviders]（baostock/akshare/mootdx/tushare 主备降级）
   → [并行执行] ThreadPoolExecutor(max_workers=2)：TA 分析 + Kronos 预测
-  → [StockFilter]（市值/行业/PE-PB/风险分/异常标记过滤）
+  → [StockFilter]（后验：置信度/信号/风险分过滤）
   → [merge_results]（TA + Kronos 融合打分，含 T+1 约束）
   → [InvestmentCommittee]（委员会审议 Bull/Bear Case）
   → [ResearchDB]（写入 Job/TA/Kronos/Decision/Committee）

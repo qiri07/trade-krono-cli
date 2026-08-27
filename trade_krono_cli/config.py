@@ -141,6 +141,19 @@ class Settings:
         default_factory=lambda: os.getenv("FILTER_EXCLUDE_ST", "true").lower() == "true"
     )
 
+    filter_exclude_low_price: bool = field(
+        default_factory=lambda: os.getenv("FILTER_EXCLUDE_LOW_PRICE", "true").lower() == "true"
+    )
+    """是否排除低价股（股价低于阈值）。"""
+    filter_low_price_threshold: str = field(
+        default_factory=lambda: os.getenv("FILTER_LOW_PRICE_THRESHOLD", "3.0")
+    )
+    """低价股阈值（元），低于此价被排除。"""
+    filter_min_pb: str = field(
+        default_factory=lambda: os.getenv("FILTER_MIN_PB", "")
+    )
+    """最低市净率，PB 低于此值视为高风险（空 = 不过滤）。"""
+
     # ── 异常股票处理配置 ──────────────────────────────────────
     filter_skip_suspended: bool = field(
         default_factory=lambda: os.getenv("FILTER_SKIP_SUSPENDED", "true").lower() == "true"

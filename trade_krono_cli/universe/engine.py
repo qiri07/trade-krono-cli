@@ -35,6 +35,7 @@ from trade_krono_cli.universe.provider import (
 from trade_krono_cli.universe.stages.static import StaticFilterStage
 from trade_krono_cli.universe.stages.fundamental import FundamentalFilterStage
 from trade_krono_cli.universe.stages.factor import FactorFilterStage
+from trade_krono_cli.universe.stages.rules import FilterRulesStage
 
 
 # ── 缓存路径 ──────────────────────────────────────────────────────────────────
@@ -106,6 +107,8 @@ class UniverseEngine:
             skip_suspended=True,
             skip_new_stock=abnormality.skip_new_stock,
             new_stock_min_days=abnormality.new_stock_min_days,
+            exclude_low_price=filter_config.exclude_low_price,
+            low_price_threshold=filter_config.low_price_threshold,
         ))
 
         # Stage 2: 基本面过滤
@@ -113,9 +116,14 @@ class UniverseEngine:
             market_cap_range=filter_config.market_cap_range,
             pe_range=filter_config.pe_range,
             pb_range=filter_config.pb_range,
+            min_pb=filter_config.min_pb,
             industry_whitelist=filter_config.industry_whitelist,
             industry_blacklist=filter_config.industry_blacklist,
         ))
+
+        # Stage 2.5: 自定义规则过滤（filter_rules）
+        if filter_config.filter_rules:
+            stages.append(FilterRulesStage(rules=filter_config.filter_rules))
 
         # Stage 3: 因子过滤（流动性）
         stages.append(FactorFilterStage(
