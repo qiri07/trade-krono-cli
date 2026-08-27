@@ -38,8 +38,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: 'uv.lock'
 
-      - name: 安装开发依赖
-        run: uv sync --dev
+      - name: 安装开发依赖（含数据源扩展）
+        run: uv sync --dev --extra data
 
       - name: Ruff Lint
         if: matrix.task == 'lint'
