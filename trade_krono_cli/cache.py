@@ -123,8 +123,8 @@ class Cache:
             return None
         try:
             return pd.read_pickle(BytesIO(data))
-        except ModuleNotFoundError:
-            # pyarrow 未安装时，旧版 pandas pickle 兼容回退
+        except (ModuleNotFoundError, AttributeError, TypeError):
+            # pyarrow 未安装或旧版 pandas pickle 兼容回退
             import pickle
             return pickle.loads(data)
 
@@ -325,10 +325,17 @@ class Cache:
         if not valid:
             return None
 
-        # 合并连续区间：取最早 start 和最早 end
-        # （K 线缓存通常是连续段，此处简化为直接取 min/max）
-        start_s = min(r[0] for r in valid)
-        end_s = max(r[1] for r in valid)
+        # 合并连续区间：对不重叠区间做归并，避免空洞区间被误判为覆盖
+        valid_sorted = sorted(valid, key=lambda r: r[0])
+        merged: list[tuple[str, str]] = [valid_sorted[0]]
+        for s, e in valid_sorted[1:]:
+            if s <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+            else:
+                merged.append((s, e))
+        # 返回整体覆盖范围（用于快速判断）
+        start_s = merged[0][0]
+        end_s = merged[-1][1]
         return (start_s, end_s)
 
     def clear_all(self) -> int:

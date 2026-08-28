@@ -24,12 +24,14 @@ def clear_all_globals() -> None:
       - kronos_runner._KRONOS_IMPORTED     — Kronos 懒加载标志
       - kronos_session._cache  — KronosSession 进程级单例缓存
       - ta_session._cache      — TASession 进程级单例缓存
+      - retry_policy._failure_store — FailureStore 单例
     """
     from trade_krono_cli.cache import clear_cache_singleton
     from trade_krono_cli.config import clear_settings
     from trade_krono_cli.data import clear_baostock_globals
     from trade_krono_cli.kronos_runner import clear_kronos_imported
     from trade_krono_cli.research_db import clear_research_singleton
+    from trade_krono_cli.retry_policy import clear_failure_store_singleton
     from trade_krono_cli.ta_runner import clear_tradingagents_imported
 
     clear_settings()
@@ -38,6 +40,7 @@ def clear_all_globals() -> None:
     clear_baostock_globals()
     clear_tradingagents_imported()
     clear_kronos_imported()
+    clear_failure_store_singleton()
     from trade_krono_cli.models.kronos_session import KronosSession
     from trade_krono_cli.models.ta_session import TASession
 

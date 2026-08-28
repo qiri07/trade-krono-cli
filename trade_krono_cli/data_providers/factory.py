@@ -145,8 +145,25 @@ class DataProviderFactory:
         -------
         KlineData | None
         """
-        if not self._try_kline_support(ticker, start_date, end_date, frequency, adjustflag):
-            return None
+        for name in self.provider_chain:
+            provider = self.get_provider(name)
+            if provider is None:
+                continue
+            if not provider.supports_kline:
+                logger.debug(f"{name}: 不支持 K 线，跳过")
+                continue
+            if not provider.health_check():
+                logger.debug(f"{name}: 健康检查未通过，跳过")
+                continue
+            try:
+                data = provider.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
+                if data is not None and not data.is_empty:
+                    logger.info(f"✅ K 线获取成功: {ticker} ← {name} ({len(data.timestamps)} 条)")
+                    return data
+            except Exception as e:
+                logger.warning(f"{name} K 线拉取异常 {ticker}: {str(e)[:100]}")
+                continue
+        logger.warning(f"❌ 所有 Provider 均无法获取 K 线: {ticker}")
         return None
 
     def _try_kline_support(

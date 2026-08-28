@@ -185,21 +185,29 @@ def fetch_kline(
     df = pd.DataFrame(rows, columns=rs.fields)
     df = df.dropna(subset=["close"])
 
+    # 使用 rs.fields 动态映射列名，避免硬编码索引依赖
+    _col_map = {c: i for i, c in enumerate(rs.fields)}
+    _date_col = rs.fields[_col_map.get("date", 0)]
+    _open_col = rs.fields[_col_map.get("open", 1)]
+    _high_col = rs.fields[_col_map.get("high", 2)]
+    _low_col = rs.fields[_col_map.get("low", 3)]
+    _close_col = rs.fields[_col_map.get("close", 4)]
+    _volume_col = rs.fields[_col_map.get("volume", 5)]
+    _amount_col = rs.fields[_col_map.get("amount", 6)]
+
     out = pd.DataFrame(
         {
-            "timestamps": pd.to_datetime(df["date"]),
-            "open": df["open"].astype(float),
-            "high": df["high"].astype(float),
-            "low": df["low"].astype(float),
-            "close": df["close"].astype(float),
-            "volume": df["volume"].astype(float),
-            "amount": df["amount"].astype(float),
+            "timestamps": pd.to_datetime(df[_date_col]),
+            "open": df[_open_col].astype(float),
+            "high": df[_high_col].astype(float),
+            "low": df[_low_col].astype(float),
+            "close": df[_close_col].astype(float),
+            "volume": df[_volume_col].astype(float),
+            "amount": df[_amount_col].astype(float),
         }
     ).reset_index(drop=True)
 
     # 写缓存：历史数据（>30天前）永久缓存，近期数据 1h TTL
-    from datetime import timedelta
-
     from trade_krono_cli.cache import (
         _KLINE_HISTORY_WINDOW_DAYS,
         _KLINE_RECENT_TTL,
@@ -321,6 +329,11 @@ def fetch_kline_incremental(
                 f"🔄 {ticker} 增量拉取: 缓存已超出请求范围，仅返回 {fetch_start} ~ {end_date}"
             )
         else:
+            # 缓存与请求范围有重叠，从 cached_end 下一天开始补拉
+            next_day = (datetime.strptime(cached_end, "%Y-%m-%d") + timedelta(days=1)).strftime(
+                "%Y-%m-%d"
+            )
+            fetch_start = next_day
             logger.info(
                 f"🔄 {ticker} 增量拉取: 补拉 {fetch_start} ~ {end_date} "
                 f"（已有 {cached_start} ~ {cached_end}）"

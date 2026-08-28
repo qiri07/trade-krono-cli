@@ -452,8 +452,12 @@ class ResearchAnalytics:
             "predictions_parquet": "v_predictions",
             "backtest_parquet": "v_backtest",
         }
+        _VALID_VIEWS = frozenset(sources.keys())
         for name, view in sources.items():
             try:
+                if view not in _VALID_VIEWS:
+                    logger.warning(f"⚠️  未知视图名称跳过: {view}")
+                    continue
                 row = self.query_one(f"SELECT COUNT(*) FROM {view}")
                 stats[name] = row[0] if row else 0
             except Exception:
