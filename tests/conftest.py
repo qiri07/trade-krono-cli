@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from types import SimpleNamespace
+
+
+def _strip_ansi(text: str) -> str:
+    """移除 ANSI 转义码，用于 CI 环境下 Rich 着色输出后的字符串检查。"""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def make_mock_settings(
