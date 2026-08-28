@@ -1,5 +1,8 @@
 """边界条件与异常场景测试：无效股票代码、数据缺失、空配置、外部仓库异常等。"""
 
+from __future__ import annotations
+
+import re
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,6 +11,11 @@ from typer.testing import CliRunner
 
 from trade_krono_cli.cli import app
 from trade_krono_cli.cli_commands.core import _load_tickers, _sanitize_path
+
+
+def _strip_ansi(text: str) -> str:
+    """移除 ANSI 转义码，用于 CI 环境下 Rich 着色输出后的字符串检查。"""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 @pytest.fixture
@@ -52,7 +60,7 @@ class TestInvalidTickers:
                 ],
             )
             assert result.exit_code != 0
-            assert "股票列表为空" in result.output
+            assert "股票列表为空" in _strip_ansi(result.output)
 
 
 # ═══════════════════════════════════════════════════════
@@ -159,7 +167,7 @@ class TestExternalRepoErrors:
         ):
             result = runner.invoke(app, ["repo", "status"])
             # 无 repo 时可能有退出码 0 或 2（取决于是否有默认配置）
-            assert "未检测到外部 repo" in result.output or result.exit_code in (0, 2)
+            assert "未检测到外部 repo" in _strip_ansi(result.output) or result.exit_code in (0, 2)
 
     def test_repo_doctor_no_entries_raises_exit(self, runner):
         """无 repo 配置时 doctor 应退出非 0。"""
@@ -191,7 +199,7 @@ class TestExternalRepoErrors:
         ):
             result = runner.invoke(app, ["repo", "repo-update"])
             assert result.exit_code == 0
-            assert "已 pinned，跳过" in result.output
+            assert "已 pinned，跳过" in _strip_ansi(result.output)
 
     def test_repo_pin_nonexistent_repo(self, runner):
         with (
@@ -202,7 +210,7 @@ class TestExternalRepoErrors:
                 app, ["repo", "repo-pin", "--name", "fake", "--commit", "abc123"]
             )
             assert result.exit_code != 0
-            assert "未知 repo" in result.output
+            assert "未知 repo" in _strip_ansi(result.output)
 
 
 # ═══════════════════════════════════════════════════════

@@ -1,11 +1,19 @@
 """扩展 CLI 测试：策略标志、warm_cache、history、eval 变体、repo 命令、错误路径。"""
 
+from __future__ import annotations
+
+import re
 from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
 from trade_krono_cli.cli import app
+
+
+def _strip_ansi(text: str) -> str:
+    """移除 ANSI 转义码，用于 CI 环境下 Rich 着色输出后的字符串检查。"""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 @pytest.fixture
@@ -23,11 +31,12 @@ class TestRunStrategyFlags:
         """run --help 应显示评分策略面板。"""
         result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
-        assert "评分策略" in result.output
-        assert "--scoring-strategy" in result.output
-        assert "--risk-boost-strategy" in result.output
-        assert "--risk-boost-multiplier" in result.output
-        assert "--risk-boost-power" in result.output
+        out = _strip_ansi(result.output)
+        assert "评分策略" in out
+        assert "--scoring-strategy" in out
+        assert "--risk-boost-strategy" in out
+        assert "--risk-boost-multiplier" in out
+        assert "--risk-boost-power" in out
 
     def test_run_passes_scoring_strategy_to_pipeline(self, runner):
         """--scoring-strategy multiplicative 应被传入 PipelineConfig。"""
@@ -154,15 +163,16 @@ class TestWarmCache:
     def test_warm_cache_help(self, runner):
         result = runner.invoke(app, ["warm-cache", "--help"])
         assert result.exit_code == 0
-        assert "--tickers" in result.output
-        assert "--date" in result.output
-        assert "--lookback" in result.output
+        out = _strip_ansi(result.output)
+        assert "--tickers" in out
+        assert "--date" in out
+        assert "--lookback" in out
 
     def test_warm_cache_empty_tickers(self, runner):
         with patch("trade_krono_cli.cli_commands.core._load_env"):
             result = runner.invoke(app, ["warm-cache", "--date", "2026-08-11"])
             assert result.exit_code != 0
-            assert "股票列表为空" in result.output
+            assert "股票列表为空" in _strip_ansi(result.output)
 
     def test_warm_cache_with_mock_cache(self, runner):
         mock_cache = MagicMock()
@@ -182,7 +192,7 @@ class TestWarmCache:
                 ],
             )
             assert result.exit_code == 0
-            assert "预热完成" in result.output
+            assert "预热完成" in _strip_ansi(result.output)
             assert mock_cache.warm_history.call_count == 2
 
     def test_warm_cache_from_config_file(self, runner, tmp_path):
@@ -245,7 +255,7 @@ class TestHistory:
         ):
             result = runner.invoke(app, ["history"])
             assert result.exit_code == 0
-            assert "暂无分析记录" in result.output
+            assert "暂无分析记录" in _strip_ansi(result.output)
 
     def test_history_with_ticker_shows_records(self, runner):
         mock_research = MagicMock()
@@ -280,7 +290,7 @@ class TestHistory:
         ):
             result = runner.invoke(app, ["history", "--ticker", "999999"])
             assert result.exit_code == 0
-            assert "未找到" in result.output
+            assert "未找到" in _strip_ansi(result.output)
 
     def test_history_limit(self, runner):
         mock_research = MagicMock()
@@ -400,7 +410,7 @@ class TestRepoCommands:
         ):
             result = runner.invoke(app, ["repo", "repo-doctor"])
             # 无 repo 时退出非 0
-            assert result.exit_code != 0 or "外部 repo" in result.output
+            assert result.exit_code != 0 or "外部 repo" in _strip_ansi(result.output)
 
     def test_repo_doctor_with_issues(self, runner):
         from trade_krono_cli.external import ExternalRepo
@@ -420,7 +430,7 @@ class TestRepoCommands:
         ):
             result = runner.invoke(app, ["repo", "repo-doctor"])
             assert result.exit_code != 0
-            assert "检测到以下问题" in result.output
+            assert "检测到以下问题" in _strip_ansi(result.output)
 
     def test_repo_update(self, runner):
         with (
@@ -440,7 +450,7 @@ class TestRepoCommands:
                 app, ["repo", "repo-pin", "--name", "tradingagents", "--commit", "abc123def"]
             )
             assert result.exit_code == 0
-            assert "已 pin" in result.output
+            assert "已 pin" in _strip_ansi(result.output)
             mock_pin.assert_called_once_with("tradingagents", "abc123def")
 
     def test_repo_pin_failure(self, runner):
@@ -452,7 +462,7 @@ class TestRepoCommands:
                 app, ["repo", "repo-pin", "--name", "nonexistent", "--commit", "abc123"]
             )
             assert result.exit_code != 0
-            assert "未知 repo" in result.output
+            assert "未知 repo" in _strip_ansi(result.output)
 
 
 # ═══════════════════════════════════════════════════════
@@ -545,13 +555,13 @@ class TestCliErrorPaths:
         with patch("trade_krono_cli.cli_commands.core._load_env"):
             result = runner.invoke(app, ["ta", "--date", "2026-08-11"])
             assert result.exit_code != 0
-            assert "股票列表为空" in result.output
+            assert "股票列表为空" in _strip_ansi(result.output)
 
     def test_kronos_command_missing_tickers(self, runner):
         with patch("trade_krono_cli.cli_commands.core._load_env"):
             result = runner.invoke(app, ["kronos", "--date", "2026-08-11"])
             assert result.exit_code != 0
-            assert "股票列表为空" in result.output
+            assert "股票列表为空" in _strip_ansi(result.output)
 
     def test_run_command_invalid_date_format_accepted(self, runner):
         """日期格式校验不在 CLI 层做，应由 pipeline 内部处理。"""
@@ -581,7 +591,7 @@ class TestCliErrorPaths:
             mock_get_cache.return_value.clear_all.return_value = 42
             result = runner.invoke(app, ["clear-cache"])
             assert result.exit_code == 0
-            assert "42" in result.output
+            assert "42" in _strip_ansi(result.output)
 
 
 # ═══════════════════════════════════════════════════════
