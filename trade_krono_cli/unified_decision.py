@@ -99,6 +99,7 @@ class UnifiedInvestmentDecision:
     # Kronos 源
     kronos_direction: Optional[str] = None  # "UP"/"DOWN"/"FLAT"
     kronos_expected_return: Optional[float] = None
+    direction_score: Optional[float] = None  # 方向强度 0-1，来自 PredictionDistribution
     p10: Optional[float] = None
     p25: Optional[float] = None
     p50: Optional[float] = None
@@ -225,9 +226,9 @@ class UnifiedInvestmentDecision:
             votes.append((self.ta_signal, self.ta_confidence or 50.0, "ta"))
         kronos_sig = _direction_to_signal(self.kronos_direction)
         if kronos_sig:
-            # Kronos 置信度用 direction_score * 100
-            ks = getattr(self, "_kronos_direction_score", None)
-            votes.append((kronos_sig, (ks or 0.5) * 100, "kronos"))
+            # Kronos 置信度用 direction_score * 100（0-1 → 0-100）
+            ks = self.direction_score or 0.5
+            votes.append((kronos_sig, ks * 100, "kronos"))
         if self.committee_rec:
             votes.append((self.committee_rec, self.committee_confidence or 50.0, "committee"))
 
@@ -349,6 +350,7 @@ def build_unified_decision(
         ta_reasoning=ta_decision.thesis[:200] if ta_decision else "",
         kronos_direction=kronos_direction,
         kronos_expected_return=kronos_expected_return,
+        direction_score=d.get("direction_score"),
         p10=d.get("p10"),
         p25=d.get("p25"),
         p50=d.get("p50"),
