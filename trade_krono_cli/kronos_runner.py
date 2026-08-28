@@ -46,6 +46,9 @@ from trade_krono_cli.version import compute_config_hash, get_kronos_model_versio
 # 向后兼容：PredictionUncertainty 是 PredictionDistribution 的别名
 PredictionUncertainty = PredictionDistribution
 
+# 向后兼容：从领域层导入并重导出，保持旧路径 importable
+from trade_krono_cli.domain.kronos_result import KronosForecastResult  # noqa: F401, E402
+
 # 向后兼容：保持从 kronos_runner 导入 PredictionUncertainty 的能力
 __all__ = ("KronosRunner", "KronosForecastResult", "PredictionUncertainty")
 
@@ -73,94 +76,6 @@ def clear_kronos_imported() -> None:
     """重置 Kronos 懒加载状态，用于测试隔离。"""
     global _KRONOS_IMPORTED
     _KRONOS_IMPORTED = False
-
-
-# ── 预测结果 ─────────────────────────────────────────────────────────────────
-
-
-class KronosForecastResult:
-    """单只股票的 Kronos 预测结果。"""
-
-    __slots__ = (
-        "ticker",
-        "eval_date",
-        "horizon",
-        "interval",
-        "last_close",
-        "predicted_close_mean",
-        "predicted_close_final",
-        "expected_change_pct",
-        "direction",
-        "volatility_proxy",
-        "confidence_band",
-        "forecast_dict",
-        "model_name",
-        "error",
-        "elapsed_sec",
-        "prediction_uncertainty",
-    )
-
-    def __init__(
-        self,
-        ticker: str,
-        eval_date: str,
-        horizon: int,
-        interval: str = "d",
-        last_close: Optional[float] = None,
-        predicted_close_mean: Optional[float] = None,
-        predicted_close_final: Optional[float] = None,
-        expected_change_pct: Optional[float] = None,
-        direction: Optional[str] = None,
-        volatility_proxy: Optional[float] = None,
-        confidence_band: Optional[dict] = None,
-        forecast_dict: Optional[dict] = None,
-        model_name: Optional[str] = None,
-        error: Optional[str] = None,
-        elapsed_sec: float = 0.0,
-        prediction_uncertainty: Optional[PredictionDistribution] = None,
-    ):
-        self.ticker = ticker
-        self.eval_date = eval_date
-        self.horizon = horizon
-        self.interval = interval
-        self.last_close = last_close
-        self.predicted_close_mean = predicted_close_mean
-        self.predicted_close_final = predicted_close_final
-        self.expected_change_pct = expected_change_pct
-        self.direction = direction
-        self.volatility_proxy = volatility_proxy
-        self.confidence_band = confidence_band
-        self.forecast_dict = forecast_dict
-        self.model_name = model_name
-        self.error = error
-        self.elapsed_sec = elapsed_sec
-        self.prediction_uncertainty = prediction_uncertainty
-
-    def to_dict(self) -> dict:
-        d = {
-            "ticker": self.ticker,
-            "eval_date": self.eval_date,
-            "horizon": self.horizon,
-            "interval": self.interval,
-            "last_close": self.last_close,
-            "predicted_close_mean": self.predicted_close_mean,
-            "predicted_close_final": self.predicted_close_final,
-            "expected_change_pct": self.expected_change_pct,
-            "direction": self.direction,
-            "volatility_proxy": self.volatility_proxy,
-            "confidence_band": self.confidence_band,
-            "forecast_dict": self.forecast_dict,
-            "model_name": self.model_name,
-            "error": self.error,
-            "elapsed_sec": self.elapsed_sec,
-            "prediction_uncertainty": (
-                self.prediction_uncertainty.to_dict()
-                if self.prediction_uncertainty is not None
-                else None
-            ),
-        }
-        return d
-
 
 # ── 预测器 ────────────────────────────────────────────────────────────────────
 

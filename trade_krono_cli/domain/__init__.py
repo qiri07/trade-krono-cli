@@ -78,6 +78,9 @@ from trade_krono_cli.domain.prediction import (
     TAAnalysis,
 )
 
+# ── Kronos 预测结果 ────────────────────────────────────────────────────────
+from trade_krono_cli.domain.kronos_result import KronosForecastResult
+
 # ── 风险 ───────────────────────────────────────────────────────────────────
 from trade_krono_cli.domain.risk import RiskAssessment, RiskFactor
 
@@ -104,6 +107,7 @@ __all__ = [
     "PredictionDistribution",
     "TAAnalysis",
     "KronosPrediction",
+    "KronosForecastResult",
     # 信号
     "SignalAssessment",
     "SignalConflict",
