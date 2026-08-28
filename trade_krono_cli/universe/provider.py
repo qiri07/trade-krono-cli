@@ -183,6 +183,17 @@ class MootDxUniverseProvider(UniverseProvider):
                     continue
                 raw_codes.append(code)
 
+            # ── 在同一 session 内批量补充行业数据，避免第二次 login/logout ──────
+            industry_map: dict[str, str] = {}
+            try:
+                ind_rs = bs.query_stock_industry()
+                while ind_rs.next():
+                    ind_row = ind_rs.get_row_data()
+                    if len(ind_row) > 1 and ind_row[1]:
+                        industry_map[ind_row[0]] = str(ind_row[1])
+            except Exception as e:
+                logger.debug(f"baostock 行业查询失败（非致命）: {e}")
+
             bs.logout()
             logger.info(f"📋 Baostock 获取到 {len(raw_codes)} 只 A 股代码")
         except Exception as e:
@@ -221,6 +232,7 @@ class MootDxUniverseProvider(UniverseProvider):
                                 UniverseTicket(
                                     ticker=ticker,
                                     price=price,
+                                    industry=industry_map.get(ticker),
                                     source=self.name,
                                 )
                             )
@@ -233,47 +245,8 @@ class MootDxUniverseProvider(UniverseProvider):
             # 批次间隔，避免被服务端限流
             _time.sleep(0.3)
 
-        # ── 补充行业数据（通过 baostock query_stock_industry）─────────────────
-        self._fill_industry(tickets)
-
         logger.info(f"📡 MootDx 全市场获取: {len(tickets)} 只 A 股")
         return tickets
-
-    def _fill_industry(self, tickets: list[UniverseTicket]) -> None:
-        """
-        通过 baostock query_stock_industry 补充 industry 字段。
-
-        逐个 ticker 查询，失败时静默跳过，不影响其他股票。
-        """
-        try:
-            import baostock as bs  # type: ignore
-
-            lg = bs.login()
-            if lg.error_code != "0":
-                logger.debug(f"baostock login failed in _fill_industry: {lg.error_msg}")
-                return
-            try:
-                for ticket in tickets:
-                    try:
-                        rs = bs.query_stock_industry(code=ticket.ticker)  # type: ignore
-                        if rs.error_code != "0":
-                            continue
-                        rows: list[list] = []
-                        while rs.next():
-                            rows.append(rs.get_row_data())
-                        if rows:
-                            # baostock 返回: [industry_code, industry_name, ...]
-                            row = rows[0]
-                            if len(row) > 1 and row[1]:
-                                ticket.industry = str(row[1]) or None
-                    except Exception:
-                        continue
-            finally:
-                bs.logout()  # type: ignore
-        except ImportError:
-            logger.debug("baostock 未安装，跳过行业数据补充")
-        except Exception as e:
-            logger.debug(f"_fill_industry 异常: {e}")
 
 
 # ── 工厂函数 ──────────────────────────────────────────────────────────────────

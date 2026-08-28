@@ -51,54 +51,12 @@ from trade_krono_cli.configs.scoring import (
 )
 from trade_krono_cli.configs.ta import TAConfig
 from trade_krono_cli.configs.trading import ConstraintConfig
-
-
-# 配置解析辅助函数 — 保留在此模块中；cli_commands.core 直接从 pipeline.config_loader 导入
-# （避免 pipeline_config ↔ pipeline 包的循环导入）
-def _parse_range(s: str) -> tuple[float, float] | None:
-    if not s or not s.strip():
-        return None
-    parts = [p.strip() for p in s.split(",") if p.strip()]
-    if len(parts) != 2:
-        return None
-    try:
-        return float(parts[0]), float(parts[1])
-    except ValueError:
-        return None
-
-
-def _parse_comma_list(s: str) -> list[str]:
-    if not s or not s.strip():
-        return []
-    return [p.strip() for p in s.split(",") if p.strip()]
-
-
-def _parse_float(s: str) -> float | None:
-    if not s or not s.strip():
-        return None
-    try:
-        return float(s.strip())
-    except ValueError:
-        return None
-
-
-# ── PipelineConfig ────────────────────────────────────────────────────────────
-
-
-def _merge_with_nested(obj: Any, overrides: dict) -> Any:
-    """递归合并嵌套 dict 到 dataclass 实例（支持 "__" 嵌套路径）。"""
-    if not hasattr(obj, "merge"):
-        return obj
-    nested: dict[str, Any] = {}
-    flat: dict[str, Any] = {}
-    for k, v in overrides.items():
-        if "__" in k:
-            outer, inner = k.split("__", 1)
-            nested.setdefault(outer, {})[inner] = v
-        else:
-            flat[k] = v
-    merged = obj.merge(**flat, **nested)
-    return merged
+from trade_krono_cli.utils.parser_helpers import (
+    _merge_with_nested,
+    _parse_comma_list,
+    _parse_float,
+    _parse_range,
+)
 
 
 class PipelineConfig:

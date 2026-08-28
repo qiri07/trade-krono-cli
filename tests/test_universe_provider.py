@@ -55,16 +55,16 @@ def _make_fake_bs(login_ok=True, codes=None):
     def fake_query():
         return FakeRecordSet(rows)
 
-    # Industry lookup: maps ticker → (industry_code, industry_name)
-    _industry_data: dict[str, list[list]] = {
-        "sh.600519": [["B61", "银行"]],
-        "sz.000858": [["C21", "食品饮料"]],
-        "sh.601318": [["B61", "银行"]],
-    }
+    # Industry lookup: batch mode returns all rows (no code arg in new impl)
+    _industry_rows = [
+        ["sh.600519", "银行"],
+        ["sz.000858", "食品饮料"],
+        ["sh.601318", "银行"],
+    ]
 
     class FakeIndustryRecordSet:
-        def __init__(self, rows):
-            self._rows = rows
+        def __init__(self, rows=None):
+            self._rows = rows if rows is not None else _industry_rows
             self._idx = 0
             self.error_code = "0"
 
@@ -79,8 +79,7 @@ def _make_fake_bs(login_ok=True, codes=None):
             return []
 
     def fake_query_industry(code=""):
-        rows = _industry_data.get(str(code), [])
-        return FakeIndustryRecordSet(rows)
+        return FakeIndustryRecordSet()
 
     fake_bs.login = fake_login
     fake_bs.logout = fake_logout
@@ -507,52 +506,144 @@ class TestMootDxNoCodes:
 
 
 class TestFillIndustry:
-    """Tests for MootDxUniverseProvider._fill_industry."""
+    """Industry data is now fetched in-batch during get_universe; these tests
+    verify the batch-query path via get_universe instead."""
 
-    def test_fill_industry_populates_known_tickers(self):
-        """Known tickers get their industry from baostock."""
-        from trade_krono_cli.universe.provider import UniverseTicket
-
-        tickets = [
-            UniverseTicket(ticker="sh.600519", price=1800.0),
-            UniverseTicket(ticker="sz.000858", price=150.0),
-            UniverseTicket(ticker="sh.999999", price=50.0),  # unknown
-        ]
+    def test_industry_populated_for_known_tickers(self):
+        """Tickets for known tickers get industry from batch query."""
         fake_bs = _make_fake_bs()
 
-        with patch.dict("sys.modules", {"baostock": fake_bs}):
+        class FakeDF:
+            empty = False
+            _data = [
+                {"code": "600519", "market": 1, "price": 1800.0},
+                {"code": "000858", "market": 0, "price": 150.0},
+            ]
+
+            def iterrows(self):
+                for row in self._data:
+                    yield None, row
+
+            def __len__(self):
+                return len(self._data)
+
+        class FakeQuotes:
+            def quotes(self, symbol):
+                return FakeDF()
+
+        class QuotesClass:
+            @staticmethod
+            def factory(market):
+                return FakeQuotes()
+
+        fake_quotes_mod = ModuleType("mootdx.quotes")
+        fake_quotes_mod.Quotes = QuotesClass
+        fake_mootdx = ModuleType("mootdx")
+        fake_mootdx.quotes = fake_quotes_mod
+
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
-            provider._fill_industry(tickets)
+            result = provider.get_universe()
 
-        assert tickets[0].industry == "银行"
-        assert tickets[1].industry == "食品饮料"
-        assert tickets[2].industry is None  # not in lookup
+        by_ticker = {t.ticker: t for t in result}
+        assert by_ticker["sh.600519"].industry == "银行"
+        assert by_ticker["sz.000858"].industry == "食品饮料"
+        # sh.601318 is also in raw_codes but mootdx has no data → not in result
 
-    def test_fill_industry_baostock_import_error(self):
-        """ImportError is silently ignored."""
-        from trade_krono_cli.universe.provider import UniverseTicket
+    def test_industry_missing_for_unknown_tickers(self):
+        """Ticker not in industry batch query → industry is None."""
+        fake_bs = _make_fake_bs()
 
-        tickets = [UniverseTicket(ticker="sh.600519")]
-        fake_bs_no_import = ModuleType("baostock")
+        class FakeDF:
+            empty = False
+            _data = [{"code": "999999", "market": 1, "price": 50.0}]
 
-        with patch.dict("sys.modules", {"baostock": fake_bs_no_import}):
+            def iterrows(self):
+                for row in self._data:
+                    yield None, row
+
+            def __len__(self):
+                return len(self._data)
+
+        class FakeQuotes:
+            def quotes(self, symbol):
+                return FakeDF()
+
+        class QuotesClass:
+            @staticmethod
+            def factory(market):
+                return FakeQuotes()
+
+        fake_quotes_mod = ModuleType("mootdx.quotes")
+        fake_quotes_mod.Quotes = QuotesClass
+        fake_mootdx = ModuleType("mootdx")
+        fake_mootdx.quotes = fake_quotes_mod
+
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
-            provider._fill_industry(tickets)
+            result = provider.get_universe()
 
-        assert tickets[0].industry is None
+        assert len(result) == 1
+        assert result[0].ticker == "sh.999999"
+        assert result[0].industry is None
 
-    def test_fill_industry_login_failure(self):
-        """baostock login failure is silently ignored."""
-        from trade_krono_cli.universe.provider import UniverseTicket
+    def test_industry_query_failure_is_non_fatal(self):
+        """If batch industry query raises, tickets are still returned."""
+        fake_bs = _make_fake_bs()
 
-        tickets = [UniverseTicket(ticker="sh.600519")]
-        fake_bs = _make_fake_bs(login_ok=False)
+        def bad_industry_query(code=""):
+            raise RuntimeError("industry api down")
 
-        with patch.dict("sys.modules", {"baostock": fake_bs}):
+        fake_bs.query_stock_industry = bad_industry_query
+
+        class FakeDF:
+            empty = False
+            _data = [{"code": "600519", "market": 1, "price": 1800.0}]
+
+            def iterrows(self):
+                for row in self._data:
+                    yield None, row
+
+            def __len__(self):
+                return len(self._data)
+
+        class FakeQuotes:
+            def quotes(self, symbol):
+                return FakeDF()
+
+        class QuotesClass:
+            @staticmethod
+            def factory(market):
+                return FakeQuotes()
+
+        fake_quotes_mod = ModuleType("mootdx.quotes")
+        fake_quotes_mod.Quotes = QuotesClass
+        fake_mootdx = ModuleType("mootdx")
+        fake_mootdx.quotes = fake_quotes_mod
+
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
-            provider._fill_industry(tickets)
+            result = provider.get_universe()
 
-        assert tickets[0].industry is None
+        assert len(result) == 1
+        assert result[0].ticker == "sh.600519"
+        assert result[0].industry is None  # industry query failed, non-fatal
+
+    def test_fill_industry_method_removed(self):
+        """_fill_industry no longer exists as a separate method."""
+        provider = MootDxUniverseProvider()
+        assert not hasattr(provider, "_fill_industry") or not callable(
+            getattr(provider, "_fill_industry", None)
+        )
 
 
 class TestMootDxIndustryInGetUniverse:
