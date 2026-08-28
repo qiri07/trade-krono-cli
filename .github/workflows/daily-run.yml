@@ -128,7 +128,7 @@ jobs:
 
       # ── 安装数据源依赖（mootdx/akshare/tushare，支持 --auto-universe）────
       - name: 安装数据源扩展
-        run: uv sync --extra data
+        run: uv sync --all-extras
 
       # ── 执行投研分析 ─────────────────────────────────────────────────
       - name: 运行投研分析流水线
