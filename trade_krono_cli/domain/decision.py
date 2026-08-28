@@ -192,9 +192,7 @@ class InvestmentDecision:
             "risks": self.risks,
         }
         if self.signal_assessment:
-            d["ta_signal"] = (
-                self.signal_assessment.ta.signal if self.signal_assessment.ta else None
-            )
+            d["ta_signal"] = self.signal_assessment.ta.signal if self.signal_assessment.ta else None
             d["ta_confidence"] = (
                 self.signal_assessment.ta.confidence if self.signal_assessment.ta else None
             )

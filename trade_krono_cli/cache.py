@@ -126,6 +126,7 @@ class Cache:
         except (ModuleNotFoundError, AttributeError, TypeError):
             # pyarrow 未安装或旧版 pandas pickle 兼容回退
             import pickle
+
             return pickle.loads(data)
 
     def set_kline(

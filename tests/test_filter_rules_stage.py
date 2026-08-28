@@ -172,9 +172,9 @@ class TestFilterRulesStage:
             ]
         )
         tickets = [
-            UniverseTicket(ticker="sh.600519", pe=25.0, pb=2.0),   # passes both
-            UniverseTicket(ticker="sz.000858", pe=20.0, pb=5.0),   # fails pb
-            UniverseTicket(ticker="sh.601318", pe=5.0, pb=2.0),    # fails pe
+            UniverseTicket(ticker="sh.600519", pe=25.0, pb=2.0),  # passes both
+            UniverseTicket(ticker="sz.000858", pe=20.0, pb=5.0),  # fails pb
+            UniverseTicket(ticker="sh.601318", pe=5.0, pb=2.0),  # fails pe
         ]
         result = stage.filter(tickets)
         assert len(result) == 1
@@ -251,7 +251,7 @@ class TestFilterRulesStage:
         tickets = [
             UniverseTicket(ticker="sh.600519", pe=25.0),
             UniverseTicket(ticker="sz.000858", pe=50.0),  # too high
-            UniverseTicket(ticker="sh.601318", pe=5.0),   # too low
+            UniverseTicket(ticker="sh.601318", pe=5.0),  # too low
         ]
         result = stage.filter(tickets)
         assert len(result) == 1

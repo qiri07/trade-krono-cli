@@ -308,13 +308,17 @@ class PredictionEvaluator:
                     bt_result.total_return_pct - full_summary.benchmark_cum_return_pct, 2
                 )
             equity_curve = cast(list[tuple[str, float]], bt_result.equity_curve)
-            full_summary.excess_curve = {  # type: ignore[assignment,misc]
-                d: round(float(bt_val - bench_val), 4)  # type: ignore[has-type]
-                for d, (bt_val, bench_val) in zip(
-                    [d for d, _ in equity_curve],
-                    [v for _, v in equity_curve],
-                )
-            } if equity_curve else {}
+            full_summary.excess_curve = (
+                {  # type: ignore[assignment,misc]
+                    d: round(float(bt_val - bench_val), 4)  # type: ignore[has-type]
+                    for d, (bt_val, bench_val) in zip(
+                        [d for d, _ in equity_curve],
+                        [v for _, v in equity_curve],
+                    )
+                }
+                if equity_curve
+                else {}
+            )
 
             # 将回测增强指标写入 horizon 汇总
             for horizon in self.HORIZONS:

@@ -84,6 +84,7 @@ class TestFetchStockMetaImportError:
         # This simulates what would happen if baostock were unavailable.
         # We use a more direct approach: monkeypatch fetch_stock_meta's inner import.
         import builtins
+
         real_import = builtins.__import__
 
         def fake_import(name, *args, **kwargs):
@@ -195,19 +196,23 @@ class TestFetchStockMetaSuccess:
 
         def make_perf_query(code):
             rows = perf_rows_1 if code == "sh.600519" else perf_rows_2
+
             class FakeRS:
                 def __init__(r, data):
                     r._rows = data
                     r._idx = 0
                     r.error_code = "0"
+
                 def next(r):
                     return r._idx < len(r._rows)
+
                 def get_row_data(r):
                     if r._idx < len(r._rows):
                         row = list(r._rows[r._idx])
                         r._idx += 1
                         return row
                     return []
+
             return FakeRS(rows)
 
         fake_bs = _make_fake_bs_module(login_ok=True)

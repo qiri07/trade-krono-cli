@@ -128,7 +128,9 @@ def get_latest_evaluation(db_path: str) -> Optional[dict]:
     }
 
 
-def print_report(summary: EvaluationSummary, horizons: list[int] | tuple[int, ...] = (5, 10, 20)) -> None:
+def print_report(
+    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...] = (5, 10, 20)
+) -> None:
     """打印评估报告到控制台。"""
     logger.info("")
     logger.info("=" * 60)
@@ -144,7 +146,9 @@ def print_report(summary: EvaluationSummary, horizons: list[int] | tuple[int, ..
     _print_baseline_section()
 
 
-def _print_kronos_section(summary: EvaluationSummary, horizons: list[int] | tuple[int, ...]) -> None:
+def _print_kronos_section(
+    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...]
+) -> None:
     logger.info("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
     logger.info(f"│  样本数: {summary.kronos_n}                              │")
     for h in horizons:
@@ -171,7 +175,9 @@ def _print_ta_section(summary: EvaluationSummary, horizons: list[int] | tuple[in
     logger.info("")
 
 
-def _print_combined_section(summary: EvaluationSummary, horizons: list[int] | tuple[int, ...]) -> None:
+def _print_combined_section(
+    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...]
+) -> None:
     logger.info("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
     logger.info(f"│  样本数: {summary.combined_buy_up_n}                          │")
     for h in horizons:
@@ -186,7 +192,9 @@ def _print_combined_section(summary: EvaluationSummary, horizons: list[int] | tu
     logger.info("")
 
 
-def _print_high_conf_section(summary: EvaluationSummary, horizons: list[int] | tuple[int, ...]) -> None:
+def _print_high_conf_section(
+    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...]
+) -> None:
     logger.info("┌─ 高置信信号（综合分 ≥ 70）──────────────────────────┐")
     logger.info(f"│  样本数: {summary.high_conf_n}                              │")
     for h in horizons:

@@ -244,6 +244,7 @@ class TestFailureStoreEdges:
         store._save_unlocked()
         data = (tmp_path / "failures_edges.json").read_text(encoding="utf-8")
         import json
+
         records = json.loads(data)
         assert len(records) == 1
         assert records[0]["ticker"] == "sh.600519"
@@ -263,6 +264,7 @@ class TestFailureStoreEdges:
         # UnicodeDecodeError is not caught by (json.JSONDecodeError, OSError)
         # so this will raise - which is actually a bug in the code, but we test the behavior
         import pytest
+
         with pytest.raises(UnicodeDecodeError):
             FailureStore(store_path=p)
         clear_failure_store_singleton()

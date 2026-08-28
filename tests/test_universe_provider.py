@@ -40,13 +40,18 @@ def _make_fake_bs(login_ok=True, codes=None):
     def fake_logout():
         pass
 
-    rows = codes if codes is not None else [
-        ("sh.600519", "贵州茅台", "2001-08-27", "", "1", "1"),
-        ("sz.000858", "五粮液", "2000-12-18", "", "1", "1"),
-        ("sh.601318", "中国平安", "2007-01-09", "", "1", "1"),
-        ("sh.900901", "弃牌B股", "2000-01-01", "", "2", "1"),
-        ("sz.000000", "退市股", "2020-01-01", "2025-01-01", "1", "0"),
-    ]
+    rows = (
+        codes
+        if codes is not None
+        else [
+            ("sh.600519", "贵州茅台", "2001-08-27", "", "1", "1"),
+            ("sz.000858", "五粮液", "2000-12-18", "", "1", "1"),
+            ("sh.601318", "中国平安", "2007-01-09", "", "1", "1"),
+            ("sh.900901", "弃牌B股", "2000-01-01", "", "2", "1"),
+            ("sz.000000", "退市股", "2020-01-01", "2025-01-01", "1", "0"),
+        ]
+    )
+
     def fake_query():
         return FakeRecordSet(rows)
 
@@ -97,9 +102,11 @@ class TestMootDxBatchFetch:
                 {"code": "600519", "market": 1, "price": 1800.0},
                 {"code": "000858", "market": 0, "price": 150.0},
             ]
+
             def iterrows(self):
                 for row in self._data:
                     yield None, row
+
             def __len__(self):
                 return len(self._data)
 
@@ -113,14 +120,19 @@ class TestMootDxBatchFetch:
 
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
+
         # Need Quotes class with factory method
         class QuotesClass:
             @staticmethod
             def factory(market):
                 return FakeQuotes()
+
         fake_quotes_mod.Quotes = QuotesClass
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
             assert len(result) == 2
@@ -138,9 +150,11 @@ class TestMootDxBatchFetch:
                 {"code": "600519", "market": 1, "price": 0.0},
                 {"code": "000858", "market": 0, "price": 150.0},
             ]
+
             def iterrows(self):
                 for row in self._data:
                     yield None, row
+
             def __len__(self):
                 return len(self._data)
 
@@ -158,7 +172,10 @@ class TestMootDxBatchFetch:
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
             assert len(result) == 1
@@ -167,20 +184,27 @@ class TestMootDxBatchFetch:
     def test_batch_partial_failure_continues(self):
         """One batch fails, others succeed → partial results returned."""
         # Provide 25 codes so they span 2 batches (batch_size=20)
-        extra_codes = [(f"sh.{601000+i}", f"股票{i}", "2020-01-01", "", "1", "1") for i in range(23)]
-        fake_bs = _make_fake_bs(codes=[
-            ("sh.600519", "贵州茅台", "2001-08-27", "", "1", "1"),
-            ("sz.000858", "五粮液", "2000-12-18", "", "1", "1"),
-        ] + extra_codes)
+        extra_codes = [
+            (f"sh.{601000 + i}", f"股票{i}", "2020-01-01", "", "1", "1") for i in range(23)
+        ]
+        fake_bs = _make_fake_bs(
+            codes=[
+                ("sh.600519", "贵州茅台", "2001-08-27", "", "1", "1"),
+                ("sz.000858", "五粮液", "2000-12-18", "", "1", "1"),
+            ]
+            + extra_codes
+        )
 
         call_count = [0]
 
         class FakeDF:
             empty = False
             _data = [{"code": "601318", "market": 1, "price": 50.0}]
+
             def iterrows(self):
                 for row in self._data:
                     yield None, row
+
             def __len__(self):
                 return len(self._data)
 
@@ -201,7 +225,10 @@ class TestMootDxBatchFetch:
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
             assert len(result) >= 1
@@ -214,8 +241,10 @@ class TestMootDxBatchFetch:
 
         class FakeDF:
             empty = True
+
             def iterrows(self):
                 return iter([])
+
             def __len__(self):
                 return 0
 
@@ -233,7 +262,10 @@ class TestMootDxBatchFetch:
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
             assert result == []
@@ -245,9 +277,11 @@ class TestMootDxBatchFetch:
         class FakeDF:
             empty = False
             _data = [{"code": "600519", "market": 1, "price": 1800.0}]
+
             def iterrows(self):
                 for row in self._data:
                     yield None, row
+
             def __len__(self):
                 return len(self._data)
 
@@ -265,7 +299,10 @@ class TestMootDxBatchFetch:
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             assert provider.health_check() is True
 
@@ -275,8 +312,10 @@ class TestMootDxBatchFetch:
 
         class FakeDF:
             empty = True
+
             def iterrows(self):
                 return iter([])
+
             def __len__(self):
                 return 0
 
@@ -294,7 +333,10 @@ class TestMootDxBatchFetch:
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             assert provider.health_check() is False
 
@@ -314,15 +356,19 @@ class TestMootDxBatchFetch:
 
     def test_non_a_share_filtered_out(self):
         """stock_type != '1' rows are excluded from raw_codes."""
-        fake_bs = _make_fake_bs(codes=[
-            ("sh.900901", "B股", "2000-01-01", "", "2", "1"),
-            ("sz.400001", "新三板", "2010-01-01", "", "3", "1"),
-        ])
+        fake_bs = _make_fake_bs(
+            codes=[
+                ("sh.900901", "B股", "2000-01-01", "", "2", "1"),
+                ("sz.400001", "新三板", "2010-01-01", "", "3", "1"),
+            ]
+        )
 
         class FakeDF:
             empty = True
+
             def iterrows(self):
                 return iter([])
+
             def __len__(self):
                 return 0
 
@@ -340,21 +386,28 @@ class TestMootDxBatchFetch:
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
             assert result == []
 
     def test_delisted_stock_filtered_out(self):
         """status != '1' (delisted) rows are excluded from raw_codes."""
-        fake_bs = _make_fake_bs(codes=[
-            ("sz.000000", "退市股", "2020-01-01", "2025-01-01", "1", "0"),
-        ])
+        fake_bs = _make_fake_bs(
+            codes=[
+                ("sz.000000", "退市股", "2020-01-01", "2025-01-01", "1", "0"),
+            ]
+        )
 
         class FakeDF:
             empty = True
+
             def iterrows(self):
                 return iter([])
+
             def __len__(self):
                 return 0
 
@@ -372,7 +425,10 @@ class TestMootDxBatchFetch:
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
             assert result == []
@@ -404,7 +460,10 @@ class TestMootDxMootdxInitFailure:
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
             assert result == []
@@ -417,8 +476,10 @@ class TestMootDxNoCodes:
 
         class FakeDF:
             empty = True
+
             def iterrows(self):
                 return iter([])
+
             def __len__(self):
                 return 0
 
@@ -436,7 +497,10 @@ class TestMootDxNoCodes:
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
             assert result == []
@@ -501,9 +565,11 @@ class TestMootDxIndustryInGetUniverse:
         class FakeDF:
             empty = False
             _data = [{"code": "600519", "market": 1, "price": 1800.0}]
+
             def iterrows(self):
                 for row in self._data:
                     yield None, row
+
             def __len__(self):
                 return len(self._data)
 
@@ -521,7 +587,10 @@ class TestMootDxIndustryInGetUniverse:
         fake_mootdx = ModuleType("mootdx")
         fake_mootdx.quotes = fake_quotes_mod
 
-        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+        with patch.dict(
+            "sys.modules",
+            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+        ):
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
             assert len(result) == 1
