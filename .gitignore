@@ -19,3 +19,4 @@ htmlcov/
 # 本地符号链接（通过 README 说明手动创建）
 external/Kronos
 external/TradingAgents-astock
+coverage.xml
