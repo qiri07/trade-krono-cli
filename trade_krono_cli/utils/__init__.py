@@ -44,7 +44,7 @@ def parse_float(s: str) -> float | None:
         return None
 
 
-def merge_with_nested(obj: Any, overrides: dict) -> Any:
+def merge_with_nested(obj: Any, overrides: dict) -> Any:  # noqa: ANN401 — type is unknown at merge-time; must accept dataclass | Pydantic BaseModel | plain object
     """
     递归合并嵌套 dict 到 dataclass 实例。
 
