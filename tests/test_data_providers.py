@@ -638,7 +638,7 @@ class TestTushareProvider:
         mock_ts.pro_bar.return_value = mock_df
 
         with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch("trade_krono_cli.data_providers.tushare_provider.tushare", mock_ts):
+            with patch.object(provider.__class__, "_ts", mock_ts):
                 result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
                 assert result is not None
                 assert result.length == 2
@@ -651,7 +651,7 @@ class TestTushareProvider:
                 "ts_code": ["600519.SH"],
                 "name": ["贵州茅台"],
                 "industry": ["白酒"],
-                "list_date": ["19991110"],
+                "list_date": ["1999-11-10"],
                 "delist_date": [None],
             }
         )
@@ -659,7 +659,7 @@ class TestTushareProvider:
         mock_ts.stock_basic.return_value = mock_df
 
         with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch("trade_krono_cli.data_providers.tushare_provider.tushare", mock_ts):
+            with patch.object(provider.__class__, "_ts", mock_ts):
                 meta = provider.fetch_metadata("sh.600519")
                 assert meta is not None
                 assert meta.industry == "白酒"
@@ -682,7 +682,7 @@ class TestTushareProvider:
         mock_ts.stock_basic.return_value = mock_df
 
         with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch("trade_krono_cli.data_providers.tushare_provider.tushare", mock_ts):
+            with patch.object(provider.__class__, "_ts", mock_ts):
                 meta = provider.fetch_metadata("sh.601234")
                 assert meta is not None
                 assert meta.is_st is True
@@ -695,7 +695,7 @@ class TestTushareProvider:
         mock_ts.stock_basic.return_value = mock_df
 
         with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch("trade_krono_cli.data_providers.tushare_provider.tushare", mock_ts):
+            with patch.object(provider.__class__, "_ts", mock_ts):
                 assert provider.health_check() is True
 
     def test_health_check_failure(self, provider):
@@ -703,7 +703,7 @@ class TestTushareProvider:
         mock_ts.stock_basic.side_effect = Exception("fail")
 
         with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch("trade_krono_cli.data_providers.tushare_provider.tushare", mock_ts):
+            with patch.object(provider.__class__, "_ts", mock_ts):
                 assert provider.health_check() is False
 
 
@@ -926,6 +926,18 @@ class TestEdgeCases:
             data_fallback="",
             akshare_enabled=True,
             mootdx_enabled=True,
+            scoring_strategy="linear",
+            risk_boost_strategy="fixed_boost",
+            risk_boost_multiplier=1.0,
+            risk_boost_diminishing_power=0.5,
+            retry_max_attempts=3,
+            retry_base_delay=2.0,
+            retry_jitter=True,
+            retry_rate_limit_backoff=True,
+            retry_rate_limit_max_wait=60.0,
+            degrade_mode="strict",
+            ta_cache_fallback_enabled=False,
+            ta_cache_max_age_days=7,
         )
         errors, warnings = validate_settings(s)
         assert any("DATA_PROVIDER" in e for e in errors)
@@ -982,6 +994,18 @@ class TestEdgeCases:
             data_fallback="baostock,akshare",
             akshare_enabled=True,
             mootdx_enabled=True,
+            scoring_strategy="linear",
+            risk_boost_strategy="fixed_boost",
+            risk_boost_multiplier=1.0,
+            risk_boost_diminishing_power=0.5,
+            retry_max_attempts=3,
+            retry_base_delay=2.0,
+            retry_jitter=True,
+            retry_rate_limit_backoff=True,
+            retry_rate_limit_max_wait=60.0,
+            degrade_mode="strict",
+            ta_cache_fallback_enabled=False,
+            ta_cache_max_age_days=7,
         )
         errors, warnings = validate_settings(s)
         assert any("DATA_FALLBACK" in e and "不能包含" in e for e in errors)
