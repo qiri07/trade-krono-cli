@@ -52,9 +52,9 @@ from trade_krono_cli.configs.scoring import (
 from trade_krono_cli.configs.ta import TAConfig
 from trade_krono_cli.configs.trading import ConstraintConfig
 
-# ── 配置解析辅助函数 ─────────────────────────────────────────────────────────
 
-
+# 配置解析辅助函数 — 保留在此模块中；cli_commands.core 直接从 pipeline.config_loader 导入
+# （避免 pipeline_config ↔ pipeline 包的循环导入）
 def _parse_range(s: str) -> tuple[float, float] | None:
     if not s or not s.strip():
         return None
@@ -83,6 +83,22 @@ def _parse_float(s: str) -> float | None:
 
 
 # ── PipelineConfig ────────────────────────────────────────────────────────────
+
+
+def _merge_with_nested(obj: Any, overrides: dict) -> Any:
+    """递归合并嵌套 dict 到 dataclass 实例（支持 "__" 嵌套路径）。"""
+    if not hasattr(obj, "merge"):
+        return obj
+    nested: dict[str, Any] = {}
+    flat: dict[str, Any] = {}
+    for k, v in overrides.items():
+        if "__" in k:
+            outer, inner = k.split("__", 1)
+            nested.setdefault(outer, {})[inner] = v
+        else:
+            flat[k] = v
+    merged = obj.merge(**flat, **nested)
+    return merged
 
 
 class PipelineConfig:
@@ -479,7 +495,7 @@ class PipelineConfig:
             current = getattr(self, name)
             if isinstance(override, dict):
                 # 嵌套 dict 覆盖：处理 "__" 嵌套路径
-                merged_sub[name] = self._merge_with_nested(current, override)
+                merged_sub[name] = _merge_with_nested(current, override)
             else:
                 merged_sub[name] = override
         # 处理 constraints → trading 别名
@@ -495,22 +511,6 @@ class PipelineConfig:
         }
         kwargs_new.update(flat_filtered)
         return PipelineConfig(**kwargs_new)
-
-    @staticmethod
-    def _merge_with_nested(obj: Any, overrides: dict) -> Any:
-        """递归合并嵌套 dict 到 dataclass 实例。"""
-        if not hasattr(obj, "merge"):
-            return obj
-        nested: dict[str, Any] = {}
-        flat: dict[str, Any] = {}
-        for k, v in overrides.items():
-            if "__" in k:
-                outer, inner = k.split("__", 1)
-                nested.setdefault(outer, {})[inner] = v
-            else:
-                flat[k] = v
-        merged = obj.merge(**flat, **nested)
-        return merged
 
     def to_dict(self) -> dict:
         """序列化为扁平 dict（含嵌套子配置）。"""

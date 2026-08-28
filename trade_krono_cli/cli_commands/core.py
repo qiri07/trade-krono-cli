@@ -263,7 +263,7 @@ def run(
     from trade_krono_cli.pipeline import QuantPipeline
 
     # 解析过滤配置（CLI 参数优先，其次 fallback 到 Settings 默认）
-    from trade_krono_cli.pipeline_config import _parse_comma_list, _parse_range
+    from trade_krono_cli.pipeline.config_loader import _parse_comma_list, _parse_range
 
     mc_range = _parse_range(market_cap_range) if market_cap_range else None
     ind_whitelist = _parse_comma_list(industry_whitelist) if industry_whitelist else None
