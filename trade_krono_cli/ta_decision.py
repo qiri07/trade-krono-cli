@@ -13,15 +13,12 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field
-from enum import Enum
 from typing import Optional
 
+# ── Signal：来自领域层，消除重复定义 ──────────────────────────────────────
+from trade_krono_cli.domain.types import Signal  # noqa: F401
 
-class Signal(str, Enum):
-    BUY = "BUY"
-    OVERWEIGHT = "OVERWEIGHT"
-    HOLD = "HOLD"
-    SELL = "SELL"
+__all__ = ("Signal", "InvestmentDecision", "DecisionAdapter")
 
 
 # Truncation length for thesis/summary extraction
