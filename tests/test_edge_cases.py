@@ -1,11 +1,12 @@
 """边界条件与异常场景测试：无效股票代码、数据缺失、空配置、外部仓库异常等。"""
-import pytest
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-from typer.testing import CliRunner
+
+import pytest
 from typer import Exit
+from typer.testing import CliRunner
 
 from trade_krono_cli.cli import app
+from trade_krono_cli.cli_commands.core import _load_tickers, _sanitize_path
 
 
 @pytest.fixture
@@ -19,27 +20,25 @@ def runner():
 
 class TestInvalidTickers:
     def test_load_tickers_empty_list_from_string(self):
-        from trade_krono_cli.cli import _load_tickers
         assert _load_tickers("", None) == []
 
     def test_load_tickers_only_whitespace(self):
-        from trade_krono_cli.cli import _load_tickers
         assert _load_tickers("   \n  \n  ", None) == []
 
     def test_ta_command_with_empty_tickers_string(self, runner):
-        with patch("trade_krono_cli.cli._load_env"):
+        with patch("trade_krono_cli.cli_commands.core._load_env"):
             result = runner.invoke(app, ["ta", "--tickers", "", "--date", "2026-08-11"])
             assert result.exit_code != 0
 
     def test_kronos_command_with_empty_tickers_string(self, runner):
-        with patch("trade_krono_cli.cli._load_env"):
+        with patch("trade_krono_cli.cli_commands.core._load_env"):
             result = runner.invoke(app, ["kronos", "--tickers", "", "--date", "2026-08-11"])
             assert result.exit_code != 0
 
     def test_run_command_with_only_comments_config(self, runner, tmp_path):
         config_file = tmp_path / "only_comments.txt"
         config_file.write_text("# 只有注释\n# 第二行注释\n")
-        with patch("trade_krono_cli.cli._load_env"):
+        with patch("trade_krono_cli.cli_commands.core._load_env"):
             result = runner.invoke(app, [
                 "run", "--stock-file", str(config_file), "--date", "2026-08-11",
             ])
@@ -60,9 +59,9 @@ class TestMissingData:
 
     def test_merge_results_all_failed(self):
         """所有模块都失败时应返回空结果。"""
+        from trade_krono_cli.kronos_runner import KronosForecastResult
         from trade_krono_cli.pipeline.merge import merge_results
         from trade_krono_cli.ta_runner import StockAnalysisResult
-        from trade_krono_cli.kronos_runner import KronosForecastResult
         ta_results = [StockAnalysisResult(ticker="sh.600519", date="2026-08-11", error="fail")]
         kronos_results = [KronosForecastResult(
             ticker="sh.600519", eval_date="2026-08-11", horizon=30,
@@ -99,14 +98,12 @@ class TestMissingData:
 
 class TestEmptyConfig:
     def test_load_tickers_from_empty_file(self, tmp_path):
-        from trade_krono_cli.cli import _load_tickers
         config_file = tmp_path / "empty.txt"
         config_file.write_text("")
         tickers = _load_tickers(None, str(config_file))
         assert tickers == []
 
     def test_load_tickers_from_whitespace_file(self, tmp_path):
-        from trade_krono_cli.cli import _load_tickers
         config_file = tmp_path / "whitespace.txt"
         config_file.write_text("   \n  \n\n")
         tickers = _load_tickers(None, str(config_file))
@@ -132,7 +129,7 @@ class TestEmptyConfig:
 class TestExternalRepoErrors:
     def test_repo_status_no_repos(self, runner):
         """无外部 repo 配置时应给出提示。"""
-        with patch("trade_krono_cli.cli._load_env"), \
+        with patch("trade_krono_cli.cli_commands.core._load_env"), \
              patch("trade_krono_cli.external.status", return_value=[]):
             result = runner.invoke(app, ["repo", "status"])
             # 无 repo 时可能有退出码 0 或 2（取决于是否有默认配置）
@@ -140,7 +137,7 @@ class TestExternalRepoErrors:
 
     def test_repo_doctor_no_entries_raises_exit(self, runner):
         """无 repo 配置时 doctor 应退出非 0。"""
-        with patch("trade_krono_cli.cli._load_env"), \
+        with patch("trade_krono_cli.cli_commands.core._load_env"), \
              patch("trade_krono_cli.external.doctor", return_value=[]), \
              patch("trade_krono_cli.external.status", return_value=[]), \
              patch("trade_krono_cli.external.load_lock", return_value={}):
@@ -155,7 +152,7 @@ class TestExternalRepoErrors:
             name="tradingagents", path="/tmp/ta", branch="main",
             url="", commit="abc123",
         )
-        with patch("trade_krono_cli.cli._load_env"), \
+        with patch("trade_krono_cli.cli_commands.core._load_env"), \
              patch("trade_krono_cli.external.get_repos", return_value=[pinned_repo]), \
              patch("trade_krono_cli.external.update", return_value={}):
             result = runner.invoke(app, ["repo", "repo-update"])
@@ -163,7 +160,7 @@ class TestExternalRepoErrors:
             assert "已 pinned，跳过" in result.output
 
     def test_repo_pin_nonexistent_repo(self, runner):
-        with patch("trade_krono_cli.cli._load_env"), \
+        with patch("trade_krono_cli.cli_commands.core._load_env"), \
              patch("trade_krono_cli.external.pin",
                    side_effect=ValueError("未知 repo: fake")):
             result = runner.invoke(app, ["repo", "repo-pin", "--name", "fake", "--commit", "abc123"])
@@ -177,12 +174,10 @@ class TestExternalRepoErrors:
 
 class TestPathTraversalEdgeCases:
     def test_sanitize_path_with_double_dot(self, tmp_path):
-        from trade_krono_cli.cli import _sanitize_path
         with pytest.raises(Exit):
             _sanitize_path(str(tmp_path / ".." / ".." / "etc" / "passwd"), "Test", tmp_path)
 
     def test_sanitize_path_symlink_chain_escape(self, tmp_path):
-        from trade_krono_cli.cli import _sanitize_path
         link_a = tmp_path / "link_a"
         link_b = tmp_path / "link_b"
         link_a.symlink_to(link_b)
@@ -200,7 +195,7 @@ class TestInvalidDate:
         """未来日期不应在 CLI 层拒绝。"""
         mock_pipeline = MagicMock()
         mock_pipeline.run_parallel.return_value = []
-        with patch("trade_krono_cli.cli._load_env"), \
+        with patch("trade_krono_cli.cli_commands.core._load_env"), \
              patch("trade_krono_cli.pipeline.QuantPipeline", return_value=mock_pipeline):
             result = runner.invoke(app, ["run", "--tickers", "600519", "--date", "2099-01-01"])
             assert result.exit_code == 0
@@ -208,7 +203,7 @@ class TestInvalidDate:
     def test_ta_with_future_date(self, runner):
         mock_pipeline = MagicMock()
         mock_pipeline.run_ta_only.return_value = []
-        with patch("trade_krono_cli.cli._load_env"), \
+        with patch("trade_krono_cli.cli_commands.core._load_env"), \
              patch("trade_krono_cli.pipeline.QuantPipeline", return_value=mock_pipeline):
             result = runner.invoke(app, ["ta", "--tickers", "600519", "--date", "2099-01-01"])
             assert result.exit_code == 0
@@ -216,7 +211,7 @@ class TestInvalidDate:
     def test_warm_cache_with_future_date(self, runner):
         mock_cache = MagicMock()
         mock_cache.warm_history.return_value = (10, 1)
-        with patch("trade_krono_cli.cli._load_env"), \
+        with patch("trade_krono_cli.cli_commands.core._load_env"), \
              patch("trade_krono_cli.cache.get_cache", return_value=mock_cache):
             result = runner.invoke(app, ["warm-cache", "--tickers", "600519", "--date", "2099-01-01"])
             assert result.exit_code == 0

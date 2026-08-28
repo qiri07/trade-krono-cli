@@ -1,10 +1,11 @@
 """测试 PipelineConfig 配置类（Phase 3）。"""
-import pytest
-import json
 from pathlib import Path
-from trade_krono_cli.pipeline_config import PipelineConfig
+
+import pytest
+
+from trade_krono_cli.configs.schema import RiskConfig, ScoringConfig
 from trade_krono_cli.constraints_config import ConstraintConfig
-from trade_krono_cli.configs.schema import ScoringConfig, RiskConfig
+from trade_krono_cli.pipeline_config import PipelineConfig
 
 
 def test_default_config():
@@ -14,7 +15,7 @@ def test_default_config():
     assert cfg.lookback == 400
     assert cfg.model_name.lower() == "kronos-base"
     assert cfg.min_confidence == 55.0
-    assert cfg.allowed_signals == ("BUY", "HOLD")
+    assert cfg.allowed_signals == ("BUY", "OVERWEIGHT", "HOLD")
     assert cfg.log_level == "INFO"
     assert cfg.log_json is False
     assert isinstance(cfg.constraints, ConstraintConfig)
@@ -153,11 +154,12 @@ def test_from_dict_restores_dataclasses(tmp_path: Path):
 
 def test_merge_works_with_loaded_config(tmp_path: Path):
     """从文件加载的配置用于 merge_results 不应 AttributeError。"""
-    import pandas as pd
     import numpy as np
+    import pandas as pd
+
+    from trade_krono_cli.kronos_runner import KronosForecastResult
     from trade_krono_cli.pipeline.merge import merge_results
     from trade_krono_cli.ta_runner import StockAnalysisResult
-    from trade_krono_cli.kronos_runner import KronosForecastResult
 
     ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0)
     kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=3.2)

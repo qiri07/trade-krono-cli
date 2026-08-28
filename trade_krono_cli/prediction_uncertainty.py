@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from trade_krono_cli.prediction_distribution import (  # noqa: F401
     PredictionDistribution as PredictionUncertainty,
-    compute_single_sample,
-    compute_multi_sample,
+)
+from trade_krono_cli.prediction_distribution import (
     build_distribution,
-    build_result_dict,
+    compute_multi_sample,  # noqa: F401
+    compute_single_sample,  # noqa: F401
 )
 
 # 旧 API 别名，供遗留代码使用
