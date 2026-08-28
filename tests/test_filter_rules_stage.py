@@ -144,7 +144,7 @@ class TestFilterRulesStage:
         )
         tickets = [
             UniverseTicket(ticker="sh.600519", pe=25.0),  # passes
-            UniverseTicket(ticker="sz.000858", pe=5.0),   # fails (pe < 10)
+            UniverseTicket(ticker="sz.000858", pe=5.0),  # fails (pe < 10)
         ]
         result = stage.filter(tickets)
         assert len(result) == 1
