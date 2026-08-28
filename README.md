@@ -83,21 +83,21 @@ EOF
 
 ```bash
 # TA-only mode: no PyTorch, ~200MB install vs ~2GB+ full install
-pip install -e ".[ta]"
+uv pip install -e ".[ta]"
 
 # Full install: TA + Kronos prediction + all data sources
-pip install -e ".[full]"
+uv pip install -e ".[full]"
 
 # Kronos only (includes PyTorch)
-pip install -e ".[kronos]"
+uv pip install -e ".[kronos]"
 
 # Data sources only (combinable)
-pip install -e ".[data,akshare]"
-pip install -e ".[data,mootdx]"
-pip install -e ".[data,tushare]"
+uv pip install -e ".[data,akshare]"
+uv pip install -e ".[data,mootdx]"
+uv pip install -e ".[data,tushare]"
 
 # Development dependencies
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ```
 
 ### Method 1: uv Virtual Environment (Recommended)
@@ -115,13 +115,13 @@ uv pip install -e ".[dev]"
 
 ```bash
 cd trade-krono-cli
-pip install -e .
+uv pip install -e .
 ```
 
 For development dependencies (tests, etc.):
 
 ```bash
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ```
 
 ### Method 3: One-Click Install Script
@@ -141,7 +141,7 @@ The install script will:
 | Dependency | Minimum Version | Notes |
 |------|----------|------|
 | Python | 3.12 | Python 3.14 not yet supported (no torch wheel) |
-| PyTorch | 2.13+ (cu130) | **Optional**: Kronos model inference (`pip install -e ".[kronos]"`) |
+| PyTorch | 2.13+ (cu130) | **Optional**: Kronos model inference (`uv pip install -e ".[kronos]"`) |
 | Typer | 0.9+ | CLI framework |
 | Rich | 13+ | Terminal beautification output |
 | Python-dotenv | 1.0+ | .env file loading |
@@ -264,7 +264,7 @@ FILTER_MIN_TURNOVER_RATE=            # Minimum turnover rate (%)
 
 | `--universe-source` | Data Source | Description |
 |---------------------|-------------|-------------|
-| `akshare` | akshare | Requires `pip install akshare`, some APIs need proxy |
+| `akshare` | akshare | Requires `uv add akshare`, some APIs need proxy |
 | `mootdx` | mootdx + baostock | Free, no API key required (recommended) |
 | `baostock` | baostock | Stock list only, no quote data |
 

@@ -48,7 +48,7 @@
 
 ```bash
 # 安装
-pip install -e .
+uv pip install -e .
 
 # 配置（复制并编辑 .env）
 cp .env.example .env
@@ -82,21 +82,21 @@ trade-krono-cli run --tickers "600519,000858,600036" --date 2026-08-11
 
 ```bash
 # TA 分析模式：不含 PyTorch，安装包约 200MB（vs 全量 2GB+）
-pip install -e ".[ta]"
+uv pip install -e ".[ta]"
 
 # 完整安装：TA + Kronos 预测 + 所有数据源
-pip install -e ".[full]"
+uv pip install -e ".[full]"
 
 # 仅加 Kronos（含 PyTorch）
-pip install -e ".[kronos]"
+uv pip install -e ".[kronos]"
 
 # 仅加数据源（可选组合）
-pip install -e ".[data,akshare]"
-pip install -e ".[data,mootdx]"
-pip install -e ".[data,tushare]"
+uv pip install -e ".[data,akshare]"
+uv pip install -e ".[data,mootdx]"
+uv pip install -e ".[data,tushare]"
 
 # 开发模式
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ```
 
 ### uv 虚拟环境（推荐）
@@ -114,13 +114,13 @@ uv pip install -e ".[dev]"
 
 ```bash
 cd trade-krono-cli
-pip install -e .
+uv pip install -e .
 ```
 
 如需开发依赖（测试等）：
 
 ```bash
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ```
 
 ### 方式三：一键安装脚本
@@ -140,7 +140,7 @@ bash scripts/install.sh
 | 依赖 | 最低版本 | 说明 |
 |------|----------|------|
 | Python | 3.12 | 3.14 暂不支持（torch 无 wheel） |
-| PyTorch | 2.13+ (cu130) | **可选**：Kronos 模型推理（`pip install -e ".[kronos]"`） |
+| PyTorch | 2.13+ (cu130) | **可选**：Kronos 模型推理（`uv pip install -e ".[kronos]"`） |
 | Typer | 0.9+ | CLI 框架 |
 | Rich | 13+ | 终端美化输出 |
 | Python-dotenv | 1.0+ | .env 文件加载 |
@@ -263,7 +263,7 @@ FILTER_MIN_TURNOVER_RATE=            # 最小换手率（%）
 
 | `--universe-source` | 数据源 | 说明 |
 |---------------------|--------|------|
-| `akshare` | akshare | 需 `pip install akshare`，部分接口需要代理 |
+| `akshare` | akshare | 需 `uv add akshare`，部分接口需要代理 |
 | `mootdx` | mootdx + baostock | 免费，无需 API Key（推荐） |
 | `baostock` | baostock | 仅获取股票列表，无行情数据 |
 

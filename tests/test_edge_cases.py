@@ -8,9 +8,9 @@ import pytest
 from typer import Exit
 from typer.testing import CliRunner
 
+from tests.conftest import _strip_ansi
 from trade_krono_cli.cli import app
 from trade_krono_cli.cli_commands.core import _load_tickers, _sanitize_path
-from tests.conftest import _strip_ansi
 
 
 @pytest.fixture

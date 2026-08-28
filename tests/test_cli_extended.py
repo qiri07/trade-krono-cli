@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from trade_krono_cli.cli import app
 from tests.conftest import _strip_ansi
+from trade_krono_cli.cli import app
 
 
 @pytest.fixture
