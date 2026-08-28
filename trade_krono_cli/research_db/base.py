@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 from trade_krono_cli.config import Settings, get_settings
@@ -33,14 +34,20 @@ class ResearchDatabase:
     def __init__(self, db_path: Path | None = None, settings: Settings | None = None):
         self._db_path = db_path or ((settings or get_settings()).cache_dir / "pipeline_cache.db")
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        # 线程本地存储必须在 _init_db 之前初始化，因为 _init_db 会访问 _conn
+        self._local = threading.local()
         self._init_db()
         self._migrate_schema()
 
     @property
     def _conn(self) -> sqlite3.Connection:
-        """持久连接（懒初始化），避免每次读写新建连接。"""
-        conn = sqlite3.connect(self._db_path, check_same_thread=True)
-        conn.execute("PRAGMA journal_mode=WAL")
+        """获取当前线程的 SQLite 连接（线程安全）。"""
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            self._local.conn = conn
         return conn
 
     def _init_db(self) -> None:

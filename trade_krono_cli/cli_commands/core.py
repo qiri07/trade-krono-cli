@@ -27,14 +27,39 @@ console: Console = Console()
 def _build_degrade_overrides(
     degrade_mode: str = "strict",
     ta_cache_fallback: bool = False,
-) -> dict:
+) -> dict[str, object]:
     """根据 CLI 参数构建降级策略覆盖字典。"""
-    overrides: dict = {}
+    overrides: dict[str, object] = {}
     if degrade_mode != "strict":
         overrides["degrade_mode"] = degrade_mode
     if ta_cache_fallback:
         overrides["ta_cache_fallback_enabled"] = True
     return overrides
+
+
+def _build_retry_overrides(
+    max_retries: int | None = None,
+    base_delay: float | None = None,
+    no_jitter: bool = False,
+    no_rate_limit_backoff: bool = False,
+) -> dict[str, object]:
+    """根据 CLI 参数构建重试策略覆盖字典。
+
+    供 run / ta / kronos / retry_failed 命令共享使用。
+    """
+    overrides: dict[str, object] = {}
+    if max_retries is not None:
+        overrides["retry_max_attempts"] = max_retries
+    if base_delay is not None:
+        overrides["retry_base_delay"] = base_delay
+    if no_jitter:
+        overrides["retry_jitter"] = False
+    if no_rate_limit_backoff:
+        overrides["retry_rate_limit_backoff"] = False
+    return overrides
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 # ═══════════════════════════════════════════════════════
@@ -347,22 +372,19 @@ def run(
     def _progress(stage: str, cur: int, total: int) -> None:
         console.print(f"  [cyan]{stage}[/cyan] [{cur}/{total}]")
 
-    project_root = Path(__file__).resolve().parent.parent.parent
+    project_root = _PROJECT_ROOT
     json_out_p = _sanitize_path(json_out, "JSON", project_root)
     html_out_p = _sanitize_path(html_out, "HTML", project_root)
 
     all_overrides = {**filter_overrides, **strategy_overrides}
 
     # 重试策略覆盖
-    retry_overrides: dict = {}
-    if max_retries is not None:
-        retry_overrides["retry_max_attempts"] = max_retries
-    if base_delay is not None:
-        retry_overrides["retry_base_delay"] = base_delay
-    if no_jitter:
-        retry_overrides["retry_jitter"] = False
-    if no_rate_limit_backoff:
-        retry_overrides["retry_rate_limit_backoff"] = False
+    retry_overrides = _build_retry_overrides(
+        max_retries=max_retries,
+        base_delay=base_delay,
+        no_jitter=no_jitter,
+        no_rate_limit_backoff=no_rate_limit_backoff,
+    )
     if retry_overrides:
         all_overrides.update(retry_overrides)
 
@@ -453,17 +475,13 @@ def ta(
         console.print("[red]❌ 股票列表为空[/red]")
         raise typer.Exit(1)
 
-    project_root = Path(__file__).resolve().parent.parent.parent
+    project_root = _PROJECT_ROOT
     output_p = _sanitize_path(output, "TA输出", project_root)
 
     # 构建重试策略
-    retry_overrides: dict = {}
-    if max_retries is not None:
-        retry_overrides["retry_max_attempts"] = max_retries
-    if base_delay is not None:
-        retry_overrides["retry_base_delay"] = base_delay
-    if no_jitter:
-        retry_overrides["retry_jitter"] = False
+    retry_overrides = _build_retry_overrides(
+        max_retries=max_retries, base_delay=base_delay, no_jitter=no_jitter
+    )
     cfg = PipelineConfig.default().override(**retry_overrides) if retry_overrides else None
     degrade_overrides = _build_degrade_overrides(degrade_mode, ta_cache_fallback)
     if degrade_overrides:
@@ -534,17 +552,13 @@ def kronos(
         console.print("[red]❌ 股票列表为空[/red]")
         raise typer.Exit(1)
 
-    project_root = Path(__file__).resolve().parent.parent.parent
+    project_root = _PROJECT_ROOT
     output_p = _sanitize_path(output, "Kronos输出", project_root)
 
     # 构建重试策略
-    retry_overrides: dict = {}
-    if max_retries is not None:
-        retry_overrides["retry_max_attempts"] = max_retries
-    if base_delay is not None:
-        retry_overrides["retry_base_delay"] = base_delay
-    if no_jitter:
-        retry_overrides["retry_jitter"] = False
+    retry_overrides = _build_retry_overrides(
+        max_retries=max_retries, base_delay=base_delay, no_jitter=no_jitter
+    )
     cfg = PipelineConfig.default().override(**retry_overrides) if retry_overrides else None
     degrade_overrides = _build_degrade_overrides(degrade_mode, ta_cache_fallback)
     if degrade_overrides:

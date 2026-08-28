@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from trade_krono_cli.cli_commands.core import _load_env, _load_tickers
+from trade_krono_cli.cli_commands.core import _build_retry_overrides, _load_env, _load_tickers
 
 console: Console = Console()
 
@@ -352,13 +352,9 @@ def retry_failed(
     )
 
     # 构建重试策略
-    retry_overrides: dict = {}
-    if max_retries is not None:
-        retry_overrides["retry_max_attempts"] = max_retries
-    if base_delay is not None:
-        retry_overrides["retry_base_delay"] = base_delay
-    if no_jitter:
-        retry_overrides["retry_jitter"] = False
+    retry_overrides = _build_retry_overrides(
+        max_retries=max_retries, base_delay=base_delay, no_jitter=no_jitter
+    )
     cfg = (
         PipelineConfig.default(settings).override(**retry_overrides)
         if retry_overrides
@@ -376,16 +372,15 @@ def retry_failed(
                 ta_r = pipeline.ta.analyze_one(ticker, date)
                 if ta_r.error is None:
                     console.print("[green]✅[/green]")
-                    success_count += 1
                 else:
                     console.print(f"[red]❌ {ta_r.error[:60]}[/red]")
                     still_failed.append(ticker)
+                    continue  # 只重试指定模块时，TA失败即标记为仍失败
             if module is None or module == "kronos":
                 if pipeline.kronos is not None:
                     kr = pipeline.kronos.predict_one(ticker, date)
                     if kr.error is None:
                         console.print("[green]✅[/green]")
-                        success_count += 1
                     else:
                         console.print(f"[red]❌ {kr.error[:60]}[/red]")
                         still_failed.append(ticker)
@@ -395,21 +390,23 @@ def retry_failed(
             console.print(f"[red]❌ {type(e).__name__}: {str(e)[:60]}[/red]")
             still_failed.append(ticker)
 
+    success_count = len(failed_tickers) - len(still_failed)
+
     # 更新失败记录：成功的移除，仍失败的更新 attempt_count
-    succeeded_set = set(failed_tickers) - set(still_failed)
-    for ticker in succeeded_set:
-        store.clear_for_date(date)  # 简化：清掉该日期所有记录再重建
-    store.clear_for_date(date)
+    # 先构建原始记录的 ticker → record 映射（O(n)）
+    from trade_krono_cli.retry_policy.store import FailureRecord
+
+    orig_map: dict[str, FailureRecord] = {r.ticker: r for r in fails}
+    store.clear_for_date(date, module=module)
     for ticker in still_failed:
-        # 找到原始失败记录并更新 attempt_count
-        orig = [r for r in fails if r.ticker == ticker]
-        if orig:
+        orig = orig_map.get(ticker)
+        if orig is not None:
             store.record(
                 ticker,
                 date,
-                orig[0].module,
-                RuntimeError(orig[0].error_message),
-                attempt_count=orig[0].attempt_count + 1,
+                orig.module,
+                RuntimeError(orig.error_message),
+                attempt_count=orig.attempt_count + 1,
             )
 
     console.print(f"\n[bold]{'✅' if still_failed else '🎉'} 重跑完成[/bold]")
@@ -417,5 +414,4 @@ def retry_failed(
     if still_failed:
         console.print(f"   仍失败: {len(still_failed)} 只 → {', '.join(still_failed)}")
     else:
-        store.clear_for_date(date)
-        console.print(f"   已清除日期 {date} 的失败记录")
+        console.print(f"   已清除日期 {date} 的失败记录（全部成功）")

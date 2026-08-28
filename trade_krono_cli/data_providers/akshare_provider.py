@@ -13,6 +13,7 @@ API 参考：
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime
 from typing import Any, Optional
 
@@ -26,6 +27,10 @@ from trade_krono_cli.data_providers.base import (
 )
 
 _ST_PATTERNS = re.compile(r"^(ST|\*ST|SST|N ST)", re.IGNORECASE)
+
+# 全市场实时行情缓存（TTL 60 秒），避免每次 fetch_quote 都重新拉取全市场
+_full_market_cache: dict[str, Any] = {"data": None, "timestamp": 0.0}
+_FULL_MARKET_CACHE_TTL_SEC = 60
 
 
 class AkShareProvider(DataProvider):
@@ -52,6 +57,23 @@ class AkShareProvider(DataProvider):
             raise RuntimeError(
                 "akshare 未安装，无法使用 akshare 数据源。请运行: pip install akshare"
             )
+
+    @classmethod
+    def _get_full_market_cache(cls) -> Any:
+        """获取全市场实时行情缓存，TTL 内直接返回，过期则重新拉取。"""
+        now = time.time()
+        cached = _full_market_cache
+        if cached["data"] is not None and (now - cached["timestamp"]) < _FULL_MARKET_CACHE_TTL_SEC:
+            return cached["data"]
+        try:
+            df = cls._ak.stock_zh_a_spot_em()
+            if df is not None and not df.empty:
+                cached["data"] = df
+                cached["timestamp"] = now
+            return cached["data"]
+        except Exception as e:
+            logger.debug(f"akshare 全市场行情拉取失败: {e}")
+            return None
 
     # ── 内部转换工具 ──────────────────────────────────────────
 
@@ -115,8 +137,8 @@ class AkShareProvider(DataProvider):
     def fetch_quote(self, ticker: str) -> Optional[RealtimeQuote]:
         try:
             self._ensure_import()
-            # 获取全市场实时行情，然后查找目标股票
-            df = self._ak.stock_zh_a_spot_em()
+            # 使用缓存的全市场实时行情，避免重复拉取
+            df = self._get_full_market_cache()
             if df is None or df.empty:
                 return None
 

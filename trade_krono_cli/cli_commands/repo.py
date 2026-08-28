@@ -4,6 +4,7 @@ CLI repo 子命令 — 外部项目管理（TradingAgents-astock、Kronos 等下
 
 from __future__ import annotations
 
+import typer
 from rich.console import Console
 from rich.table import Table
 
@@ -73,7 +74,7 @@ def repo_doctor() -> None:
     if not entries:
         console.print("[yellow]⚠️  未检测到外部 repo 配置[/yellow]")
         console.print("  建议：创建 external/repos.yaml 或使用默认路径")
-        raise SystemExit(1)
+        raise typer.Exit(1)
 
     console.print("[bold red]❌ 检测到以下问题：[/bold red]")
     for issue in issues:
@@ -85,7 +86,7 @@ def repo_doctor() -> None:
     console.print("  • dirty       → git stash 或 git checkout -- .")
     console.print("  • lock 漂移   → 运行 repo pin <name> <commit> 重新锁定")
     console.print("  • 落后于远程  → 运行 repo update")
-    raise SystemExit(1)
+    raise typer.Exit(1)
 
 
 def repo_update() -> None:
@@ -104,8 +105,8 @@ def repo_update() -> None:
 
 
 def repo_pin(
-    name: str | None = None,  # typer will inject via decorator
-    commit: str | None = None,
+    name: str = typer.Option(..., "--name", "-n", help="外部 repo 名称"),
+    commit: str = typer.Option(..., "--commit", "-c", help="目标 commit hash"),
 ) -> None:
     """将外部 repo pin 到指定 commit，同时更新 repos.yaml 和 repo.lock。
 
@@ -115,13 +116,10 @@ def repo_pin(
     """
     from trade_krono_cli.external import pin
 
-    if name is None or commit is None:
-        console.print("[red]❌ --name 和 --commit 均为必填参数[/red]")
-        raise SystemExit(1)
     try:
         pin(name, commit)
         console.print(f"[green]✅ [{name}] 已 pin 到 {commit[:12]}[/green]")
         console.print("   配置文件已更新：external/repos.yaml + external/repo.lock")
     except ValueError as e:
         console.print(f"[red]❌ {e}[/red]")
-        raise SystemExit(1)
+        raise typer.Exit(1)

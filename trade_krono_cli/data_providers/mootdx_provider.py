@@ -35,17 +35,24 @@ class MootDxProvider(DataProvider):
     # ── 懒加载 ────────────────────────────────────────────────
 
     _client: Any = None
+    _connected: bool = False
 
     @classmethod
-    def _ensure_client(cls):
-        if cls._client is not None:
+    def _ensure_client(cls) -> None:
+        if cls._client is not None and cls._connected:
             return
         try:
             from mootdx.quotes import Quotes  # type: ignore
 
             cls._client = Quotes.factory(market="std")
+            cls._connected = True
         except ImportError:
             raise RuntimeError("mootdx 未安装，无法使用 mootdx 数据源。请运行: pip install mootdx")
+        except Exception:
+            # 连接失败时重置状态，下次调用会重新建立
+            cls._client = None
+            cls._connected = False
+            raise
 
     # ── 内部转换工具 ──────────────────────────────────────────
 

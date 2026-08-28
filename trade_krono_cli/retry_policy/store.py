@@ -169,10 +169,15 @@ class FailureStore:
                 result.append(r.ticker)
         return result
 
-    def clear_for_date(self, date: str) -> int:
-        """清除指定日期的所有失败记录，返回清除数量。"""
+    def clear_for_date(self, date: str, module: str | None = None) -> int:
+        """清除指定日期的所有失败记录（可按模块过滤），返回清除数量。"""
         before = len(self._records)
-        self._records = [r for r in self._records if r.date != date]
+        if module:
+            self._records = [
+                r for r in self._records if not (r.date == date and r.module == module)
+            ]
+        else:
+            self._records = [r for r in self._records if r.date != date]
         cleared = before - len(self._records)
         if cleared:
             self._save()

@@ -7,8 +7,10 @@ data_providers.baostock_provider — baostock 数据源实现。
 
 from __future__ import annotations
 
+import atexit
 import re
 import threading
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -32,7 +34,28 @@ _bs_login_lock = threading.Lock()
 
 # ST 标记正则（与 trading_constraints.py 保持一致）
 _ST_PATTERNS = re.compile(r"^(ST|\*ST|SST|N ST)", re.IGNORECASE)
-_st_cache: dict[str, bool] = {}
+
+# _st_cache: ticker → (is_st: bool, timestamp: float)
+# TTL: 30 分钟，避免无限增长
+_st_cache: dict[str, tuple[bool, float]] = {}
+_ST_CACHE_TTL_SEC = 30 * 60  # 30 分钟
+
+
+def _cleanup_bs_on_exit() -> None:
+    """进程退出时保证 baostock 会话被正确注销。"""
+    global _bs, _HAS_BS, _bs_logged_in
+    if _bs_logged_in and _bs is not None:
+        try:
+            _bs.logout()  # type: ignore
+        except Exception:
+            pass
+        _bs_logged_in = False
+        _HAS_BS = False
+        _bs = None
+        logger.debug("baostock 会话已在进程退出时清理")
+
+
+atexit.register(_cleanup_bs_on_exit)
 
 
 class BaostockProvider(DataProvider):
@@ -194,14 +217,19 @@ class BaostockProvider(DataProvider):
 
     def check_st_status(self, ticker: str) -> bool:
         """
-        检查是否为 ST 标的（带缓存，与 trading_constraints 兼容）。
+        检查是否为 ST 标的（带 TTL 缓存，避免无限增长）。
         """
+        now = time.time()
         if ticker in _st_cache:
-            return _st_cache[ticker]
+            is_st, cached_at = _st_cache[ticker]
+            if now - cached_at < _ST_CACHE_TTL_SEC:
+                return is_st
+            # 缓存过期，删除旧条目
+            del _st_cache[ticker]
 
         meta = self.fetch_metadata(ticker)
         result = meta.is_st if meta else False
-        _st_cache[ticker] = result
+        _st_cache[ticker] = (result, now)
         return result
 
     def check_delisted(self, ticker: str) -> bool:
