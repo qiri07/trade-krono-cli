@@ -7,49 +7,51 @@ QuantPipeline 的核心实现，负责协调 TA + Kronos 并行执行、
 PipelineFactory 负责组装组件（TradingAgentsSession / KronosSession），
 实现创建与执行的职责分离。
 """
+
 from __future__ import annotations
 
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Optional, Callable
+from typing import Any, Callable, Optional
 
 from loguru import logger
-from trade_krono_cli.config import get_settings, Settings
-from trade_krono_cli.models.kronos_session import KronosSession
-from trade_krono_cli.models.ta_session import TASession
-from trade_krono_cli.kronos_runner import KronosForecastResult
-from trade_krono_cli.ta_runner import StockAnalysisResult
-from trade_krono_cli.pipeline.merge import merge_results, filter_pool
-from trade_krono_cli.research_db import get_research
-from trade_krono_cli.trading_constraints import T1Tracker
-from trade_krono_cli.constraints_config import ConstraintConfig
-from trade_krono_cli.pipeline_config import PipelineConfig
-from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
-from trade_krono_cli.stock_filter import StockFilter, StockMeta
+
 from trade_krono_cli.abnormal_stock import (
-    precheck_stock_status,
-    check_kline_completeness,
-    apply_abnormality_risk_boost,
-    StockAbnormality,
     AbnormalityFlag,
+    StockAbnormality,
+    apply_abnormality_risk_boost,
+    check_kline_completeness,
+    precheck_stock_status,
 )
-from trade_krono_cli.pipeline.reporter import (
-    save_json_report,
-    save_html_report,
-)
-from trade_krono_cli.security import sanitize_for_log
-from trade_krono_cli.universe.engine import UniverseEngine
 from trade_krono_cli.committee import (
     InvestmentCommittee,
     build_committee_input,
-    describe_committee,
 )
+from trade_krono_cli.config import Settings, get_settings
+from trade_krono_cli.constraints_config import ConstraintConfig
+from trade_krono_cli.kronos_runner import KronosForecastResult
+from trade_krono_cli.models.kronos_session import KronosSession
+from trade_krono_cli.models.ta_session import TASession
+from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
+from trade_krono_cli.pipeline.merge import filter_pool, merge_results
+from trade_krono_cli.pipeline.reporter import (
+    save_html_report,
+    save_json_report,
+)
+from trade_krono_cli.pipeline_config import PipelineConfig
+from trade_krono_cli.research_db import get_research
+from trade_krono_cli.security import sanitize_for_log
+from trade_krono_cli.stock_filter import StockFilter, StockMeta
+from trade_krono_cli.ta_runner import StockAnalysisResult
+from trade_krono_cli.trading_constraints import T1Tracker
+from trade_krono_cli.universe.engine import UniverseEngine
 
 
 def _collect_futures(
-    ta_future, kronos_future,
+    ta_future,
+    kronos_future,
 ) -> tuple[list, list]:
     """
     同时等待两个 Future 完成，Kronos 异常时降级为空列表。
@@ -135,6 +137,7 @@ class PipelineFactory:
     def _ensure_session(obj: Optional[Any], kind: str) -> Any:
         """将 runner 对象包装为 session，或原样返回 session 对象。"""
         from unittest.mock import MagicMock as _Mock
+
         if obj is None:
             if kind == "ta":
                 return TASession()
@@ -235,6 +238,7 @@ class QuantPipeline:
 
         # 构造 runner 实例，委托 session 管理资源
         from trade_krono_cli.retry_policy import RetryPolicy
+
         retry_cfg = config or PipelineConfig.default()
         retry_policy = RetryPolicy(
             max_attempts=retry_cfg.retry_max_attempts,
@@ -246,9 +250,9 @@ class QuantPipeline:
         self.ta = self.ta_session.runner
         self.kronos = self.kronos_session.runner if self.kronos_session else None
         # 注入重试策略
-        if hasattr(self.ta, '_retry_policy'):
+        if hasattr(self.ta, "_retry_policy"):
             self.ta._retry_policy = retry_policy
-        if self.kronos and hasattr(self.kronos, '_retry_policy'):
+        if self.kronos and hasattr(self.kronos, "_retry_policy"):
             self.kronos._retry_policy = retry_policy
 
         logger.info(
@@ -269,7 +273,8 @@ class QuantPipeline:
             if ta.error is None:
                 continue
             cached = research.get_latest_ta_for_ticker(
-                ta.ticker, max_age_days=max_age_days,
+                ta.ticker,
+                max_age_days=max_age_days,
             )
             if cached:
                 logger.info(
@@ -282,9 +287,7 @@ class QuantPipeline:
                 ta.error = None
                 ta_fallback_count += 1
         if ta_fallback_count:
-            logger.info(
-                f"📦 TA 缓存回退完成: {ta_fallback_count}/{len(ta_results)} 只股票"
-            )
+            logger.info(f"📦 TA 缓存回退完成: {ta_fallback_count}/{len(ta_results)} 只股票")
 
     def run_parallel(
         self,
@@ -331,19 +334,17 @@ class QuantPipeline:
         abnormal_flags_map = precheck_stock_status(
             tickers=tickers,
             eval_date=date,
-            min_listing_days=getattr(cfg, 'new_stock_min_days', 60),
+            min_listing_days=getattr(cfg, "new_stock_min_days", 60),
             skip_suspended=cfg.exclude_st or True,
-            skip_new_stock=getattr(cfg, 'skip_new_stock', True),
+            skip_new_stock=getattr(cfg, "skip_new_stock", True),
         )
         # 记录被标记为退市的股票
         delisted = [
-            t for t, f in abnormal_flags_map.items()
-            if StockAbnormality.DELISTED in f.flags
+            t for t, f in abnormal_flags_map.items() if StockAbnormality.DELISTED in f.flags
         ]
         if delisted:
             logger.warning(
-                f"🚫 检测到 {len(delisted)} 只退市股票，将从分析中排除: "
-                f"{', '.join(delisted)}"
+                f"🚫 检测到 {len(delisted)} 只退市股票，将从分析中排除: {', '.join(delisted)}"
             )
         # 过滤掉退市股票，不参与后续分析
         tickers_clean: list[str] = []
@@ -360,6 +361,7 @@ class QuantPipeline:
         # ── 流式模式：数据拉取与计算重叠 ────────────────────────────────
         if streaming:
             from trade_krono_cli.pipeline.stream_pipeline import StreamPipeline
+
             stream = StreamPipeline(
                 ta_runner=self.ta,
                 kronos_runner=self.kronos,
@@ -376,14 +378,15 @@ class QuantPipeline:
         else:
             # ── 批量准备 K 线数据（共享给风险引擎）─────────────────
             kline_data = prepare_kline_batch(
-                tickers, date,
+                tickers,
+                date,
                 lookback=self._config.lookback,
                 adjustflag=self.constraints_config.adjustflag,
                 use_cache=self._config.use_cache,
             )
 
             # ── K 线完整性校验（标记数据不足的股票）─────────────────
-            min_completeness = getattr(cfg, 'kline_min_completeness', 0.85)
+            min_completeness = getattr(cfg, "kline_min_completeness", 0.85)
             for tk, df in list(kline_data.items()):
                 if df is None or len(df) == 0:
                     abnormal_flags_map[tk] = AbnormalityFlag(
@@ -410,19 +413,20 @@ class QuantPipeline:
 
             # ── 并行执行 TA + Kronos（错误隔离）──────────────────
             with ThreadPoolExecutor(max_workers=2) as executor:
-                ta_future = executor.submit(
-                    self.ta.analyze_batch, tickers, date
+                ta_future = executor.submit(self.ta.analyze_batch, tickers, date)
+                kronos_future = (
+                    executor.submit(self.kronos.predict_batch, tickers, date)
+                    if self.kronos
+                    else None
                 )
-                kronos_future = executor.submit(
-                    self.kronos.predict_batch, tickers, date
-                ) if self.kronos else None
 
-                ta_results, kronos_results = _collect_futures(
-                    ta_future, kronos_future
-                )
+                ta_results, kronos_results = _collect_futures(ta_future, kronos_future)
 
         # ── 降级模式：TA 缓存回退 ────────────────────────────────
-        if self._config.degrade_mode == "ta_cache_fallback" and self._config.ta_cache_fallback_enabled:
+        if (
+            self._config.degrade_mode == "ta_cache_fallback"
+            and self._config.ta_cache_fallback_enabled
+        ):
             self._apply_ta_cache_fallback(ta_results)
 
         # ── 应用过滤（信号 / 置信度阈值）────────────────────────────
@@ -496,7 +500,7 @@ class QuantPipeline:
         )
 
         # ── 异常风险分上调 ──────────────────────────────────────
-        if getattr(cfg, 'abnormality_risk_boost_enabled', True):
+        if getattr(cfg, "abnormality_risk_boost_enabled", True):
             risk_boost_cfg = cfg.risk_boost_strategy
             for item in merged:
                 ticker = item.get("ticker", "")
@@ -508,7 +512,7 @@ class QuantPipeline:
                         flags=af.flag_names(),
                         enabled=True,
                         strategy=risk_boost_cfg.strategy,
-                        params=risk_boost_cfg.params if hasattr(risk_boost_cfg, 'params') else None,
+                        params=risk_boost_cfg.params if hasattr(risk_boost_cfg, "params") else None,
                     )
                     item["risk_score_total"] = boosted
                     item["abnormal_flags"] = af.flag_names()
@@ -533,8 +537,11 @@ class QuantPipeline:
             research.insert_ta(job_id, r, version_snapshot=version_snapshot)
             if r.investment_decision:
                 research.insert_decision(
-                    job_id, r.ticker, r.investment_decision,
-                    r.investment_decision.thesis, r.investment_decision.risks,
+                    job_id,
+                    r.ticker,
+                    r.investment_decision,
+                    r.investment_decision.thesis,
+                    r.investment_decision.risks,
                 )
 
         self._index_ta_raw_reports(research, job_id, ta_results, raw_paths)
@@ -546,8 +553,11 @@ class QuantPipeline:
 
         # ── 委员会审议：多 Agent 报告 → Bull/Bear Case → 最终推荐 ──
         self._run_committee(
-            research=research, job_id=job_id, date=date,
-            ta_results=ta_results, kronos_results=kronos_results,
+            research=research,
+            job_id=job_id,
+            date=date,
+            ta_results=ta_results,
+            kronos_results=kronos_results,
         )
 
         elapsed = time.time() - t0
@@ -593,16 +603,22 @@ class QuantPipeline:
             research.insert_ta(job_id, r, version_snapshot=version_snapshot)
             if r.investment_decision:
                 research.insert_decision(
-                    job_id, r.ticker, r.investment_decision,
-                    r.investment_decision.thesis, r.investment_decision.risks,
+                    job_id,
+                    r.ticker,
+                    r.investment_decision,
+                    r.investment_decision.thesis,
+                    r.investment_decision.risks,
                 )
 
         self._index_ta_raw_reports(research, job_id, results, raw_paths)
 
         # ── 委员会审议（TA-only 路径）──────────────────────────────
         self._run_committee(
-            research=research, job_id=job_id, date=date,
-            ta_results=results, kronos_results=[],
+            research=research,
+            job_id=job_id,
+            date=date,
+            ta_results=results,
+            kronos_results=[],
         )
 
         elapsed = time.time() - t0
@@ -611,9 +627,7 @@ class QuantPipeline:
             n_success=sum(1 for r in results if r.error is None),
             elapsed=elapsed,
         )
-        logger.info(
-            f"📊 TA 研究作业完成: job={job_id} run_id={version_snapshot['run_id']}"
-        )
+        logger.info(f"📊 TA 研究作业完成: job={job_id} run_id={version_snapshot['run_id']}")
         return results
 
     def run_kronos_only(
@@ -633,7 +647,10 @@ class QuantPipeline:
 
     @staticmethod
     def _index_ta_raw_reports(
-        research, job_id: str, ta_results: list, raw_paths: dict,
+        research,
+        job_id: str,
+        ta_results: list,
+        raw_paths: dict,
     ) -> None:
         """索引 TA 原始报告文件到 research database。"""
         for r in ta_results:
@@ -734,6 +751,4 @@ class QuantPipeline:
                 logger.warning(f"⚠️  委员会审议失败 {ta.ticker}: {safe_msg}")
 
         if deliberated:
-            logger.info(
-                f"🏛️  委员会审议: {deliberated}/{len(ta_results)} 只股票完成"
-            )
+            logger.info(f"🏛️  委员会审议: {deliberated}/{len(ta_results)} 只股票完成")

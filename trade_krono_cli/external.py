@@ -13,30 +13,33 @@
                          每次 repo pin / repo update 后自动写入
                          .gitignore 推荐加入此文件以跟踪变更，但提交到 git 以确保复现
 """
+
 from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from loguru import logger
-from trade_krono_cli.config import get_settings, Settings
 
+from trade_krono_cli.config import Settings, get_settings
 
 # ═══════════════════════════════════════════════════════
 # 数据模型
 # ═══════════════════════════════════════════════════════
 
+
 @dataclass
 class ExternalRepo:
     """单个外部 repo 的配置。"""
+
     name: str
-    path: str          # 相对项目根目录的路径
-    branch: str        # 默认跟踪分支
-    url: str           # 远程 git 地址
+    path: str  # 相对项目根目录的路径
+    branch: str  # 默认跟踪分支
+    url: str  # 远程 git 地址
     commit: Optional[str] = None  # YAML 中指定的 commit（None = unpinned）
 
     @property
@@ -51,17 +54,19 @@ class ExternalRepo:
 @dataclass
 class LockedRepo:
     """repo.lock 中记录的锁定版本。"""
-    commit: str                    # 全量 SHA
-    commit_short: str              # 前 12 位
-    pinned_at: str                 # ISO 时间戳
+
+    commit: str  # 全量 SHA
+    commit_short: str  # 前 12 位
+    pinned_at: str  # ISO 时间戳
     branch: str = "main"
     dirty: bool = False
-    message: str = ""              # commit message（首行）
+    message: str = ""  # commit message（首行）
 
 
 @dataclass
 class RepoStatus:
     """单个 repo 的运行时状态。"""
+
     name: str
     path_exists: bool
     is_git_repo: bool = False
@@ -69,25 +74,28 @@ class RepoStatus:
     commit: Optional[str] = None
     commit_short: Optional[str] = None
     is_dirty: bool = False
-    is_pinned: bool = False        # YAML 配置中是否 pinned
-    is_locked: bool = False        # repo.lock 中是否有记录
+    is_pinned: bool = False  # YAML 配置中是否 pinned
+    is_locked: bool = False  # repo.lock 中是否有记录
     is_up_to_date: Optional[bool] = None
     remote_url: Optional[str] = None
     error: Optional[str] = None
-    lock_commit: Optional[str] = None   # repo.lock 中记录的 commit
-    lock_mismatch: bool = False      # 当前 commit 与 lock 不一致
+    lock_commit: Optional[str] = None  # repo.lock 中记录的 commit
+    lock_mismatch: bool = False  # 当前 commit 与 lock 不一致
 
 
 # ═══════════════════════════════════════════════════════
 # Git 工具函数
 # ═══════════════════════════════════════════════════════
 
+
 def _git(repo_path: Path, *args: str) -> tuple[int, str, str]:
     """在指定目录执行 git 命令，返回 (returncode, stdout, stderr)。"""
     try:
         r = subprocess.run(
             ["git", "-C", str(repo_path), *args],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return r.returncode, r.stdout.strip(), r.stderr.strip()
     except FileNotFoundError:
@@ -265,6 +273,7 @@ def load_config(
       commit 为 None 表示 unpinned（跟踪 branch）
     """
     import yaml
+
     cfg_path = _config_path(project_root)
     if not cfg_path.exists():
         logger.debug(f"外部配置不存在: {cfg_path}（使用 .env 默认路径）")
@@ -299,6 +308,7 @@ def save_config(
       commit = None 表示 unpinned
     """
     import yaml
+
     root = project_root or Path(__file__).resolve().parent.parent
     cfg_path = root / "external" / _CONFIG_FILENAME
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -312,7 +322,10 @@ def save_config(
 # 核心 API
 # ═══════════════════════════════════════════════════════
 
-def get_repos(project_root: Optional[Path] = None, settings: Optional[Settings] = None) -> list[ExternalRepo]:
+
+def get_repos(
+    project_root: Optional[Path] = None, settings: Optional[Settings] = None
+) -> list[ExternalRepo]:
     """
     获取所有外部 repo 配置（从 YAML 或 .env fallback）。
 
@@ -337,23 +350,31 @@ def get_repos(project_root: Optional[Path] = None, settings: Optional[Settings] 
     s = settings or get_settings()
     repos = []
     if s.tradingagents_root:
-        repos.append(ExternalRepo(
-            name="tradingagents",
-            path=str(s.tradingagents_root.relative_to(s.project_root)
-                     if str(s.tradingagents_root).startswith(str(s.project_root))
-                     else s.tradingagents_root),
-            branch="main",
-            url="https://github.com/simonlin1212/TradingAgents-astock",
-        ))
+        repos.append(
+            ExternalRepo(
+                name="tradingagents",
+                path=str(
+                    s.tradingagents_root.relative_to(s.project_root)
+                    if str(s.tradingagents_root).startswith(str(s.project_root))
+                    else s.tradingagents_root
+                ),
+                branch="main",
+                url="https://github.com/simonlin1212/TradingAgents-astock",
+            )
+        )
     if s.kronos_root:
-        repos.append(ExternalRepo(
-            name="kronos",
-            path=str(s.kronos_root.relative_to(s.project_root)
-                     if str(s.kronos_root).startswith(str(s.project_root))
-                     else s.kronos_root),
-            branch="main",
-            url="https://github.com/shiyu-coder/Kronos",
-        ))
+        repos.append(
+            ExternalRepo(
+                name="kronos",
+                path=str(
+                    s.kronos_root.relative_to(s.project_root)
+                    if str(s.kronos_root).startswith(str(s.project_root))
+                    else s.kronos_root
+                ),
+                branch="main",
+                url="https://github.com/shiyu-coder/Kronos",
+            )
+        )
     return repos
 
 
@@ -383,10 +404,7 @@ def status(project_root: Optional[Path] = None) -> list[RepoStatus]:
         if st.commit and st.lock_commit:
             if not st.commit.startswith(st.lock_commit):
                 st.lock_mismatch = True
-                st.error = (
-                    f"lock 漂移：当前={st.commit_short} "
-                    f"期望(lock)={st.lock_commit[:12]}"
-                )
+                st.error = f"lock 漂移：当前={st.commit_short} 期望(lock)={st.lock_commit[:12]}"
 
         results.append(st)
     return results
@@ -421,8 +439,9 @@ def doctor(project_root: Optional[Path] = None) -> list[str]:
             issues.append(f"[{name}] ⚠️  工作区有未提交修改（dirty），可能影响结果复现")
         if st.lock_mismatch:
             lock_short = st.lock_commit[:12] if st.lock_commit else "?"
-            issues.append(f"[{name}] ❌ lock 漂移：repo.lock 锁定的是 {lock_short}，"
-                          f"当前是 {st.commit_short}")
+            issues.append(
+                f"[{name}] ❌ lock 漂移：repo.lock 锁定的是 {lock_short}，当前是 {st.commit_short}"
+            )
         elif st.error and "未 pin" in st.error:
             issues.append(f"[{name}] ❌ {st.error}")
         if not st.is_locked and not st.is_pinned and st.is_up_to_date is False:
@@ -497,9 +516,7 @@ def pin(
     cfg = load_config(project_root)
     if name not in cfg:
         cfg[name] = {
-            "path": str(target.absolute_path.relative_to(
-                Path(__file__).resolve().parent.parent
-            )),
+            "path": str(target.absolute_path.relative_to(Path(__file__).resolve().parent.parent)),
             "branch": target.branch,
             "url": target.url,
         }

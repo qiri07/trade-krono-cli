@@ -15,6 +15,7 @@ data_providers.factory — 数据源工厂 + 自动降级路由。
     # 合并多维度（K 线 + 行情 + 元数据）
     result = factory.fetch_merged("sh.600519", "2026-01-01", "2026-08-13")
 """
+
 from __future__ import annotations
 
 import threading
@@ -30,10 +31,10 @@ from trade_krono_cli.data_providers.base import (
     StockMetadata,
 )
 
-
 # ═══════════════════════════════════════════════════════
 # 工厂实现
 # ═══════════════════════════════════════════════════════
+
 
 class DataProviderFactory:
     """
@@ -261,10 +262,7 @@ class DataProviderFactory:
 
     def available_providers(self) -> list[str]:
         """返回当前已初始化的可用 Provider 名称列表"""
-        return [
-            name for name in self.provider_chain
-            if self.get_provider(name) is not None
-        ]
+        return [name for name in self.provider_chain if self.get_provider(name) is not None]
 
     def health_check_all(self) -> dict[str, bool]:
         """检查所有 Provider 的健康状态"""
@@ -292,15 +290,19 @@ class DataProviderFactory:
         try:
             if name == "baostock":
                 from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
+
                 registry[name] = BaostockProvider
             elif name == "akshare":
                 from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
+
                 registry[name] = AkShareProvider
             elif name == "mootdx":
                 from trade_krono_cli.data_providers.mootdx_provider import MootDxProvider
+
                 registry[name] = MootDxProvider
             elif name == "tushare":
                 from trade_krono_cli.data_providers.tushare_provider import TushareProvider
+
                 registry[name] = TushareProvider
             else:
                 logger.warning(f"未知的 Provider 名称: {name}")
@@ -336,11 +338,11 @@ def get_data_factory() -> DataProviderFactory:
                 s = get_settings()
                 primary = getattr(s, "data_provider", "baostock")
                 fallback_str = getattr(s, "data_fallback", "")
-                fallbacks = [
-                    x.strip()
-                    for x in fallback_str.split(",")
-                    if x.strip()
-                ] if fallback_str else []
+                fallbacks = (
+                    [x.strip() for x in fallback_str.split(",") if x.strip()]
+                    if fallback_str
+                    else []
+                )
                 _factory_instance = DataProviderFactory(
                     primary=primary,
                     fallbacks=fallbacks,

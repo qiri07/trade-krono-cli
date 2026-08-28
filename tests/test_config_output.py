@@ -1,9 +1,8 @@
 """测试 OutputConfig 配置类。"""
+
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
 
 from trade_krono_cli.configs.output import OutputConfig
 

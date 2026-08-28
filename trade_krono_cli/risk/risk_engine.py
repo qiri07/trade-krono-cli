@@ -39,9 +39,10 @@
     Return Adj      -0.062  (预期收益降低 6.2%)
   ======================================
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 import numpy as np
@@ -49,35 +50,34 @@ import pandas as pd
 from loguru import logger
 
 from trade_krono_cli.configs.risk import RiskConfig
-from trade_krono_cli.risk.volatility import calc_volatility_risk
-from trade_krono_cli.risk.drawdown import calc_drawdown_risk
-from trade_krono_cli.risk.liquidity import calc_liquidity_risk
 from trade_krono_cli.risk.concentration import calc_concentration_risk
-from trade_krono_cli.risk.market_regime import calc_market_regime_risk
-from trade_krono_cli.risk.gap_risk import calc_gap_risk
+from trade_krono_cli.risk.drawdown import calc_drawdown_risk
 from trade_krono_cli.risk.event_risk import calc_event_risk
-from trade_krono_cli.risk.valuation_risk import calc_valuation_risk
+from trade_krono_cli.risk.gap_risk import calc_gap_risk
+from trade_krono_cli.risk.liquidity import calc_liquidity_risk
+from trade_krono_cli.risk.market_regime import calc_market_regime_risk
 from trade_krono_cli.risk.models import (
-    historical_var,
-    conditional_var,
     beta as calc_beta,
-    adjust_expected_return,
-    expected_return_adjustment,
-    RISK_NORMALIZATION_WEIGHTS,
 )
-
+from trade_krono_cli.risk.models import (
+    conditional_var,
+    expected_return_adjustment,
+    historical_var,
+)
+from trade_krono_cli.risk.valuation_risk import calc_valuation_risk
+from trade_krono_cli.risk.volatility import calc_volatility_risk
 
 # 评分维度权重（从 RiskWeights 映射到 models 键名，beta 除外——它在
 # expected_return_adjustment 中单独处理，不与 total_risk 双重计入）
 _SCORE_WEIGHT_KEYS: tuple[tuple[str, str], ...] = (
-    ("volatility",    "volatility"),
-    ("drawdown",      "drawdown"),
-    ("liquidity",     "liquidity_score"),
+    ("volatility", "volatility"),
+    ("drawdown", "drawdown"),
+    ("liquidity", "liquidity_score"),
     ("concentration", "concentration"),
     ("market_regime", "market_regime"),
-    ("gap_risk",      "gap_risk"),
-    ("event_risk",    "event_risk"),
-    ("valuation_risk","valuation_risk"),
+    ("gap_risk", "gap_risk"),
+    ("event_risk", "event_risk"),
+    ("valuation_risk", "valuation_risk"),
 )
 
 
@@ -89,6 +89,7 @@ class RiskScore:
     仅保留原始 5 个维度 + 总分 + 3 个原始值，不含 VaR/Beta/新风险分。
     新架构请使用 RiskMetrics。
     """
+
     ticker: str
     date: str
 
@@ -137,6 +138,7 @@ class RiskMetrics:
       - 流动性/缺口/事件/估值/市场环境风险分
       - 预期收益调整因子     综合风险 → 预期收益映射
     """
+
     ticker: str
     date: str
 
@@ -184,16 +186,27 @@ class RiskMetrics:
             f"{'=' * 44}",
             f"  Risk Metrics for {self.ticker} ({self.date})",
             f"{'=' * 44}",
-            (f"  VaR(95%)          {self.var_95:>7.2f}%"
-             if self.var_95 else "  VaR(95%)         n/a"),
-            (f"  CVaR(95%)         {self.cvar_95:>7.2f}%"
-             if self.cvar_95 else "  CVaR(95%)        n/a"),
-            (f"  Beta              {self.beta:>7.2f}"
-             if self.beta else "  Beta             n/a"),
-            (f"  Ann. Volatility   {self.annualized_vol:>7.1f}%"
-             if self.annualized_vol else "  Ann. Vol.        n/a"),
-            (f"  Max Drawdown      {self.max_drawdown:>7.1f}%"
-             if self.max_drawdown else "  Max DD           n/a"),
+            (
+                f"  VaR(95%)          {self.var_95:>7.2f}%"
+                if self.var_95
+                else "  VaR(95%)         n/a"
+            ),
+            (
+                f"  CVaR(95%)         {self.cvar_95:>7.2f}%"
+                if self.cvar_95
+                else "  CVaR(95%)        n/a"
+            ),
+            (f"  Beta              {self.beta:>7.2f}" if self.beta else "  Beta             n/a"),
+            (
+                f"  Ann. Volatility   {self.annualized_vol:>7.1f}%"
+                if self.annualized_vol
+                else "  Ann. Vol.        n/a"
+            ),
+            (
+                f"  Max Drawdown      {self.max_drawdown:>7.1f}%"
+                if self.max_drawdown
+                else "  Max DD           n/a"
+            ),
             f"{'─' * 44}",
             f"  Gap Risk          {self.gap_risk_score:>6.0f}",
             f"  Event Risk        {self.event_risk_score:>6.0f}",
@@ -203,7 +216,7 @@ class RiskMetrics:
             f"{'─' * 44}",
             f"  Total Risk        {self.total_risk:>6.1f}",
             f"  Return Adj        {self.return_adjustment:>6.3f}  "
-            f"({self.return_adjustment*100:+.1f}%)",
+            f"({self.return_adjustment * 100:+.1f}%)",
             f"{'=' * 44}",
         ]
         return "\n".join(lines)
@@ -229,13 +242,13 @@ class RiskEngine:
         # 评分维度权重（不含 beta——beta 已通过 expected_return_adjustment 处理）
         w = self._config.weights
         self._weights = {
-            "volatility":    w.volatility,
-            "drawdown":      w.drawdown,
-            "liquidity":     w.liquidity,
+            "volatility": w.volatility,
+            "drawdown": w.drawdown,
+            "liquidity": w.liquidity,
             "concentration": w.concentration,
             "market_regime": w.market_regime,
-            "gap_risk":      w.gap_risk,
-            "event_risk":    w.event_risk,
+            "gap_risk": w.gap_risk,
+            "event_risk": w.event_risk,
             "valuation_risk": w.valuation_risk,
         }
         logger.debug(f"RiskEngine v2 initialized | weights={self._weights}")
@@ -264,12 +277,8 @@ class RiskEngine:
         volume = kline_df["volume"].astype(float)
 
         # ── 基础风险分 ───────────────────────────────────────────────────────
-        vol_score, ann_vol = calc_volatility_risk(
-            close, thresholds=self._config.volatility
-        )
-        dd_score, max_dd = calc_drawdown_risk(
-            high, close, thresholds=self._config.drawdown
-        )
+        vol_score, ann_vol = calc_volatility_risk(close, thresholds=self._config.volatility)
+        dd_score, max_dd = calc_drawdown_risk(high, close, thresholds=self._config.drawdown)
 
         market_cap = quote_data.get("market_cap") if quote_data else None
         liq_score, avg_turnover = calc_liquidity_risk(
@@ -277,13 +286,13 @@ class RiskEngine:
         )
 
         conc_score = calc_concentration_risk(ta_result)
-        regime_score = calc_market_regime_risk(
-            close, thresholds=self._config.market_regime
-        )
+        regime_score = calc_market_regime_risk(close, thresholds=self._config.market_regime)
 
         # ── 新增风险分 ───────────────────────────────────────────────────────
         gap_score = calc_gap_risk(
-            close, high, low,
+            close,
+            high,
+            low,
             min_gap_pct=self._config.gap_risk.min_gap_pct,
         )
         event_score = calc_event_risk(
@@ -314,13 +323,13 @@ class RiskEngine:
         total = sum(
             score * self._weights[dim]
             for dim, score in [
-                ("volatility",    vol_score),
-                ("drawdown",      dd_score),
-                ("liquidity",     liq_score),
+                ("volatility", vol_score),
+                ("drawdown", dd_score),
+                ("liquidity", liq_score),
                 ("concentration", conc_score),
                 ("market_regime", regime_score),
-                ("gap_risk",      gap_score),
-                ("event_risk",    event_score),
+                ("gap_risk", gap_score),
+                ("event_risk", event_score),
                 ("valuation_risk", val_score),
             ]
         )

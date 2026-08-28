@@ -1,6 +1,7 @@
 """
 研究数据库 — Decisions 表和 Raw Reports 表读写。
 """
+
 from __future__ import annotations
 
 import json
@@ -16,8 +17,12 @@ class DecisionsMixin(ResearchDatabase):
     """Decisions 表相关方法。"""
 
     def insert_decision(
-        self, job_id: str, ticker: str,
-        decision: InvestmentDecision, thesis: str, risks: list[str],
+        self,
+        job_id: str,
+        ticker: str,
+        decision: InvestmentDecision,
+        thesis: str,
+        risks: list[str],
     ) -> None:
         decision_json = json.dumps(decision.to_dict(), ensure_ascii=False)
         risks_json = json.dumps(risks, ensure_ascii=False)
@@ -33,8 +38,7 @@ class DecisionsMixin(ResearchDatabase):
     def get_decision(self, job_id: str, ticker: str) -> dict | None:
         with self._conn as conn:
             row = conn.execute(
-                "SELECT decision_json, thesis, risks FROM decisions "
-                "WHERE job_id=? AND ticker=?",
+                "SELECT decision_json, thesis, risks FROM decisions WHERE job_id=? AND ticker=?",
                 (job_id, ticker),
             ).fetchone()
         if not row:
@@ -50,7 +54,10 @@ class ReportsMixin(ResearchDatabase):
     """Raw Reports 表相关方法。"""
 
     def index_raw_report(
-        self, job_id: str, ticker: str, file_path: str,
+        self,
+        job_id: str,
+        ticker: str,
+        file_path: str,
         report_lengths: dict[str, int],
     ) -> None:
         reports_json = json.dumps(report_lengths, ensure_ascii=False)

@@ -3,9 +3,10 @@ Stock — 领域层股票实体。
 
 代表一只正在被分析的 A 股，携带标识信息和基础元数据。
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True, order=False)
@@ -23,6 +24,7 @@ class Stock:
     pb_ratio      市净率（可选）
     listed_date   上市日期 ISO 字符串（可选）
     """
+
     ticker: str
     name: str = ""
     industry: str = ""

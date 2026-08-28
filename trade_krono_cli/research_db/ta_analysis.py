@@ -1,6 +1,7 @@
 """
 研究数据库 — TA Analysis 表读写。
 """
+
 from __future__ import annotations
 
 import json
@@ -18,17 +19,21 @@ class TaAnalysisMixin(ResearchDatabase):
     """TA Analysis 表相关方法。"""
 
     def insert_ta(
-        self, job_id: str, result: StockAnalysisResult,
+        self,
+        job_id: str,
+        result: StockAnalysisResult,
         version_snapshot: dict | None = None,
     ) -> None:
         """写入 TA 分析记录（含版本信息）。"""
         risks = (
             json.dumps(result.investment_decision.risks, ensure_ascii=False)
-            if result.investment_decision else None
+            if result.investment_decision
+            else None
         )
         thesis = (
             result.investment_decision.thesis
-            if result.investment_decision else (result.reasoning or "")[:REASONING_TRUNCATE_LEN]
+            if result.investment_decision
+            else (result.reasoning or "")[:REASONING_TRUNCATE_LEN]
         )
         with self._conn as conn:
             conn.execute(
@@ -36,10 +41,14 @@ class TaAnalysisMixin(ResearchDatabase):
                 "(job_id, ticker, signal, confidence, thesis, risks, error, elapsed) "
                 "VALUES (?,?,?,?,?,?,?,?)",
                 (
-                    job_id, result.ticker,
-                    result.signal, result.confidence,
-                    thesis, risks,
-                    result.error, result.elapsed_sec,
+                    job_id,
+                    result.ticker,
+                    result.signal,
+                    result.confidence,
+                    thesis,
+                    risks,
+                    result.error,
+                    result.elapsed_sec,
                 ),
             )
             conn.commit()
@@ -52,13 +61,22 @@ class TaAnalysisMixin(ResearchDatabase):
                 (job_id,),
             ).fetchall()
         return [
-            {"ticker": r[0], "signal": r[1], "confidence": r[2],
-             "thesis": r[3], "risks": r[4], "error": r[5], "elapsed": r[6]}
+            {
+                "ticker": r[0],
+                "signal": r[1],
+                "confidence": r[2],
+                "thesis": r[3],
+                "risks": r[4],
+                "error": r[5],
+                "elapsed": r[6],
+            }
             for r in rows
         ]
 
     def get_latest_ta_for_ticker(
-        self, ticker: str, max_age_days: int = 7,
+        self,
+        ticker: str,
+        max_age_days: int = 7,
     ) -> dict | None:
         """
         查询最近一次成功的 TA 分析结果（不限定 job_id）。

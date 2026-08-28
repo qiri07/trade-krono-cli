@@ -15,17 +15,17 @@ DataSnapshot 的职责：
   · cut_date 之后的数据一律返回 None / 空，强制调用方感知时间边界
   · 支持多数据源并行快照（baostock / akshare / tushare 各自独立追踪）
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Optional
-
 
 # ═══════════════════════════════════════════════════════
 #  单数据源快照
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass(frozen=True)
 class DataSourceSnapshot:
@@ -41,6 +41,7 @@ class DataSourceSnapshot:
     record_count 记录条数
     data_hash   SHA-256 校验和，用于检测数据是否被修改过
     """
+
     source: str
     cut_date: str
     latest_date: str
@@ -65,6 +66,7 @@ class DataSourceSnapshot:
 #  DataSnapshot — 核心类
 # ═══════════════════════════════════════════════════════
 
+
 @dataclass(frozen=True)
 class DataSnapshot:
     """
@@ -82,6 +84,7 @@ class DataSnapshot:
       2. 持久化：snapshot_id → research_db.data_snapshots 表
       3. 评估时：用 cut_date 过滤所有 future data，防止前视偏差
     """
+
     cut_date: str
     sources: tuple[DataSourceSnapshot, ...] = ()
     description: str = ""
@@ -124,9 +127,7 @@ class DataSnapshot:
 
     @classmethod
     def from_dict(cls, data: dict) -> "DataSnapshot":
-        sources = tuple(
-            DataSourceSnapshot(**s) for s in data.get("sources", [])
-        )
+        sources = tuple(DataSourceSnapshot(**s) for s in data.get("sources", []))
         return cls(
             cut_date=data["cut_date"],
             sources=sources,
@@ -139,45 +140,12 @@ class DataSnapshot:
 #  Point-in-Time K线截取工具
 # ═══════════════════════════════════════════════════════
 
-def filter_kline_to_cut_date(
-    df,
-    cut_date: str,
-    date_col: str = "timestamps",
-) -> Optional[type(df)]:
-    """
-    将 K 线 DataFrame 截断到 cut_date（不含）。
-
-    Parameters
-    ----------
-    df        pandas DataFrame，必须包含 date_col 列
-    cut_date  ISO 字符串 "YYYY-MM-DD"
-    date_col  日期列名
-
-    Returns
-    -------
-    截断后的 DataFrame（copy），若输入为 None 则返回 None
-    """
-    if df is None or df.empty:
-        return df
-    try:
-        dates = pd.to_datetime(df[date_col])
-        cutoff = pd.to_datetime(cut_date)
-        return df[dates < cutoff].copy()
-    except Exception:
-        return df
-
-
-# 延迟导入 pandas（避免循环依赖）
-def _lazy_pd():
-    import pandas as pd  # noqa: local import for lazy eval
-    return pd
-
 
 def filter_kline_to_cut_date(
     df,
     cut_date: str,
     date_col: str = "timestamps",
-) -> Optional[type(df)]:
+) -> object:
     """
     将 K 线 DataFrame 截断到 cut_date（不含）。
 
@@ -192,6 +160,7 @@ def filter_kline_to_cut_date(
     截断后的 DataFrame（copy），若输入为 None 则返回 None
     """
     import pandas as pd
+
     if df is None or df.empty:
         return df
     try:

@@ -1,32 +1,32 @@
 """
 测试 eval_ic.py 和 eval_benchmark.py — Signal IC 与 Alpha 评估。
 """
-import pytest
-import numpy as np
-from unittest.mock import patch, MagicMock
 
+from unittest.mock import patch
+
+import numpy as np
+import pytest
+
+from trade_krono_cli.eval_benchmark import (
+    compute_alpha,
+    compute_portfolio_metrics,
+    get_best_alpha,
+)
+from trade_krono_cli.eval_data import EvalRecord, EvaluationSummary, HorizonMetrics
 from trade_krono_cli.eval_ic import (
-    compute_ic_metrics,
-    compute_ic_aggregated,
+    ICResult,
     _compute_ic_for_signal,
+    _rank_transform,
     _safe_pearson,
     _safe_spearman,
-    _rank_transform,
-    ICResult,
+    compute_ic_aggregated,
+    compute_ic_metrics,
 )
-from trade_krono_cli.eval_benchmark import (
-    compute_benchmark_metrics,
-    compute_portfolio_metrics,
-    compute_alpha,
-    get_best_alpha,
-    BENCHMARK_TICKERS,
-)
-from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics, EvaluationSummary
-
 
 # ═══════════════════════════════════════════════════════
 # IC 工具函数
 # ═══════════════════════════════════════════════════════
+
 
 class TestRankTransform:
     def test_basic(self):
@@ -35,11 +35,11 @@ class TestRankTransform:
         # 排序后 [1,1,3,4,5] → 平均秩 [1.5,1.5,3,4,5]，映射回原位置
         # ranks[0]=3.0(值3), ranks[1]=1.5(值1并列), ranks[2]=4.0(值4),
         # ranks[3]=1.5(值1并列), ranks[4]=5.0(值5)
-        assert abs(ranks[0] - 3.0) < 0.01   # 3.0 的秩
-        assert abs(ranks[1] - 1.5) < 0.01   # 1.0 并列平均秩
-        assert abs(ranks[2] - 4.0) < 0.01   # 4.0 的秩
-        assert abs(ranks[3] - 1.5) < 0.01   # 1.0 并列平均秩
-        assert abs(ranks[4] - 5.0) < 0.01   # 5.0 的秩
+        assert abs(ranks[0] - 3.0) < 0.01  # 3.0 的秩
+        assert abs(ranks[1] - 1.5) < 0.01  # 1.0 并列平均秩
+        assert abs(ranks[2] - 4.0) < 0.01  # 4.0 的秩
+        assert abs(ranks[3] - 1.5) < 0.01  # 1.0 并列平均秩
+        assert abs(ranks[4] - 5.0) < 0.01  # 5.0 的秩
 
     def test_empty(self):
         assert len(_rank_transform(np.array([]))) == 0
@@ -81,6 +81,7 @@ class TestSafeSpearman:
 # IC 计算
 # ═══════════════════════════════════════════════════════
 
+
 class TestComputeICForSignal:
     def test_perfect_correlation(self):
         """预测与实际完全线性相关 → IC≈1。"""
@@ -113,12 +114,30 @@ class TestComputeICAggregated:
     def test_aggregate_multiple_dates(self):
         """多日 IC 聚合后应给出有意义的均值/标准差。"""
         results = [
-            ICResult(ic_mean=0.05, ic_std=0.01, rank_ic_mean=0.06,
-                     rank_ic_std=0.01, n_groups=1, n_records=20),
-            ICResult(ic_mean=0.03, ic_std=0.01, rank_ic_mean=0.04,
-                     rank_ic_std=0.01, n_groups=1, n_records=25),
-            ICResult(ic_mean=0.07, ic_std=0.02, rank_ic_mean=0.08,
-                     rank_ic_std=0.02, n_groups=1, n_records=18),
+            ICResult(
+                ic_mean=0.05,
+                ic_std=0.01,
+                rank_ic_mean=0.06,
+                rank_ic_std=0.01,
+                n_groups=1,
+                n_records=20,
+            ),
+            ICResult(
+                ic_mean=0.03,
+                ic_std=0.01,
+                rank_ic_mean=0.04,
+                rank_ic_std=0.01,
+                n_groups=1,
+                n_records=25,
+            ),
+            ICResult(
+                ic_mean=0.07,
+                ic_std=0.02,
+                rank_ic_mean=0.08,
+                rank_ic_std=0.02,
+                n_groups=1,
+                n_records=18,
+            ),
         ]
         agg = compute_ic_aggregated(results)
         assert agg.ic_mean == pytest.approx(0.05, abs=0.01)
@@ -141,19 +160,21 @@ class TestComputeICMetrics:
             for i in range(20):
                 score = 60.0 + i * 2 + np.random.normal(0, 1)
                 ret = score * 0.15 + np.random.normal(0, 0.3)
-                records.append(EvalRecord(
-                    ticker=f"sh.60{i:03d}",
-                    eval_date=f"2026-01-{day_idx+1:02d}",
-                    horizon_days=5,
-                    pred_direction="UP",
-                    pred_return_pct=ret * 0.5,
-                    actual_return_pct=round(ret, 4),
-                    actual_direction="UP" if ret > 0 else "DOWN",
-                    is_direction_correct=ret > 0,
-                    error_pct=0.0,
-                    ta_signal="BUY",
-                    composite_score=score,
-                ))
+                records.append(
+                    EvalRecord(
+                        ticker=f"sh.60{i:03d}",
+                        eval_date=f"2026-01-{day_idx + 1:02d}",
+                        horizon_days=5,
+                        pred_direction="UP",
+                        pred_return_pct=ret * 0.5,
+                        actual_return_pct=round(ret, 4),
+                        actual_direction="UP" if ret > 0 else "DOWN",
+                        is_direction_correct=ret > 0,
+                        error_pct=0.0,
+                        ta_signal="BUY",
+                        composite_score=score,
+                    )
+                )
 
         m = HorizonMetrics()
         n = compute_ic_metrics(records, m)
@@ -168,19 +189,21 @@ class TestComputeICMetrics:
         np.random.seed(99)
         for day_idx in range(5):
             for i in range(20):
-                records.append(EvalRecord(
-                    ticker=f"sh.60{i:03d}",
-                    eval_date=f"2026-02-{day_idx+1:02d}",
-                    horizon_days=5,
-                    pred_direction=None,
-                    pred_return_pct=None,
-                    actual_return_pct=round(np.random.normal(0, 2), 4),
-                    actual_direction="UP" if np.random.random() > 0.5 else "DOWN",
-                    is_direction_correct=False,
-                    error_pct=0.0,
-                    ta_signal=None,
-                    composite_score=float(np.random.randint(40, 80)),
-                ))
+                records.append(
+                    EvalRecord(
+                        ticker=f"sh.60{i:03d}",
+                        eval_date=f"2026-02-{day_idx + 1:02d}",
+                        horizon_days=5,
+                        pred_direction=None,
+                        pred_return_pct=None,
+                        actual_return_pct=round(np.random.normal(0, 2), 4),
+                        actual_direction="UP" if np.random.random() > 0.5 else "DOWN",
+                        is_direction_correct=False,
+                        error_pct=0.0,
+                        ta_signal=None,
+                        composite_score=float(np.random.randint(40, 80)),
+                    )
+                )
 
         m = HorizonMetrics()
         n = compute_ic_metrics(records, m)
@@ -192,16 +215,22 @@ class TestComputeICMetrics:
         """少于 3 个 eval_date 时跳过 IC 计算。"""
         records = [
             EvalRecord(
-                ticker="sh.600519", eval_date="2026-01-01", horizon_days=5,
-                pred_direction="UP", pred_return_pct=2.0,
-                actual_return_pct=3.0, actual_direction="UP",
-                is_direction_correct=True, error_pct=0.0,
-                ta_signal="BUY", composite_score=70.0,
+                ticker="sh.600519",
+                eval_date="2026-01-01",
+                horizon_days=5,
+                pred_direction="UP",
+                pred_return_pct=2.0,
+                actual_return_pct=3.0,
+                actual_direction="UP",
+                is_direction_correct=True,
+                error_pct=0.0,
+                ta_signal="BUY",
+                composite_score=70.0,
             ),
         ] * 15
         m = HorizonMetrics()
         n = compute_ic_metrics(records, m)
-        assert n == 0   # 少于 3 个 eval_date 时跳过，返回 0
+        assert n == 0  # 少于 3 个 eval_date 时跳过，返回 0
         # IC 未被计算，字段保持默认值
         assert m.rank_ic_composite_mean == 0.0
 
@@ -209,6 +238,7 @@ class TestComputeICMetrics:
 # ═══════════════════════════════════════════════════════
 # Benchmark
 # ═══════════════════════════════════════════════════════
+
 
 class TestComputePortfolioMetrics:
     def test_basic_metrics(self):
@@ -254,28 +284,48 @@ class TestComputeAlpha:
         """验证 Alpha 计算逻辑（mock 基准数据）。"""
         records = [
             EvalRecord(
-                ticker="sh.600519", eval_date="2026-01-01", horizon_days=5,
-                pred_direction="UP", pred_return_pct=3.0,
-                actual_return_pct=2.5, actual_direction="UP",
-                is_direction_correct=True, error_pct=0.5,
-                ta_signal="BUY", composite_score=80.0,
+                ticker="sh.600519",
+                eval_date="2026-01-01",
+                horizon_days=5,
+                pred_direction="UP",
+                pred_return_pct=3.0,
+                actual_return_pct=2.5,
+                actual_direction="UP",
+                is_direction_correct=True,
+                error_pct=0.5,
+                ta_signal="BUY",
+                composite_score=80.0,
             ),
         ]
         # mock fetch_benchmark_kline 返回基准数据
         with patch("trade_krono_cli.eval_benchmark.fetch_kline") as mock_fetch:
             import pandas as pd
-            mock_fetch.return_value = pd.DataFrame({
-                "timestamps": ["2026-01-01", "2026-01-06"],
-                "close": [4000.0, 4100.0],
-            })
+
+            mock_fetch.return_value = pd.DataFrame(
+                {
+                    "timestamps": ["2026-01-01", "2026-01-06"],
+                    "close": [4000.0, 4100.0],
+                }
+            )
             results = compute_alpha(5.0, records, ("2026-01-01", "2026-01-06"))
         assert "CSI300" in results or "SHCOMP" in results
 
     def test_get_best_alpha(self):
         from trade_krono_cli.eval_benchmark import AlphaResult
+
         results = {
-            "CSI300": AlphaResult(strategy_return_pct=10.0, benchmark_return_pct=5.0, alpha_pct=5.0, benchmark_name="CSI300"),
-            "CSI500": AlphaResult(strategy_return_pct=10.0, benchmark_return_pct=8.0, alpha_pct=2.0, benchmark_name="CSI500"),
+            "CSI300": AlphaResult(
+                strategy_return_pct=10.0,
+                benchmark_return_pct=5.0,
+                alpha_pct=5.0,
+                benchmark_name="CSI300",
+            ),
+            "CSI500": AlphaResult(
+                strategy_return_pct=10.0,
+                benchmark_return_pct=8.0,
+                alpha_pct=2.0,
+                benchmark_name="CSI500",
+            ),
         }
         best = get_best_alpha(results)
         assert best.benchmark_name == "CSI300"
@@ -290,10 +340,12 @@ class TestComputeAlpha:
 # 端到端：PredictionEvaluator 集成
 # ═══════════════════════════════════════════════════════
 
+
 class TestPredictionEvaluatorWithIC:
     def test_summary_includes_ic_fields(self):
         """_compute_summary 应将 IC 字段写入 HorizonMetrics。"""
         from trade_krono_cli.prediction_eval import PredictionEvaluator
+
         evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
         evaluator.HORIZONS = [5, 10]
 
@@ -303,19 +355,21 @@ class TestPredictionEvaluatorWithIC:
             for i in range(20):
                 score = 60.0 + i * 2
                 ret = score * 0.1 + np.random.normal(0, 0.5)
-                records.append(EvalRecord(
-                    ticker=f"sh.60{i:03d}",
-                    eval_date=f"2026-03-{day_idx+1:02d}",
-                    horizon_days=5,
-                    pred_direction="UP",
-                    pred_return_pct=ret * 0.5,
-                    actual_return_pct=round(ret, 4),
-                    actual_direction="UP" if ret > 0 else "DOWN",
-                    is_direction_correct=ret > 0,
-                    error_pct=0.0,
-                    ta_signal="BUY",
-                    composite_score=score,
-                ))
+                records.append(
+                    EvalRecord(
+                        ticker=f"sh.60{i:03d}",
+                        eval_date=f"2026-03-{day_idx + 1:02d}",
+                        horizon_days=5,
+                        pred_direction="UP",
+                        pred_return_pct=ret * 0.5,
+                        actual_return_pct=round(ret, 4),
+                        actual_direction="UP" if ret > 0 else "DOWN",
+                        is_direction_correct=ret > 0,
+                        error_pct=0.0,
+                        ta_signal="BUY",
+                        composite_score=score,
+                    )
+                )
 
         summary = evaluator._compute_summary(records)
         m5 = summary.horizons.get(5)

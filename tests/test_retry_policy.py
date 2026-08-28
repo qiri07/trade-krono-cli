@@ -9,6 +9,7 @@
   · PipelineConfig retry 字段默认值与 override
   · config_validator retry 校验规则
 """
+
 from __future__ import annotations
 
 import json
@@ -18,33 +19,30 @@ from unittest.mock import patch
 
 import pytest
 
+from trade_krono_cli.config import Settings, clear_settings
+from trade_krono_cli.pipeline_config import PipelineConfig
 from trade_krono_cli.retry_policy import (
-    classify_error,
-    smart_retry,
-    RetryPolicy,
+    AuthError,
+    DataNotFoundError,
     FailureRecord,
     FailureStore,
-    parse_retry_after,
-    make_rate_limit_error,
     NetworkError,
-    RateLimitError,
-    Server5xxError,
     ParameterError,
-    DataNotFoundError,
-    AuthError,
+    RateLimitError,
+    RetryPolicy,
+    Server5xxError,
     ValidationError,
-    TradeKronoRetryableError,
-    TradeKronoNonRetryableError,
-    get_failure_store,
+    classify_error,
     clear_failure_store_singleton,
+    make_rate_limit_error,
+    parse_retry_after,
+    smart_retry,
 )
-from trade_krono_cli.pipeline_config import PipelineConfig
-from trade_krono_cli.config import Settings, reload_settings, clear_settings
-
 
 # ═══════════════════════════════════════════════════════
 # 错误分类测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestClassifyError:
     """verify classify_error returns correct category for each exception type."""
@@ -100,6 +98,7 @@ class TestClassifyError:
 # ═══════════════════════════════════════════════════════
 # smart_retry 装饰器测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestSmartRetry:
     """Test smart_retry decorator behavior."""
@@ -166,8 +165,11 @@ class TestSmartRetry:
     def test_rate_limit_with_retry_after(self):
         """Rate limit errors should use Retry-After when available."""
         policy = RetryPolicy(
-            max_attempts=3, base_delay=10.0, jitter=False,
-            rate_limit_backoff=True, rate_limit_max_wait=5.0,
+            max_attempts=3,
+            base_delay=10.0,
+            jitter=False,
+            rate_limit_backoff=True,
+            rate_limit_max_wait=5.0,
         )
         call_count = 0
         start = time.monotonic()
@@ -229,6 +231,7 @@ class TestSmartRetry:
 # ═══════════════════════════════════════════════════════
 # FailureStore 测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestFailureStore:
     """Test FailureStore persistence and query operations."""
@@ -328,6 +331,7 @@ class TestFailureStore:
 # parse_retry_after 测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestParseRetryAfter:
     def test_integer_seconds(self):
         assert parse_retry_after("120") == 120.0
@@ -342,9 +346,11 @@ class TestParseRetryAfter:
         assert parse_retry_after(None) is None
 
     def test_http_date_format(self):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
+
         future = datetime.now(timezone.utc) + timedelta(seconds=45)
         from email.utils import formatdate
+
         hdr = formatdate(timeval=future.timestamp(), usegmt=True)
         result = parse_retry_after(hdr)
         assert result is not None
@@ -357,6 +363,7 @@ class TestParseRetryAfter:
 # ═══════════════════════════════════════════════════════
 # make_rate_limit_error 测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestMakeRateLimitError:
     def test_with_retry_after_header(self):
@@ -377,6 +384,7 @@ class TestMakeRateLimitError:
 # ═══════════════════════════════════════════════════════
 # PipelineConfig retry 字段测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestPipelineConfigRetry:
     def test_default_values(self):
@@ -422,6 +430,7 @@ class TestPipelineConfigRetry:
 # Settings retry 字段测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestSettingsRetry:
     def test_default_env_values(self):
         clear_settings()
@@ -456,9 +465,11 @@ class TestSettingsRetry:
 # config_validator retry 校验测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestConfigValidatorRetry:
     def test_valid_retry_config(self):
         from trade_krono_cli.config_validator import _validate_retry_policy
+
         s = Settings()
         errs = _validate_retry_policy(s)
         assert errs == []
@@ -468,6 +479,7 @@ class TestConfigValidatorRetry:
         with patch.dict("os.environ", {"RETRY_MAX_ATTEMPTS": "0"}):
             s = Settings()
         from trade_krono_cli.config_validator import _validate_retry_policy
+
         errs = _validate_retry_policy(s)
         assert any(">= 1" in e for e in errs)
 
@@ -476,6 +488,7 @@ class TestConfigValidatorRetry:
         with patch.dict("os.environ", {"RETRY_MAX_ATTEMPTS": "15"}):
             s = Settings()
         from trade_krono_cli.config_validator import _validate_retry_policy
+
         errs = _validate_retry_policy(s)
         assert any("10" in e and "重试" in e for e in errs)
 
@@ -484,6 +497,7 @@ class TestConfigValidatorRetry:
         with patch.dict("os.environ", {"RETRY_BASE_DELAY": "0"}):
             s = Settings()
         from trade_krono_cli.config_validator import _validate_retry_policy
+
         errs = _validate_retry_policy(s)
         assert any("> 0" in e for e in errs)
 
@@ -492,6 +506,7 @@ class TestConfigValidatorRetry:
         with patch.dict("os.environ", {"RETRY_BASE_DELAY": "120.0"}):
             s = Settings()
         from trade_krono_cli.config_validator import _validate_retry_policy
+
         errs = _validate_retry_policy(s)
         assert any("60" in e for e in errs)
 
@@ -500,6 +515,7 @@ class TestConfigValidatorRetry:
         with patch.dict("os.environ", {"RETRY_RATE_LIMIT_MAX_WAIT": "0"}):
             s = Settings()
         from trade_krono_cli.config_validator import _validate_retry_policy
+
         errs = _validate_retry_policy(s)
         assert any("RETRY_RATE_LIMIT_MAX_WAIT" in e and "> 0" in e for e in errs)
 
@@ -508,6 +524,7 @@ class TestConfigValidatorRetry:
         with patch.dict("os.environ", {"RETRY_RATE_LIMIT_MAX_WAIT": "500.0"}):
             s = Settings()
         from trade_krono_cli.config_validator import _validate_retry_policy
+
         errs = _validate_retry_policy(s)
         assert any("300" in e for e in errs)
 
@@ -515,6 +532,7 @@ class TestConfigValidatorRetry:
 # ═══════════════════════════════════════════════════════
 # FailureRecord 序列化测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestFailureRecord:
     def test_to_dict_and_from_dict(self):

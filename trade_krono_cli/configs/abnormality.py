@@ -1,4 +1,5 @@
 """异常股票处理配置。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,12 +22,8 @@ class AbnormalityConfig:
     def validate(self) -> list[str]:
         errors: list[str] = []
         if self.new_stock_min_days < 5:
-            errors.append(
-                f"abnormality.new_stock_min_days={self.new_stock_min_days} 必须 >= 5"
-            )
+            errors.append(f"abnormality.new_stock_min_days={self.new_stock_min_days} 必须 >= 5")
         kc = self.kline_min_completeness
         if not (0 < kc <= 1.0):
-            errors.append(
-                f"abnormality.kline_min_completeness={kc} 必须在 (0, 1.0] 范围内"
-            )
+            errors.append(f"abnormality.kline_min_completeness={kc} 必须在 (0, 1.0] 范围内")
         return errors

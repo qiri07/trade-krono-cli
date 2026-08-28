@@ -4,13 +4,13 @@
 每个 check_* 函数返回 HealthResult，包含状态和描述信息。
 health_summary() 汇总所有检查并打印报告。
 """
+
 from __future__ import annotations
 
 import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from trade_krono_cli.config import Settings
 
@@ -18,9 +18,10 @@ from trade_krono_cli.config import Settings
 @dataclass
 class HealthResult:
     """单项健康检查结果。"""
+
     name: str
     ok: bool
-    detail: str   # "OK" / "缺失" / 错误原因等
+    detail: str  # "OK" / "缺失" / 错误原因等
 
 
 # ── 检查函数 ──────────────────────────────────────────────────────────────────
@@ -34,8 +35,8 @@ def check_llm_api() -> HealthResult:
     已配置的 provider 用 ✅，缺失的用 ⚠️，无配置用 ❌。
     """
     from trade_krono_cli.security import KeyVault
+
     vault = KeyVault()
-    available = vault.available_providers()
     configured = vault.validate()
 
     if not configured:
@@ -64,15 +65,14 @@ def check_kronos_import() -> HealthResult:
     """
     try:
         from trade_krono_cli.adapters import KronosAdapterImpl
-        adapter = KronosAdapterImpl()
+
+        KronosAdapterImpl()
     except ImportError as e:
         return HealthResult("Kronos", False, f"无法导入适配器: {e}")
 
-    torch_ok = False
-    torch_detail = ""
     try:
         import torch
-        torch_ok = True
+
         if torch.cuda.is_available():
             torch_detail = f"GPU ({torch.cuda.device_count()} 卡)"
         else:
@@ -112,14 +112,16 @@ def check_disk_space(path: Path, min_gb: float = 0.5) -> HealthResult:
     try:
         stat = os.statvfs(str(path))
         free_bytes = stat.f_bavail * stat.f_frsize
-        free_gb = free_bytes / (1024 ** 3)
+        free_gb = free_bytes / (1024**3)
         if free_gb < min_gb:
             return HealthResult(
-                "磁盘空间", False,
+                "磁盘空间",
+                False,
                 f"❌ 可用空间 {free_gb:.2f} GB < {min_gb} GB 阈值",
             )
         return HealthResult(
-            "磁盘空间", True,
+            "磁盘空间",
+            True,
             f"✅ 可用 {free_gb:.1f} GB",
         )
     except OSError as e:
@@ -140,7 +142,6 @@ def health_summary(
     settings : Settings
         当前全局配置，用于获取数据库路径和缓存目录。
     """
-    from trade_krono_cli.config import Settings as _SettingsType  # avoid circular
     # 延迟导入避免循环依赖
     from trade_krono_cli.research_db import get_research
 
@@ -174,7 +175,6 @@ def print_health_report(results: list[HealthResult]) -> bool:
       └─ 磁盘空间        ✅ 可用 42.3 GB
     """
     from rich.console import Console
-    from rich.panel import Panel
 
     console = Console()
     console.print()

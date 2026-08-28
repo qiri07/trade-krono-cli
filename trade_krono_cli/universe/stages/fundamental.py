@@ -4,14 +4,15 @@ Fundamental Filter Stage — PE / PB / 市值 / 行业 基本面过滤。
 利用 akshare 实时行情中已有的 PE/PB/市值字段，
 加上 baostock 行业数据（懒加载），执行基本面筛选。
 """
+
 from __future__ import annotations
 
 from typing import Optional
 
 from loguru import logger
 
-from trade_krono_cli.universe.stages import FilterStage
 from trade_krono_cli.universe.provider import UniverseTicket
+from trade_krono_cli.universe.stages import FilterStage
 
 
 class FundamentalFilterStage(FilterStage):
@@ -83,7 +84,5 @@ class FundamentalFilterStage(FilterStage):
 
             kept.append(t)
 
-        logger.info(
-            f"📋 Fundamental stage: {len(tickets)} → {len(kept)}"
-        )
+        logger.info(f"📋 Fundamental stage: {len(tickets)} → {len(kept)}")
         return kept

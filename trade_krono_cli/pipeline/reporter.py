@@ -8,6 +8,7 @@ pipeline.reporter — 报告输出（JSON / HTML / 控制台表格）。
 V0.3: 报告新增 EV 列（expected_value, prob_win, risk_adjusted_ev），
       ranking_score 标注为辅助排序分。
 """
+
 from __future__ import annotations
 
 import json
@@ -25,6 +26,7 @@ console = Console()
 # ═══════════════════════════════════════════════════════
 #  降级标记 helpers
 # ═══════════════════════════════════════════════════════
+
 
 def _degradation_badge(dmg: Optional[str]) -> tuple[str, str]:
     """返回 (html_badge, rich_console_str) 降级标记。"""
@@ -45,6 +47,7 @@ def _degradation_badge(dmg: Optional[str]) -> tuple[str, str]:
 # JSON 报告
 # ═══════════════════════════════════════════════════════
 
+
 def save_json_report(merged: list[dict], path: str) -> str:
     """保存 JSON 报告，截断 forecast_dict 避免文件过大。"""
     clean = []
@@ -62,8 +65,14 @@ def save_json_report(merged: list[dict], path: str) -> str:
         clean.append(c)
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
+    report = {
+        "project": "trade-krono-cli",
+        "generated_at": datetime.now().isoformat(),
+        "count": len(clean),
+        "results": clean,
+    }
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(clean, f, ensure_ascii=False, indent=2)
+        json.dump(report, f, ensure_ascii=False, indent=2)
     logger.info(f"💾 JSON 报告已保存: {path}")
     return path
 
@@ -74,6 +83,7 @@ save_json = save_json_report
 # ═══════════════════════════════════════════════════════
 # HTML 报告
 # ═══════════════════════════════════════════════════════
+
 
 def save_html_report(merged: list[dict], path: str, date: str) -> str:
     """生成 HTML 报告（含 EV 指标列）。"""
@@ -99,13 +109,13 @@ def save_html_report(merged: list[dict], path: str, date: str) -> str:
         rows.append(f"""
             <tr>
               <td>{i}</td>
-              <td><b>{m['ticker']}</b>{badge}</td>
-              <td>{m.get('ta_signal') or '-'}</td>
-              <td>{m.get('ta_confidence') or '-'}</td>
-              <td>{m.get('kronos_direction') or '-'}</td>
-              <td>{m.get('kronos_change_pct') or 0:.2f}%</td>
-              <td>{m.get('kronos_last_close') or '-'}</td>
-              <td>{m.get('kronos_pred_close') or '-'}</td>
+              <td><b>{m["ticker"]}</b>{badge}</td>
+              <td>{m.get("ta_signal") or "-"}</td>
+              <td>{m.get("ta_confidence") or "-"}</td>
+              <td>{m.get("kronos_direction") or "-"}</td>
+              <td>{m.get("kronos_change_pct") or 0:.2f}%</td>
+              <td>{m.get("kronos_last_close") or "-"}</td>
+              <td>{m.get("kronos_pred_close") or "-"}</td>
               <td title="方向评分={dc_str}<br>路径分散={pd_str}<br>综合置信={cs_str}">{cs_str}</td>
               <td title="EV={ev_str}<br>P(win)={pw_str}<br>RA-EV={raev_str}">{rs:.1f}</td>
               <td style="color:#0066cc;font-weight:bold">{ev_str}</td>
@@ -116,7 +126,7 @@ def save_html_report(merged: list[dict], path: str, date: str) -> str:
     html = f"""<!DOCTYPE html>
 <html lang="zh"><head>
 <meta charset="utf-8">
-<title>trade-krono-cli 报告 {date}</title>
+<title>trade-krono-cli 投研报告 {date}</title>
 <style>
 body {{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:20px;background:#f8f9fa}}
 h1 {{color:#333}} table {{border-collapse:collapse;width:100%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1)}}
@@ -132,7 +142,7 @@ tr:hover {{background:#f1f3f5}}
 </style>
 </head><body>
 <h1>📊 trade-krono-cli 投研报告</h1>
-<p class="meta">分析日期: {date} | 生成时间: {now_str} | 共 {len(merged)} 只</p>
+<p class="meta">项目: <b>trade-krono-cli</b> &nbsp;|&nbsp; 分析日期: {date} &nbsp;|&nbsp; 生成时间: {now_str} &nbsp;|&nbsp; 共 {len(merged)} 只</p>
 <table>
 <tr>
   <th>排名</th><th>代码</th><th>TA信号</th><th>置信度</th>
@@ -141,7 +151,7 @@ tr:hover {{background:#f1f3f5}}
   <th title="Expected Value = P(win)×Gain − P(loss)×Loss − cost">EV(%)</th>
   <th title="辅助排序分 0-100（原 composite_score 降级）">Ranking</th>
 </tr>
-{''.join(rows)}
+{"".join(rows)}
 </table>
 </body></html>"""
 
@@ -159,10 +169,22 @@ save_html = save_html_report
 # 控制台输出
 # ═══════════════════════════════════════════════════════
 
+
 def print_results_table(merged: list[dict]) -> None:
     """在控制台输出富文本表格（含 EV 列）。"""
-    table = Table(title="📊 综合排名（EV 优先）", header_style="bold magenta")
-    for col in ("排名", "代码", "TA信号", "置信度", "Kronos方向", "预期涨幅%", "Kronos置信", "EV(%)", "Ranking", "降级模式"):
+    table = Table(title="📊 trade-krono-cli 综合排名（EV 优先）", header_style="bold magenta")
+    for col in (
+        "排名",
+        "代码",
+        "TA信号",
+        "置信度",
+        "Kronos方向",
+        "预期涨幅%",
+        "Kronos置信",
+        "EV(%)",
+        "Ranking",
+        "降级模式",
+    ):
         table.add_column(col, justify="right" if col != "代码" else "left")
 
     for m in merged[:20]:
@@ -194,16 +216,12 @@ print_table = print_results_table
 
 def print_results_summary(merged: list[dict], date: str) -> None:
     """打印简要摘要（含 EV 统计）。"""
-    console.print(f"\n[bold cyan]📅 分析日期: {date}[/bold cyan]")
+    console.print(f"\n[bold cyan]📅 trade-krono-cli · 分析日期: {date}[/bold cyan]")
     console.print(f"[bold cyan]📈 共分析 {len(merged)} 只股票[/bold cyan]\n")
 
     n_degraded = sum(1 for m in merged if m.get("degradation_mode"))
-    n_kronos_degraded = sum(
-        1 for m in merged if m.get("degradation_mode") == "kronos_degraded"
-    )
-    n_cache_fallback = sum(
-        1 for m in merged if m.get("degradation_mode") == "ta_cache_fallback"
-    )
+    n_kronos_degraded = sum(1 for m in merged if m.get("degradation_mode") == "kronos_degraded")
+    n_cache_fallback = sum(1 for m in merged if m.get("degradation_mode") == "ta_cache_fallback")
     if n_degraded:
         parts = []
         if n_kronos_degraded:
@@ -225,13 +243,14 @@ def print_results_summary(merged: list[dict], date: str) -> None:
         pw = best.get("prob_win")
         pw_str = f" P(win)={pw:.0%}" if pw is not None else ""
         console.print(
-            f"[bold green]🥇 最佳推荐: {best['ticker']} "
+            f"[bold green]🥇 trade-krono-cli 最佳推荐: {best['ticker']} "
             f"(TA={best.get('ta_signal')}  Kronos={best.get('kronos_direction')} "
             f"综合分={best.get('ranking_score') or best.get('composite_score')}{ev_str}{pw_str}{cs_str}){dmg_note}[/bold green]"
         )
 
     buys = [m for m in merged if m.get("ta_signal") == "BUY"]
-    if buys:
+    overweight = [m for m in merged if m.get("ta_signal") == "OVERWEIGHT"]
+    if buys or overweight:
         console.print(f"[green]💚 BUY 信号: {len(buys)} 只[/green]")
         for m in buys[:5]:
             pu = m.get("kronos_prediction_uncertainty") or {}
@@ -242,6 +261,15 @@ def print_results_summary(merged: list[dict], date: str) -> None:
             console.print(
                 f"   • {m['ticker']}: 置信度={m.get('ta_confidence')} "
                 f"Kronos预期={m.get('kronos_change_pct') or 0:.2f}%{ev_str}{cs_str}"
+            )
+    if overweight:
+        console.print(f"[dim green]💚 OVERWEIGHT 信号: {len(overweight)} 只[/dim green]")
+        for m in overweight[:5]:
+            ev = m.get("expected_value")
+            ev_str = f" EV={ev:+.3f}%" if ev is not None else ""
+            console.print(
+                f"   • {m['ticker']}: 置信度={m.get('ta_confidence')} "
+                f"Kronos预期={m.get('kronos_change_pct') or 0:.2f}%{ev_str}"
             )
 
     console.print()

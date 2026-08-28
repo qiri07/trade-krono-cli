@@ -3,6 +3,7 @@ TA 信号胜率评估。
 
 负责统计 TA BUY / HOLD 信号的胜率和平均收益。
 """
+
 from __future__ import annotations
 
 from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics

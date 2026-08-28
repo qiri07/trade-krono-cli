@@ -7,10 +7,11 @@ A 股交易约束引擎。
   - ST/*ST 标的识别
   - 交易成本计算
 """
+
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -19,10 +20,10 @@ from loguru import logger
 from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.security import validate_ticker
 
-
 # ═══════════════════════════════════════════════════════
 # 约束结果
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass(frozen=True)
 class TradingConstraintResult:
@@ -30,12 +31,12 @@ class TradingConstraintResult:
 
     symbol: str
     allowed: bool
-    reason: Optional[str] = None          # 拒绝原因（None 表示通过）
-    cost_bps: float = 0.0               # 本次交易所需成本（bps）
+    reason: Optional[str] = None  # 拒绝原因（None 表示通过）
+    cost_bps: float = 0.0  # 本次交易所需成本（bps）
     position_locked_until: Optional[date] = None  # T+1 锁定到期日
-    limit_up_price: Optional[float] = None    # 今日涨停价
+    limit_up_price: Optional[float] = None  # 今日涨停价
     limit_down_price: Optional[float] = None  # 今日跌停价
-    is_st: bool = False                   # 是否为 ST 标的
+    is_st: bool = False  # 是否为 ST 标的
 
 
 # ═══════════════════════════════════════════════════════
@@ -89,6 +90,7 @@ def check_st_status(
 
     try:
         import baostock as bs  # type: ignore
+
         lg = bs.login()
         if lg.error_code != "0":
             logger.debug(f"baostock 登录失败，跳过 ST 检测: {lg.error_msg}")
@@ -126,6 +128,7 @@ def check_st_status(
 # ═══════════════════════════════════════════════════════
 # 涨跌停检测
 # ═══════════════════════════════════════════════════════
+
 
 def detect_exchange(ticker: str) -> str:
     """
@@ -172,7 +175,7 @@ def compute_limit_prices(
 
     limit_pct = config.sse_limit_pct  # 默认主板
     if ticker:
-        exchange = detect_exchange(ticker)
+        _ = detect_exchange(ticker)
         code = ticker.split(".")[-1]
         # 科创板(688)在上证，创业板(300/301)在深证，均用20%
         if code.startswith("688") or code.startswith("300") or code.startswith("301"):
@@ -213,9 +216,7 @@ def check_limit_status(
     limit_up, limit_down = compute_limit_prices(prev_close, ticker, config)
 
     if limit_up is None:
-        return TradingConstraintResult(
-            symbol=ticker, allowed=True
-        )
+        return TradingConstraintResult(symbol=ticker, allowed=True)
 
     # 检查是否触及涨停（current_price >= 涨停价）
     if current_price >= limit_up * 0.999:  # 允许 0.1% 浮点误差
@@ -248,6 +249,7 @@ def check_limit_status(
 # ═══════════════════════════════════════════════════════
 # T+1 约束
 # ═══════════════════════════════════════════════════════
+
 
 class T1Tracker:
     """
@@ -334,6 +336,7 @@ def enforce_t1(
 # 成本模型
 # ═══════════════════════════════════════════════════════
 
+
 def compute_transaction_cost(
     gross_return_pct: float,
     side: str = "sell",
@@ -371,6 +374,7 @@ def compute_transaction_cost(
 # ═══════════════════════════════════════════════════════
 # 综合约束检查
 # ═══════════════════════════════════════════════════════
+
 
 def check_all_constraints(
     ticker: str,
@@ -419,9 +423,7 @@ def check_all_constraints(
 
     # 2. 涨跌停检查
     if current_price is not None and prev_close is not None:
-        limit_result = check_limit_status(
-            ticker, current_price, prev_close, kline_df, config
-        )
+        limit_result = check_limit_status(ticker, current_price, prev_close, kline_df, config)
         if not limit_result.allowed:
             return limit_result
 
@@ -484,8 +486,6 @@ def filter_by_constraints(
             item["constraint_limit_up"] = result.limit_up_price
             item["constraint_limit_down"] = result.limit_down_price
             rejected.append(item)
-            logger.debug(
-                f"🚫 {ticker} 被约束拦截: {result.reason}"
-            )
+            logger.debug(f"🚫 {ticker} 被约束拦截: {result.reason}")
 
     return allowed, rejected

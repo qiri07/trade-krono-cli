@@ -10,6 +10,7 @@ API 参考：
   - 股票基本信息: ts.trade_cal() / ts.stock_basic()
   - 财务指标: ts.fina_indicator()
 """
+
 from __future__ import annotations
 
 import os
@@ -18,7 +19,12 @@ from typing import Optional
 
 from loguru import logger
 
-from trade_krono_cli.data_providers.base import DataProvider, KlineData, RealtimeQuote, StockMetadata
+from trade_krono_cli.data_providers.base import (
+    DataProvider,
+    KlineData,
+    RealtimeQuote,
+    StockMetadata,
+)
 
 
 class TushareProvider(DataProvider):
@@ -47,12 +53,12 @@ class TushareProvider(DataProvider):
         cls._token = token
         try:
             import tushare as ts  # type: ignore
+
             ts.set_token(cls._token)
             cls._ts = ts
         except ImportError:
             raise RuntimeError(
-                "tushare 未安装，无法使用 tushare 数据源。"
-                "请运行: pip install tushare"
+                "tushare 未安装，无法使用 tushare 数据源。请运行: pip install tushare"
             )
 
     # ── 核心接口实现 ──────────────────────────────────────────
@@ -68,7 +74,6 @@ class TushareProvider(DataProvider):
         try:
             self._ensure_import()
             # tushare 代码格式: 600519.SH / 000858.SZ
-            code = ticker.replace(".", ".")
             ts_code = ticker.replace("sh.", ".SH").replace("sz.", ".SZ")
 
             df = self._ts.pro_bar(
@@ -138,7 +143,9 @@ class TushareProvider(DataProvider):
                 ticker=ticker,
                 industry=str(row.get("industry")) if pd_notna(row.get("industry")) else None,
                 ipo_date=str(row.get("list_date"))[:10] if pd_notna(row.get("list_date")) else None,
-                out_date=str(row.get("delist_date"))[:10] if pd_notna(row.get("delist_date")) else None,
+                out_date=str(row.get("delist_date"))[:10]
+                if pd_notna(row.get("delist_date"))
+                else None,
                 is_st=is_st,
                 source=self.name,
             )
@@ -165,12 +172,13 @@ class TushareProvider(DataProvider):
 # 工具函数
 # ═══════════════════════════════════════════════════════
 
+
 def safe_float(value) -> Optional[float]:
     if value is None:
         return None
     try:
         f = float(value)
-        return f if not (f != f or f == float('inf') or f == float('-inf')) else None
+        return f if not (f != f or f == float("inf") or f == float("-inf")) else None
     except (ValueError, TypeError):
         return None
 
@@ -179,6 +187,7 @@ def pd_notna(value) -> bool:
     """检查 pandas NaN 安全。"""
     try:
         import pandas as pd
+
         return not pd.isna(value)
     except Exception:
         return value is not None
@@ -186,5 +195,6 @@ def pd_notna(value) -> bool:
 
 def pd_to_datetime_safe(values: list) -> list[datetime]:
     import pandas as pd
+
     ts = pd.to_datetime(values)
     return ts.tolist()

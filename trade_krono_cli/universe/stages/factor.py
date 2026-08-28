@@ -3,14 +3,15 @@ Factor Filter Stage — 量比 / 换手率 流动性过滤。
 
 在静态和基本面过滤之后，通过成交活跃度排除流动性不足的标的。
 """
+
 from __future__ import annotations
 
 from typing import Optional
 
 from loguru import logger
 
-from trade_krono_cli.universe.stages import FilterStage
 from trade_krono_cli.universe.provider import UniverseTicket
+from trade_krono_cli.universe.stages import FilterStage
 
 
 class FactorFilterStage(FilterStage):
@@ -49,7 +50,5 @@ class FactorFilterStage(FilterStage):
 
             kept.append(t)
 
-        logger.info(
-            f"📋 Factor stage: {len(tickets)} → {len(kept)}"
-        )
+        logger.info(f"📋 Factor stage: {len(tickets)} → {len(kept)}")
         return kept

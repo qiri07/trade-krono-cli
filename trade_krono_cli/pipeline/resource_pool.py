@@ -29,6 +29,7 @@ ResourcePool — 统一的并发资源管理器。
       ├── LLM Semaphore  (asyncio.Semaphore, 3 concurrent)
       └── GPU Queue      (asyncio.Semaphore, 1 depth)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -43,6 +44,7 @@ from loguru import logger
 @dataclass(frozen=True)
 class PoolConfig:
     """线程池资源配置。"""
+
     cpu_workers: int = 8
     """CPU-bound 任务的最大并发数（默认 8，匹配 Ryzen 7 4800H 物理核心）。"""
 
@@ -141,9 +143,7 @@ class ResourcePool:
                     self._gpu_semaphore = asyncio.Semaphore(self._config.gpu_queue_size)
         return self._gpu_semaphore
 
-    def submit_cpu(
-        self, fn: Callable, *args, **kwargs
-    ) -> Future:
+    def submit_cpu(self, fn: Callable, *args, **kwargs) -> Future:
         """
         提交 CPU-bound 任务（TA 分析、数据预处理）。
 
@@ -153,9 +153,7 @@ class ResourcePool:
         """
         return self.cpu.submit(fn, *args, **kwargs)
 
-    def submit_io(
-        self, fn: Callable, *args, **kwargs
-    ) -> Future:
+    def submit_io(self, fn: Callable, *args, **kwargs) -> Future:
         """
         提交 IO-bound 任务（网络请求、文件读写）。
 

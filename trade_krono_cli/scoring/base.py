@@ -8,21 +8,23 @@ scoring.base — 评分与风险插件抽象基类。
 
 所有具体实现类必须在子类中声明 name 属性，并在 Registry 中注册。
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional
-
+from typing import Any
 
 # ═══════════════════════════════════════════════════════
 # 综合打分器
 # ═══════════════════════════════════════════════════════
 
+
 @dataclass(frozen=True)
 class ScoreResult:
     """单次打分的结构化结果。"""
-    score: float                    # 最终综合分 0–100
+
+    score: float  # 最终综合分 0–100
     raw_components: dict[str, float] = field(default_factory=dict)
     """各子项原始得分，供调试和回测分析。"""
     strategy_name: str = ""
@@ -72,12 +74,14 @@ class CompositeScorer(ABC):
 # 风险加分策略
 # ═══════════════════════════════════════════════════════
 
+
 @dataclass(frozen=True)
 class BoostResult:
     """风险加分结果。"""
-    boosted_risk: float             # 上调后的风险分 0–100
-    base_risk: float                # 原始风险分
-    total_boost: float              # 累计加分
+
+    boosted_risk: float  # 上调后的风险分 0–100
+    base_risk: float  # 原始风险分
+    total_boost: float  # 累计加分
     flags_applied: list[str] = field(default_factory=list)
     """实际应用的异常标记列表。"""
 

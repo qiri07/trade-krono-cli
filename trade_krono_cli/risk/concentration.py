@@ -3,9 +3,8 @@
 
 当前版本基于占位实现，未来可接入组合权重数据进行真实集中度计算。
 """
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 
 def calc_concentration_risk(ta_result=None) -> float:

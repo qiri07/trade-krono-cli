@@ -6,6 +6,7 @@ Prediction — 预测相关的领域对象。
   · TAAnalysis               — 技术面/基本面分析结果
   · KronosPrediction        — 时序模型预测结果
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -13,10 +14,10 @@ from typing import Optional
 
 from trade_krono_cli.domain.types import Direction
 
-
 # ═══════════════════════════════════════════════════════
 #  PredictionDistribution
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass(frozen=True)
 class PredictionDistribution:
@@ -29,12 +30,13 @@ class PredictionDistribution:
 
     单样本时百分位退化为最终价；多样本时从路径矩阵计算。
     """
-    expected_return: Optional[float] = None       # 预期收益率（%）
-    direction: Optional[Direction] = None          # UP / DOWN / FLAT
-    direction_score: Optional[float] = None        # 方向强度 0-1
-    volatility: Optional[float] = None             # 预测路径标准差
-    path_dispersion: Optional[float] = None        # 归一化路径分散度
-    confidence_score: Optional[float] = None       # 综合置信度 0-100
+
+    expected_return: Optional[float] = None  # 预期收益率（%）
+    direction: Optional[Direction] = None  # UP / DOWN / FLAT
+    direction_score: Optional[float] = None  # 方向强度 0-1
+    volatility: Optional[float] = None  # 预测路径标准差
+    path_dispersion: Optional[float] = None  # 归一化路径分散度
+    confidence_score: Optional[float] = None  # 综合置信度 0-100
     sample_count_used: int = 1
 
     # 分位数（多样本时填充）
@@ -60,16 +62,23 @@ class PredictionDistribution:
             "path_dispersion": self.path_dispersion,
             "confidence_score": self.confidence_score,
             "sample_count_used": self.sample_count_used,
-            "p10": self.p10, "p25": self.p25, "p50": self.p50,
-            "p75": self.p75, "p90": self.p90,
+            "p10": self.p10,
+            "p25": self.p25,
+            "p50": self.p50,
+            "p75": self.p75,
+            "p90": self.p90,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "PredictionDistribution":
         direction_val = data.get("direction")
-        direction = Direction.UP if direction_val == "UP" else (
-            Direction.DOWN if direction_val == "DOWN" else Direction.FLAT
-        ) if direction_val else None
+        direction = (
+            Direction.UP
+            if direction_val == "UP"
+            else (Direction.DOWN if direction_val == "DOWN" else Direction.FLAT)
+            if direction_val
+            else None
+        )
         return cls(
             expected_return=data.get("expected_return"),
             direction=direction,
@@ -94,6 +103,7 @@ class PredictionDistribution:
 #  TAAnalysis
 # ═══════════════════════════════════════════════════════
 
+
 @dataclass(frozen=True)
 class TAAnalysis:
     """
@@ -101,12 +111,13 @@ class TAAnalysis:
 
     由 TradingAgents 产出，代表从多个维度对股票的分析结论。
     """
+
     ticker: str
     eval_date: str
-    signal: "domain.Signal"                    # BUY / HOLD / SELL
-    confidence: float                          # 0–100
-    thesis: str = ""                           # 投资论点摘要
-    reasoning: str = ""                        # 详细推理过程
+    signal: str  # BUY / HOLD / SELL — 使用字符串避免循环导入 domain.Signal
+    confidence: float  # 0–100
+    thesis: str = ""  # 投资论点摘要
+    reasoning: str = ""  # 详细推理过程
     risks: list[str] = field(default_factory=list)
     invalidations: list[str] = field(default_factory=list)
 
@@ -149,6 +160,7 @@ class TAAnalysis:
     @classmethod
     def from_dict(cls, data: dict) -> "TAAnalysis":
         from trade_krono_cli.domain import Signal
+
         signal_val = data.get("signal", "HOLD")
         if isinstance(signal_val, str):
             try:
@@ -180,14 +192,18 @@ class TAAnalysis:
     @classmethod
     def failed(cls, ticker: str, eval_date: str, error: str) -> "TAAnalysis":
         return cls(
-            ticker=ticker, eval_date=eval_date,
-            signal=Signal.HOLD, confidence=0.0, error=error,
+            ticker=ticker,
+            eval_date=eval_date,
+            signal="HOLD",
+            confidence=0.0,
+            error=error,
         )
 
 
 # ═══════════════════════════════════════════════════════
 #  KronosPrediction
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass(frozen=True)
 class KronosPrediction:
@@ -196,13 +212,14 @@ class KronosPrediction:
 
     与 TAAnalysis 并行，提供基于时间序列的概率预测。
     """
+
     ticker: str
     eval_date: str
-    horizon: int                                  # 预测周期（交易日）
-    direction: Direction                          # UP / DOWN / FLAT
-    expected_return: float                        # 预期收益率（%）
-    predicted_close: float                        # 预测最终价
-    distribution: PredictionDistribution          # 完整概率分布
+    horizon: int  # 预测周期（交易日）
+    direction: Direction  # UP / DOWN / FLAT
+    expected_return: float  # 预期收益率（%）
+    predicted_close: float  # 预测最终价
+    distribution: PredictionDistribution  # 完整概率分布
 
     # 元数据
     model_name: str = ""
@@ -248,10 +265,14 @@ class KronosPrediction:
     @classmethod
     def from_dict(cls, data: dict) -> "KronosPrediction":
         dist_data = data.get("distribution", {})
-        dist = PredictionDistribution.from_dict(dist_data) if dist_data else PredictionDistribution()
+        dist = (
+            PredictionDistribution.from_dict(dist_data) if dist_data else PredictionDistribution()
+        )
         direction_val = data.get("direction", "FLAT")
-        direction = Direction.UP if direction_val == "UP" else (
-            Direction.DOWN if direction_val == "DOWN" else Direction.FLAT
+        direction = (
+            Direction.UP
+            if direction_val == "UP"
+            else (Direction.DOWN if direction_val == "DOWN" else Direction.FLAT)
         )
         return cls(
             ticker=data["ticker"],
@@ -270,9 +291,13 @@ class KronosPrediction:
     @classmethod
     def failed(cls, ticker: str, eval_date: str, horizon: int, error: str) -> "KronosPrediction":
         return cls(
-            ticker=ticker, eval_date=eval_date, horizon=horizon,
-            direction=Direction.FLAT, expected_return=0.0,
-            predicted_close=0.0, distribution=PredictionDistribution.empty(),
+            ticker=ticker,
+            eval_date=eval_date,
+            horizon=horizon,
+            direction=Direction.FLAT,
+            expected_return=0.0,
+            predicted_close=0.0,
+            distribution=PredictionDistribution.empty(),
             error=error,
         )
 

@@ -1,20 +1,19 @@
 """测试领域工厂函数（domain/factory.py）。"""
+
 from __future__ import annotations
 
 import pytest
 
 from trade_krono_cli.domain.factory import (
-    build_signal_assessment,
-    build_investment_decision,
-    build_eval_record,
     _majority_vote,
+    build_eval_record,
+    build_investment_decision,
+    build_signal_assessment,
 )
-from trade_krono_cli.domain.types import Direction, Signal as DomainSignal
-from trade_krono_cli.domain.prediction import TAAnalysis, KronosPrediction, PredictionDistribution
+from trade_krono_cli.domain.prediction import KronosPrediction, PredictionDistribution, TAAnalysis
 from trade_krono_cli.domain.signal import SignalAssessment, SignalConflict
-from trade_krono_cli.domain.decision import InvestmentDecision
-from trade_krono_cli.domain.evaluation import EvalRecord
-
+from trade_krono_cli.domain.types import Direction
+from trade_krono_cli.domain.types import Signal as DomainSignal
 
 # ── _majority_vote ────────────────────────────────────────────────────────────
 
@@ -56,12 +55,16 @@ def test_majority_vote_empty():
 
 def test_build_only_ta():
     ta = TAAnalysis(
-        ticker="sh.600519", eval_date="2026-08-11",
-        signal=DomainSignal.BUY, confidence=80.0,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        signal=DomainSignal.BUY,
+        confidence=80.0,
         thesis="基本面良好",
     )
     sa = build_signal_assessment(
-        ticker="sh.600519", eval_date="2026-08-11", ta=ta,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        ta=ta,
     )
     assert sa.final_signal == DomainSignal.BUY
     assert sa.final_confidence > 0
@@ -70,17 +73,24 @@ def test_build_only_ta():
 
 def test_build_only_kronos():
     kd = PredictionDistribution(
-        expected_return=3.2, direction=Direction.UP, direction_score=0.8,
+        expected_return=3.2,
+        direction=Direction.UP,
+        direction_score=0.8,
         confidence_score=75.0,
     )
     kronos = KronosPrediction(
-        ticker="sh.600519", eval_date="2026-08-11",
-        horizon=5, predicted_close=155.0,
-        direction=Direction.UP, expected_return=3.2,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        horizon=5,
+        predicted_close=155.0,
+        direction=Direction.UP,
+        expected_return=3.2,
         distribution=kd,
     )
     sa = build_signal_assessment(
-        ticker="sh.600519", eval_date="2026-08-11", kronos=kronos,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        kronos=kronos,
     )
     assert sa.final_signal == DomainSignal.BUY
     assert sa.expected_value is not None
@@ -88,20 +98,30 @@ def test_build_only_kronos():
 
 def test_build_ta_and_kronos_conflict():
     ta = TAAnalysis(
-        ticker="sh.600519", eval_date="2026-08-11",
-        signal=DomainSignal.BUY, confidence=80.0,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        signal=DomainSignal.BUY,
+        confidence=80.0,
     )
     kronos = KronosPrediction(
-        ticker="sh.600519", eval_date="2026-08-11",
-        horizon=5, predicted_close=145.0,
-        direction=Direction.DOWN, expected_return=-2.0,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        horizon=5,
+        predicted_close=145.0,
+        direction=Direction.DOWN,
+        expected_return=-2.0,
         distribution=PredictionDistribution(
-            expected_return=-2.0, direction=Direction.DOWN, direction_score=0.6,
+            expected_return=-2.0,
+            direction=Direction.DOWN,
+            direction_score=0.6,
             confidence_score=60.0,
         ),
     )
     sa = build_signal_assessment(
-        ticker="sh.600519", eval_date="2026-08-11", ta=ta, kronos=kronos,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        ta=ta,
+        kronos=kronos,
     )
     # TA BUY + Kronos DOWN → 冲突
     assert sa.conflict in (SignalConflict.TA_vs_KRONOS, SignalConflict.ALL_CONFLICT)
@@ -109,8 +129,10 @@ def test_build_ta_and_kronos_conflict():
 
 def test_build_with_committee():
     sa = build_signal_assessment(
-        ticker="sh.600519", eval_date="2026-08-11",
-        committee_rec=DomainSignal.BUY, committee_confidence=85.0,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        committee_rec=DomainSignal.BUY,
+        committee_confidence=85.0,
     )
     assert sa.final_signal == DomainSignal.BUY
 
@@ -118,7 +140,8 @@ def test_build_with_committee():
 def test_build_all_none():
     """所有输入均为 None 时，final_signal = HOLD, conflict = NONE。"""
     sa = build_signal_assessment(
-        ticker="sh.600519", eval_date="2026-08-11",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
     )
     assert sa.final_signal == DomainSignal.HOLD
     assert sa.conflict == SignalConflict.NONE
@@ -126,18 +149,23 @@ def test_build_all_none():
 
 def test_build_with_bull_bear_case():
     sa = build_signal_assessment(
-        ticker="sh.600519", eval_date="2026-08-11",
-        bull_case="业绩超预期", bear_case="估值偏高",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        bull_case="业绩超预期",
+        bear_case="估值偏高",
     )
     assert "Bull" in sa.thesis
 
 
 def test_build_custom_cost_bps():
     sa = build_signal_assessment(
-        ticker="sh.600519", eval_date="2026-08-11",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
         ta=TAAnalysis(
-            ticker="sh.600519", eval_date="2026-08-11",
-            signal=DomainSignal.BUY, confidence=80.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            signal=DomainSignal.BUY,
+            confidence=80.0,
         ),
         cost_bps=30.0,
     )
@@ -149,13 +177,18 @@ def test_build_custom_cost_bps():
 
 def test_build_decision_from_assessment():
     assessment = SignalAssessment(
-        ticker="sh.600519", eval_date="2026-08-11",
-        final_signal=DomainSignal.BUY, final_confidence=80.0,
-        expected_value=5.5, prob_win=0.72,
-        thesis="论点", risks=["风险"],
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        final_signal=DomainSignal.BUY,
+        final_confidence=80.0,
+        expected_value=5.5,
+        prob_win=0.72,
+        thesis="论点",
+        risks=["风险"],
     )
     d = build_investment_decision(
-        ticker="sh.600519", eval_date="2026-08-11",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
         signal_assessment=assessment,
     )
     assert d.ticker == "sh.600519"
@@ -167,28 +200,39 @@ def test_build_decision_from_assessment():
 
 def test_build_decision_with_risk():
     from trade_krono_cli.domain.risk import RiskAssessment
+
     assessment = SignalAssessment(
-        ticker="sh.600519", eval_date="2026-08-11",
-        final_signal=DomainSignal.BUY, final_confidence=80.0,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        final_signal=DomainSignal.BUY,
+        final_confidence=80.0,
     )
     risk = RiskAssessment(ticker="sh.600519", eval_date="2026-08-11", risk_score_total=35.0)
     d = build_investment_decision(
-        ticker="sh.600519", eval_date="2026-08-11",
-        signal_assessment=assessment, risk_assessment=risk,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        signal_assessment=assessment,
+        risk_assessment=risk,
     )
     assert d.risk_assessment == risk
 
 
 def test_build_decision_with_params():
     assessment = SignalAssessment(
-        ticker="sh.600519", eval_date="2026-08-11",
-        final_signal=DomainSignal.BUY, final_confidence=80.0,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        final_signal=DomainSignal.BUY,
+        final_confidence=80.0,
     )
     d = build_investment_decision(
-        ticker="sh.600519", eval_date="2026-08-11",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
         signal_assessment=assessment,
-        position_size=0.3, entry_zone=[148.0, 152.0],
-        target_price=170.0, stop_loss=140.0, horizon=20,
+        position_size=0.3,
+        entry_zone=[148.0, 152.0],
+        target_price=170.0,
+        stop_loss=140.0,
+        horizon=20,
     )
     assert d.position_size == 0.3
     assert d.entry_zone == [148.0, 152.0]
@@ -202,12 +246,15 @@ def test_build_decision_with_params():
 
 def test_build_eval_record():
     record = build_eval_record(
-        ticker="sh.600519", eval_date="2026-08-11",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
         horizon_days=5,
-        pred_direction=Direction.UP, pred_return_pct=3.2,
+        pred_direction=Direction.UP,
+        pred_return_pct=3.2,
         actual_return_pct=2.5,
         ta_signal=DomainSignal.BUY,
-        ranking_score=75.0, expected_value=5.0,
+        ranking_score=75.0,
+        expected_value=5.0,
     )
     assert record.ticker == "sh.600519"
     assert record.pred_direction == Direction.UP
@@ -218,9 +265,11 @@ def test_build_eval_record():
 
 def test_build_eval_record_flat():
     record = build_eval_record(
-        ticker="sh.600519", eval_date="2026-08-11",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
         horizon_days=5,
-        pred_direction=Direction.UP, pred_return_pct=3.2,
+        pred_direction=Direction.UP,
+        pred_return_pct=3.2,
         actual_return_pct=0.5,  # < 1.0 → FLAT
     )
     assert record.actual_direction == "FLAT"
@@ -229,9 +278,11 @@ def test_build_eval_record_flat():
 
 def test_build_eval_record_down():
     record = build_eval_record(
-        ticker="sh.600519", eval_date="2026-08-11",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
         horizon_days=5,
-        pred_direction=Direction.DOWN, pred_return_pct=-3.0,
+        pred_direction=Direction.DOWN,
+        pred_return_pct=-3.0,
         actual_return_pct=-5.0,
     )
     assert record.actual_direction == "DOWN"
@@ -240,11 +291,17 @@ def test_build_eval_record_down():
 
 def test_build_eval_record_with_distribution():
     record = build_eval_record(
-        ticker="sh.600519", eval_date="2026-08-11",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
         horizon_days=5,
-        pred_direction=Direction.UP, pred_return_pct=3.2,
+        pred_direction=Direction.UP,
+        pred_return_pct=3.2,
         actual_return_pct=2.5,
-        p10=-1.0, p25=0.5, p50=3.0, p75=5.0, p90=8.0,
+        p10=-1.0,
+        p25=0.5,
+        p50=3.0,
+        p75=5.0,
+        p90=8.0,
     )
     assert record.p10 == -1.0
     assert record.p90 == 8.0
@@ -253,9 +310,11 @@ def test_build_eval_record_with_distribution():
 def test_build_eval_record_composite_score_backward_compat():
     """composite_score 参数作为 ranking_score 的别名。"""
     record = build_eval_record(
-        ticker="sh.600519", eval_date="2026-08-11",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
         horizon_days=5,
-        pred_direction=Direction.UP, pred_return_pct=2.0,
+        pred_direction=Direction.UP,
+        pred_return_pct=2.0,
         actual_return_pct=1.5,
         composite_score=70.0,
     )

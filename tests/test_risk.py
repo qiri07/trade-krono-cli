@@ -1,20 +1,25 @@
 """测试风险引擎各模块。"""
-import pytest
+
 import numpy as np
 import pandas as pd
-from trade_krono_cli.risk.volatility import calc_volatility_risk
+import pytest
+
+from trade_krono_cli.configs.schema import (
+    DrawdownThresholds,
+    LiquidityThresholds,
+    MarketRegimeThresholds,
+    RiskConfig,
+    VolatilityThresholds,
+)
+from trade_krono_cli.risk.concentration import calc_concentration_risk
 from trade_krono_cli.risk.drawdown import calc_drawdown_risk
 from trade_krono_cli.risk.liquidity import calc_liquidity_risk
-from trade_krono_cli.risk.concentration import calc_concentration_risk
 from trade_krono_cli.risk.market_regime import calc_market_regime_risk
 from trade_krono_cli.risk.risk_engine import RiskEngine, RiskScore
-from trade_krono_cli.configs.schema import (
-    RiskConfig, VolatilityThresholds,
-    DrawdownThresholds, LiquidityThresholds, MarketRegimeThresholds,
-)
-
+from trade_krono_cli.risk.volatility import calc_volatility_risk
 
 # ── 辅助函数：构造测试用 K 线数据 ───────────────────────────────────────────────
+
 
 def _make_close_series(values):
     return pd.Series(values, dtype=float)
@@ -30,18 +35,21 @@ def _make_kline_df(close_values, high_values=None, volume_values=None):
         volume = pd.Series([1e7] * len(close), dtype=float)
     else:
         volume = pd.Series(volume_values, dtype=float)
-    return pd.DataFrame({
-        "open":   close * 0.99,
-        "high":   high,
-        "low":    close * 0.98,
-        "close":  close,
-        "volume": volume,
-    })
+    return pd.DataFrame(
+        {
+            "open": close * 0.99,
+            "high": high,
+            "low": close * 0.98,
+            "close": close,
+            "volume": volume,
+        }
+    )
 
 
 # ═══════════════════════════════════════════════════════
 # Volatility 风险测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestVolatilityRisk:
     def test_low_volatility_gives_low_score(self):
@@ -54,9 +62,7 @@ class TestVolatilityRisk:
     def test_high_volatility_gives_high_score(self):
         """波动率高 → 风险分高。"""
         np.random.seed(42)
-        close = pd.Series(
-            100 * (1 + np.random.randn(50) * 0.04), dtype=float
-        )
+        close = pd.Series(100 * (1 + np.random.randn(50) * 0.04), dtype=float)
         score, ann_vol = calc_volatility_risk(close)
         assert score > 50  # 高风险
         assert ann_vol > 50
@@ -72,7 +78,8 @@ class TestVolatilityRisk:
         """极端高波动时分数不超过 100。"""
         np.random.seed(99)
         close = pd.Series(
-            100 * (1 + np.random.randn(50) * 0.15), dtype=float  # 极高波动
+            100 * (1 + np.random.randn(50) * 0.15),
+            dtype=float,  # 极高波动
         )
         score, _ = calc_volatility_risk(close)
         assert 0 <= score <= 100
@@ -90,6 +97,7 @@ class TestVolatilityRisk:
 # Drawdown 风险测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestDrawdownRisk:
     def test_no_drawdown_gives_low_score(self):
         """无回撤 → 低风险分。"""
@@ -101,9 +109,7 @@ class TestDrawdownRisk:
 
     def test_large_drawdown_gives_high_score(self):
         """大回撤 → 高风险分。"""
-        close = _make_close_series(
-            [100, 100, 90, 80, 75, 80, 85, 90, 95, 100] * 5
-        )
+        close = _make_close_series([100, 100, 90, 80, 75, 80, 85, 90, 95, 100] * 5)
         high = close * 1.02
         score, max_dd = calc_drawdown_risk(high, close)
         assert score > 40
@@ -141,6 +147,7 @@ class TestDrawdownRisk:
 # ═══════════════════════════════════════════════════════
 # Liquidity 风险测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestLiquidityRisk:
     def test_high_volume_gives_low_score(self):
@@ -187,6 +194,7 @@ class TestLiquidityRisk:
 # Concentration 风险测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestConcentrationRisk:
     def test_default_score(self):
         """无 TA 结果时返回默认 10 分。"""
@@ -202,6 +210,7 @@ class TestConcentrationRisk:
 # ═══════════════════════════════════════════════════════
 # Market Regime 风险测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestMarketRegimeRisk:
     def test_uptrend_gives_low_score(self):
@@ -247,6 +256,7 @@ class TestMarketRegimeRisk:
 # ═══════════════════════════════════════════════════════
 # RiskEngine 集成测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestRiskEngine:
     def test_assess_basic(self):
@@ -305,11 +315,18 @@ class TestRiskEngine:
 
     def test_custom_weights(self):
         """自定义权重应生效。"""
-        rc = RiskConfig(weights=RiskConfig().weights.merge(
-            volatility=0.50, drawdown=0.20, liquidity=0.15,
-            concentration=0.10, market_regime=0.05,
-            gap_risk=0.0, event_risk=0.0, valuation_risk=0.0,
-        ))
+        rc = RiskConfig(
+            weights=RiskConfig().weights.merge(
+                volatility=0.50,
+                drawdown=0.20,
+                liquidity=0.15,
+                concentration=0.10,
+                market_regime=0.05,
+                gap_risk=0.0,
+                event_risk=0.0,
+                valuation_risk=0.0,
+            )
+        )
         engine = RiskEngine(risk_config=rc)
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
         risk_score, _ = engine.assess("sh.600519", "2026-08-11", df)
@@ -378,10 +395,12 @@ class TestRiskEngine:
 
 # ── assess_risk 便捷函数测试 ─────────────────────────────────────────────────
 
+
 class TestAssessRisk:
     def test_convenience_function(self):
         """便捷函数 assess_risk 应返回 (RiskScore, RiskMetrics)。"""
         from trade_krono_cli.risk.risk_engine import assess_risk
+
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
         risk_score, risk_metrics = assess_risk("sh.600519", "2026-08-11", df)
         assert isinstance(risk_score, RiskScore)
@@ -390,6 +409,7 @@ class TestAssessRisk:
     def test_convenience_with_config(self):
         """便捷函数支持传入 RiskConfig。"""
         from trade_krono_cli.risk.risk_engine import assess_risk
+
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
         rc = RiskConfig(weights=RiskConfig().weights.merge(volatility=0.99))
         risk_score, _ = assess_risk("sh.600519", "2026-08-11", df, risk_config=rc)

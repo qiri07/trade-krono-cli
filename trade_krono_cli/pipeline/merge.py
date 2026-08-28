@@ -13,6 +13,7 @@ V0.3 语义升级：
   - sort_primary   ：按 expected_value 降序（金融意义优先）
   - sort_secondary ：按 ranking_score 降序（辅助）
 """
+
 from __future__ import annotations
 
 from typing import Callable, Optional
@@ -20,19 +21,19 @@ from typing import Callable, Optional
 import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.configs.scoring import ScoringConfig, ScoringStrategyConfig
 from trade_krono_cli.configs.risk import RiskConfig
+from trade_krono_cli.configs.scoring import ScoringConfig, ScoringStrategyConfig
+from trade_krono_cli.constraints_config import ConstraintConfig
+from trade_krono_cli.domain.signal import _compute_ev as _domain_compute_ev
+from trade_krono_cli.kronos_runner import KronosForecastResult
+from trade_krono_cli.risk.models import adjust_expected_return
+from trade_krono_cli.risk.risk_engine import RiskEngine
 from trade_krono_cli.scoring.registry import get_scorer_registry
 from trade_krono_cli.ta_runner import StockAnalysisResult
-from trade_krono_cli.kronos_runner import KronosForecastResult
-from trade_krono_cli.risk.risk_engine import RiskEngine
-from trade_krono_cli.risk.models import adjust_expected_return
 from trade_krono_cli.trading_constraints import (
     T1Tracker,
     check_all_constraints,
 )
-from trade_krono_cli.constraints_config import ConstraintConfig
-from trade_krono_cli.domain.signal import _compute_ev as _domain_compute_ev
 
 REASONING_TRUNCATE_LEN = 500
 DEFAULT_COST_BPS = 17.0
@@ -84,7 +85,11 @@ def _compute_ev_for_merged(
     p90 = float(getattr(dist, "p90", None)) if dist is not None else None
 
     prob_win, prob_loss, _, _, ev, raev = _domain_compute_ev(
-        direction=None, expected_return=ret, p10=p10, p90=p90, cost_bps=cost_bps,
+        direction=None,
+        expected_return=ret,
+        p10=p10,
+        p90=p90,
+        cost_bps=cost_bps,
     )
     return prob_win, prob_loss, ev, raev
 
@@ -107,9 +112,7 @@ def default_scorer(merged: dict, scoring: Optional[ScoringConfig] = None) -> flo
     if adj_ret is not None:
         chg = adj_ret
     else:
-        chg = merged.get("kronos_change_pct") or merged.get(
-            "kronos_change_pct_gross"
-        ) or 0
+        chg = merged.get("kronos_change_pct") or merged.get("kronos_change_pct_gross") or 0
     raw_score += s.change_pct_weight * max(0, min(100, chg + s.change_pct_offset))
 
     direction = merged.get("kronos_direction")
@@ -186,9 +189,7 @@ def run_risk_assessment(
 ) -> tuple[float, dict, dict]:
     """对单只股票运行风险引擎。"""
     engine = RiskEngine(risk_config=risk_config)
-    risk_score, risk_metrics = engine.assess(
-        ticker, date, kline_df, quote_data, ta_result
-    )
+    risk_score, risk_metrics = engine.assess(ticker, date, kline_df, quote_data, ta_result)
 
     scores = {
         "volatility": risk_score.volatility_score,
@@ -227,6 +228,7 @@ def merge_results(
     """
     if scorer is None:
         from trade_krono_cli.scoring.scorers import LinearScorer
+
         if scoring_strategy:
             registry = get_scorer_registry()
             registered = registry.get(scoring_strategy.strategy)
@@ -235,7 +237,9 @@ def merge_results(
                 logger.debug(f"📊 使用打分策略: {registered.name}")
             else:
                 scorer = LinearScorer().score
-                logger.warning(f"⚠️  未找到打分策略 '{scoring_strategy.strategy}'，fallback 到 linear")
+                logger.warning(
+                    f"⚠️  未找到打分策略 '{scoring_strategy.strategy}'，fallback 到 linear"
+                )
         else:
             scorer = LinearScorer().score
 
@@ -256,9 +260,7 @@ def merge_results(
         if degrade_mode == "ta_only_on_kronos_fail":
             if ta.error is None and (kr is None or kr.error is not None):
                 item["degradation_mode"] = "kronos_degraded"
-                logger.info(
-                    f"⚠️  {ta.ticker} Kronos 不可用，降级为「仅 TA 评分」模式"
-                )
+                logger.info(f"⚠️  {ta.ticker} Kronos 不可用，降级为「仅 TA 评分」模式")
 
         # ── A 股交易约束检查 ──────────────────────────────────────
         if constraints_config.enable_limit_check or constraints_config.enable_t1:
@@ -319,13 +321,9 @@ def merge_results(
                 item["risk_scores"] = risk_scores
                 item["risk_metrics"] = risk_metrics
 
-                raw_ret = item.get("kronos_change_pct") or item.get(
-                    "kronos_change_pct_gross"
-                )
+                raw_ret = item.get("kronos_change_pct") or item.get("kronos_change_pct_gross")
                 if raw_ret is not None and risk_metrics.get("return_adjustment") is not None:
-                    item["adjusted_expected_return"] = adjust_expected_return(
-                        raw_ret, risk_metrics
-                    )
+                    item["adjusted_expected_return"] = adjust_expected_return(raw_ret, risk_metrics)
             except (ValueError, TypeError, KeyError, IndexError) as e:
                 logger.warning(f"⚠️  风险评估异常 {tk}: {str(e)[:200]}")
                 item["risk_score_total"] = 50.0

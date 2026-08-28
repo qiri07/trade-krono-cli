@@ -1,4 +1,5 @@
 """测试 PipelineConfig 配置类（Phase 3）。"""
+
 from pathlib import Path
 
 import pytest
@@ -65,6 +66,7 @@ def test_save_and_load_yaml(tmp_path: Path):
     path = tmp_path / "config.yaml"
     # 手动写入 YAML（避免 tuple 序列化问题）
     import yaml
+
     data = cfg.to_dict()
     # 将 tuple breakpoints 转为 list for YAML serialization
     for section in ("scoring", "risk"):
@@ -162,19 +164,30 @@ def test_merge_works_with_loaded_config(tmp_path: Path):
     from trade_krono_cli.ta_runner import StockAnalysisResult
 
     ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0)
-    kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=3.2)
+    kronos = KronosForecastResult(
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        horizon=30,
+        direction="UP",
+        expected_change_pct=3.2,
+    )
 
     np.random.seed(42)
     close_vals = 100 * (1 + np.random.randn(60) * 0.02)
-    kline_df = pd.DataFrame({
-        "open": close_vals * 0.99, "high": close_vals * 1.01,
-        "low": close_vals * 0.98, "close": close_vals,
-        "volume": pd.Series([1e7] * 60),
-    })
+    kline_df = pd.DataFrame(
+        {
+            "open": close_vals * 0.99,
+            "high": close_vals * 1.01,
+            "low": close_vals * 0.98,
+            "close": close_vals,
+            "volume": pd.Series([1e7] * 60),
+        }
+    )
 
     cfg = PipelineConfig.default()
     merged = merge_results(
-        [ta], [kronos],
+        [ta],
+        [kronos],
         kline_data={"sh.600519": kline_df},
         scoring_config=cfg.scoring,
         risk_config=cfg.risk,

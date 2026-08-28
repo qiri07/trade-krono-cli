@@ -12,32 +12,30 @@ tests/test_degradation.py — 优雅降级机制测试。
   8. research_db: get_latest_ta_for_ticker 基础查询
   9. orchestrator: ta_cache_fallback 逻辑分支（mock 验证）
 """
+
 from __future__ import annotations
 
 import json
-import time
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from trade_krono_cli.config_validator import validate_settings
 from trade_krono_cli.pipeline.merge import merge_results
 from trade_krono_cli.pipeline.reporter import (
-    save_json_report,
-    save_html_report,
-    print_results_table,
     print_results_summary,
+    print_results_table,
+    save_html_report,
+    save_json_report,
 )
 from trade_krono_cli.pipeline_config import PipelineConfig
-from trade_krono_cli.config_validator import validate_settings
 from trade_krono_cli.research_db import ResearchDatabase, clear_research_singleton
-from trade_krono_cli.config import Settings, clear_settings
-
 
 # ═══════════════════════════════════════════════════════
 # 测试数据构建辅助
 # ═══════════════════════════════════════════════════════
+
 
 def _make_ta_result(
     ticker: str = "600519",
@@ -76,7 +74,11 @@ def _make_kronos_result(
     r.confidence_band = [1750.0, 1970.0]
     r.forecast_dict = {"timestamps": [], "close": []}
     pu = MagicMock()
-    pu.to_dict.return_value = {"confidence_score": 80.0, "path_dispersion": 0.03, "direction_score": 0.85}
+    pu.to_dict.return_value = {
+        "confidence_score": 80.0,
+        "path_dispersion": 0.03,
+        "direction_score": 0.85,
+    }
     r.prediction_uncertainty = pu
     return r
 
@@ -113,6 +115,7 @@ def _make_merged_item(
 # 测试 1：strict 模式 — 无降级标记
 # ═══════════════════════════════════════════════════════
 
+
 class TestMergeStrictMode:
     def test_strict_no_degradation_flag(self):
         """strict 模式下，TA 成功 + Kronos 成功 → degradation_mode=None"""
@@ -137,6 +140,7 @@ class TestMergeStrictMode:
 # ═══════════════════════════════════════════════════════
 # 测试 2：ta_only_on_kronos_fail 模式 — 降级标记
 # ═══════════════════════════════════════════════════════
+
 
 class TestMergeTaOnlyDegradation:
     def test_kronos_failed_ta_success(self):
@@ -181,6 +185,7 @@ class TestMergeTaOnlyDegradation:
 # 测试 3：JSON 报告包含 degradation_mode
 # ═══════════════════════════════════════════════════════
 
+
 class TestJsonReport:
     def test_save_json_includes_degradation_mode(self, tmp_path):
         """save_json_report 应包含 degradation_mode 字段"""
@@ -192,8 +197,10 @@ class TestJsonReport:
         save_json_report([item], path)
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        assert len(data) == 1
-        assert data[0]["degradation_mode"] == "kronos_degraded"
+        assert data.get("project") == "trade-krono-cli"
+        results = data["results"]
+        assert len(results) == 1
+        assert results[0]["degradation_mode"] == "kronos_degraded"
 
     def test_save_json_none_degradation_mode(self, tmp_path):
         """degradation_mode=None 时 JSON 仍包含该字段（值为 null）"""
@@ -202,7 +209,8 @@ class TestJsonReport:
         save_json_report([item], path)
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        assert data[0]["degradation_mode"] is None
+        results = data["results"]
+        assert results[0]["degradation_mode"] is None
 
     def test_save_json_missing_degradation_field(self, tmp_path):
         """旧格式结果（无 degradation_mode 键）自动补全为 None"""
@@ -212,12 +220,14 @@ class TestJsonReport:
         save_json_report([item], path)
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        assert data[0]["degradation_mode"] is None
+        results = data["results"]
+        assert results[0]["degradation_mode"] is None
 
 
 # ═══════════════════════════════════════════════════════
 # 测试 4：HTML 报告包含降级徽章
 # ═══════════════════════════════════════════════════════
+
 
 class TestHtmlReport:
     def test_html_kronos_degraded_badge(self, tmp_path):
@@ -247,6 +257,7 @@ class TestHtmlReport:
 # 测试 5：控制台输出含降级信息
 # ═══════════════════════════════════════════════════════
 
+
 class TestConsoleOutput:
     def test_table_shows_degradation_column(self, capsys):
         items = [
@@ -260,8 +271,12 @@ class TestConsoleOutput:
 
     def test_summary_shows_degradation_stats(self, capsys):
         items = [
-            _make_merged_item(ticker="600519", degradation_mode="kronos_degraded", composite_score=80.0),
-            _make_merged_item(ticker="000858", degradation_mode="ta_cache_fallback", composite_score=60.0),
+            _make_merged_item(
+                ticker="600519", degradation_mode="kronos_degraded", composite_score=80.0
+            ),
+            _make_merged_item(
+                ticker="000858", degradation_mode="ta_cache_fallback", composite_score=60.0
+            ),
         ]
         print_results_summary(items, date="2026-01-15")
         captured = capsys.readouterr()
@@ -279,6 +294,7 @@ class TestConsoleOutput:
 # ═══════════════════════════════════════════════════════
 # 测试 6：PipelineConfig 降级字段
 # ═══════════════════════════════════════════════════════
+
 
 class TestPipelineConfigDegradation:
     def test_default_degrade_mode(self):
@@ -328,9 +344,11 @@ class TestPipelineConfigDegradation:
 # 测试 7：config_validator 降级策略校验
 # ═══════════════════════════════════════════════════════
 
+
 class TestValidatorDegradation:
     def _make_settings(self, **overrides):
         from tests.conftest import make_mock_settings
+
         return make_mock_settings(**overrides)
 
     def test_valid_degrade_mode_strict(self):
@@ -368,6 +386,7 @@ class TestValidatorDegradation:
 # 测试 8：research_db get_latest_ta_for_ticker
 # ═══════════════════════════════════════════════════════
 
+
 @pytest.fixture
 def research_db(tmp_path):
     """创建临时研究数据库。"""
@@ -397,7 +416,9 @@ class TestResearchDbLatestTA:
         job_new = research_db.create_job("2026-01-15", ["600519"])
         # 第一次作业：600519 成功，000858 失败（不影响目标查询）
         research_db.insert_ta(job_old, self._make_ta_mock("600519", "BUY", 70.0, "old thesis"))
-        research_db.insert_ta(job_old, self._make_ta_mock("000858", "SELL", 30.0, "", error="some error"))
+        research_db.insert_ta(
+            job_old, self._make_ta_mock("000858", "SELL", 30.0, "", error="some error")
+        )
         # 第二次作业：600519 再次成功（最新的 run_at）
         research_db.insert_ta(job_new, self._make_ta_mock("600519", "HOLD", 55.0, "new thesis"))
 
@@ -414,13 +435,16 @@ class TestResearchDbLatestTA:
     def test_returns_none_when_all_failed(self, research_db):
         """全部记录均有 error → 返回 None"""
         job_id = research_db.create_job("2026-01-15", ["600519"])
-        research_db.insert_ta(job_id, self._make_ta_mock("600519", "SELL", 30.0, "", error="LLM error"))
+        research_db.insert_ta(
+            job_id, self._make_ta_mock("600519", "SELL", 30.0, "", error="LLM error")
+        )
         result = research_db.get_latest_ta_for_ticker("600519", max_age_days=7)
         assert result is None
 
     def test_expired_record_not_returned(self, research_db):
         """过期记录（超出 max_age_days）不应被返回"""
         import time as _time
+
         old_time = _time.time() - 30 * 86400
         job_id = research_db.create_job("2026-01-01", ["600519"])
         # 手动回退 job run_at
@@ -438,10 +462,10 @@ class TestResearchDbLatestTA:
 # 测试 9：orchestrator ta_cache_fallback 逻辑
 # ═══════════════════════════════════════════════════════
 
+
 class TestOrchestratorCacheFallback:
     def test_cache_fallback_logic_patches_ta_error(self):
         """mock 验证：TA 失败时从数据库回退缓存结果"""
-        from trade_krono_cli.pipeline.orchestrator import QuantPipeline
 
         mock_research = MagicMock()
         mock_research.get_latest_ta_for_ticker.return_value = {
@@ -461,7 +485,9 @@ class TestOrchestratorCacheFallback:
         ta_result_failed.confidence = None
         ta_result_failed.reasoning = None
 
-        with patch("trade_krono_cli.pipeline.orchestrator.get_research", return_value=mock_research):
+        with patch(
+            "trade_krono_cli.pipeline.orchestrator.get_research", return_value=mock_research
+        ):
             # 模拟 orchestrator 中 ta_cache_fallback 的核心逻辑片段
             cfg = SimpleNamespace(
                 degrade_mode="ta_cache_fallback",
@@ -474,7 +500,8 @@ class TestOrchestratorCacheFallback:
                 if ta.error is None:
                     continue
                 cached = mock_research.get_latest_ta_for_ticker(
-                    ta.ticker, max_age_days=cfg.ta_cache_max_age_days,
+                    ta.ticker,
+                    max_age_days=cfg.ta_cache_max_age_days,
                 )
                 if cached:
                     ta.signal = cached["signal"]

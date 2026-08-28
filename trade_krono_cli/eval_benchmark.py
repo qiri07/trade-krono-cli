@@ -13,32 +13,32 @@ Benchmark 与 Alpha 评估模块。
   · 中证1000：sh.000852
   · 上证综指：sh.000001
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from typing import Optional
 
 import numpy as np
 from loguru import logger
 
 from trade_krono_cli.data import fetch_kline
-from trade_krono_cli.eval_data import EvalRecord, BacktestResult, HorizonMetrics
-
+from trade_krono_cli.eval_data import EvalRecord
 
 # ── 基准代码映射 ──────────────────────────────────────────────────────────────
 
 BENCHMARK_TICKERS: dict[str, str] = {
-    "CSI300":  "sh.000300",
-    "CSI500":  "sh.000905",
+    "CSI300": "sh.000300",
+    "CSI500": "sh.000905",
     "CSI1000": "sh.000852",
-    "SHCOMP":  "sh.000001",   # 上证综指（fallback）
+    "SHCOMP": "sh.000001",  # 上证综指（fallback）
 }
 
 
 @dataclass
 class BenchmarkResult:
     """单只基准的评估结果。"""
+
     name: str
     ticker: str
     cumulative_return_pct: float = 0.0
@@ -53,15 +53,17 @@ class BenchmarkResult:
 @dataclass
 class AlphaResult:
     """策略 vs 基准的 Alpha 对比。"""
+
     strategy_return_pct: float = 0.0
     benchmark_return_pct: float = 0.0
-    alpha_pct: float = 0.0           # strategy - benchmark
+    alpha_pct: float = 0.0  # strategy - benchmark
     benchmark_name: str = ""
 
 
 # ═══════════════════════════════════════════════════════
 # 基准数据获取
 # ═══════════════════════════════════════════════════════
+
 
 def fetch_benchmark_kline(
     ticker: str,
@@ -124,20 +126,23 @@ def compute_benchmark_metrics(
 
     # ── 年化收益（CAGR）─────────────────────────────────────────────────
     ann_return = (
-        ((prices[-1] / prices[0]) ** (1 / max(years, 0.01)) - 1) * 100
-        if years > 0 else 0.0
+        ((prices[-1] / prices[0]) ** (1 / max(years, 0.01)) - 1) * 100 if years > 0 else 0.0
     )
 
     # ── 年化波动率 ─────────────────────────────────────────────────────
-    vol = float(np.std(daily_ret, ddof=1)) * np.sqrt(trading_days_per_year) * 100 \
-        if len(daily_ret) > 1 and np.std(daily_ret, ddof=1) > 0 else 0.0
+    vol = (
+        float(np.std(daily_ret, ddof=1)) * np.sqrt(trading_days_per_year) * 100
+        if len(daily_ret) > 1 and np.std(daily_ret, ddof=1) > 0
+        else 0.0
+    )
 
     # ── 夏普比率 ────────────────────────────────────────────────────────
     rf_daily = 0.025 / trading_days_per_year
     excess = daily_ret - rf_daily
     sharpe = (
         float(np.mean(excess) / np.std(excess) * np.sqrt(trading_days_per_year))
-        if len(excess) > 1 and np.std(excess) > 1e-12 else 0.0
+        if len(excess) > 1 and np.std(excess) > 1e-12
+        else 0.0
     )
 
     # ── 最大回撤 ────────────────────────────────────────────────────────
@@ -165,6 +170,7 @@ def compute_benchmark_metrics(
 # Portfolio Metrics（完整绩效指标）
 # ═══════════════════════════════════════════════════════
 
+
 def compute_portfolio_metrics(
     equity_curve: list[tuple[str, float]],
     trades: list[dict],
@@ -181,7 +187,6 @@ def compute_portfolio_metrics(
         return {}
 
     values = np.array([v for _, v in equity_curve], dtype=float)
-    dates = [d for d, _ in equity_curve]
     n_days = len(values)
     trading_days_per_year = 252
     years = n_days / trading_days_per_year
@@ -191,10 +196,7 @@ def compute_portfolio_metrics(
 
     # ── CAGR / 年化收益 ─────────────────────────────────────────────────
     total_return = (values[-1] / values[0] - 1) * 100
-    cagr = (
-        ((values[-1] / values[0]) ** (1 / max(years, 0.01)) - 1) * 100
-        if years > 0 else 0.0
-    )
+    cagr = ((values[-1] / values[0]) ** (1 / max(years, 0.01)) - 1) * 100 if years > 0 else 0.0
 
     # ── 年化波动率 ──────────────────────────────────────────────────────
     vol = (
@@ -234,8 +236,7 @@ def compute_portfolio_metrics(
     avg_win = float(np.mean(wins)) if wins else 0.0
     avg_loss = abs(float(np.mean(losses))) if losses else 1e-9
     profit_factor = (
-        abs(sum(wins) / sum(losses)) if losses and sum(losses) != 0
-        else (100.0 if wins else 0.0)
+        abs(sum(wins) / sum(losses)) if losses and sum(losses) != 0 else (100.0 if wins else 0.0)
     )
 
     # ── 换手率（Turnover）───────────────────────────────────────────────
@@ -276,13 +277,16 @@ def compute_portfolio_metrics(
         "skewness": round(_skew(daily_returns), 3),
         "kurtosis": round(_kurt(daily_returns), 3),
         "best_day_pct": round(float(np.max(daily_returns) * 100), 2) if len(daily_returns) else 0.0,
-        "worst_day_pct": round(float(np.min(daily_returns) * 100), 2) if len(daily_returns) else 0.0,
+        "worst_day_pct": round(float(np.min(daily_returns) * 100), 2)
+        if len(daily_returns)
+        else 0.0,
     }
 
 
 # ═══════════════════════════════════════════════════════
 # Alpha 计算：策略 vs 多基准对比
 # ═══════════════════════════════════════════════════════
+
 
 def compute_alpha(
     strategy_return_pct: float,

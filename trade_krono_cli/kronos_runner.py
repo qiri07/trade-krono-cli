@@ -10,41 +10,38 @@ Kronos 金融时序预测封装层（业务逻辑层）。
 
 资源管理（模型加载 / 设备判断 / 适配器初始化）由 KronosSession 负责。
 """
+
 from __future__ import annotations
 
-import time
 import json
-from dataclasses import asdict
+import time
 from pathlib import Path
-from typing import Optional, Any
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
-
 from loguru import logger
-from trade_krono_cli.config import get_settings, Settings
-from trade_krono_cli.security import (
-    validate_ticker,
-    validate_date,
-    retry,
-    sanitize_for_log,
-)
-from trade_krono_cli.retry_policy import (
-    smart_retry,
-    RetryPolicy,
-    classify_error,
-    get_failure_store,
-)
+
 from trade_krono_cli.cache import get_cache
+from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.data import fetch_lookback, next_business_days
-from trade_krono_cli.version import compute_config_hash, get_kronos_model_version
-from trade_krono_cli.errors import ModelLoadError, DataError
+from trade_krono_cli.errors import DataError, ModelLoadError
 from trade_krono_cli.prediction_distribution import (
     PredictionDistribution,
     build_result_dict,
-    compute_single_sample,
-    compute_multi_sample,
 )
+from trade_krono_cli.retry_policy import (
+    RetryPolicy,
+    classify_error,
+    get_failure_store,
+    smart_retry,
+)
+from trade_krono_cli.security import (
+    sanitize_for_log,
+    validate_date,
+    validate_ticker,
+)
+from trade_krono_cli.version import compute_config_hash, get_kronos_model_version
 
 # 向后兼容：PredictionUncertainty 是 PredictionDistribution 的别名
 PredictionUncertainty = PredictionDistribution
@@ -64,6 +61,7 @@ def _ensure_kronos_import(settings: Settings) -> None:
     if _KRONOS_IMPORTED:
         return
     from trade_krono_cli.security import ensure_import_path
+
     harness_root = settings.kronos_root / "agent-harness"
     kronos_root = settings.kronos_root
     ensure_import_path(harness_root, kronos_root)
@@ -79,14 +77,27 @@ def clear_kronos_imported() -> None:
 
 # ── 预测结果 ─────────────────────────────────────────────────────────────────
 
+
 class KronosForecastResult:
     """单只股票的 Kronos 预测结果。"""
+
     __slots__ = (
-        "ticker", "eval_date", "horizon", "interval",
-        "last_close", "predicted_close_mean", "predicted_close_final",
-        "expected_change_pct", "direction", "volatility_proxy",
-        "confidence_band", "forecast_dict", "model_name",
-        "error", "elapsed_sec", "prediction_uncertainty",
+        "ticker",
+        "eval_date",
+        "horizon",
+        "interval",
+        "last_close",
+        "predicted_close_mean",
+        "predicted_close_final",
+        "expected_change_pct",
+        "direction",
+        "volatility_proxy",
+        "confidence_band",
+        "forecast_dict",
+        "model_name",
+        "error",
+        "elapsed_sec",
+        "prediction_uncertainty",
     )
 
     def __init__(
@@ -153,6 +164,7 @@ class KronosForecastResult:
 
 # ── 预测器 ────────────────────────────────────────────────────────────────────
 
+
 class KronosRunner:
     """
     生产级 Kronos 预测器（业务逻辑层）。
@@ -185,8 +197,7 @@ class KronosRunner:
         # 流式流水线预取：K 线数据已提前拉取，避免重复 I/O
         self._pre_fetched: dict[str, pd.DataFrame] = {}
         self.model_name = (
-            session._model_name if session else
-            (self._settings_obj.kronos_model or "kronos-base")
+            session._model_name if session else (self._settings_obj.kronos_model or "kronos-base")
         )
 
         if "large" in self.model_name.lower():
@@ -262,13 +273,14 @@ class KronosRunner:
     @staticmethod
     def _split_batches(items: list, size: int) -> list[list]:
         """将列表分割为固定大小的批次。"""
-        return [items[i:i + size] for i in range(0, len(items), size)]
+        return [items[i : i + size] for i in range(0, len(items), size)]
 
     def _prepare(
         self, ticker: str, eval_date: str
     ) -> tuple[pd.DataFrame, pd.Series, pd.Series, float]:
         """拉 K 线 + 构造 x/y timestamp。优先使用预取数据（流式流水线）。"""
         from trade_krono_cli.constraints_config import ConstraintConfig
+
         adjustflag = ConstraintConfig().adjustflag
 
         # 流式预取路径：直接返回预取数据，跳过 fetch_lookback
@@ -277,7 +289,8 @@ class KronosRunner:
             logger.debug(f"📦 Kronos 使用预取数据: {ticker} ({len(df)} 行)")
         else:
             df = fetch_lookback(
-                ticker, eval_date,
+                ticker,
+                eval_date,
                 lookback=self._settings_obj.kronos_lookback,
                 frequency="d",
                 use_cache=self.use_cache,
@@ -288,17 +301,17 @@ class KronosRunner:
                 f"数据不足: {ticker} 仅 {len(df)} 行 < {self._settings_obj.kronos_lookback}"
             )
 
-        x_df = df.iloc[-self._settings_obj.kronos_lookback:][[
-            "open", "high", "low", "close", "volume", "amount"
-        ]].reset_index(drop=True)
-        x_ts = df.iloc[-self._settings_obj.kronos_lookback:]["timestamps"].reset_index(drop=True)
+        x_df = df.iloc[-self._settings_obj.kronos_lookback :][
+            ["open", "high", "low", "close", "volume", "amount"]
+        ].reset_index(drop=True)
+        x_ts = df.iloc[-self._settings_obj.kronos_lookback :]["timestamps"].reset_index(drop=True)
         last_close = float(x_df["close"].iloc[-1])
 
         # ⚠️ 预测日期从 eval_date 起算，而非 x_ts.iloc[-1]
         # 原因：如果股票在 eval_date 前停牌，x_ts.iloc[-1] 会早于 eval_date，
         #       导致 future 窗口起点早于评估日（未来函数/数据泄漏）
         future = next_business_days(eval_date, self._settings_obj.kronos_pred_len)
-        future = future[:self._settings_obj.kronos_pred_len]
+        future = future[: self._settings_obj.kronos_pred_len]
         y_ts = pd.Series(future, name="y_timestamp")
 
         return x_df, x_ts, y_ts, last_close
@@ -306,7 +319,9 @@ class KronosRunner:
     # ── 结果解析 ──────────────────────────────────────────────────────────────
 
     def _parse_pred_df(
-        self, pred_df: pd.DataFrame, last_close: float,
+        self,
+        pred_df: pd.DataFrame,
+        last_close: float,
         sample_count: int = 1,
     ) -> dict:
         """
@@ -326,15 +341,17 @@ class KronosRunner:
             idx = pd.date_range("today", periods=len(pred_df), freq="B")
         return {
             "timestamps": [t.isoformat() for t in idx],
-            "open":   [round(float(x), 4) for x in pred_df.get("open", pd.Series(0)).tolist()],
-            "high":   [round(float(x), 4) for x in pred_df.get("high", pd.Series(0)).tolist()],
-            "low":    [round(float(x), 4) for x in pred_df.get("low", pd.Series(0)).tolist()],
-            "close":  [round(float(x), 4) for x in pred_df.get("close", pd.Series(0)).tolist()],
+            "open": [round(float(x), 4) for x in pred_df.get("open", pd.Series(0)).tolist()],
+            "high": [round(float(x), 4) for x in pred_df.get("high", pd.Series(0)).tolist()],
+            "low": [round(float(x), 4) for x in pred_df.get("low", pd.Series(0)).tolist()],
+            "close": [round(float(x), 4) for x in pred_df.get("close", pd.Series(0)).tolist()],
             "volume": [round(float(x), 2) for x in pred_df.get("volume", pd.Series(0)).tolist()],
         }
 
     def _apply_parsed_to_result(
-        self, res: KronosForecastResult, parsed: dict,
+        self,
+        res: KronosForecastResult,
+        parsed: dict,
     ) -> None:
         """将 parsed dict 写入 result，单独处理 prediction_uncertainty 字段。"""
         # 兼容旧键 prediction_uncertainty 和新键 prediction_distribution
@@ -359,17 +376,21 @@ class KronosRunner:
         ticker = validate_ticker(ticker)
         eval_date = validate_date(eval_date)
         res = KronosForecastResult(
-            ticker=ticker, eval_date=eval_date,
-            horizon=self._settings_obj.kronos_pred_len, interval="d",
+            ticker=ticker,
+            eval_date=eval_date,
+            horizon=self._settings_obj.kronos_pred_len,
+            interval="d",
             model_name=self.model_name,
         )
-        t0 = time.time()
 
         if self.use_cache and self._cache:
             cached = self._cache.get_kronos(
-                ticker, eval_date,
-                self._settings_obj.kronos_pred_len, self.sample_count,
-                config_hash=self._config_hash, model_ver=self._model_version,
+                ticker,
+                eval_date,
+                self._settings_obj.kronos_pred_len,
+                self.sample_count,
+                config_hash=self._config_hash,
+                model_ver=self._model_version,
             )
             if cached:
                 logger.debug(f"📦 Kronos 缓存命中: {ticker}")
@@ -399,8 +420,10 @@ class KronosRunner:
         ticker = validate_ticker(ticker)
         eval_date = validate_date(eval_date)
         res = KronosForecastResult(
-            ticker=ticker, eval_date=eval_date,
-            horizon=self._settings_obj.kronos_pred_len, interval="d",
+            ticker=ticker,
+            eval_date=eval_date,
+            horizon=self._settings_obj.kronos_pred_len,
+            interval="d",
             model_name=self.model_name,
         )
         t0 = time.time()
@@ -425,7 +448,10 @@ class KronosRunner:
         return res
 
     def stream_predict_one(
-        self, ticker: str, eval_date: str, df: pd.DataFrame,
+        self,
+        ticker: str,
+        eval_date: str,
+        df: pd.DataFrame,
     ) -> KronosForecastResult:
         """
         流式预测：直接使用预取的 K 线 DataFrame，跳过缓存检查和 fetch_lookback。
@@ -454,27 +480,33 @@ class KronosRunner:
 
     @staticmethod
     def _prepare_stream(
-        df: pd.DataFrame, ticker: str, eval_date: str,
+        df: pd.DataFrame,
+        ticker: str,
+        eval_date: str,
     ) -> tuple[pd.DataFrame, pd.Series, pd.Series, float]:
         """
         从预取 DataFrame 直接构造 _prepare 所需输出。
         复用 _prepare 的 slice/归一化逻辑，跳过 fetch_lookback。
         """
         lookback = len(df)
-        x_df = df.iloc[-lookback:][[
-            "open", "high", "low", "close", "volume", "amount"
-        ]].reset_index(drop=True)
+        x_df = df.iloc[-lookback:][
+            ["open", "high", "low", "close", "volume", "amount"]
+        ].reset_index(drop=True)
         x_ts = df.iloc[-lookback:]["timestamps"].reset_index(drop=True)
         last_close = float(x_df["close"].iloc[-1])
         from trade_krono_cli.data import next_business_days
+
         future = next_business_days(eval_date, 30)[:30]
         y_ts = pd.Series(future, name="y_timestamp")
         return x_df, x_ts, y_ts, last_close
 
     def _run_predict(
         self,
-        x_df: pd.DataFrame, x_ts: pd.Series, y_ts: pd.Series,
-        last_close: float, res: KronosForecastResult,
+        x_df: pd.DataFrame,
+        x_ts: pd.Series,
+        y_ts: pd.Series,
+        last_close: float,
+        res: KronosForecastResult,
     ) -> None:
         """共享预测执行逻辑，供 predict_one 和 stream_predict_one 复用。"""
         n_samples = max(1, self.sample_count)
@@ -482,7 +514,9 @@ class KronosRunner:
 
         if n_samples > 1:
             pred_df = adapter.predict(
-                df=x_df, x_timestamp=x_ts, y_timestamp=y_ts,
+                df=x_df,
+                x_timestamp=x_ts,
+                y_timestamp=y_ts,
                 pred_len=len(y_ts),
                 T=self._settings_obj.kronos_T,
                 top_p=self._settings_obj.kronos_top_p,
@@ -497,7 +531,9 @@ class KronosRunner:
                 stacked = close_vals.reshape(1, -1)
         else:
             pred_df = adapter.predict(
-                df=x_df, x_timestamp=x_ts, y_timestamp=y_ts,
+                df=x_df,
+                x_timestamp=x_ts,
+                y_timestamp=y_ts,
                 pred_len=len(y_ts),
                 T=self._settings_obj.kronos_T,
                 top_p=self._settings_obj.kronos_top_p,
@@ -508,11 +544,18 @@ class KronosRunner:
 
         if n_samples > 1:
             from trade_krono_cli.prediction_distribution import (
-                compute_multi_sample, build_distribution,
+                build_distribution,
+                compute_multi_sample,
             )
+
             (
-                change_pct, direction, vol, path_dispersion,
-                direction_score, conf_score, percentiles,
+                change_pct,
+                direction,
+                vol,
+                path_dispersion,
+                direction_score,
+                conf_score,
+                percentiles,
             ) = compute_multi_sample(avg_close, stacked, last_close)
             res.predicted_close_mean = round(float(np.mean(avg_close)), 4)
             res.predicted_close_final = round(float(avg_close[-1]), 4)
@@ -524,7 +567,9 @@ class KronosRunner:
                 "high": round(float(np.percentile(avg_close, 75)), 4),
             }
             _pd = build_distribution(
-                change_pct=change_pct, direction=direction, vol=vol,
+                change_pct=change_pct,
+                direction=direction,
+                vol=vol,
                 path_dispersion=path_dispersion,
                 direction_score=direction_score,
                 confidence_score=conf_score,
@@ -539,7 +584,7 @@ class KronosRunner:
             res.last_close = last_close
             self._apply_parsed_to_result(res, parsed)
 
-            y_ts_len = len(y_ts) if hasattr(y_ts, '__len__') else 0
+            y_ts_len = len(y_ts) if hasattr(y_ts, "__len__") else 0
             if y_ts_len == len(avg_close):
                 pred_idx = y_ts.reset_index(drop=True)
             else:
@@ -550,10 +595,13 @@ class KronosRunner:
 
         if self._cache:
             self._cache.set_kronos(
-                res.ticker, res.eval_date,
-                self._settings_obj.kronos_pred_len, res.to_dict(),
+                res.ticker,
+                res.eval_date,
+                self._settings_obj.kronos_pred_len,
+                res.to_dict(),
                 sample_count=self.sample_count,
-                config_hash=self._config_hash, model_ver=self._model_version,
+                config_hash=self._config_hash,
+                model_ver=self._model_version,
             )
 
     def predict_batch(
@@ -569,7 +617,9 @@ class KronosRunner:
         """
         eval_date = validate_date(eval_date)
         tickers = [validate_ticker(t) for t in tickers]
-        logger.info(f"🚀 Kronos 批量预测: {len(tickers)} 只, date={eval_date}, batch_size={self.batch_size}")
+        logger.info(
+            f"🚀 Kronos 批量预测: {len(tickers)} 只, date={eval_date}, batch_size={self.batch_size}"
+        )
 
         results: list[KronosForecastResult] = []
         prepared: list[tuple[str, Any, Any, Any, float] | None] = []
@@ -577,15 +627,20 @@ class KronosRunner:
 
         for tk in tickers:
             res = KronosForecastResult(
-                ticker=tk, eval_date=eval_date,
-                horizon=self._settings_obj.kronos_pred_len, interval="d",
+                ticker=tk,
+                eval_date=eval_date,
+                horizon=self._settings_obj.kronos_pred_len,
+                interval="d",
                 model_name=self.model_name,
             )
             if self.use_cache and self._cache:
                 cached = self._cache.get_kronos(
-                    tk, eval_date,
-                    self._settings_obj.kronos_pred_len, self.sample_count,
-                    config_hash=self._config_hash, model_ver=self._model_version,
+                    tk,
+                    eval_date,
+                    self._settings_obj.kronos_pred_len,
+                    self.sample_count,
+                    config_hash=self._config_hash,
+                    model_ver=self._model_version,
                 )
                 if cached:
                     for k, v in cached.items():
@@ -628,7 +683,6 @@ class KronosRunner:
         all_results: list[KronosForecastResult] = []
 
         for batch_idx, batch in enumerate(batches):
-            batch_indices = [idx for _, idx in batch]
             df_list = [p[1] for p, _ in batch]
             x_ts_list = [p[2] for p, _ in batch]
             y_ts_list = [p[3] for p, _ in batch]
@@ -655,7 +709,7 @@ class KronosRunner:
                     top_p=self._settings_obj.kronos_top_p,
                     sample_count=self.sample_count,
                 )
-                logger.info(f"✅ 批次 {batch_idx + 1} 完成 ({time.time()-t0:.1f}s)")
+                logger.info(f"✅ 批次 {batch_idx + 1} 完成 ({time.time() - t0:.1f}s)")
             except (DataError, ModelLoadError, RuntimeError) as e:
                 logger.warning(
                     f"⚠️  批次 {batch_idx + 1} 推理失败 ({sanitize_for_log(str(e))})，"
@@ -674,11 +728,18 @@ class KronosRunner:
                     avg_close = close_vals.mean(axis=0)
                     stacked = close_vals
                     from trade_krono_cli.prediction_distribution import (
-                        compute_multi_sample, build_distribution,
+                        build_distribution,
+                        compute_multi_sample,
                     )
+
                     (
-                        change_pct, direction, vol, path_dispersion,
-                        direction_score, conf_score, percentiles,
+                        change_pct,
+                        direction,
+                        vol,
+                        path_dispersion,
+                        direction_score,
+                        conf_score,
+                        percentiles,
                     ) = compute_multi_sample(avg_close, stacked, lc)
 
                     res.predicted_close_mean = round(float(np.mean(avg_close)), 4)
@@ -691,28 +752,32 @@ class KronosRunner:
                         "high": round(float(np.percentile(avg_close, 75)), 4),
                     }
                     _pd = build_distribution(
-                        change_pct=change_pct, direction=direction,
-                        vol=vol, path_dispersion=path_dispersion,
+                        change_pct=change_pct,
+                        direction=direction,
+                        vol=vol,
+                        path_dispersion=path_dispersion,
                         direction_score=direction_score,
                         confidence_score=conf_score,
-                        sample_count=n_samples, percentiles=percentiles,
+                        sample_count=n_samples,
+                        percentiles=percentiles,
                     )
                     res.prediction_uncertainty = _pd
                     res.forecast_dict = self._pred_df_to_dict(pred_df)
                 else:
-                    parsed = self._parse_pred_df(
-                        pred_df, lc, sample_count=1
-                    )
+                    parsed = self._parse_pred_df(pred_df, lc, sample_count=1)
                     res.last_close = lc
                     self._apply_parsed_to_result(res, parsed)
                     res.forecast_dict = self._pred_df_to_dict(pred_df)
 
                 if self._cache:
                     self._cache.set_kronos(
-                        res.ticker, eval_date,
-                        self._settings_obj.kronos_pred_len, res.to_dict(),
+                        res.ticker,
+                        eval_date,
+                        self._settings_obj.kronos_pred_len,
+                        res.to_dict(),
                         sample_count=self.sample_count,
-                        config_hash=self._config_hash, model_ver=self._model_version,
+                        config_hash=self._config_hash,
+                        model_ver=self._model_version,
                     )
                 all_results.append(res)
 
@@ -721,8 +786,8 @@ class KronosRunner:
         return all_results
 
     def save_results(self, results: list[KronosForecastResult], path: str) -> str:
+        data = [{"project": "trade-krono-cli"}] + [r.to_dict() for r in results]
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        data = [r.to_dict() for r in results]
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         logger.info(f"💾 Kronos 预测已保存: {path}")

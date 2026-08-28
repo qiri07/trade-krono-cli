@@ -1,15 +1,13 @@
 """测试缓存层（Cache — TTL 驱动的 SQLite 缓存）。"""
+
 from __future__ import annotations
 
-import json
 import time
-from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from trade_krono_cli.cache import Cache, _validate_table_name
-
 
 # ── 辅助函数 ──────────────────────────────────────────────────────────────────
 
@@ -17,14 +15,16 @@ from trade_krono_cli.cache import Cache, _validate_table_name
 def _make_kline_df(n: int = 10) -> pd.DataFrame:
     """生成 N 行模拟 K 线 DataFrame。"""
     dates = pd.date_range("2026-01-01", periods=n, freq="D")
-    return pd.DataFrame({
-        "timestamps": dates,
-        "open":       [10.0 + i * 0.1 for i in range(n)],
-        "close":      [10.5 + i * 0.1 for i in range(n)],
-        "high":       [11.0 + i * 0.1 for i in range(n)],
-        "low":        [9.5 + i * 0.1 for i in range(n)],
-        "volume":     [1_000_000.0] * n,
-    })
+    return pd.DataFrame(
+        {
+            "timestamps": dates,
+            "open": [10.0 + i * 0.1 for i in range(n)],
+            "close": [10.5 + i * 0.1 for i in range(n)],
+            "high": [11.0 + i * 0.1 for i in range(n)],
+            "low": [9.5 + i * 0.1 for i in range(n)],
+            "volume": [1_000_000.0] * n,
+        }
+    )
 
 
 # ── _validate_table_name ──────────────────────────────────────────────────────
@@ -143,7 +143,9 @@ def test_ta_cache_ttl_expire(tmp_path):
 def test_kronos_cache_set_and_get(tmp_path):
     c = Cache(db_path=tmp_path / "cache.db")
     data = {"direction": "UP", "expected_change_pct": 3.2}
-    c.set_kronos("sh.600519", "2026-08-11", pred_len=30, result=data, sample_count=5, config_hash="xyz")
+    c.set_kronos(
+        "sh.600519", "2026-08-11", pred_len=30, result=data, sample_count=5, config_hash="xyz"
+    )
     result = c.get_kronos("sh.600519", "2026-08-11", pred_len=30, sample_count=5, config_hash="xyz")
     assert result == data
 

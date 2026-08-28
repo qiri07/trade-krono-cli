@@ -4,6 +4,7 @@ Evaluation — 预测评估领域对象。
 EvaluationResult 封装单次预测的回测/评估结果，
 EvaluationSummary 封装多次预测的聚合统计。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -41,6 +42,7 @@ class EvalRecord:
     exit_blocked         退出日跌停拦截
     cost_bps_applied     交易成本（bps）
     """
+
     ticker: str
     eval_date: str
     horizon_days: int
@@ -80,8 +82,11 @@ class EvalRecord:
             "actual_direction": self.actual_direction,
             "is_direction_correct": self.is_direction_correct,
             "error_pct": self.error_pct,
-            "p10": self.p10, "p25": self.p25, "p50": self.p50,
-            "p75": self.p75, "p90": self.p90,
+            "p10": self.p10,
+            "p25": self.p25,
+            "p50": self.p50,
+            "p75": self.p75,
+            "p90": self.p90,
             "ta_signal": self.ta_signal,
             "ranking_score": self.ranking_score,
             "expected_value": self.expected_value,
@@ -107,8 +112,11 @@ class EvalRecord:
             actual_direction=data.get("actual_direction", "FLAT"),
             is_direction_correct=bool(data.get("is_direction_correct", False)),
             error_pct=float(data.get("error_pct", 0.0)),
-            p10=data.get("p10"), p25=data.get("p25"), p50=data.get("p50"),
-            p75=data.get("p75"), p90=data.get("p90"),
+            p10=data.get("p10"),
+            p25=data.get("p25"),
+            p50=data.get("p50"),
+            p75=data.get("p75"),
+            p90=data.get("p90"),
             ta_signal=data.get("ta_signal"),
             ranking_score=rs,
             expected_value=data.get("expected_value"),
@@ -124,6 +132,7 @@ class EvalRecord:
 @dataclass
 class HorizonMetrics:
     """按单一 horizon 分组的指标汇总。"""
+
     kronos_dir_accuracy: float = 0.0
     ta_buy_win_rate: float = 0.0
     ta_buy_avg_return: float = 0.0
@@ -161,6 +170,7 @@ class HorizonMetrics:
 @dataclass
 class BacktestResult:
     """单次完整回测的结果。"""
+
     initial_capital: float = 1_000_000.0
     final_value: float = 0.0
     total_return_pct: float = 0.0
@@ -187,6 +197,7 @@ class BacktestResult:
 @dataclass
 class EvaluationSummary:
     """评估汇总统计。"""
+
     # 聚合计数
     kronos_n: int = 0
     ta_buy_n: int = 0

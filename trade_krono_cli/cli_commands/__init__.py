@@ -4,6 +4,7 @@ CLI 命令包入口。
 向后兼容：保留 trade_krono_cli.cli_commands 的导入路径。
 所有公开 API 通过此模块导出，原有 import 语句无需修改。
 """
+
 from __future__ import annotations
 
 # 共享工具函数（cli.py 和测试直接导入）

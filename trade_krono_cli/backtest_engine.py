@@ -8,26 +8,26 @@
   · 计算经典绩效指标：年化收益、夏普比率、卡玛比率、最大回撤、胜率、盈亏比
   · 基准对比（沪深 300 proxy）与超额收益曲线
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 
 import numpy as np
-import pandas as pd
-from loguru import logger
 
 from trade_krono_cli.constraints_config import ConstraintConfig
-from trade_krono_cli.eval_data import BacktestResult, HorizonMetrics
+from trade_krono_cli.eval_data import BacktestResult
 from trade_krono_cli.trading_constraints import compute_limit_prices
 
-
 # ── 平仓结果 ─────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class CloseLog:
     """单次平仓操作的执行日志。"""
+
     blocked: bool = False
     blocked_reason: str = ""
     trade_log: dict | None = None
@@ -35,6 +35,7 @@ class CloseLog:
 
 
 # ── 交易日辅助 ────────────────────────────────────────────────────────────────
+
 
 def _next_trading_day(d: datetime, kline_dates: list[str]) -> Optional[str]:
     """在 kline_dates 中找 d 之后最近的一个交易日。"""
@@ -63,11 +64,12 @@ def _month_start(d: datetime) -> datetime:
 @dataclass
 class _Position:
     """单只股票的持仓快照。"""
+
     ticker: str
     entry_date: str
     entry_price: float
-    shares: int           # 股数（A 股 100 股整数倍）
-    direction: str        # "UP" | "DOWN"
+    shares: int  # 股数（A 股 100 股整数倍）
+    direction: str  # "UP" | "DOWN"
     cost_bps: float = 0.0
 
 
@@ -132,7 +134,7 @@ class BacktestEngine:
         # 模拟：每日现金 + 持仓
         cash = self.initial_capital
         positions: dict[str, _Position] = {}
-        daily_equity: list[tuple[str, float]] = []   # (date, equity)
+        daily_equity: list[tuple[str, float]] = []  # (date, equity)
         trades: list[dict] = []
 
         prev_close_map: dict[str, float] = {}  # ticker -> prev_close
@@ -227,14 +229,16 @@ class BacktestEngine:
                     direction=sig.signal or "UP",
                     cost_bps=cost_bps,
                 )
-                trades.append({
-                    "date": day,
-                    "ticker": sig.ticker,
-                    "action": "BUY",
-                    "price": entry_price,
-                    "shares": shares,
-                    "cost_bps": cost_bps,
-                })
+                trades.append(
+                    {
+                        "date": day,
+                        "ticker": sig.ticker,
+                        "action": "BUY",
+                        "price": entry_price,
+                        "shares": shares,
+                        "cost_bps": cost_bps,
+                    }
+                )
 
             # ── 3. 更新 prev_close，记录权益 ───────────────────────────────
             for ticker in list(positions.keys()) + list(seen_tickers):
@@ -275,20 +279,21 @@ class BacktestEngine:
 
     # ── 价格获取 ─────────────────────────────────────────────────────────────
 
-    def _get_entry_price(self, ticker: str, date: str,
-                         prev_close_map: dict[str, float]) -> Optional[float]:
+    def _get_entry_price(
+        self, ticker: str, date: str, prev_close_map: dict[str, float]
+    ) -> Optional[float]:
         """简化：使用 prev_close_map 中的最新收盘价作为近似入场价。"""
         return prev_close_map.get(ticker)
 
-    def _get_exit_price(self, ticker: str, date: str,
-                        prev_close_map: dict[str, float]) -> Optional[float]:
+    def _get_exit_price(
+        self, ticker: str, date: str, prev_close_map: dict[str, float]
+    ) -> Optional[float]:
         """简化：使用 prev_close_map 中该日的前一日收盘作为退出价。"""
         # 这里用 prev_close_map 本身作为近似（需要调用方维护）
         # 实际实现中应由 fetcher 提供
         return prev_close_map.get(ticker)
 
-    def _can_buy_on_day(self, ticker: str, date: str,
-                        positions: dict[str, _Position]) -> bool:
+    def _can_buy_on_day(self, ticker: str, date: str, positions: dict[str, _Position]) -> bool:
         """T+1：若当日或前一日有买入，则今日不可再买。"""
         pos = positions.get(ticker)
         if pos is None:
@@ -296,9 +301,14 @@ class BacktestEngine:
         # 已有持仓不重复买入
         return False
 
-    def _close_position(self, pos: _Position, exit_price: float,
-                        date: str, ticker: str,
-                        prev_close_map: dict[str, float]) -> "CloseLog":
+    def _close_position(
+        self,
+        pos: _Position,
+        exit_price: float,
+        date: str,
+        ticker: str,
+        prev_close_map: dict[str, float],
+    ) -> "CloseLog":
         """平仓，返回成交明细。"""
         prev_close = prev_close_map.get(ticker)
         blocked_reason = ""
@@ -343,7 +353,6 @@ class BacktestEngine:
             return {}
 
         values = np.array([v for _, v in equity_curve], dtype=float)
-        dates = [d for d, _ in equity_curve]
         n_days = len(values)
         if n_days < 2:
             return {}
@@ -355,14 +364,23 @@ class BacktestEngine:
         # ── 总收益率 / 年化收益率 ──────────────────────────────────────────
         total_return = (values[-1] / values[0] - 1) * 100
         years = n_days / trading_days_per_year
-        annual_return = ((values[-1] / values[0]) ** (1 / max(years, 0.01)) - 1) * 100 if years > 0 else 0.0
+        annual_return = (
+            ((values[-1] / values[0]) ** (1 / max(years, 0.01)) - 1) * 100 if years > 0 else 0.0
+        )
 
         # ── 波动率 / 夏普比率 ──────────────────────────────────────────────
-        vol = float(np.std(daily_returns)) * np.sqrt(trading_days_per_year) * 100 if len(daily_returns) > 1 else 0.0
+        vol = (
+            float(np.std(daily_returns)) * np.sqrt(trading_days_per_year) * 100
+            if len(daily_returns) > 1
+            else 0.0
+        )
         risk_free_daily = 0.025 / trading_days_per_year  # 无风险利率 ~2.5%/年
         excess_ret = daily_returns - risk_free_daily
-        sharpe = float(np.mean(excess_ret) / np.std(excess_ret) * np.sqrt(trading_days_per_year)) \
-            if len(excess_ret) > 1 and np.std(excess_ret) > 1e-12 else 0.0
+        sharpe = (
+            float(np.mean(excess_ret) / np.std(excess_ret) * np.sqrt(trading_days_per_year))
+            if len(excess_ret) > 1 and np.std(excess_ret) > 1e-12
+            else 0.0
+        )
 
         # ── 最大回撤 ────────────────────────────────────────────────────────
         running_max = np.maximum.accumulate(values)
@@ -379,7 +397,11 @@ class BacktestEngine:
         win_rate = len(wins) / len(pnl_list) * 100 if pnl_list else 0.0
         avg_win = np.mean(wins) if wins else 0.0
         avg_loss = abs(np.mean(losses)) if losses else 1e-9
-        profit_factor = abs(sum(wins) / sum(losses)) if losses and sum(losses) != 0 else (100.0 if wins else 0.0)
+        profit_factor = (
+            abs(sum(wins) / sum(losses))
+            if losses and sum(losses) != 0
+            else (100.0 if wins else 0.0)
+        )
 
         # ── 收益分布（手动计算偏度/峰度，兼容 numpy 2.0）─────────────────────
         def _skewness(arr):
@@ -430,6 +452,7 @@ class BacktestEngine:
 
 # ── 基准与超额收益 ────────────────────────────────────────────────────────────
 
+
 def compute_benchmark_returns(
     records: list["BacktestRecord"],
     records_map: dict[str, list["BacktestRecord"]],
@@ -459,7 +482,6 @@ def compute_benchmark_returns(
 
     # 等权组合每日收益
     cum_ret: list[float] = [0.0]
-    prev_portfolio = 1.0
     for day in all_dates[1:]:
         daily_returns: list[float] = []
         for tk in tickers:
@@ -496,12 +518,14 @@ def compute_excess_curve(
 
 # ── 回测记录数据结构 ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class BacktestRecord:
     """回测单条信号的数据快照。"""
+
     ticker: str
     date: str
-    signal: Optional[str]       # "BUY" / "HOLD" / "SELL"
+    signal: Optional[str]  # "BUY" / "HOLD" / "SELL"
     entry_price: Optional[float]
     exit_price: Optional[float]
     horizon_days: int
@@ -521,14 +545,16 @@ def build_backtest_records(
     filtered = [r for r in eval_records if r.horizon_days == horizon]
     records = []
     for r in filtered:
-        records.append(BacktestRecord(
-            ticker=r.ticker,
-            date=r.eval_date,
-            signal=r.ta_signal,
-            entry_price=None,  # 由 engine 从价格数据填充
-            exit_price=None,
-            horizon_days=horizon,
-            pred_direction=r.pred_direction,
-            actual_return_pct=r.actual_return_pct,
-        ))
+        records.append(
+            BacktestRecord(
+                ticker=r.ticker,
+                date=r.eval_date,
+                signal=r.ta_signal,
+                entry_price=None,  # 由 engine 从价格数据填充
+                exit_price=None,
+                horizon_days=horizon,
+                pred_direction=r.pred_direction,
+                actual_return_pct=r.actual_return_pct,
+            )
+        )
     return records

@@ -9,6 +9,7 @@ API 参考：
   - 实时行情: ak.stock_zh_a_spot_em()
   - 行业分类: ak.stock_board_industry_name_em()
 """
+
 from __future__ import annotations
 
 import re
@@ -17,8 +18,12 @@ from typing import Optional
 
 from loguru import logger
 
-from trade_krono_cli.data_providers.base import DataProvider, KlineData, RealtimeQuote, StockMetadata
-
+from trade_krono_cli.data_providers.base import (
+    DataProvider,
+    KlineData,
+    RealtimeQuote,
+    StockMetadata,
+)
 
 _ST_PATTERNS = re.compile(r"^(ST|\*ST|SST|N ST)", re.IGNORECASE)
 
@@ -41,11 +46,11 @@ class AkShareProvider(DataProvider):
             return
         try:
             import akshare as ak  # type: ignore
+
             cls._ak = ak
         except ImportError:
             raise RuntimeError(
-                "akshare 未安装，无法使用 akshare 数据源。"
-                "请运行: pip install akshare"
+                "akshare 未安装，无法使用 akshare 数据源。请运行: pip install akshare"
             )
 
     # ── 内部转换工具 ──────────────────────────────────────────
@@ -159,13 +164,14 @@ class AkShareProvider(DataProvider):
 # 工具函数
 # ═══════════════════════════════════════════════════════
 
+
 def safe_float(value) -> Optional[float]:
     """安全地将值转为 float，失败返回 None。"""
     if value is None or (isinstance(value, float) and value != value):  # NaN check
         return None
     try:
         f = float(value)
-        return f if not (f != f or f == float('inf') or f == float('-inf')) else None
+        return f if not (f != f or f == float("inf") or f == float("-inf")) else None
     except (ValueError, TypeError):
         return None
 
@@ -173,5 +179,6 @@ def safe_float(value) -> Optional[float]:
 def pd_to_datetime_safe(values: list) -> list[datetime]:
     """将日期列表安全转为 datetime。"""
     import pandas as pd
+
     ts = pd.to_datetime(values)
     return ts.tolist()

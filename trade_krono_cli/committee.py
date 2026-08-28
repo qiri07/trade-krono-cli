@@ -28,33 +28,34 @@ TradingAgents 已经内置了一个完整的分析团队：
   · 委员会决策是可解释的（不是黑盒 LLM 调用）
   · 所有审议记录持久化到研究数据库
 """
+
 from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, asdict, field
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
 from loguru import logger
 
-
 # ═══════════════════════════════════════════════════════
 #  数据类型
 # ═══════════════════════════════════════════════════════
 
+
 class AgentType(str, Enum):
     """委员会中各 Agent 的角色类型。"""
-    FUNDAMENTAL  = "fundamental"
-    MARKET       = "market"
-    SENTIMENT    = "sentiment"
-    NEWS         = "news"
-    POLICY       = "policy"
-    CAPITAL_FLOW = "capital_flow"   # HotMoney
-    LOCKUP       = "lockup"
-    KRONOS       = "kronos"
-    TECHNICAL    = "technical"
+
+    FUNDAMENTAL = "fundamental"
+    MARKET = "market"
+    SENTIMENT = "sentiment"
+    NEWS = "news"
+    POLICY = "policy"
+    CAPITAL_FLOW = "capital_flow"  # HotMoney
+    LOCKUP = "lockup"
+    KRONOS = "kronos"
+    TECHNICAL = "technical"
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,7 @@ class AgentReport:
     confidence      : Agent 独立置信度（0-100，None 表示未明确表达）
     key_finding     : 最关键的发现（一句话）
     """
+
     agent_type: AgentType
     ticker: str
     content: str
@@ -101,6 +103,7 @@ class StockCommitteeInput:
     ta_confidence      : TA 综合置信度
     composite_score    : 合并打分
     """
+
     ticker: str
     date: str
     agent_reports: list[AgentReport] = field(default_factory=list)
@@ -144,6 +147,7 @@ class InvestmentCommitteeResult:
     agent_consensus     : Agent 信号分布（如 {"BUY": 3, "HOLD": 2, "SELL": 1}）
     created_at          : 创建时间戳
     """
+
     ticker: str
     date: str
     job_id: str
@@ -169,13 +173,13 @@ class InvestmentCommitteeResult:
 # ═══════════════════════════════════════════════════════
 
 _AGENT_TYPE_MAP: dict[str, AgentType] = {
-    "fundamentals_report":  AgentType.FUNDAMENTAL,
-    "market_report":        AgentType.MARKET,
-    "sentiment_report":     AgentType.SENTIMENT,
-    "news_report":          AgentType.NEWS,
-    "policy_report":        AgentType.POLICY,
-    "hot_money_report":     AgentType.CAPITAL_FLOW,
-    "lockup_report":        AgentType.LOCKUP,
+    "fundamentals_report": AgentType.FUNDAMENTAL,
+    "market_report": AgentType.MARKET,
+    "sentiment_report": AgentType.SENTIMENT,
+    "news_report": AgentType.NEWS,
+    "policy_report": AgentType.POLICY,
+    "hot_money_report": AgentType.CAPITAL_FLOW,
+    "lockup_report": AgentType.LOCKUP,
 }
 
 
@@ -202,12 +206,14 @@ def extract_agent_reports(
             continue
         # 尝试从内容中提取信号和关键发现（简化版，实际可接入 LLM）
         key_finding = _extract_key_finding(content, agent_type)
-        reports.append(AgentReport(
-            agent_type=agent_type,
-            ticker=ticker,
-            content=content[:2000],  # 截断以防过大
-            key_finding=key_finding,
-        ))
+        reports.append(
+            AgentReport(
+                agent_type=agent_type,
+                ticker=ticker,
+                content=content[:2000],  # 截断以防过大
+                key_finding=key_finding,
+            )
+        )
 
     # 提取辩论历史作为补充证据
     debate_state = final_state.get("investment_debate_state", {})
@@ -215,24 +221,25 @@ def extract_agent_reports(
         bull_history = debate_state.get("bull_history", "")
         bear_history = debate_state.get("bear_history", "")
         if bull_history:
-            reports.append(AgentReport(
-                agent_type=AgentType.FUNDAMENTAL,
-                ticker=ticker,
-                content=bull_history[:1000],
-                key_finding="Bull debate highlights",
-            ))
+            reports.append(
+                AgentReport(
+                    agent_type=AgentType.FUNDAMENTAL,
+                    ticker=ticker,
+                    content=bull_history[:1000],
+                    key_finding="Bull debate highlights",
+                )
+            )
         if bear_history:
-            reports.append(AgentReport(
-                agent_type=AgentType.FUNDAMENTAL,
-                ticker=ticker,
-                content=bear_history[:1000],
-                key_finding="Bear debate highlights",
-            ))
+            reports.append(
+                AgentReport(
+                    agent_type=AgentType.FUNDAMENTAL,
+                    ticker=ticker,
+                    content=bear_history[:1000],
+                    key_finding="Bear debate highlights",
+                )
+            )
 
-    logger.info(
-        f"📡 委员会输入: {ticker} | "
-        f"{len(reports)} 份 Agent 报告已提取"
-    )
+    logger.info(f"📡 委员会输入: {ticker} | {len(reports)} 份 Agent 报告已提取")
     return reports
 
 
@@ -250,6 +257,7 @@ def _extract_key_finding(content: str, agent_type: AgentType) -> str:
 # ═══════════════════════════════════════════════════════
 #  InvestmentCommittee — 核心审议逻辑
 # ═══════════════════════════════════════════════════════
+
 
 class InvestmentCommittee:
     """
@@ -302,8 +310,8 @@ class InvestmentCommittee:
 
         # 2. 综合审议（LLM 路径 or 启发式路径）
         if llm_client is not None:
-            bull_case, bear_case, recommendation, confidence, reasoning = (
-                self._llm_deliberate(input_data, llm_client, consensus)
+            bull_case, bear_case, recommendation, confidence, reasoning = self._llm_deliberate(
+                input_data, llm_client, consensus
             )
         else:
             bull_case, bear_case, recommendation, confidence, reasoning = (
@@ -347,12 +355,14 @@ class InvestmentCommittee:
         -------
         dict : {"BUY": n, "HOLD": m, "SELL": k}
         """
-        consensus: dict[str, int] = {"BUY": 0, "HOLD": 0, "SELL": 0}
+        consensus: dict[str, int] = {"BUY": 0, "OVERWEIGHT": 0, "HOLD": 0, "SELL": 0}
 
         for report in input_data.agent_reports:
             sig = report.signal
             if sig == "BUY":
                 consensus["BUY"] += 1
+            elif sig == "OVERWEIGHT":
+                consensus["OVERWEIGHT"] += 1
             elif sig == "SELL":
                 consensus["SELL"] += 1
             elif sig == "HOLD":
@@ -388,7 +398,7 @@ class InvestmentCommittee:
         bear_points: list[str] = []
 
         for report in input_data.agent_reports:
-            if report.signal == "BUY":
+            if report.signal in ("BUY", "OVERWEIGHT"):
                 bull_points.append(f"【{report.agent_type.value}】{report.key_finding}")
             elif report.signal == "SELL":
                 bear_points.append(f"【{report.agent_type.value}】{report.key_finding}")
@@ -414,17 +424,24 @@ class InvestmentCommittee:
 
         # ── 综合信号判定 ──────────────────────────────────────────────────
         buy_votes = consensus.get("BUY", 0)
+        overweight_votes = consensus.get("OVERWEIGHT", 0)
         sell_votes = consensus.get("SELL", 0)
         hold_votes = consensus.get("HOLD", 0)
-        total = buy_votes + sell_votes + hold_votes
+        total = buy_votes + overweight_votes + sell_votes + hold_votes
 
         if total == 0:
             recommendation = "HOLD"
             confidence = 50.0
-        elif buy_votes > sell_votes:
-            recommendation = "BUY"
-            confidence = min(95.0, 50.0 + buy_votes * 10.0 + (input_data.composite_score or 50) * 0.2)
-        elif sell_votes > buy_votes:
+        elif buy_votes + overweight_votes > sell_votes:
+            if buy_votes > sell_votes:
+                recommendation = "BUY"
+                cs = input_data.composite_score or 50
+                confidence = min(95.0, 50.0 + buy_votes * 10.0 + cs * 0.2)
+            else:
+                recommendation = "OVERWEIGHT"
+                cs = input_data.composite_score or 50
+                confidence = min(95.0, 50.0 + overweight_votes * 8.0 + cs * 0.15)
+        elif sell_votes > buy_votes + overweight_votes:
             recommendation = "SELL"
             confidence = min(95.0, 50.0 + sell_votes * 10.0)
         else:
@@ -436,6 +453,10 @@ class InvestmentCommittee:
             if recommendation == "HOLD":
                 recommendation = "BUY"
             confidence = min(95.0, confidence + input_data.ta_confidence * 0.15)
+        elif input_data.ta_signal == "OVERWEIGHT" and input_data.ta_confidence:
+            if recommendation == "HOLD":
+                recommendation = "OVERWEIGHT"
+            confidence = min(95.0, confidence + input_data.ta_confidence * 0.10)
         elif input_data.ta_signal == "SELL" and input_data.ta_confidence:
             if recommendation == "HOLD":
                 recommendation = "SELL"
@@ -443,11 +464,14 @@ class InvestmentCommittee:
 
         confidence = round(min(95.0, max(30.0, confidence)), 1)
 
+        kr_dir = input_data.kronos_direction or ""
+        kr_pct = input_data.kronos_change_pct or 0
+        kr_conf = input_data.kronos_confidence or 0
         reasoning = (
             f"委员会审议 [{ticker} @ {input_data.date}]\n"
             f"Agent 共识: BUY={buy_votes}, HOLD={hold_votes}, SELL={sell_votes}\n"
             f"TA 信号: {input_data.ta_signal}(conf={input_data.ta_confidence})\n"
-            f"Kronos: {input_data.kronos_direction}({input_data.kronos_change_pct}%, conf={input_data.kronos_confidence})\n"
+            f"Kronos: {kr_dir}({kr_pct}%, conf={kr_conf})\n"
             f"综合评分: {input_data.composite_score}\n\n"
             f"看多论点:\n{bull_case}\n\n"
             f"看空论点:\n{bear_case}"
@@ -469,14 +493,13 @@ class InvestmentCommittee:
         TODO: 实现 LLM 审议路径。参考 DecisionAdapter 模式：
               构建 prompt → 调用 LLM → 解析 JSON 输出。
         """
-        raise NotImplementedError(
-            "LLM 委员会审议路径尚未实现，请使用 heuristic 模式"
-        )
+        raise NotImplementedError("LLM 委员会审议路径尚未实现，请使用 heuristic 模式")
 
 
 # ═══════════════════════════════════════════════════════
 #  模块级便捷函数
 # ═══════════════════════════════════════════════════════
+
 
 def build_committee_input(
     ticker: str,
@@ -520,17 +543,17 @@ def describe_committee(result: InvestmentCommitteeResult) -> str:
         f"  日期     : {result.date}",
         f"  推荐     : {result.recommendation}  (置信度={result.recommendation_confidence:.0f})",
         f"  Agent共识: {json.dumps(result.agent_consensus, ensure_ascii=False)}",
-        f"",
-        f"  📈 看多论点:",
+        "",
+        "  📈 看多论点:",
     ]
     for line in result.bull_case.split("\n"):
         lines.append(f"    {line}")
     lines.append("")
-    lines.append(f"  📉 看空论点:")
+    lines.append("  📉 看空论点:")
     for line in result.bear_case.split("\n"):
         lines.append(f"    {line}")
     lines.append("")
-    lines.append(f"  🔍 审议推理:")
+    lines.append("  🔍 审议推理:")
     for line in result.reasoning.split("\n")[:8]:
         lines.append(f"    {line}")
     return "\n".join(lines)

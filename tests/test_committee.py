@@ -1,24 +1,22 @@
 """测试 AI 投资委员会模块（committee.py）。"""
+
 from __future__ import annotations
 
-import json
-import time
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from trade_krono_cli.committee import (
-    AgentType,
     AgentReport,
-    StockCommitteeInput,
-    InvestmentCommitteeResult,
+    AgentType,
     InvestmentCommittee,
-    extract_agent_reports,
+    InvestmentCommitteeResult,
+    StockCommitteeInput,
     build_committee_input,
     describe_committee,
+    extract_agent_reports,
 )
-from trade_krono_cli.research_db import ResearchDatabase, clear_research_singleton
+from trade_krono_cli.research_db import ResearchDatabase
 
 
 @pytest.fixture
@@ -28,6 +26,7 @@ def research_db(tmp_path):
 
 
 # ── AgentReport / AgentType ────────────────────────────────────────────────
+
 
 def test_agent_report_to_dict():
     report = AgentReport(
@@ -57,6 +56,7 @@ def test_agent_report_frozen():
 
 
 # ── extract_agent_reports ──────────────────────────────────────────────────
+
 
 def test_extract_agent_reports_basic():
     final_state = {
@@ -116,6 +116,7 @@ def test_extract_agent_reports_with_debate():
 
 # ── build_committee_input ──────────────────────────────────────────────────
 
+
 def test_build_committee_input():
     final_state = {
         "fundamentals_report": "ROE 25%",
@@ -163,17 +164,36 @@ def test_build_committee_input_no_kronos():
 
 # ── InvestmentCommittee.deliberate (heuristic) ─────────────────────────────
 
+
 def test_deliberate_buy_consensus(research_db):
     inp = StockCommitteeInput(
         ticker="sh.600519",
         date="2026-08-14",
         agent_reports=[
-            AgentReport(agent_type=AgentType.FUNDAMENTAL, ticker="sh.600519",
-                        content="ROE强", signal="BUY", confidence=80.0, key_finding="ROE 28%"),
-            AgentReport(agent_type=AgentType.MARKET, ticker="sh.600519",
-                        content="突破", signal="BUY", confidence=70.0, key_finding="均线突破"),
-            AgentReport(agent_type=AgentType.SENTIMENT, ticker="sh.600519",
-                        content="乐观", signal="BUY", confidence=65.0, key_finding="情绪高涨"),
+            AgentReport(
+                agent_type=AgentType.FUNDAMENTAL,
+                ticker="sh.600519",
+                content="ROE强",
+                signal="BUY",
+                confidence=80.0,
+                key_finding="ROE 28%",
+            ),
+            AgentReport(
+                agent_type=AgentType.MARKET,
+                ticker="sh.600519",
+                content="突破",
+                signal="BUY",
+                confidence=70.0,
+                key_finding="均线突破",
+            ),
+            AgentReport(
+                agent_type=AgentType.SENTIMENT,
+                ticker="sh.600519",
+                content="乐观",
+                signal="BUY",
+                confidence=65.0,
+                key_finding="情绪高涨",
+            ),
         ],
         ta_signal="BUY",
         ta_confidence=75.0,
@@ -184,7 +204,11 @@ def test_deliberate_buy_consensus(research_db):
     assert result.ticker == "sh.600519"
     assert result.recommendation == "BUY"
     assert result.recommendation_confidence > 50
-    assert "BUY=3" in result.reasoning or "BUY=3" in result.agent_consensus.get("_kronos_up", "") or True
+    assert (
+        "BUY=3" in result.reasoning
+        or "BUY=3" in result.agent_consensus.get("_kronos_up", "")
+        or True
+    )
     assert result.bull_case  # 非空
     assert isinstance(result.agent_consensus, dict)
 
@@ -194,10 +218,22 @@ def test_deliberate_sell_consensus(research_db):
         ticker="sz.000858",
         date="2026-08-14",
         agent_reports=[
-            AgentReport(agent_type=AgentType.FUNDAMENTAL, ticker="sz.000858",
-                        content="业绩下滑", signal="SELL", confidence=70.0, key_finding="利润下降"),
-            AgentReport(agent_type=AgentType.MARKET, ticker="sz.000858",
-                        content="破位", signal="SELL", confidence=65.0, key_finding="跌破支撑"),
+            AgentReport(
+                agent_type=AgentType.FUNDAMENTAL,
+                ticker="sz.000858",
+                content="业绩下滑",
+                signal="SELL",
+                confidence=70.0,
+                key_finding="利润下降",
+            ),
+            AgentReport(
+                agent_type=AgentType.MARKET,
+                ticker="sz.000858",
+                content="破位",
+                signal="SELL",
+                confidence=65.0,
+                key_finding="跌破支撑",
+            ),
         ],
         ta_signal="SELL",
         ta_confidence=70.0,
@@ -215,10 +251,22 @@ def test_deliberate_hold_split(research_db):
         ticker="sh.600036",
         date="2026-08-14",
         agent_reports=[
-            AgentReport(agent_type=AgentType.FUNDAMENTAL, ticker="sh.600036",
-                        content="好", signal="BUY", confidence=60.0, key_finding="成长性好"),
-            AgentReport(agent_type=AgentType.MARKET, ticker="sh.600036",
-                        content="风险", signal="SELL", confidence=55.0, key_finding="技术面走弱"),
+            AgentReport(
+                agent_type=AgentType.FUNDAMENTAL,
+                ticker="sh.600036",
+                content="好",
+                signal="BUY",
+                confidence=60.0,
+                key_finding="成长性好",
+            ),
+            AgentReport(
+                agent_type=AgentType.MARKET,
+                ticker="sh.600036",
+                content="风险",
+                signal="SELL",
+                confidence=55.0,
+                key_finding="技术面走弱",
+            ),
         ],
         ta_signal="HOLD",
         ta_confidence=50.0,
@@ -252,8 +300,14 @@ def test_deliberate_with_kronos_up(research_db):
         ticker="sh.600519",
         date="2026-08-14",
         agent_reports=[
-            AgentReport(agent_type=AgentType.FUNDAMENTAL, ticker="sh.600519",
-                        content="中性", signal="HOLD", confidence=50.0, key_finding="估值合理"),
+            AgentReport(
+                agent_type=AgentType.FUNDAMENTAL,
+                ticker="sh.600519",
+                content="中性",
+                signal="HOLD",
+                confidence=50.0,
+                key_finding="估值合理",
+            ),
         ],
         kronos_direction="UP",
         kronos_change_pct=4.2,
@@ -293,16 +347,46 @@ def test_deliberate_confidence_capped(research_db):
         ticker="sh.600519",
         date="2026-08-14",
         agent_reports=[
-            AgentReport(agent_type=AgentType.FUNDAMENTAL, ticker="sh.600519",
-                        content="强", signal="BUY", confidence=95.0, key_finding="a"),
-            AgentReport(agent_type=AgentType.MARKET, ticker="sh.600519",
-                        content="强", signal="BUY", confidence=95.0, key_finding="b"),
-            AgentReport(agent_type=AgentType.SENTIMENT, ticker="sh.600519",
-                        content="强", signal="BUY", confidence=95.0, key_finding="c"),
-            AgentReport(agent_type=AgentType.NEWS, ticker="sh.600519",
-                        content="强", signal="BUY", confidence=95.0, key_finding="d"),
-            AgentReport(agent_type=AgentType.POLICY, ticker="sh.600519",
-                        content="强", signal="BUY", confidence=95.0, key_finding="e"),
+            AgentReport(
+                agent_type=AgentType.FUNDAMENTAL,
+                ticker="sh.600519",
+                content="强",
+                signal="BUY",
+                confidence=95.0,
+                key_finding="a",
+            ),
+            AgentReport(
+                agent_type=AgentType.MARKET,
+                ticker="sh.600519",
+                content="强",
+                signal="BUY",
+                confidence=95.0,
+                key_finding="b",
+            ),
+            AgentReport(
+                agent_type=AgentType.SENTIMENT,
+                ticker="sh.600519",
+                content="强",
+                signal="BUY",
+                confidence=95.0,
+                key_finding="c",
+            ),
+            AgentReport(
+                agent_type=AgentType.NEWS,
+                ticker="sh.600519",
+                content="强",
+                signal="BUY",
+                confidence=95.0,
+                key_finding="d",
+            ),
+            AgentReport(
+                agent_type=AgentType.POLICY,
+                ticker="sh.600519",
+                content="强",
+                signal="BUY",
+                confidence=95.0,
+                key_finding="e",
+            ),
         ],
         ta_signal="BUY",
         ta_confidence=95.0,
@@ -333,12 +417,27 @@ def test_get_consensus(research_db):
         ticker="sh.600519",
         date="2026-08-14",
         agent_reports=[
-            AgentReport(agent_type=AgentType.FUNDAMENTAL, ticker="sh.600519",
-                        content="a", signal="BUY", key_finding="a"),
-            AgentReport(agent_type=AgentType.MARKET, ticker="sh.600519",
-                        content="b", signal="HOLD", key_finding="b"),
-            AgentReport(agent_type=AgentType.SENTIMENT, ticker="sh.600519",
-                        content="c", signal="SELL", key_finding="c"),
+            AgentReport(
+                agent_type=AgentType.FUNDAMENTAL,
+                ticker="sh.600519",
+                content="a",
+                signal="BUY",
+                key_finding="a",
+            ),
+            AgentReport(
+                agent_type=AgentType.MARKET,
+                ticker="sh.600519",
+                content="b",
+                signal="HOLD",
+                key_finding="b",
+            ),
+            AgentReport(
+                agent_type=AgentType.SENTIMENT,
+                ticker="sh.600519",
+                content="c",
+                signal="SELL",
+                key_finding="c",
+            ),
         ],
         ta_signal="BUY",
         ta_confidence=70.0,
@@ -346,12 +445,13 @@ def test_get_consensus(research_db):
     )
     committee = InvestmentCommittee()
     consensus = committee.get_consensus(inp)
-    assert consensus["BUY"] == 2   # 1 agent + 1 TA
+    assert consensus["BUY"] == 2  # 1 agent + 1 TA
     assert consensus["HOLD"] == 1
     assert consensus["SELL"] == 1
 
 
 # ── InvestmentCommitteeResult ──────────────────────────────────────────────
+
 
 def test_committee_result_to_dict():
     result = InvestmentCommitteeResult(
@@ -386,6 +486,7 @@ def test_committee_result_auto_created_at():
 
 # ── describe_committee ─────────────────────────────────────────────────────
 
+
 def test_describe_committee():
     result = InvestmentCommitteeResult(
         ticker="sh.600519",
@@ -408,6 +509,7 @@ def test_describe_committee():
 
 
 # ── Persistence: insert + get_committee_for_ticker ─────────────────────────
+
 
 def test_insert_and_get_committee_deliberation(research_db):
     job_id = research_db.create_job("2026-08-14", ["sh.600519"])
@@ -440,16 +542,26 @@ def test_get_committee_for_ticker_not_found(research_db):
 def test_insert_committee_overwrite(research_db):
     job_id = research_db.create_job("2026-08-14", ["sh.600519"])
     research_db.insert_committee_deliberation(
-        job_id=job_id, ticker="sh.600519", date="2026-08-14",
-        bull_case="v1", bear_case="b1",
-        recommendation="BUY", recommendation_confidence=80.0,
-        reasoning="r1", agent_consensus={"BUY": 1},
+        job_id=job_id,
+        ticker="sh.600519",
+        date="2026-08-14",
+        bull_case="v1",
+        bear_case="b1",
+        recommendation="BUY",
+        recommendation_confidence=80.0,
+        reasoning="r1",
+        agent_consensus={"BUY": 1},
     )
     research_db.insert_committee_deliberation(
-        job_id=job_id, ticker="sh.600519", date="2026-08-14",
-        bull_case="v2", bear_case="b2",
-        recommendation="SELL", recommendation_confidence=60.0,
-        reasoning="r2", agent_consensus={"SELL": 1},
+        job_id=job_id,
+        ticker="sh.600519",
+        date="2026-08-14",
+        bull_case="v2",
+        bear_case="b2",
+        recommendation="SELL",
+        recommendation_confidence=60.0,
+        reasoning="r2",
+        agent_consensus={"SELL": 1},
     )
     got = research_db.get_committee_for_ticker("sh.600519")
     assert got is not None
@@ -461,16 +573,26 @@ def test_committee_stats_count(research_db):
     """stats() 中 committee_deliberations 应返回正确计数。"""
     job_id = research_db.create_job("2026-08-14", ["sh.600519", "sz.000858"])
     research_db.insert_committee_deliberation(
-        job_id=job_id, ticker="sh.600519", date="2026-08-14",
-        bull_case="b", bear_case="bear",
-        recommendation="BUY", recommendation_confidence=80.0,
-        reasoning="r", agent_consensus={},
+        job_id=job_id,
+        ticker="sh.600519",
+        date="2026-08-14",
+        bull_case="b",
+        bear_case="bear",
+        recommendation="BUY",
+        recommendation_confidence=80.0,
+        reasoning="r",
+        agent_consensus={},
     )
     research_db.insert_committee_deliberation(
-        job_id=job_id, ticker="sz.000858", date="2026-08-14",
-        bull_case="b", bear_case="bear",
-        recommendation="HOLD", recommendation_confidence=50.0,
-        reasoning="r", agent_consensus={},
+        job_id=job_id,
+        ticker="sz.000858",
+        date="2026-08-14",
+        bull_case="b",
+        bear_case="bear",
+        recommendation="HOLD",
+        recommendation_confidence=50.0,
+        reasoning="r",
+        agent_consensus={},
     )
     stats = research_db.stats()
     assert stats["research_committee_deliberations"] == 2
@@ -480,7 +602,8 @@ def test_committee_table_exists_after_init(tmp_path):
     """初始化后 committee_deliberations 表应已创建。"""
     db = ResearchDatabase(db_path=tmp_path / "test.db")
     with db._conn as conn:
-        tables = [row[0] for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()]
+        tables = [
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        ]
     assert "committee_deliberations" in tables

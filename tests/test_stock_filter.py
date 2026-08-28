@@ -10,26 +10,27 @@ tests/test_stock_filter.py — 股票过滤规则引擎测试。
   · 边界情况（None 字段、ST 过滤、行业匹配）
   · 自定义规则链
 """
+
 import pytest
 
 from trade_krono_cli.stock_filter import (
+    ContainsRule,
     FilterOp,
     FilterRule,
-    MinValueRule,
-    MaxValueRule,
-    RangeRule,
     InSetRule,
-    NotInSetRule,
-    ContainsRule,
     MatchRule,
-    StockMeta,
+    MaxValueRule,
+    MinValueRule,
+    NotInSetRule,
+    RangeRule,
     StockFilter,
+    StockMeta,
 )
-
 
 # ═══════════════════════════════════════════════════════
 # 工具函数
 # ═══════════════════════════════════════════════════════
+
 
 def _meta(**kwargs) -> StockMeta:
     """便捷构造 StockMeta，ticker 默认 'sh.600519'。"""
@@ -40,6 +41,7 @@ def _meta(**kwargs) -> StockMeta:
 # ═══════════════════════════════════════════════════════
 # FilterRule 基础
 # ═══════════════════════════════════════════════════════
+
 
 class TestFilterRule:
     def test_min_rule(self):
@@ -89,6 +91,7 @@ class TestFilterRule:
 # ═══════════════════════════════════════════════════════
 # StockFilter.apply() 单条规则测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestStockFilterApply:
     def test_min_value_pass(self):
@@ -156,10 +159,12 @@ class TestStockFilterApply:
 
     def test_exception_in_rule_logs_but_continues(self):
         """单条规则异常不应中断其他规则。"""
+
         # 通过自定义规则触发异常
         class BadRule(FilterRule):
             def __init__(self):
                 super().__init__(field="x", op=FilterOp.MIN, value=1, label="bad")
+
         f = StockFilter([BadRule(), MinValueRule("confidence", 50.0)])
         # BadRule._check_rule 会抛 AttributeError（MinValueRule 是不同类）
         # 但 StockFilter.apply 应该捕获异常继续执行
@@ -173,9 +178,11 @@ class TestStockFilterApply:
 
     def test_unknown_op_falls_through(self):
         """未知操作符应返回 True（不拦截）。"""
+
         # 直接构造一个带 .value 属性的对象，绕过 Enum 校验
         class _UnknownOp:
             value = "unknown"
+
         rule = FilterRule(field="signal", op=_UnknownOp(), value="x", label="custom")
         f = StockFilter([rule])
         assert f.apply(_meta(signal="BUY")) is True
@@ -192,12 +199,15 @@ class TestStockFilterApply:
 # StockFilter.apply_batch()
 # ═══════════════════════════════════════════════════════
 
+
 class TestStockFilterBatch:
     def test_batch_basic(self):
-        f = StockFilter([
-            MinValueRule("confidence", 55.0),
-            InSetRule("signal", {"BUY", "HOLD"}),
-        ])
+        f = StockFilter(
+            [
+                MinValueRule("confidence", 55.0),
+                InSetRule("signal", {"BUY", "HOLD"}),
+            ]
+        )
         metas = [
             _meta(ticker="a", signal="BUY", confidence=60.0),
             _meta(ticker="b", signal="SELL", confidence=80.0),
@@ -227,6 +237,7 @@ class TestStockFilterBatch:
 # ═══════════════════════════════════════════════════════
 # StockFilter.from_config() 工厂方法
 # ═══════════════════════════════════════════════════════
+
 
 class TestStockFilterFromConfig:
     def test_minimal_config(self):
@@ -304,27 +315,30 @@ class TestStockFilterFromConfig:
         )
         # 统计各类型规则
         ops = [r.op for r in f.rules]
-        assert FilterOp.MIN in ops   # confidence
-        assert FilterOp.IN in ops    # signal + industry whitelist
-        assert FilterOp.MAX in ops   # is_st + risk_score
-        assert FilterOp.RANGE in ops # market_cap + pe + pb
-        assert FilterOp.NOT_IN in ops    # industry blacklist
-        assert FilterOp.MIN in ops      # volume_ratio
+        assert FilterOp.MIN in ops  # confidence
+        assert FilterOp.IN in ops  # signal + industry whitelist
+        assert FilterOp.MAX in ops  # is_st + risk_score
+        assert FilterOp.RANGE in ops  # market_cap + pe + pb
+        assert FilterOp.NOT_IN in ops  # industry blacklist
+        assert FilterOp.MIN in ops  # volume_ratio
 
 
 # ═══════════════════════════════════════════════════════
 # 边界情况
 # ═══════════════════════════════════════════════════════
 
+
 class TestEdgeCases:
     def test_none_fields_skip_all_rules(self):
         """所有字段均为 None 时，任何过滤规则都不应拦截。"""
-        f = StockFilter([
-            MinValueRule("confidence", 55.0),
-            RangeRule("market_cap_billion", 50.0, 5000.0),
-            MaxValueRule("risk_score", 0.7),
-            InSetRule("signal", {"BUY"}),
-        ])
+        f = StockFilter(
+            [
+                MinValueRule("confidence", 55.0),
+                RangeRule("market_cap_billion", 50.0, 5000.0),
+                MaxValueRule("risk_score", 0.7),
+                InSetRule("signal", {"BUY"}),
+            ]
+        )
         meta = _meta(
             ticker="sh.000001",
             signal=None,
@@ -347,10 +361,12 @@ class TestEdgeCases:
 
     def test_mixed_none_and_some_fields(self):
         """部分字段有值，部分为 None。"""
-        f = StockFilter([
-            MinValueRule("confidence", 55.0),
-            RangeRule("market_cap_billion", 50.0, 5000.0),
-        ])
+        f = StockFilter(
+            [
+                MinValueRule("confidence", 55.0),
+                RangeRule("market_cap_billion", 50.0, 5000.0),
+            ]
+        )
         # confidence 有值但 market_cap 为 None
         meta = _meta(confidence=60.0, market_cap_billion=None)
         assert f.apply(meta) is True  # None 跳过市值规则
@@ -364,6 +380,7 @@ class TestEdgeCases:
 # 自定义规则链
 # ═══════════════════════════════════════════════════════
 
+
 class TestCustomRules:
     def test_custom_rule_chain(self):
         """手动构造规则链。"""
@@ -375,20 +392,26 @@ class TestCustomRules:
         ]
         f = StockFilter(rules=rules)
         meta_good = _meta(
-            signal="BUY", confidence=70.0,
-            market_cap_billion=500.0, risk_score=0.3,
+            signal="BUY",
+            confidence=70.0,
+            market_cap_billion=500.0,
+            risk_score=0.3,
         )
         meta_bad_conf = _meta(
-            signal="BUY", confidence=50.0,
-            market_cap_billion=500.0, risk_score=0.3,
+            signal="BUY",
+            confidence=50.0,
+            market_cap_billion=500.0,
+            risk_score=0.3,
         )
         assert f.apply(meta_good) is True
         assert f.apply(meta_bad_conf) is False
 
     def test_custom_rule_with_regex(self):
         """使用正则匹配行业名。"""
-        f = StockFilter([
-            MatchRule("industry", r"^金融.*"),
-        ])
+        f = StockFilter(
+            [
+                MatchRule("industry", r"^金融.*"),
+            ]
+        )
         assert f.apply(_meta(industry="金融科技")) is True
         assert f.apply(_meta(industry="银行")) is False

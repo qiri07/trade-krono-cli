@@ -1,6 +1,7 @@
 """
 CLI 维护命令 — status / clear-cache / warm-cache / history / eval-prediction / retry-failed。
 """
+
 from __future__ import annotations
 
 import typer
@@ -15,6 +16,7 @@ console: Console = Console()
 # ═══════════════════════════════════════════════════════
 # status — 查看系统状态
 # ═══════════════════════════════════════════════════════
+
 
 def status() -> None:
     """查看系统状态：密钥、缓存、模型配置 + 健康检查。"""
@@ -49,29 +51,22 @@ def status() -> None:
 
     # ── 健康检查 ────────────────────────────────────────────────────────────
     from trade_krono_cli.health import health_summary, print_health_report
+
     results = health_summary(s)
     print_health_report(results)
 
     try:
         from trade_krono_cli.research_db import get_research
+
         res_stats = get_research().stats()
         console.print(f"[dim]研究数据库: {res_stats}[/dim]")
         jobs = get_research().list_jobs(limit=5)
         if jobs:
             console.print("[bold]最近分析作业:[/bold]")
             for j in jobs:
-                run_id_str = (
-                    f" run={j.get('run_id', '-')}"
-                    if j.get("run_id") else ""
-                )
-                dv_str = (
-                    f" data={j.get('data_version', '-')}"
-                    if j.get("data_version") else ""
-                )
-                ch_str = (
-                    f" hash={j.get('config_hash', '-')[:8]}…"
-                    if j.get("config_hash") else ""
-                )
+                run_id_str = f" run={j.get('run_id', '-')}" if j.get("run_id") else ""
+                dv_str = f" data={j.get('data_version', '-')}" if j.get("data_version") else ""
+                ch_str = f" hash={j.get('config_hash', '-')[:8]}…" if j.get("config_hash") else ""
                 console.print(
                     f"  • [{j['date']}] job={j['job_id']}"
                     f"{run_id_str}{dv_str}{ch_str} "
@@ -86,11 +81,13 @@ def status() -> None:
 # clear-cache — 清除缓存
 # ═══════════════════════════════════════════════════════
 
+
 def clear_cache() -> None:
     """清除所有缓存（K线/TA/Kronos），不影响研究数据库。"""
     _load_env()
 
     from trade_krono_cli.cache import get_cache
+
     n = get_cache().clear_all()
     console.print(f"[yellow]🧹 已清除 {n} 条缓存[/yellow]")
 
@@ -99,23 +96,16 @@ def clear_cache() -> None:
 # warm-cache — 盘前缓存预热
 # ═══════════════════════════════════════════════════════
 
+
 def warm_cache(
     tickers: str | None = typer.Option(
-        None, "--tickers", "-t",
-        help="逗号分隔的股票代码，如 600519,000858,600036"
+        None, "--tickers", "-t", help="逗号分隔的股票代码，如 600519,000858,600036"
     ),
     config: str | None = typer.Option(
-        None, "--config", "-c",
-        help="股票列表文件路径（每行一只，支持 # 注释）"
+        None, "--config", "-c", help="股票列表文件路径（每行一只，支持 # 注释）"
     ),
-    date: str = typer.Option(
-        ..., "--date", "-d",
-        help="基准日期 YYYY-MM-DD（默认今天）"
-    ),
-    lookback: int = typer.Option(
-        730, "--lookback", "-l",
-        help="回溯天数，默认 730（2年）"
-    ),
+    date: str = typer.Option(..., "--date", "-d", help="基准日期 YYYY-MM-DD（默认今天）"),
+    lookback: int = typer.Option(730, "--lookback", "-l", help="回溯天数，默认 730（2年）"),
 ) -> None:
     """盘前缓存预热：批量拉取 K 线数据并写入缓存。
 
@@ -128,17 +118,13 @@ def warm_cache(
 
     tk_list = _load_tickers(tickers, config)
     if not tk_list:
-        console.print(
-            "[red]❌ 股票列表为空"
-            "（请通过 --tickers 或 --config 提供）[/red]"
-        )
+        console.print("[red]❌ 股票列表为空（请通过 --tickers 或 --config 提供）[/red]")
         raise typer.Exit(1)
 
     cache = get_cache()
     total_rows, total_segments = 0, 0
     console.print(
-        f"[bold green]🔥 缓存预热[/bold green] "
-        f"{len(tk_list)} 只 → {date} (回溯 {lookback} 天)"
+        f"[bold green]🔥 缓存预热[/bold green] {len(tk_list)} 只 → {date} (回溯 {lookback} 天)"
     )
     for i, tk in enumerate(tk_list, 1):
         console.print(f"  [{i}/{len(tk_list)}] {tk} ...", end="")
@@ -148,8 +134,7 @@ def warm_cache(
         console.print(f" ✅ {rows}行/{segs}段")
 
     console.print(
-        f"[bold green]✅ 预热完成[/bold green] "
-        f"共 {total_rows} 行 / {total_segments} 个缓存段"
+        f"[bold green]✅ 预热完成[/bold green] 共 {total_rows} 行 / {total_segments} 个缓存段"
     )
 
 
@@ -157,10 +142,10 @@ def warm_cache(
 # history — 查看历史分析记录
 # ═══════════════════════════════════════════════════════
 
+
 def history(
     ticker: str | None = typer.Option(
-        None, "--ticker", "-t",
-        help="指定股票代码，查看该股票的历史分析记录"
+        None, "--ticker", "-t", help="指定股票代码，查看该股票的历史分析记录"
     ),
     limit: int = typer.Option(10, "--limit", "-l", help="最多显示条数"),
 ) -> None:
@@ -168,6 +153,7 @@ def history(
     _load_env()
 
     from trade_krono_cli.research_db import get_research
+
     research = get_research()
 
     if ticker:
@@ -178,35 +164,30 @@ def history(
             return
         table = Table(title=f"📈 {ticker} 历史分析记录")
         for col in (
-            "日期", "RunID", "数据版本", "排名", "综合分",
-            "TA信号", "TA置信", "Kronos方向", "预期%",
+            "日期",
+            "RunID",
+            "数据版本",
+            "排名",
+            "综合分",
+            "TA信号",
+            "TA置信",
+            "Kronos方向",
+            "预期%",
         ):
             table.add_column(
                 col,
-                justify="right"
-                if col not in ("日期", "RunID", "数据版本")
-                else "left",
+                justify="right" if col not in ("日期", "RunID", "数据版本") else "left",
             )
         for r in records:
-            change = (
-                f"{r['kronos_change']:.2f}"
-                if r.get("kronos_change") is not None
-                else "-"
-            )
+            change = f"{r['kronos_change']:.2f}" if r.get("kronos_change") is not None else "-"
             table.add_row(
                 str(r["date"]),
                 str(r.get("run_id") or "-"),
                 str(r.get("data_version") or "-"),
                 str(r["rank"] or "-"),
-                (
-                    f"{r['composite_score']:.1f}"
-                    if r.get("composite_score") else "-"
-                ),
+                (f"{r['composite_score']:.1f}" if r.get("composite_score") else "-"),
                 str(r["ta_signal"] or "-"),
-                (
-                    f"{r['ta_confidence']:.0f}"
-                    if r.get("ta_confidence") else "-"
-                ),
+                (f"{r['ta_confidence']:.0f}" if r.get("ta_confidence") else "-"),
                 str(r["kronos_direction"] or "-"),
                 change,
             )
@@ -218,14 +199,17 @@ def history(
             return
         table = Table(title="📋 最近分析作业")
         for col in (
-            "作业ID", "RunID", "日期", "股票数", "成功数",
-            "数据版本", "耗时(s)",
+            "作业ID",
+            "RunID",
+            "日期",
+            "股票数",
+            "成功数",
+            "数据版本",
+            "耗时(s)",
         ):
             table.add_column(
                 col,
-                justify="right"
-                if col not in ("作业ID", "RunID")
-                else "left",
+                justify="right" if col not in ("作业ID", "RunID") else "left",
             )
         for j in jobs:
             run_id = j.get("run_id", "-") or "-"
@@ -246,29 +230,21 @@ def history(
 # eval — 预测评估
 # ═══════════════════════════════════════════════════════
 
+
 def eval_prediction(
-    from_date: str | None = typer.Option(
-        None, "--from", "-f",
-        help="起始分析日期 YYYY-MM-DD"
-    ),
-    to_date: str | None = typer.Option(
-        None, "--to", "-t",
-        help="截止分析日期 YYYY-MM-DD"
-    ),
-    tickers: str | None = typer.Option(
-        None, "--tickers", "-i",
-        help="只评估指定股票（逗号分隔）"
-    ),
-    latest: bool = typer.Option(
-        False, "--latest", "-l",
-        help="查看最新评估结果（不重新计算）"
-    ),
+    from_date: str | None = typer.Option(None, "--from", "-f", help="起始分析日期 YYYY-MM-DD"),
+    to_date: str | None = typer.Option(None, "--to", "-t", help="截止分析日期 YYYY-MM-DD"),
+    tickers: str | None = typer.Option(None, "--tickers", "-i", help="只评估指定股票（逗号分隔）"),
+    latest: bool = typer.Option(False, "--latest", "-l", help="查看最新评估结果（不重新计算）"),
     backtest: bool = typer.Option(
-        False, "--backtest", "-b",
+        False,
+        "--backtest",
+        "-b",
         help="运行回测引擎，输出年化收益/夏普/最大回撤等绩效指标",
     ),
     rebal_mode: str = typer.Option(
-        "fixed_horizon", "--rebal-mode",
+        "fixed_horizon",
+        "--rebal-mode",
         help="调仓模式: fixed_horizon / rebal_weekly / rebal_monthly",
     ),
 ) -> None:
@@ -295,27 +271,32 @@ def eval_prediction(
 # retry-failed — 重跑失败股票
 # ═══════════════════════════════════════════════════════
 
+
 def retry_failed(
     date: str = typer.Option(
-        ..., "--date", "-d",
-        help="要重跑的日期 YYYY-MM-DD（默认最新有失败的日期）"
+        ..., "--date", "-d", help="要重跑的日期 YYYY-MM-DD（默认最新有失败的日期）"
     ),
     module: str = typer.Option(
-        None, "--module", "-m",
+        None,
+        "--module",
+        "-m",
         help="指定模块：ta / kronos（None = 全部）",
     ),
     max_retries: int = typer.Option(
-        None, "--max-retries",
+        None,
+        "--max-retries",
         help="最大重试次数（含首次，默认 3）",
         rich_help_panel="重试策略",
     ),
     base_delay: float = typer.Option(
-        None, "--base-delay",
+        None,
+        "--base-delay",
         help="基础退避秒数（默认 2.0）",
         rich_help_panel="重试策略",
     ),
     no_jitter: bool = typer.Option(
-        False, "--no-jitter",
+        False,
+        "--no-jitter",
         help="禁用随机抖动",
         rich_help_panel="重试策略",
     ),
@@ -355,7 +336,9 @@ def retry_failed(
     # 筛选失败记录
     fails = store.list_fails(date=date, module=module)
     if not fails:
-        console.print(f"[yellow]⚠️  日期 {date}{f' (module={module})' if module else ''} 无失败记录[/yellow]")
+        console.print(
+            f"[yellow]⚠️  日期 {date}{f' (module={module})' if module else ''} 无失败记录[/yellow]"
+        )
         return
 
     failed_tickers = list(dict.fromkeys(r.ticker for r in fails))
@@ -376,7 +359,11 @@ def retry_failed(
         retry_overrides["retry_base_delay"] = base_delay
     if no_jitter:
         retry_overrides["retry_jitter"] = False
-    cfg = PipelineConfig.default(settings).override(**retry_overrides) if retry_overrides else PipelineConfig.default(settings)
+    cfg = (
+        PipelineConfig.default(settings).override(**retry_overrides)
+        if retry_overrides
+        else PipelineConfig.default(settings)
+    )
 
     pipeline = QuantPipeline(config=cfg)
 
@@ -417,8 +404,13 @@ def retry_failed(
         # 找到原始失败记录并更新 attempt_count
         orig = [r for r in fails if r.ticker == ticker]
         if orig:
-            store.record(ticker, date, orig[0].module, RuntimeError(orig[0].error_message),
-                         attempt_count=orig[0].attempt_count + 1)
+            store.record(
+                ticker,
+                date,
+                orig[0].module,
+                RuntimeError(orig[0].error_message),
+                attempt_count=orig[0].attempt_count + 1,
+            )
 
     console.print(f"\n[bold]{'✅' if still_failed else '🎉'} 重跑完成[/bold]")
     console.print(f"   本次成功: {success_count}/{len(failed_tickers)}")

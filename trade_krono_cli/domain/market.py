@@ -3,10 +3,10 @@ MarketSnapshot — 市场快照。
 
 某只股票在某一时刻的完整市场状态，作为所有分析的输入事实。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date as date_type
 from typing import Optional
 
 from trade_krono_cli.domain.stock import Stock
@@ -36,6 +36,7 @@ class MarketSnapshot:
     sector            所属行业（覆盖 Stock.industry，优先使用此处）
     extra             附加元数据（行业分类、指数权重等）
     """
+
     stock: Stock
     date: str
     close: float
@@ -89,7 +90,11 @@ class MarketSnapshot:
     @classmethod
     def from_dict(cls, data: dict) -> "MarketSnapshot":
         stock_data = data.get("stock", {})
-        stock = Stock.from_dict(stock_data) if isinstance(stock_data, dict) else Stock(ticker=data.get("ticker", ""))
+        stock = (
+            Stock.from_dict(stock_data)
+            if isinstance(stock_data, dict)
+            else Stock(ticker=data.get("ticker", ""))
+        )
         return cls(
             stock=stock,
             date=data["date"],

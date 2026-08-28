@@ -5,24 +5,29 @@ tests for V0.2 Research Engine modules:
   · eval_walkforward     — rolling window evaluation
   · experiment_registry  — hypothesis tracking
 """
-import json
-import pytest
-import pandas as pd
-from unittest.mock import MagicMock, patch
 
+import pandas as pd
+import pytest
 
 # ═══════════════════════════════════════════════════════
 #  DataSnapshot
 # ═══════════════════════════════════════════════════════
 
+
 class TestDataSnapshot:
     def test_basic_construction(self):
         from trade_krono_cli.data_snapshot import DataSnapshot, DataSourceSnapshot
+
         snap = DataSnapshot(
             cut_date="2024-06-30",
             sources=(
-                DataSourceSnapshot(source="baostock", cut_date="2024-06-30",
-                                   latest_date="2024-06-28", record_count=500, data_hash="abc"),
+                DataSourceSnapshot(
+                    source="baostock",
+                    cut_date="2024-06-30",
+                    latest_date="2024-06-28",
+                    record_count=500,
+                    data_hash="abc",
+                ),
             ),
             description="test",
         )
@@ -33,17 +38,23 @@ class TestDataSnapshot:
 
     def test_empty_sources(self):
         from trade_krono_cli.data_snapshot import DataSnapshot
+
         snap = DataSnapshot(cut_date="2024-06-30")
         assert snap.effective_cut_date() == "2024-06-30"
         assert snap.contains_future_data("x", "2024-07-01") is False
 
     def test_roundtrip_serialization(self):
         from trade_krono_cli.data_snapshot import DataSnapshot, DataSourceSnapshot
+
         snap = DataSnapshot(
             cut_date="2024-06-30",
             sources=(
-                DataSourceSnapshot(source="akshare", cut_date="2024-06-30",
-                                   latest_date="2024-06-20", record_count=200),
+                DataSourceSnapshot(
+                    source="akshare",
+                    cut_date="2024-06-30",
+                    latest_date="2024-06-20",
+                    record_count=200,
+                ),
             ),
             description="roundtrip",
         )
@@ -55,6 +66,7 @@ class TestDataSnapshot:
 
     def test_frozen_immutable(self):
         from trade_krono_cli.data_snapshot import DataSnapshot
+
         snap = DataSnapshot(cut_date="2024-01-01")
         with pytest.raises(AttributeError):
             snap.cut_date = "2024-12-31"  # frozen
@@ -63,20 +75,25 @@ class TestDataSnapshot:
 class TestFilterKlineToCutDate:
     def test_filters_correctly(self):
         from trade_krono_cli.data_snapshot import filter_kline_to_cut_date
-        df = pd.DataFrame({
-            "timestamps": ["2024-06-20", "2024-06-25", "2024-06-28", "2024-07-01"],
-            "close": [100, 101, 102, 103],
-        })
+
+        df = pd.DataFrame(
+            {
+                "timestamps": ["2024-06-20", "2024-06-25", "2024-06-28", "2024-07-01"],
+                "close": [100, 101, 102, 103],
+            }
+        )
         result = filter_kline_to_cut_date(df, "2024-06-28")
         assert len(result) == 3
         assert result.iloc[-1]["timestamps"] == "2024-06-28"
 
     def test_none_input(self):
         from trade_krono_cli.data_snapshot import filter_kline_to_cut_date
+
         assert filter_kline_to_cut_date(None, "2024-06-28") is None
 
     def test_empty_df(self):
         from trade_krono_cli.data_snapshot import filter_kline_to_cut_date
+
         df = pd.DataFrame({"timestamps": [], "close": []})
         result = filter_kline_to_cut_date(df, "2024-06-28")
         assert len(result) == 0
@@ -86,14 +103,24 @@ class TestFilterKlineToCutDate:
 #  UnifiedInvestmentDecision
 # ═══════════════════════════════════════════════════════
 
+
 class TestUnifiedInvestmentDecision:
     def test_build_with_kronos_only(self):
         from trade_krono_cli.unified_decision import build_unified_decision
+
         dec = build_unified_decision(
-            ticker="sh.600519", eval_date="2024-06-30",
-            kronos_direction="UP", kronos_expected_return=3.0,
-            distribution={"p10": 1700, "p25": 1750, "p50": 1800,
-                          "p75": 1850, "p90": 1900, "predicted_close_final": 1800},
+            ticker="sh.600519",
+            eval_date="2024-06-30",
+            kronos_direction="UP",
+            kronos_expected_return=3.0,
+            distribution={
+                "p10": 1700,
+                "p25": 1750,
+                "p50": 1800,
+                "p75": 1850,
+                "p90": 1900,
+                "predicted_close_final": 1800,
+            },
         )
         assert dec.final_signal.value == "BUY"
         assert dec.kronos_direction == "UP"
@@ -101,41 +128,69 @@ class TestUnifiedInvestmentDecision:
         assert dec.prob_win is not None
 
     def test_build_with_ta_and_conflict(self):
-        from trade_krono_cli.unified_decision import build_unified_decision
         from trade_krono_cli.ta_decision import InvestmentDecision, Signal
+        from trade_krono_cli.unified_decision import build_unified_decision
+
         ta = InvestmentDecision(signal=Signal.BUY, confidence=80.0)
         dec = build_unified_decision(
-            ticker="sh.600519", eval_date="2024-06-30",
+            ticker="sh.600519",
+            eval_date="2024-06-30",
             ta_decision=ta,
-            kronos_direction="DOWN", kronos_expected_return=-2.0,
-            distribution={"p10": 1700, "p25": 1750, "p50": 1800,
-                          "p75": 1850, "p90": 1900, "predicted_close_final": 1800},
+            kronos_direction="DOWN",
+            kronos_expected_return=-2.0,
+            distribution={
+                "p10": 1700,
+                "p25": 1750,
+                "p50": 1800,
+                "p75": 1850,
+                "p90": 1900,
+                "predicted_close_final": 1800,
+            },
         )
         assert dec.conflict == "ta_vs_kronos"
         assert dec.final_signal is not None
 
     def test_build_all_three_sources_agree(self):
-        from trade_krono_cli.unified_decision import build_unified_decision, Signal
         from trade_krono_cli.ta_decision import InvestmentDecision
+        from trade_krono_cli.unified_decision import Signal, build_unified_decision
+
         ta = InvestmentDecision(signal=Signal.BUY, confidence=80.0)
         dec = build_unified_decision(
-            ticker="sh.600519", eval_date="2024-06-30",
+            ticker="sh.600519",
+            eval_date="2024-06-30",
             ta_decision=ta,
-            kronos_direction="UP", kronos_expected_return=3.0,
-            committee_rec=Signal.BUY, committee_confidence=75.0,
-            distribution={"p10": 1700, "p25": 1750, "p50": 1800,
-                          "p75": 1850, "p90": 1900, "predicted_close_final": 1800},
+            kronos_direction="UP",
+            kronos_expected_return=3.0,
+            committee_rec=Signal.BUY,
+            committee_confidence=75.0,
+            distribution={
+                "p10": 1700,
+                "p25": 1750,
+                "p50": 1800,
+                "p75": 1850,
+                "p90": 1900,
+                "predicted_close_final": 1800,
+            },
         )
         assert dec.conflict == "none"
         assert dec.final_signal.value == "BUY"
 
     def test_roundtrip_serialization(self):
         from trade_krono_cli.unified_decision import build_unified_decision
+
         dec = build_unified_decision(
-            ticker="sh.600519", eval_date="2024-06-30",
-            kronos_direction="UP", kronos_expected_return=2.5,
-            distribution={"p10": 1700, "p25": 1750, "p50": 1800,
-                          "p75": 1850, "p90": 1900, "predicted_close_final": 1800},
+            ticker="sh.600519",
+            eval_date="2024-06-30",
+            kronos_direction="UP",
+            kronos_expected_return=2.5,
+            distribution={
+                "p10": 1700,
+                "p25": 1750,
+                "p50": 1800,
+                "p75": 1850,
+                "p90": 1900,
+                "predicted_close_final": 1800,
+            },
         )
         d = dec.to_dict()
         restored = type(dec).from_dict(d)
@@ -145,22 +200,40 @@ class TestUnifiedInvestmentDecision:
 
     def test_compute_expected_value_negative(self):
         from trade_krono_cli.unified_decision import build_unified_decision
+
         dec = build_unified_decision(
-            ticker="sh.600519", eval_date="2024-06-30",
-            kronos_direction="DOWN", kronos_expected_return=-4.0,
-            distribution={"p10": 1600, "p25": 1700, "p50": 1750,
-                          "p75": 1800, "p90": 1850, "predicted_close_final": 1800},
+            ticker="sh.600519",
+            eval_date="2024-06-30",
+            kronos_direction="DOWN",
+            kronos_expected_return=-4.0,
+            distribution={
+                "p10": 1600,
+                "p25": 1700,
+                "p50": 1750,
+                "p75": 1800,
+                "p90": 1850,
+                "predicted_close_final": 1800,
+            },
         )
         assert dec.expected_value is not None
         assert dec.expected_value < 0  # negative EV
 
     def test_to_ta_decision_compat(self):
         from trade_krono_cli.unified_decision import build_unified_decision
+
         dec = build_unified_decision(
-            ticker="sh.600519", eval_date="2024-06-30",
-            kronos_direction="UP", kronos_expected_return=2.0,
-            distribution={"p10": 1700, "p25": 1750, "p50": 1800,
-                          "p75": 1850, "p90": 1900, "predicted_close_final": 1800},
+            ticker="sh.600519",
+            eval_date="2024-06-30",
+            kronos_direction="UP",
+            kronos_expected_return=2.0,
+            distribution={
+                "p10": 1700,
+                "p25": 1750,
+                "p50": 1800,
+                "p75": 1850,
+                "p90": 1900,
+                "predicted_close_final": 1800,
+            },
         )
         old = dec.to_ta_decision()
         assert old.signal.value == "BUY"
@@ -171,13 +244,21 @@ class TestUnifiedInvestmentDecision:
 #  WalkForwardEngine
 # ═══════════════════════════════════════════════════════
 
+
 class TestWalkForwardEngine:
     def test_quick_run_basic(self):
         from trade_krono_cli.eval_walkforward import run_walk_forward_quick
 
         def predict(ticker, date):
-            return {"direction": "UP", "expected_change_pct": 2.0,
-                    "p10": 100, "p25": 102, "p50": 104, "p75": 106, "p90": 108}
+            return {
+                "direction": "UP",
+                "expected_change_pct": 2.0,
+                "p10": 100,
+                "p25": 102,
+                "p50": 104,
+                "p75": 106,
+                "p90": 108,
+            }
 
         def fetch_actual(ticker, date, horizon):
             return 1.5 if horizon == 5 else 2.0
@@ -221,6 +302,7 @@ class TestWalkForwardEngine:
 
     def test_empty_eval_dates(self):
         from trade_krono_cli.eval_walkforward import run_walk_forward_quick
+
         result = run_walk_forward_quick(
             "sh.600519",
             eval_dates=[],
@@ -250,14 +332,18 @@ class TestWalkForwardEngine:
 #  ExperimentRegistry
 # ═══════════════════════════════════════════════════════
 
+
 class TestExperimentRegistry:
     def test_register_and_evaluate_pass(self):
         from trade_krono_cli.experiment_registry import (
-            ExperimentRegistry, Hypothesis, register_alpha_experiment,
+            ExperimentRegistry,
+            register_alpha_experiment,
         )
+
         reg = ExperimentRegistry()
         exp = register_alpha_experiment(
-            reg, "exp_001",
+            reg,
+            "exp_001",
             "Win rate > 55%",
             prediction_threshold=55.0,
         )
@@ -268,11 +354,14 @@ class TestExperimentRegistry:
 
     def test_evaluate_fail(self):
         from trade_krono_cli.experiment_registry import (
-            ExperimentRegistry, register_alpha_experiment,
+            ExperimentRegistry,
+            register_alpha_experiment,
         )
+
         reg = ExperimentRegistry()
         register_alpha_experiment(
-            reg, "exp_002",
+            reg,
+            "exp_002",
             "Sharpe > 2.0",
             prediction_metric="sharpe",
             prediction_threshold=2.0,
@@ -282,8 +371,10 @@ class TestExperimentRegistry:
 
     def test_compare_multiple_experiments(self):
         from trade_krono_cli.experiment_registry import (
-            ExperimentRegistry, register_alpha_experiment,
+            ExperimentRegistry,
+            register_alpha_experiment,
         )
+
         reg = ExperimentRegistry()
         register_alpha_experiment(reg, "a", "H1", prediction_threshold=50.0)
         register_alpha_experiment(reg, "b", "H2", prediction_threshold=60.0)
@@ -295,8 +386,10 @@ class TestExperimentRegistry:
 
     def test_save_and_load(self, tmp_path):
         from trade_krono_cli.experiment_registry import (
-            ExperimentRegistry, register_alpha_experiment,
+            ExperimentRegistry,
+            register_alpha_experiment,
         )
+
         reg = ExperimentRegistry()
         register_alpha_experiment(reg, "exp_x", "test hyp")
         reg.set_result("exp_x", {"win_rate": 70.0})
@@ -309,8 +402,11 @@ class TestExperimentRegistry:
 
     def test_list_filter_by_type(self):
         from trade_krono_cli.experiment_registry import (
-            ExperimentRegistry, ExperimentType, Hypothesis,
+            ExperimentRegistry,
+            ExperimentType,
+            Hypothesis,
         )
+
         reg = ExperimentRegistry()
         reg.register("e1", Hypothesis("h1", "p1", "f1"), ExperimentType.ALPHA)
         reg.register("e2", Hypothesis("h2", "p2", "f2"), ExperimentType.MODEL)
@@ -323,6 +419,7 @@ class TestExperimentRegistry:
 
     def test_hypothesis_check_edge_cases(self):
         from trade_krono_cli.experiment_registry import Hypothesis
+
         hyp = Hypothesis("h", "p", "f", metric="x", threshold=10.0, direction="<")
         passed, _ = hyp.check(5.0)
         assert passed is True
@@ -331,6 +428,7 @@ class TestExperimentRegistry:
 
     def test_evaluate_missing_metric(self):
         from trade_krono_cli.experiment_registry import ExperimentRegistry, Hypothesis
+
         reg = ExperimentRegistry()
         reg.register("e1", Hypothesis("h", "p", "f", metric="win_rate", threshold=50.0))
         passed, expl = reg.set_result("e1", {"sharpe": 1.5})  # missing win_rate
@@ -342,24 +440,34 @@ class TestExperimentRegistry:
 #  Integration: WalkForward → ExperimentRegistry
 # ═══════════════════════════════════════════════════════
 
+
 class TestWalkForwardExperimentIntegration:
     def test_end_to_end(self):
         """WalkForward 结果自动填入 Experiment 假设验证。"""
         from trade_krono_cli.eval_walkforward import run_walk_forward_quick
         from trade_krono_cli.experiment_registry import (
-            ExperimentRegistry, register_alpha_experiment,
+            ExperimentRegistry,
+            register_alpha_experiment,
         )
 
         reg = ExperimentRegistry()
         register_alpha_experiment(
-            reg, "wf_exp_001",
+            reg,
+            "wf_exp_001",
             "Kronos UP 信号在 2024 Q2 的胜率 > 50%",
             prediction_threshold=50.0,
         )
 
         def predict(ticker, date):
-            return {"direction": "UP", "expected_change_pct": 2.0,
-                    "p10": 100, "p25": 102, "p50": 104, "p75": 106, "p90": 108}
+            return {
+                "direction": "UP",
+                "expected_change_pct": 2.0,
+                "p10": 100,
+                "p25": 102,
+                "p50": 104,
+                "p75": 106,
+                "p90": 108,
+            }
 
         def fetch_actual(ticker, date, horizon):
             return 1.5
@@ -373,11 +481,14 @@ class TestWalkForwardExperimentIntegration:
         )
         # 将 walk-forward 结果关联到实验
         reg.add_run("wf_exp_001", result.run_id)
-        reg.set_result("wf_exp_001", {
-            "win_rate": result.win_rate,
-            "sharpe": result.sharpe_annual,
-            "avg_return": result.avg_return,
-        })
+        reg.set_result(
+            "wf_exp_001",
+            {
+                "win_rate": result.win_rate,
+                "sharpe": result.sharpe_annual,
+                "avg_return": result.avg_return,
+            },
+        )
         exp = reg.get("wf_exp_001")
         assert exp is not None
         assert exp.passed is True

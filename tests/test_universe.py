@@ -1,6 +1,7 @@
 """
 Tests for universe engine — multi-stage A-share universe discovery.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -8,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from trade_krono_cli.configs.filters import FilterConfig
-from trade_krono_cli.stock_filter import MinValueRule, MaxValueRule
+from trade_krono_cli.stock_filter import MaxValueRule, MinValueRule
 from trade_krono_cli.universe.engine import UniverseEngine, get_universe
 from trade_krono_cli.universe.provider import (
     AkshareUniverseProvider,
@@ -21,10 +22,10 @@ from trade_krono_cli.universe.stages.fundamental import FundamentalFilterStage
 from trade_krono_cli.universe.stages.rules import FilterRulesStage
 from trade_krono_cli.universe.stages.static import StaticFilterStage
 
-
 # ═══════════════════════════════════════════════════════
 # Provider tests
 # ═══════════════════════════════════════════════════════
+
 
 class TestUniverseTicket:
     def test_basic(self):
@@ -96,6 +97,7 @@ class TestAkshareUniverseProvider:
     def test_get_universe_import_error(self):
         """akshare 未安装时返回空列表。"""
         import sys
+
         with pytest.MonkeyPatch().context() as mp:
             mp.delitem(sys.modules, "akshare", raising=False)
             p = AkshareUniverseProvider()
@@ -106,6 +108,7 @@ class TestAkshareUniverseProvider:
         """akshare 抛出异常时返回空列表。"""
         import sys
         import types
+
         fake_ak = types.ModuleType("akshare")
         fake_ak.stock_zh_a_spot_em = lambda: (_ for _ in []).throw(RuntimeError("timeout"))
         with pytest.MonkeyPatch().context() as mp:
@@ -132,6 +135,7 @@ class TestGetUniverseProvider:
 # ═══════════════════════════════════════════════════════
 # Stage tests
 # ═══════════════════════════════════════════════════════
+
 
 def _make_tickets(n: int = 10, **kwargs) -> list[UniverseTicket]:
     return [
@@ -172,12 +176,13 @@ class TestStaticFilterStage:
             UniverseTicket(ticker="sh.600004", price=None),  # None 不拦截
         ]
         stage = StaticFilterStage(
-            exclude_st=False, skip_suspended=False, skip_new_stock=False,
-            exclude_low_price=True, low_price_threshold=3.0,
+            exclude_st=False,
+            skip_suspended=False,
+            skip_new_stock=False,
+            exclude_low_price=True,
+            low_price_threshold=3.0,
         )
-        with patch(
-            "trade_krono_cli.universe.stages.static.precheck_stock_status"
-        ) as mock_precheck:
+        with patch("trade_krono_cli.universe.stages.static.precheck_stock_status") as mock_precheck:
             mock_precheck.side_effect = Exception("mock error")
             result = stage.filter(tickets)
         # precheck fails, but low-price filter still applies
@@ -192,12 +197,12 @@ class TestStaticFilterStage:
             UniverseTicket(ticker="sh.600002", price=50.0),
         ]
         stage = StaticFilterStage(
-            exclude_st=False, skip_suspended=False, skip_new_stock=False,
+            exclude_st=False,
+            skip_suspended=False,
+            skip_new_stock=False,
             exclude_low_price=False,
         )
-        with patch(
-            "trade_krono_cli.universe.stages.static.precheck_stock_status"
-        ) as mock_precheck:
+        with patch("trade_krono_cli.universe.stages.static.precheck_stock_status") as mock_precheck:
             mock_precheck.return_value = {}
             result = stage.filter(tickets)
         assert len(result) == 2
@@ -326,6 +331,7 @@ class TestFactorFilterStage:
 # Engine tests
 # ═══════════════════════════════════════════════════════
 
+
 class TestUniverseEngine:
     def test_from_config(self):
         fc = FilterConfig(universe_source="akshare")
@@ -348,7 +354,7 @@ class TestUniverseEngine:
             cache_dir=MagicMock(),
         )
         # Disable cache by mocking path methods
-        with patch.object(engine, '_cache_dir'):
+        with patch.object(engine, "_cache_dir"):
             engine._cache_dir.exists = lambda: False
             engine._cache_dir.mkdir = lambda **kw: None
             tickers = engine.run(eval_date="2026-08-13")
@@ -365,7 +371,7 @@ class TestUniverseEngine:
             stages=[],
             cache_dir=MagicMock(),
         )
-        with patch.object(engine, '_cache_dir'):
+        with patch.object(engine, "_cache_dir"):
             engine._cache_dir.exists = lambda: False
             engine._cache_dir.mkdir = lambda **kw: None
             tickers = engine.run()
@@ -384,6 +390,7 @@ class TestUniverseEngine:
     def test_stage_summary_with_rules(self):
         """含 filter_rules 时 stages 包含 rules。"""
         from trade_krono_cli.stock_filter import MinValueRule
+
         fc = FilterConfig(
             universe_source="akshare",
             filter_rules=[MinValueRule("price", 3.0)],
@@ -424,9 +431,7 @@ class TestGetUniverse:
         mock_provider.name = "mock"
         mock_provider.get_universe.return_value = _make_tickets(3)
 
-        with patch(
-            "trade_krono_cli.universe.engine.get_universe_provider"
-        ) as mock_factory:
+        with patch("trade_krono_cli.universe.engine.get_universe_provider") as mock_factory:
             mock_factory.return_value = mock_provider
             fc = FilterConfig(universe_source="mock")
             tickers = get_universe(fc, universe_source="mock", eval_date="2026-08-13")

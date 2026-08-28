@@ -4,25 +4,29 @@ Factory — 领域对象的工厂函数。
 提供从原始数据/旧对象构建领域对象的标准接口。
 Pipeline 应通过工厂函数创建领域对象，而非直接构造。
 """
+
 from __future__ import annotations
 
 from typing import Optional
 
-from trade_krono_cli.domain import Direction, Signal
+from trade_krono_cli.domain import Signal
+from trade_krono_cli.domain.decision import InvestmentDecision
+from trade_krono_cli.domain.evaluation import EvalRecord
 from trade_krono_cli.domain.prediction import (
-    TAAnalysis, KronosPrediction, PredictionDistribution,
-)
-from trade_krono_cli.domain.signal import (
-    SignalAssessment, SignalConflict, _compute_ev, detect_conflict,
+    KronosPrediction,
+    TAAnalysis,
 )
 from trade_krono_cli.domain.risk import RiskAssessment
-from trade_krono_cli.domain.decision import InvestmentDecision
-from trade_krono_cli.domain.evaluation import EvalRecord, EvaluationSummary, HorizonMetrics
-
+from trade_krono_cli.domain.signal import (
+    SignalAssessment,
+    _compute_ev,
+    detect_conflict,
+)
 
 # ═══════════════════════════════════════════════════════
 #  build_signal_assessment
 # ═══════════════════════════════════════════════════════
+
 
 def build_signal_assessment(
     ticker: str,
@@ -112,6 +116,7 @@ def build_signal_assessment(
 #  build_investment_decision
 # ═══════════════════════════════════════════════════════
 
+
 def build_investment_decision(
     ticker: str,
     eval_date: str,
@@ -163,6 +168,7 @@ def build_investment_decision(
 #  build_eval_record
 # ═══════════════════════════════════════════════════════
 
+
 def build_eval_record(
     ticker: str,
     eval_date: str,
@@ -185,7 +191,9 @@ def build_eval_record(
     """从预测和实际结果构建 EvalRecord。"""
     # 向后兼容：composite_score → ranking_score
     rs = ranking_score if ranking_score is not None else composite_score
-    actual_direction = "UP" if actual_return_pct > 1.0 else ("DOWN" if actual_return_pct < -1.0 else "FLAT")
+    actual_direction = (
+        "UP" if actual_return_pct > 1.0 else ("DOWN" if actual_return_pct < -1.0 else "FLAT")
+    )
     is_correct = (pred_direction == actual_direction) if pred_direction else False
     return EvalRecord(
         ticker=ticker,
@@ -197,7 +205,11 @@ def build_eval_record(
         actual_direction=actual_direction,
         is_direction_correct=is_correct,
         error_pct=round((pred_return_pct or 0) - actual_return_pct, 4),
-        p10=p10, p25=p25, p50=p50, p75=p75, p90=p90,
+        p10=p10,
+        p25=p25,
+        p50=p50,
+        p75=p75,
+        p90=p90,
         ta_signal=ta_signal,
         ranking_score=rs,
         expected_value=expected_value,
@@ -209,6 +221,7 @@ def build_eval_record(
 # ═══════════════════════════════════════════════════════
 #  内部辅助
 # ═══════════════════════════════════════════════════════
+
 
 def _majority_vote(
     votes: list[tuple[Signal, float, str]],
@@ -231,7 +244,9 @@ def _majority_vote(
     majority_count = sig_counts[final]
 
     total_weight = sum(w for _, w, _ in votes)
-    weighted_conf = sum(w for s, w, _ in votes if s == final) / total_weight * 100 if total_weight else 50
+    weighted_conf = (
+        sum(w for s, w, _ in votes if s == final) / total_weight * 100 if total_weight else 50
+    )
     dissent_penalty = (3 - majority_count) * 10
     confidence = round(max(0, min(100, weighted_conf - dissent_penalty)), 1)
 

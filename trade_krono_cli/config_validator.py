@@ -4,6 +4,7 @@
 validate_settings() 返回错误列表；空列表表示配置合法。
 可在 repo doctor / run 命令入口调用，提前终止非法配置。
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -45,13 +46,9 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
 
     # ── 范围约束 ────────────────────────────────────────────────────────────
     if not (0 <= s.default_min_confidence <= 100):
-        errors.append(
-            f"default_min_confidence={s.default_min_confidence} 必须在 [0, 100] 范围内"
-        )
+        errors.append(f"default_min_confidence={s.default_min_confidence} 必须在 [0, 100] 范围内")
     if not (0 < s.kronos_top_p <= 1.0):
-        errors.append(
-            f"kronos_top_p={s.kronos_top_p} 必须在 (0, 1.0] 范围内"
-        )
+        errors.append(f"kronos_top_p={s.kronos_top_p} 必须在 (0, 1.0] 范围内")
 
     # ── 非空字符串约束 ──────────────────────────────────────────────────────
     if not s.llm_provider or not s.llm_provider.strip():
@@ -71,21 +68,15 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
         parts = [p.strip() for p in s.filter_market_cap_range.split(",") if p.strip()]
         if len(parts) != 2:
             errors.append(
-                f"FILTER_MARKET_CAP_RANGE={s.filter_market_cap_range} "
-                f"格式应为 \"low,high\""
+                f'FILTER_MARKET_CAP_RANGE={s.filter_market_cap_range} 格式应为 "low,high"'
             )
         else:
             try:
                 lo, hi = float(parts[0]), float(parts[1])
                 if lo >= hi:
-                    errors.append(
-                        f"FILTER_MARKET_CAP_RANGE 下限({lo})必须小于上限({hi})"
-                    )
+                    errors.append(f"FILTER_MARKET_CAP_RANGE 下限({lo})必须小于上限({hi})")
             except ValueError:
-                errors.append(
-                    f"FILTER_MARKET_CAP_RANGE={s.filter_market_cap_range} "
-                    f"包含非法数值"
-                )
+                errors.append(f"FILTER_MARKET_CAP_RANGE={s.filter_market_cap_range} 包含非法数值")
 
     # pe_range / pb_range: same format
     for name, val in [
@@ -95,14 +86,12 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
         if val:
             parts = [p.strip() for p in val.split(",") if p.strip()]
             if len(parts) != 2:
-                errors.append(f"{name}={val} 格式应为 \"low,high\"")
+                errors.append(f'{name}={val} 格式应为 "low,high"')
             else:
                 try:
                     lo, hi = float(parts[0]), float(parts[1])
                     if lo >= hi:
-                        errors.append(
-                            f"{name} 下限({lo})必须小于上限({hi})"
-                        )
+                        errors.append(f"{name} 下限({lo})必须小于上限({hi})")
                 except ValueError:
                     errors.append(f"{name}={val} 包含非法数值")
 
@@ -111,9 +100,7 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
         try:
             v = float(s.filter_max_risk_score)
             if not (0 <= v <= 1):
-                errors.append(
-                    f"FILTER_MAX_RISK_SCORE={v} 必须在 [0, 1] 范围内"
-                )
+                errors.append(f"FILTER_MAX_RISK_SCORE={v} 必须在 [0, 1] 范围内")
         except ValueError:
             errors.append(f"FILTER_MAX_RISK_SCORE={s.filter_max_risk_score} 不是合法数值")
 
@@ -122,23 +109,17 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
         try:
             v = float(s.filter_min_volume_ratio)
             if v <= 0:
-                errors.append(
-                    f"FILTER_MIN_VOLUME_RATIO={v} 必须 > 0"
-                )
+                errors.append(f"FILTER_MIN_VOLUME_RATIO={v} 必须 > 0")
         except ValueError:
             errors.append(f"FILTER_MIN_VOLUME_RATIO={s.filter_min_volume_ratio} 不是合法数值")
 
     # ── 异常股票配置校验 ────────────────────────────────────────
     if s.filter_new_stock_min_days < 5:
-        errors.append(
-            f"FILTER_NEW_STOCK_MIN_DAYS={s.filter_new_stock_min_days} 必须 >= 5"
-        )
+        errors.append(f"FILTER_NEW_STOCK_MIN_DAYS={s.filter_new_stock_min_days} 必须 >= 5")
 
     kc = s.filter_kline_min_completeness
     if not (0 < kc <= 1.0):
-        errors.append(
-            f"FILTER_KLINE_MIN_COMPLETENESS={kc} 必须在 (0, 1.0] 范围内"
-        )
+        errors.append(f"FILTER_KLINE_MIN_COMPLETENESS={kc} 必须在 (0, 1.0] 范围内")
 
     # ── 评分策略配置校验 ─────────────────────────────────────────────
     valid_scorers = {"linear", "multiplicative", "rank_based"}
@@ -156,9 +137,7 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
         )
 
     if not (0 < s.risk_boost_multiplier <= 5.0):
-        errors.append(
-            f"RISK_BOOST_MULTIPLIER={s.risk_boost_multiplier} 必须在 (0, 5.0] 范围内"
-        )
+        errors.append(f"RISK_BOOST_MULTIPLIER={s.risk_boost_multiplier} 必须在 (0, 5.0] 范围内")
 
     if not (0 < s.risk_boost_diminishing_power <= 1.0):
         errors.append(
@@ -182,28 +161,21 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
                 )
         # 不能包含主源自身
         if primary in [f.lower() for f in fallbacks]:
-            errors.append(
-                f"DATA_FALLBACK 不能包含主数据源 '{primary}'"
-            )
+            errors.append(f"DATA_FALLBACK 不能包含主数据源 '{primary}'")
 
     # ── 外部依赖目录（警告级，不影响核心流程）────────────────────────────────
     if s.tradingagents_root and not s.tradingagents_root.is_dir():
-        warnings.append(
-            f"TradingAgents 目录不存在: {s.tradingagents_root}"
-        )
+        warnings.append(f"TradingAgents 目录不存在: {s.tradingagents_root}")
     if s.kronos_root and not s.kronos_root.is_dir():
-        warnings.append(
-            f"Kronos 目录不存在: {s.kronos_root}"
-        )
+        warnings.append(f"Kronos 目录不存在: {s.kronos_root}")
 
     # ── LLM API Key 可用性（警告级）──────────────────────────────────────────
     if s.llm_provider:
         import os
+
         env_key = _PROVIDER_ENV_KEY.get(s.llm_provider.strip().lower())
         if env_key and not os.getenv(env_key):
-            warnings.append(
-                f"provider={s.llm_provider} 对应的环境变量 {env_key} 未设置"
-            )
+            warnings.append(f"provider={s.llm_provider} 对应的环境变量 {env_key} 未设置")
 
     # ── 重试策略校验 ───────────────────────────────────────────────────────
     errors.extend(_validate_retry_policy(s))
@@ -227,6 +199,7 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
         )
 
     all_messages = [f"❌ {e}" for e in errors] + [f"⚠️  {w}" for w in warnings]
+    del all_messages  # 保留构建逻辑，实际由调用方格式化输出
     return errors, warnings
 
 
@@ -251,16 +224,14 @@ def _validate_retry_policy(s: "Settings") -> list[str]:
 # ── 内部：provider → 环境变量名映射（复用 security.py 的约定）────────────────
 _PROVIDER_ENV_KEY = {
     "deepseek": "DEEPSEEK_API_KEY",
-    "openai":   "OPENAI_API_KEY",
-    "anthropic":"ANTHROPIC_API_KEY",
-    "minimax":  "MINIMAX_API_KEY",
-    "agnes":    "AGNES_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "minimax": "MINIMAX_API_KEY",
+    "agnes": "AGNES_API_KEY",
 }
 
 
-def print_validation_report(
-    errors: list[str], warnings: list[str]
-) -> bool:
+def print_validation_report(errors: list[str], warnings: list[str]) -> bool:
     """
     打印校验报告到控制台，返回是否通过（无错误 = True）。
 

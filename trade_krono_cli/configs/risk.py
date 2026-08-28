@@ -1,15 +1,16 @@
 """风险引擎配置。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
-
 
 # ── RiskWeights ───────────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class RiskWeights:
     """各风险维度的加权占比，总和应为 1.0。"""
+
     volatility: float = 0.25
     drawdown: float = 0.20
     liquidity: float = 0.15
@@ -24,9 +25,7 @@ class RiskWeights:
         errors: list[str] = []
         total = sum(self.__dict__.values())
         if not (0.99 <= total <= 1.01):
-            errors.append(
-                f"风险维度权重之和应为 ~1.0，当前={total:.3f}"
-            )
+            errors.append(f"风险维度权重之和应为 ~1.0，当前={total:.3f}")
         for name, w in self.__dict__.items():
             if w < 0:
                 errors.append(f"风险权重 {name}={w} 不能为负")
@@ -40,9 +39,11 @@ class RiskWeights:
 
 # ── Threshold types ───────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class VolatilityThresholds:
     """波动率 → 风险分 分段映射。"""
+
     low_pct: float = 0.0
     high_pct: float = 60.0
     insufficient_data_score: float = 25.0
@@ -52,6 +53,7 @@ class VolatilityThresholds:
 @dataclass(frozen=True)
 class DrawdownThresholds:
     """最大回撤 → 风险分 分段映射。"""
+
     breakpoints: list[tuple[float, float]] = field(
         default_factory=lambda: [(5.0, 20.0), (20.0, 60.0), (40.0, 100.0)]
     )
@@ -61,9 +63,7 @@ class DrawdownThresholds:
     def validate(self) -> list[str]:
         errors: list[str] = []
         if len(self.breakpoints) != 3:
-            errors.append(
-                f"drawdown breakpoints 应为 3 个点，当前={len(self.breakpoints)}"
-            )
+            errors.append(f"drawdown breakpoints 应为 3 个点，当前={len(self.breakpoints)}")
         else:
             if self.breakpoints[0][0] >= self.breakpoints[1][0]:
                 errors.append("drawdown breakpoints 左端点须递增")
@@ -79,6 +79,7 @@ class DrawdownThresholds:
 @dataclass(frozen=True)
 class LiquidityThresholds:
     """成交量 → 风险分 分段映射（log 空间）。"""
+
     breakpoints: list[tuple[float, float]] = field(
         default_factory=lambda: [
             (5.0, 80.0),
@@ -95,6 +96,7 @@ class LiquidityThresholds:
 @dataclass(frozen=True)
 class MarketRegimeThresholds:
     """动量 → 风险分 分段映射。"""
+
     bear_threshold: float = -10.0
     neutral_low: float = 0.0
     neutral_high: float = 10.0
@@ -107,16 +109,14 @@ class MarketRegimeThresholds:
     def validate(self) -> list[str]:
         errors: list[str] = []
         if not (self.bear_threshold < self.neutral_low < self.neutral_high):
-            errors.append(
-                "market_regime 阈值须满足: "
-                "bear_threshold < neutral_low < neutral_high"
-            )
+            errors.append("market_regime 阈值须满足: bear_threshold < neutral_low < neutral_high")
         return errors
 
 
 @dataclass(frozen=True)
 class GapRiskThresholds:
     """缺口风险阈值。"""
+
     min_gap_pct: float = 3.0
     insufficient_data_min_rows: int = 30
     insufficient_data_score: float = 50.0
@@ -125,6 +125,7 @@ class GapRiskThresholds:
 @dataclass(frozen=True)
 class EventRiskThresholds:
     """事件风险阈值。"""
+
     short_window: int = 10
     long_window: int = 60
     insufficient_data_min_rows: int = 60
@@ -134,6 +135,7 @@ class EventRiskThresholds:
 @dataclass(frozen=True)
 class ValuationRiskThresholds:
     """估值风险阈值。"""
+
     pe_high: float = 100.0
     pe_low: float = 10.0
     pb_high: float = 5.0
@@ -143,21 +145,19 @@ class ValuationRiskThresholds:
 
 # ── RiskConfig ────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class RiskConfig:
     """风险引擎全量配置。"""
+
     weights: RiskWeights = field(default_factory=RiskWeights)
     volatility: VolatilityThresholds = field(default_factory=VolatilityThresholds)
     drawdown: DrawdownThresholds = field(default_factory=DrawdownThresholds)
     liquidity: LiquidityThresholds = field(default_factory=LiquidityThresholds)
-    market_regime: MarketRegimeThresholds = field(
-        default_factory=MarketRegimeThresholds
-    )
+    market_regime: MarketRegimeThresholds = field(default_factory=MarketRegimeThresholds)
     gap_risk: GapRiskThresholds = field(default_factory=GapRiskThresholds)
     event_risk: EventRiskThresholds = field(default_factory=EventRiskThresholds)
-    valuation_risk: ValuationRiskThresholds = field(
-        default_factory=ValuationRiskThresholds
-    )
+    valuation_risk: ValuationRiskThresholds = field(default_factory=ValuationRiskThresholds)
     beta_default: float = 1.0
     var_confidence: float = 0.95
     var_lookback: int = 60
@@ -172,9 +172,7 @@ class RiskConfig:
         errors.extend(self.drawdown.validate())
         errors.extend(self.market_regime.validate())
         if not (0.0 <= self.var_confidence < 1.0):
-            errors.append(
-                f"var_confidence={self.var_confidence} 须在 (0, 1) 范围内"
-            )
+            errors.append(f"var_confidence={self.var_confidence} 须在 (0, 1) 范围内")
         for name, val in [
             ("commission_bps", self.commission_bps),
             ("slippage_bps", self.slippage_bps),

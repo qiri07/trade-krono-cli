@@ -5,23 +5,22 @@
 通过 DataProviderFactory 自动降级。
 保留原有 baostock 直调接口作为兼容层。
 """
+
 from __future__ import annotations
 
-import time
 import threading
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
-from io import BytesIO
 from typing import Optional
 
 import pandas as pd
-
 from loguru import logger
-from trade_krono_cli.config import get_settings, Settings
-from trade_krono_cli.security import TokenBucket, validate_ticker, validate_date, retry
+
 from trade_krono_cli.cache import get_cache
+from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.data_providers import get_data_factory
+from trade_krono_cli.security import TokenBucket, retry, validate_date, validate_ticker
 
 # baostock 惰性导入
 _bs = None
@@ -65,12 +64,11 @@ def _ensure_bs_import() -> None:
         return
     try:
         import baostock as _bs_mod  # type: ignore
+
         _bs = _bs_mod
         _HAS_BS = True
     except ImportError:
-        raise RuntimeError(
-            "baostock 未安装，无法拉取 K 线。请运行: pip install baostock"
-        )
+        raise RuntimeError("baostock 未安装，无法拉取 K 线。请运行: pip install baostock")
 
 
 def _ensure_bs_login() -> None:
@@ -93,6 +91,7 @@ def _ensure_bs_login() -> None:
 # ═══════════════════════════════════════════════════════
 # 核心：拉取 K 线
 # ═══════════════════════════════════════════════════════
+
 
 @retry(max_attempts=3, base_delay=2.0, exceptions=(RuntimeError, ConnectionError))
 def fetch_kline(
@@ -118,6 +117,7 @@ def fetch_kline(
     end_date = validate_date(end_date)
 
     from trade_krono_cli.cache import get_cache
+
     cache = get_cache()
     if use_cache:
         cached = cache.get_kline(ticker, start_date, end_date, frequency)
@@ -132,15 +132,22 @@ def fetch_kline(
         if kline_data is not None and not kline_data.is_empty:
             out = kline_data.to_dataframe()
             # 写缓存
-            from trade_krono_cli.cache import (
-                _KLINE_RECENT_TTL, _KLINE_HISTORY_WINDOW_DAYS,
-            )
             from datetime import timedelta
+
+            from trade_krono_cli.cache import (
+                _KLINE_HISTORY_WINDOW_DAYS,
+                _KLINE_RECENT_TTL,
+            )
+
             end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            recent_cutoff = (end_dt - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime("%Y-%m-%d")
+            recent_cutoff = (end_dt - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime(
+                "%Y-%m-%d"
+            )
             ttl = _KLINE_RECENT_TTL if start_date >= recent_cutoff else 0.0
             cache.set_kline(ticker, start_date, end_date, frequency, out, ttl=ttl)
-            logger.debug(f"✅ K 线就绪（via {kline_data.source if hasattr(kline_data, 'source') else 'factory'}）: {ticker} 共 {len(out)} 行")
+            logger.debug(
+                f"✅ K 线就绪（via {kline_data.source if hasattr(kline_data, 'source') else 'factory'}）: {ticker} 共 {len(out)} 行"
+            )
             return out
     except Exception as e:
         logger.warning(f"Factory K 线拉取失败 {ticker}: {str(e)[:150]}，回退 baostock 直调")
@@ -152,7 +159,9 @@ def fetch_kline(
 
     bs_code = ticker
 
-    logger.debug(f"📥 拉取 K 线（baostock 直调）: {bs_code} {start_date}~{end_date} freq={frequency}")
+    logger.debug(
+        f"📥 拉取 K 线（baostock 直调）: {bs_code} {start_date}~{end_date} freq={frequency}"
+    )
 
     rs = _bs.query_history_k_data_plus(  # type: ignore
         bs_code,
@@ -176,21 +185,26 @@ def fetch_kline(
     df = pd.DataFrame(rows, columns=rs.fields)
     df = df.dropna(subset=["close"])
 
-    out = pd.DataFrame({
-        "timestamps": pd.to_datetime(df["date"]),
-        "open":   df["open"].astype(float),
-        "high":   df["high"].astype(float),
-        "low":    df["low"].astype(float),
-        "close":  df["close"].astype(float),
-        "volume": df["volume"].astype(float),
-        "amount": df["amount"].astype(float),
-    }).reset_index(drop=True)
+    out = pd.DataFrame(
+        {
+            "timestamps": pd.to_datetime(df["date"]),
+            "open": df["open"].astype(float),
+            "high": df["high"].astype(float),
+            "low": df["low"].astype(float),
+            "close": df["close"].astype(float),
+            "volume": df["volume"].astype(float),
+            "amount": df["amount"].astype(float),
+        }
+    ).reset_index(drop=True)
 
     # 写缓存：历史数据（>30天前）永久缓存，近期数据 1h TTL
-    from trade_krono_cli.cache import (
-        _KLINE_RECENT_TTL, _KLINE_HISTORY_WINDOW_DAYS,
-    )
     from datetime import timedelta
+
+    from trade_krono_cli.cache import (
+        _KLINE_HISTORY_WINDOW_DAYS,
+        _KLINE_RECENT_TTL,
+    )
+
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
     recent_cutoff = (end_dt - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime("%Y-%m-%d")
     ttl = _KLINE_RECENT_TTL if start_date >= recent_cutoff else 0.0
@@ -225,8 +239,12 @@ def fetch_lookback(
     start_s = start.strftime("%Y-%m-%d")
 
     df = fetch_kline_incremental(
-        ticker, start_s, end_date,
-        frequency=frequency, adjustflag=adjustflag, use_cache=use_cache,
+        ticker,
+        start_s,
+        end_date,
+        frequency=frequency,
+        adjustflag=adjustflag,
+        use_cache=use_cache,
     )
     if len(df) < lookback:
         raise RuntimeError(
@@ -271,20 +289,19 @@ def fetch_kline_incremental(
 
     if cached_range is not None:
         cached_start, cached_end = cached_range
-        logger.debug(
-            f"📦 {ticker} 缓存覆盖: {cached_start} ~ {cached_end}"
-        )
+        logger.debug(f"📦 {ticker} 缓存覆盖: {cached_start} ~ {cached_end}")
 
         # ── 情况 1：缓存已完整覆盖请求范围，无需重新拉取 ──────────────
         if cached_start <= start_date and cached_end >= end_date:
             df = fetch_kline(
-                ticker, start_date, end_date,
-                frequency=frequency, adjustflag=adjustflag, use_cache=True,
+                ticker,
+                start_date,
+                end_date,
+                frequency=frequency,
+                adjustflag=adjustflag,
+                use_cache=True,
             )
-            logger.info(
-                f"✅ {ticker} 增量拉取: 缓存已完整覆盖，跳过网络请求 "
-                f"({len(df)} 行)"
-            )
+            logger.info(f"✅ {ticker} 增量拉取: 缓存已完整覆盖，跳过网络请求 ({len(df)} 行)")
             return df
 
         # ── 情况 2：缓存有重叠，需补拉缺失区间 ────────────────────────
@@ -295,8 +312,7 @@ def fetch_kline_incremental(
         if cached_end < start_date:
             fetch_start = start_date
             logger.info(
-                f"🔄 {ticker} 增量拉取: 缓存过期/过期前，重新拉取 "
-                f"{fetch_start} ~ {end_date}"
+                f"🔄 {ticker} 增量拉取: 缓存过期/过期前，重新拉取 {fetch_start} ~ {end_date}"
             )
         else:
             logger.info(
@@ -306,14 +322,22 @@ def fetch_kline_incremental(
 
         # 拉取缺失段
         new_df = fetch_kline(
-            ticker, fetch_start, end_date,
-            frequency=frequency, adjustflag=adjustflag, use_cache=True,
+            ticker,
+            fetch_start,
+            end_date,
+            frequency=frequency,
+            adjustflag=adjustflag,
+            use_cache=True,
         )
 
         # 读取旧缓存数据
         old_df = fetch_kline(
-            ticker, cached_start, cached_end,
-            frequency=frequency, adjustflag=adjustflag, use_cache=True,
+            ticker,
+            cached_start,
+            cached_end,
+            frequency=frequency,
+            adjustflag=adjustflag,
+            use_cache=True,
         )
 
         # 合并：优先保留新数据（去重）
@@ -330,24 +354,34 @@ def fetch_kline_incremental(
     # ── 情况 3：无缓存，全量拉取 ────────────────────────────────────
     logger.info(f"📥 {ticker} 无缓存，全量拉取 {start_date} ~ {end_date}")
     return fetch_kline(
-        ticker, start_date, end_date,
-        frequency=frequency, adjustflag=adjustflag, use_cache=True,
+        ticker,
+        start_date,
+        end_date,
+        frequency=frequency,
+        adjustflag=adjustflag,
+        use_cache=True,
     )
 
 
 def _write_merged_cache(
-    cache, ticker: str, df: pd.DataFrame, start_date: str, end_date: str,
+    cache,
+    ticker: str,
+    df: pd.DataFrame,
+    start_date: str,
+    end_date: str,
     frequency: str,
 ) -> None:
     """
     将合并后的 K 线数据写回缓存，按历史/近期分段设置 TTL。
     历史段（>30天）永久缓存，近期段（≤30天）1h TTL。
     """
-    from trade_krono_cli.cache import (
-        _KLINE_RECENT_TTL, _KLINE_HISTORY_WINDOW_DAYS,
-        _KLINE_HISTORICAL_TTL,
-    )
     from datetime import timedelta
+
+    from trade_krono_cli.cache import (
+        _KLINE_HISTORICAL_TTL,
+        _KLINE_HISTORY_WINDOW_DAYS,
+        _KLINE_RECENT_TTL,
+    )
 
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
     recent_cutoff = (end_dt - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime("%Y-%m-%d")
@@ -362,15 +396,10 @@ def _write_merged_cache(
         seg_start = seg["timestamps"].iloc[0].strftime("%Y-%m-%d")
         seg_end = seg["timestamps"].iloc[-1].strftime("%Y-%m-%d")
         cache.set_kline(ticker, seg_start, seg_end, frequency, seg, ttl=ttl)
-        logger.debug(
-            f"📦 {'永久' if ttl == 0 else '1h'} 缓存: "
-            f"{ticker} {seg_start}~{seg_end}"
-        )
+        logger.debug(f"📦 {'永久' if ttl == 0 else '1h'} 缓存: {ticker} {seg_start}~{seg_end}")
 
 
-def _merge_kline_dfs(
-    old_df: pd.DataFrame, new_df: pd.DataFrame
-) -> pd.DataFrame:
+def _merge_kline_dfs(old_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
     """
     合并新旧 K 线 DataFrame，去重并按时间排序。
 
@@ -406,6 +435,7 @@ def _merge_kline_dfs(
 def next_business_days(last_date: str, n: int) -> list[pd.Timestamp]:
     """生成后续 n 个工作日（不含周末近似）。"""
     from pandas.tseries.offsets import BDay
+
     start = pd.Timestamp(last_date) + BDay(1)
     return [start + BDay(i) for i in range(n)]
 
@@ -462,7 +492,7 @@ def _safe_float(value: str, default: Optional[float] = None) -> Optional[float]:
         return default
     try:
         f = float(value)
-        return f if not (f != f or f == float('inf') or f == float('-inf')) else default
+        return f if not (f != f or f == float("inf") or f == float("-inf")) else default
     except (ValueError, TypeError):
         return default
 
@@ -470,11 +500,11 @@ def _safe_float(value: str, default: Optional[float] = None) -> Optional[float]:
 # 腾讯财经接口字段索引（qt.gtimg.cn 协议）
 # https://stock.finance.sina.com.cn/
 # 索引对应字段如下（部分字段可能因股票类型不同而缺失）：
-_TQ_PRICE     = 3    # 当前价（元）
-_TQ_PE        = 39   # 市盈率（动态）
-_TQ_PB        = 46   # 市净率
-_TQ_MKT_CAP   = 44   # 总市值（亿元）
-_TQ_TURNOVER  = 38   # 换手率（%）
+_TQ_PRICE = 3  # 当前价（元）
+_TQ_PE = 39  # 市盈率（动态）
+_TQ_PB = 46  # 市净率
+_TQ_MKT_CAP = 44  # 总市值（亿元）
+_TQ_TURNOVER = 38  # 换手率（%）
 # 最小字段数：需至少包含 _TQ_PRICE（索引 3）+ 分隔符，取保守阈值 45
 _TQ_MIN_FIELDS = 45
 
@@ -502,9 +532,9 @@ def fetch_realtime_quote(ticker: str) -> dict:
         return {}
 
     return {
-        "price":      _safe_float(fields[_TQ_PRICE]),
-        "pe":         _safe_float(fields[_TQ_PE])         if len(fields) > _TQ_PE else None,
-        "pb":         _safe_float(fields[_TQ_PB])         if len(fields) > _TQ_PB else None,
-        "market_cap": _safe_float(fields[_TQ_MKT_CAP])    if len(fields) > _TQ_MKT_CAP else None,
-        "turnover":   _safe_float(fields[_TQ_TURNOVER])   if len(fields) > _TQ_TURNOVER else None,
+        "price": _safe_float(fields[_TQ_PRICE]),
+        "pe": _safe_float(fields[_TQ_PE]) if len(fields) > _TQ_PE else None,
+        "pb": _safe_float(fields[_TQ_PB]) if len(fields) > _TQ_PB else None,
+        "market_cap": _safe_float(fields[_TQ_MKT_CAP]) if len(fields) > _TQ_MKT_CAP else None,
+        "turnover": _safe_float(fields[_TQ_TURNOVER]) if len(fields) > _TQ_TURNOVER else None,
     }

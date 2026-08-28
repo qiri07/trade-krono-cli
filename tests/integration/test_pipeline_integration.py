@@ -1,7 +1,7 @@
 """Pipeline 集成测试 — 验证 orchestrator 与 scorer/reporter 协作。"""
-import pytest
-from unittest.mock import MagicMock, patch
+
 from pathlib import Path
+from unittest.mock import MagicMock
 
 
 class TestPipelineOrchestrator:
@@ -9,24 +9,34 @@ class TestPipelineOrchestrator:
 
     def test_run_parallel_full_flow(self):
         """完整并行流程：TA + Kronos → merge → score → save。"""
+        from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
         from trade_krono_cli.pipeline import QuantPipeline
         from trade_krono_cli.ta_runner import StockAnalysisResult
-        from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
 
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
-            StockAnalysisResult(ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0),
+            StockAnalysisResult(
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0
+            ),
         ]
 
         pu = PredictionUncertainty(
-            expected_return=3.0, direction="UP", direction_score=0.8,
-            volatility=1.0, path_dispersion=None, confidence_score=75.0,
+            expected_return=3.0,
+            direction="UP",
+            direction_score=0.8,
+            volatility=1.0,
+            path_dispersion=None,
+            confidence_score=75.0,
         )
         mock_kr = MagicMock()
         mock_kr.predict_batch.return_value = [
             KronosForecastResult(
-                ticker="sh.600519", eval_date="2026-08-12", horizon=30,
-                direction="UP", expected_change_pct=3.0, last_close=1780.0,
+                ticker="sh.600519",
+                eval_date="2026-08-12",
+                horizon=30,
+                direction="UP",
+                expected_change_pct=3.0,
+                last_close=1780.0,
                 prediction_uncertainty=pu,
             ),
         ]
@@ -52,7 +62,9 @@ class TestPipelineOrchestrator:
 
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
-            StockAnalysisResult(ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=85.0),
+            StockAnalysisResult(
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=85.0
+            ),
         ]
 
         pipeline = QuantPipeline(ta_runner=mock_ta, skip_kronos=True, no_cache=True)
@@ -62,14 +74,17 @@ class TestPipelineOrchestrator:
 
     def test_run_kronos_only(self):
         """仅 Kronos 模式。"""
-        from trade_krono_cli.pipeline import QuantPipeline
         from trade_krono_cli.kronos_runner import KronosForecastResult
+        from trade_krono_cli.pipeline import QuantPipeline
 
         mock_kr = MagicMock()
         mock_kr.predict_batch.return_value = [
             KronosForecastResult(
-                ticker="sh.600519", eval_date="2026-08-12", horizon=30,
-                direction="UP", expected_change_pct=2.5,
+                ticker="sh.600519",
+                eval_date="2026-08-12",
+                horizon=30,
+                direction="UP",
+                expected_change_pct=2.5,
             ),
         ]
 
@@ -85,7 +100,9 @@ class TestPipelineOrchestrator:
 
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
-            StockAnalysisResult(ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0),
+            StockAnalysisResult(
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0
+            ),
         ]
         mock_kr = MagicMock()
         mock_kr.predict_batch.side_effect = RuntimeError("model load failed")
@@ -102,9 +119,15 @@ class TestPipelineOrchestrator:
 
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
-            StockAnalysisResult(ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0),
-            StockAnalysisResult(ticker="sz.000858", date="2026-08-12", signal="BUY", confidence=40.0),
-            StockAnalysisResult(ticker="sh.600036", date="2026-08-12", signal="SELL", confidence=90.0),
+            StockAnalysisResult(
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0
+            ),
+            StockAnalysisResult(
+                ticker="sz.000858", date="2026-08-12", signal="BUY", confidence=40.0
+            ),
+            StockAnalysisResult(
+                ticker="sh.600036", date="2026-08-12", signal="SELL", confidence=90.0
+            ),
         ]
         mock_kr = MagicMock()
         mock_kr.predict_batch.return_value = []
@@ -138,9 +161,24 @@ class TestScorer:
         from trade_krono_cli.pipeline.merge import default_scorer
 
         items = [
-            {"ticker": "A", "ta_confidence": 60, "kronos_change_pct": 1.0, "kronos_direction": "UP"},
-            {"ticker": "B", "ta_confidence": 80, "kronos_change_pct": 3.0, "kronos_direction": "UP"},
-            {"ticker": "C", "ta_confidence": 90, "kronos_change_pct": -2.0, "kronos_direction": "DOWN"},
+            {
+                "ticker": "A",
+                "ta_confidence": 60,
+                "kronos_change_pct": 1.0,
+                "kronos_direction": "UP",
+            },
+            {
+                "ticker": "B",
+                "ta_confidence": 80,
+                "kronos_change_pct": 3.0,
+                "kronos_direction": "UP",
+            },
+            {
+                "ticker": "C",
+                "ta_confidence": 90,
+                "kronos_change_pct": -2.0,
+                "kronos_direction": "DOWN",
+            },
         ]
         # 按分数降序排列
         ranked = sorted(items, key=lambda x: default_scorer(x), reverse=True)
@@ -154,7 +192,6 @@ class TestScorer:
 
     def test_custom_scorer(self):
         """自定义打分函数可覆盖默认逻辑。"""
-        from trade_krono_cli.pipeline.merge import default_scorer
 
         items = [{"ticker": "A", "score": 10}, {"ticker": "B", "score": 20}]
 
@@ -180,9 +217,14 @@ class TestReporter:
         assert result == path
         assert Path(path).exists()
         import json
+
         with open(path) as f:
             data = json.load(f)
-        assert len(data) == 1
+        # 新项目格式：顶层 dict，results 为实际报告列表
+        assert data.get("project") == "trade-krono-cli"
+        assert data["count"] == 1
+        assert len(data["results"]) == 1
+        assert data["results"][0]["ticker"] == "sh.600519"
 
     def test_save_html_report(self, tmp_path):
         from trade_krono_cli.pipeline.reporter import save_html_report

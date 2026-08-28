@@ -5,6 +5,7 @@
   - text   : 人类可读（默认，保留现有格式）
   - json   : JSON 结构化输出，可被 logstash/ELK/jq 消费
 """
+
 from __future__ import annotations
 
 import json
@@ -26,7 +27,7 @@ class _JsonLogSink:
 
     def write(self, message: str) -> None:
         self.records.append(message.strip())
-        if not getattr(self, '_test_mode', False):
+        if not getattr(self, "_test_mode", False):
             sys.stderr.write(message)
             sys.stderr.flush()
 
@@ -75,6 +76,7 @@ def setup_logger(
     if json_format:
         json_sink = _JsonLogSink()
         import trade_krono_cli.logging_config as _mod
+
         _mod._json_sink = json_sink
 
         def _json_handler(record):

@@ -3,15 +3,17 @@ Universe Provider — 全市场股票列表获取接口。
 
 定义 UniverseProvider ABC 以及基于 akshare / mootdx 的实现。
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from loguru import logger
 
 # ── 数据结构 ──────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class UniverseTicket:
@@ -20,18 +22,20 @@ class UniverseTicket:
 
     来自数据源的原始数据尽量保留在此处，供后续各阶段消费。
     """
-    ticker: str                # 归一化格式: sh.600519 / sz.000858
-    name: str = ""             # 股票名称
-    price: Optional[float] = None      # 最新价（元）
-    pe: Optional[float] = None         # 市盈率（动态）
-    pb: Optional[float] = None         # 市净率
-    market_cap: Optional[float] = None # 总市值（亿元， akshare 返回单位）
+
+    ticker: str  # 归一化格式: sh.600519 / sz.000858
+    name: str = ""  # 股票名称
+    price: Optional[float] = None  # 最新价（元）
+    pe: Optional[float] = None  # 市盈率（动态）
+    pb: Optional[float] = None  # 市净率
+    market_cap: Optional[float] = None  # 总市值（亿元， akshare 返回单位）
     volume_ratio: Optional[float] = None  # 量比
-    turnover_rate: Optional[float] = None # 换手率（%）
-    source: str = ""                 # 数据来源标识
+    turnover_rate: Optional[float] = None  # 换手率（%）
+    source: str = ""  # 数据来源标识
 
 
 # ── 抽象基类 ──────────────────────────────────────────────────────────────────
+
 
 class UniverseProvider(ABC):
     """
@@ -65,6 +69,7 @@ class UniverseProvider(ABC):
 
 # ── AkShare 实现 ──────────────────────────────────────────────────────────────
 
+
 class AkshareUniverseProvider(UniverseProvider):
     """
     基于 akshare 的 A 股市场范围提供者。
@@ -97,21 +102,21 @@ class AkshareUniverseProvider(UniverseProvider):
                 ticker = self._code_to_ticker(code)
                 name = str(row.get("名称", ""))
 
-                tickets.append(UniverseTicket(
-                    ticker=ticker,
-                    name=name,
-                    price=self._safe_float(row.get("最新价")),
-                    pe=self._safe_float(row.get("市盈率-动态")),
-                    pb=self._safe_float(row.get("市净率")),
-                    market_cap=self._safe_float(row.get("总市值")),
-                    volume_ratio=self._safe_float(row.get("量比")),
-                    turnover_rate=self._safe_float(row.get("换手率")),
-                    source=self.name,
-                ))
+                tickets.append(
+                    UniverseTicket(
+                        ticker=ticker,
+                        name=name,
+                        price=self._safe_float(row.get("最新价")),
+                        pe=self._safe_float(row.get("市盈率-动态")),
+                        pb=self._safe_float(row.get("市净率")),
+                        market_cap=self._safe_float(row.get("总市值")),
+                        volume_ratio=self._safe_float(row.get("量比")),
+                        turnover_rate=self._safe_float(row.get("换手率")),
+                        source=self.name,
+                    )
+                )
 
-            logger.info(
-                f"📡 {self.name} 全市场获取: {len(tickets)} 只 A 股"
-            )
+            logger.info(f"📡 {self.name} 全市场获取: {len(tickets)} 只 A 股")
             return tickets
 
         except Exception as e:
@@ -140,6 +145,7 @@ class AkshareUniverseProvider(UniverseProvider):
 
 # ── MootDx Provider ───────────────────────────────────────────────────────────
 
+
 class MootDxUniverseProvider(UniverseProvider):
     """
     基于 baostock 获取股票列表 + mootdx 获取实时行情的 Provider。
@@ -154,6 +160,7 @@ class MootDxUniverseProvider(UniverseProvider):
         # 1. 从 baostock 获取 A 股代码列表
         try:
             import baostock as bs  # type: ignore
+
             lg = bs.login()
             if lg.error_code != "0":
                 logger.error(f"baostock login failed: {lg.error_msg}")
@@ -183,6 +190,7 @@ class MootDxUniverseProvider(UniverseProvider):
         # 2. 用 mootdx 批量获取实时行情
         try:
             from mootdx.quotes import Quotes  # type: ignore
+
             q = Quotes.factory(market="std")
         except Exception as e:
             logger.error(f"mootdx 初始化失败: {e}")
@@ -193,8 +201,9 @@ class MootDxUniverseProvider(UniverseProvider):
         # 使用 20 作为安全批次大小，并加入间隔以避免被服务端限流。
         batch_size = 20
         import time as _time
+
         for batch_start in range(0, len(raw_codes), batch_size):
-            batch = raw_codes[batch_start:batch_start + batch_size]
+            batch = raw_codes[batch_start : batch_start + batch_size]
             # mootdx 需要纯数字代码（无 sh./sz. 前缀）
             plain_codes = [c.split(".")[-1] for c in batch]
             try:
@@ -206,15 +215,16 @@ class MootDxUniverseProvider(UniverseProvider):
                         price = float(row.get("price", 0))
                         if price > 0:
                             ticker = f"{'sh' if market == 1 else 'sz'}.{code}"
-                            tickets.append(UniverseTicket(
-                                ticker=ticker,
-                                price=price,
-                                source=self.name,
-                            ))
+                            tickets.append(
+                                UniverseTicket(
+                                    ticker=ticker,
+                                    price=price,
+                                    source=self.name,
+                                )
+                            )
                 fetched = len(df) if df is not None and not df.empty else 0
                 logger.debug(
-                    f"  mootdx batch [{batch_start}:{batch_start+len(batch)}] "
-                    f"→ {fetched} 行"
+                    f"  mootdx batch [{batch_start}:{batch_start + len(batch)}] → {fetched} 行"
                 )
             except Exception as e:
                 logger.warning(f"mootdx 批量获取失败 (batch {batch_start}): {e}")

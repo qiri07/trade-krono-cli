@@ -1,13 +1,12 @@
 """测试领域决策对象 InvestmentDecision。"""
+
 from __future__ import annotations
 
 import pytest
 
 from trade_krono_cli.domain.decision import InvestmentDecision
-from trade_krono_cli.domain.types import Signal
 from trade_krono_cli.domain.signal import SignalAssessment
-from trade_krono_cli.domain.risk import RiskAssessment
-
+from trade_krono_cli.domain.types import Signal
 
 # ── 基本构造 ──────────────────────────────────────────────────────────────────
 
@@ -30,8 +29,10 @@ def test_basic():
 
 def test_frozen():
     d = InvestmentDecision(
-        ticker="sh.600519", eval_date="2026-08-11",
-        signal=Signal.BUY, confidence=80.0,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        signal=Signal.BUY,
+        confidence=80.0,
     )
     with pytest.raises(AttributeError):
         d.ticker = "sz.000858"  # type: ignore[misc]
@@ -39,8 +40,10 @@ def test_frozen():
 
 def test_defaults():
     d = InvestmentDecision(
-        ticker="sh.600519", eval_date="2026-08-11",
-        signal=Signal.HOLD, confidence=50.0,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        signal=Signal.HOLD,
+        confidence=50.0,
     )
     assert d.expected_value is None
     assert d.prob_win is None
@@ -56,9 +59,13 @@ def test_defaults():
 
 def test_with_ev_fields():
     d = InvestmentDecision(
-        ticker="sh.600519", eval_date="2026-08-11",
-        signal=Signal.BUY, confidence=80.0,
-        expected_value=5.5, prob_win=0.72, risk_adjusted_ev=1.23,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        signal=Signal.BUY,
+        confidence=80.0,
+        expected_value=5.5,
+        prob_win=0.72,
+        risk_adjusted_ev=1.23,
     )
     assert d.expected_value == 5.5
     assert d.prob_win == 0.72
@@ -70,11 +77,17 @@ def test_with_ev_fields():
 
 def test_to_dict():
     d = InvestmentDecision(
-        ticker="sh.600519", eval_date="2026-08-11",
-        signal=Signal.BUY, confidence=80.0,
-        thesis="论点", risks=["风险"],
-        entry_zone=[148.0, 152.0], target_price=170.0, stop_loss=140.0,
-        expected_value=5.5, prob_win=0.72,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        signal=Signal.BUY,
+        confidence=80.0,
+        thesis="论点",
+        risks=["风险"],
+        entry_zone=[148.0, 152.0],
+        target_price=170.0,
+        stop_loss=140.0,
+        expected_value=5.5,
+        prob_win=0.72,
     )
     result = d.to_dict()
     assert result["ticker"] == "sh.600519"
@@ -90,8 +103,10 @@ def test_to_dict():
 
 def test_to_dict_no_optional_fields():
     d = InvestmentDecision(
-        ticker="sh.600519", eval_date="2026-08-11",
-        signal=Signal.HOLD, confidence=50.0,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        signal=Signal.HOLD,
+        confidence=50.0,
     )
     result = d.to_dict()
     # to_dict always includes all fields (even None ones); verify key structure
@@ -108,11 +123,17 @@ def test_to_dict_no_optional_fields():
 
 def test_from_dict():
     data = {
-        "ticker": "sh.600519", "eval_date": "2026-08-11",
-        "signal": "BUY", "confidence": 80.0,
-        "thesis": "论点", "risks": ["风险"],
-        "entry_zone": [148.0, 152.0], "target_price": 170.0, "stop_loss": 140.0,
-        "expected_value": 5.5, "prob_win": 0.72,
+        "ticker": "sh.600519",
+        "eval_date": "2026-08-11",
+        "signal": "BUY",
+        "confidence": 80.0,
+        "thesis": "论点",
+        "risks": ["风险"],
+        "entry_zone": [148.0, 152.0],
+        "target_price": 170.0,
+        "stop_loss": 140.0,
+        "expected_value": 5.5,
+        "prob_win": 0.72,
     }
     d = InvestmentDecision.from_dict(data)
     assert d.ticker == "sh.600519"
@@ -122,24 +143,31 @@ def test_from_dict():
 
 
 def test_from_dict_missing_optional():
-    data = {"ticker": "sh.600519", "eval_date": "2026-08-11",
-            "signal": "HOLD", "confidence": 50.0}
+    data = {"ticker": "sh.600519", "eval_date": "2026-08-11", "signal": "HOLD", "confidence": 50.0}
     d = InvestmentDecision.from_dict(data)
     assert d.target_price is None
     assert d.stop_loss is None
 
 
 def test_from_dict_invalid_signal():
-    data = {"ticker": "sh.600519", "eval_date": "2026-08-11",
-            "signal": "UNKNOWN", "confidence": 50.0}
+    data = {
+        "ticker": "sh.600519",
+        "eval_date": "2026-08-11",
+        "signal": "UNKNOWN",
+        "confidence": 50.0,
+    }
     # Invalid signal falls back to HOLD (no exception)
     d = InvestmentDecision.from_dict(data)
     assert d.signal == Signal.HOLD
 
 
 def test_from_dict_invalid_confidence():
-    data = {"ticker": "sh.600519", "eval_date": "2026-08-11",
-            "signal": "BUY", "confidence": "not_a_number"}
+    data = {
+        "ticker": "sh.600519",
+        "eval_date": "2026-08-11",
+        "signal": "BUY",
+        "confidence": "not_a_number",
+    }
     # confidence is cast with float() — invalid string raises ValueError
     with pytest.raises(ValueError):
         InvestmentDecision.from_dict(data)
@@ -155,8 +183,10 @@ def test_from_dict_empty():
 
 def test_to_dict_ranking_score():
     d = InvestmentDecision(
-        ticker="sh.600519", eval_date="2026-08-11",
-        signal=Signal.BUY, confidence=80.0,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        signal=Signal.BUY,
+        confidence=80.0,
         ranking_score=75.0,
     )
     result = d.to_dict()
@@ -166,8 +196,10 @@ def test_to_dict_ranking_score():
 def test_from_dict_composite_score_backward_compat():
     """composite_score 字段向后兼容到 ranking_score。"""
     data = {
-        "ticker": "sh.600519", "eval_date": "2026-08-11",
-        "signal": "BUY", "confidence": 80.0,
+        "ticker": "sh.600519",
+        "eval_date": "2026-08-11",
+        "signal": "BUY",
+        "confidence": 80.0,
         "composite_score": 75.0,
     }
     d = InvestmentDecision.from_dict(data)
@@ -180,8 +212,10 @@ def test_from_dict_composite_score_backward_compat():
 def test_empty():
     """InvestmentDecision 无 empty() 工厂方法；使用 fallback 或最小构造。"""
     d = InvestmentDecision(
-        ticker="", eval_date="",
-        signal=Signal.HOLD, confidence=0.0,
+        ticker="",
+        eval_date="",
+        signal=Signal.HOLD,
+        confidence=0.0,
     )
     assert d.signal == Signal.HOLD
     assert d.confidence == 0.0
@@ -193,16 +227,20 @@ def test_empty():
 
 def test_domain_factory_build_decision():
     from trade_krono_cli.domain.factory import build_investment_decision
-    from trade_krono_cli.domain.signal import SignalAssessment
 
     assessment = SignalAssessment(
-        ticker="sh.600519", eval_date="2026-08-11",
-        final_signal=Signal.BUY, final_confidence=80.0,
-        expected_value=5.5, prob_win=0.72,
-        thesis="论点", risks=["风险"],
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        final_signal=Signal.BUY,
+        final_confidence=80.0,
+        expected_value=5.5,
+        prob_win=0.72,
+        thesis="论点",
+        risks=["风险"],
     )
     d = build_investment_decision(
-        ticker="sh.600519", eval_date="2026-08-11",
+        ticker="sh.600519",
+        eval_date="2026-08-11",
         signal_assessment=assessment,
     )
     assert d.ticker == "sh.600519"

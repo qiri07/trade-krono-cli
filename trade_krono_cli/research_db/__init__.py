@@ -4,6 +4,7 @@
 向后兼容：保留 trade_krono_cli.research_db 的导入路径。
 所有公开 API 通过此模块导出，原有 import 语句无需修改。
 """
+
 from __future__ import annotations
 
 from trade_krono_cli.research_db.committee import CommitteeMixin
@@ -48,13 +49,24 @@ class ResearchDatabase(
 
 # schema 常量（原 REASONING_TRUNCATE_LEN、_RESEARCH_TABLES、_validate_table_name）
 REASONING_TRUNCATE_LEN: int = 500
-RESEARCH_TABLES: frozenset[str] = frozenset({
-    "jobs", "ta_analysis", "kronos_forecast",
-    "signals", "decisions", "raw_reports",
-    "backtest_results", "strategy_runs",
-    "evaluation_results", "signal_history", "committee_deliberations",
-    "data_snapshots", "walkforward_runs", "experiments",
-})
+RESEARCH_TABLES: frozenset[str] = frozenset(
+    {
+        "jobs",
+        "ta_analysis",
+        "kronos_forecast",
+        "signals",
+        "decisions",
+        "raw_reports",
+        "backtest_results",
+        "strategy_runs",
+        "evaluation_results",
+        "signal_history",
+        "committee_deliberations",
+        "data_snapshots",
+        "walkforward_runs",
+        "experiments",
+    }
+)
 
 
 def _validate_table_name(table: str, allowed: frozenset[str]) -> str:

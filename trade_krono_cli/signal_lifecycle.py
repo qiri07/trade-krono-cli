@@ -17,22 +17,20 @@ SignalLifecycle — 信号生命周期管理器。
   · INVALIDATED 是可恢复的（重新 BUY 时回到 CREATED）
   · CLOSED 是终态，不再变化
 """
+
 from __future__ import annotations
 
-import json
 import time
-from dataclasses import dataclass, asdict, field
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
 from enum import Enum
-from pathlib import Path
 from typing import Optional
 
 from loguru import logger
 
-
 # ═══════════════════════════════════════════════════════
 #  生命周期状态枚举
 # ═══════════════════════════════════════════════════════
+
 
 class SignalLifecycleState(str, Enum):
     """
@@ -45,28 +43,30 @@ class SignalLifecycleState(str, Enum):
     INVALIDATED — 信号方向反转（BUY→HOLD/SELL），原逻辑失效
     CLOSED    — 终态，不再追踪（手动关闭或明确 SELL）
     """
-    CREATED  = "CREATED"
-    ACTIVE   = "ACTIVE"
-    UPDATED  = "UPDATED"
+
+    CREATED = "CREATED"
+    ACTIVE = "ACTIVE"
+    UPDATED = "UPDATED"
     WEAKENED = "WEAKENED"
     INVALIDATED = "INVALIDATED"
-    CLOSED   = "CLOSED"
+    CLOSED = "CLOSED"
 
 
 # 信号状态 ↔ 人类可读描述
 _STATE_LABELS: dict[SignalLifecycleState, str] = {
-    SignalLifecycleState.CREATED:      "新建",
-    SignalLifecycleState.ACTIVE:       "活跃",
-    SignalLifecycleState.UPDATED:      "更新",
-    SignalLifecycleState.WEAKENED:     "弱化",
-    SignalLifecycleState.INVALIDATED:  "失效",
-    SignalLifecycleState.CLOSED:       "已关闭",
+    SignalLifecycleState.CREATED: "新建",
+    SignalLifecycleState.ACTIVE: "活跃",
+    SignalLifecycleState.UPDATED: "更新",
+    SignalLifecycleState.WEAKENED: "弱化",
+    SignalLifecycleState.INVALIDATED: "失效",
+    SignalLifecycleState.CLOSED: "已关闭",
 }
 
 
 # ═══════════════════════════════════════════════════════
 #  数据类
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass(frozen=True)
 class SignalRecord:
@@ -87,9 +87,10 @@ class SignalRecord:
     run_id              : 关联的运行 ID
     thesis_snapshot     : 本次投资论点摘要（截断）
     """
+
     ticker: str
     date: str
-    signal: str                         # "BUY" / "HOLD" / "SELL"
+    signal: str  # "BUY" / "HOLD" / "SELL"
     confidence: float
     composite_score: float
     lifecycle_state: SignalLifecycleState
@@ -117,6 +118,7 @@ class SignalRecord:
 # ═══════════════════════════════════════════════════════
 #  状态迁移规则
 # ═══════════════════════════════════════════════════════
+
 
 def _determine_next_state(
     current_state: Optional[SignalLifecycleState],
@@ -214,6 +216,7 @@ def _determine_next_state(
 # ═══════════════════════════════════════════════════════
 #  SignalLifecycle 管理器
 # ═══════════════════════════════════════════════════════
+
 
 class SignalLifecycle:
     """
@@ -448,6 +451,7 @@ class SignalLifecycle:
 #  模块级便捷函数
 # ═══════════════════════════════════════════════════════
 
+
 def build_signal_record(
     ticker: str,
     date: str,
@@ -487,7 +491,10 @@ def next_state(
 ) -> tuple[SignalLifecycleState, str]:
     """便捷函数：计算下一个生命周期状态和迁移原因。"""
     return _determine_next_state(
-        current_state, current_confidence,
-        new_signal, new_confidence,
-        min_active_confidence, weak_threshold,
+        current_state,
+        current_confidence,
+        new_signal,
+        new_confidence,
+        min_active_confidence,
+        weak_threshold,
     )

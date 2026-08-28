@@ -4,6 +4,7 @@ Risk — 风险评估领域对象。
 RiskAssessment 整合多源风险因子（波动率 / 流动性 / 估值 / 事件 / 市场状态），
 输出综合风险评分和风险调整后的预期收益。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -13,13 +14,19 @@ from typing import Optional
 @dataclass(frozen=True)
 class RiskFactor:
     """单个风险因子的评估结果。"""
-    name: str                    # 因子名称（如 "volatility", "liquidity"）
-    score: float                 # 风险评分 0–100（越高越危险）
-    weight: float = 1.0          # 在综合评分中的权重
-    detail: str = ""             # 人类可读描述
+
+    name: str  # 因子名称（如 "volatility", "liquidity"）
+    score: float  # 风险评分 0–100（越高越危险）
+    weight: float = 1.0  # 在综合评分中的权重
+    detail: str = ""  # 人类可读描述
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "score": self.score, "weight": self.weight, "detail": self.detail}
+        return {
+            "name": self.name,
+            "score": self.score,
+            "weight": self.weight,
+            "detail": self.detail,
+        }
 
 
 @dataclass(frozen=True)
@@ -50,6 +57,7 @@ class RiskAssessment:
     cvar_95                 95% 置信度 CVaR（%）
     max_drawdown_pct        最大回撤（%）
     """
+
     ticker: str
     eval_date: str
     risk_score_total: float = 0.0
@@ -95,9 +103,7 @@ class RiskAssessment:
 
     @classmethod
     def from_dict(cls, data: dict) -> "RiskAssessment":
-        factors = [
-            RiskFactor(**f) for f in data.get("risk_factors", [])
-        ]
+        factors = [RiskFactor(**f) for f in data.get("risk_factors", [])]
         return cls(
             ticker=data["ticker"],
             eval_date=data.get("eval_date", ""),

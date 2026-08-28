@@ -3,6 +3,7 @@ scoring.registry — 打分策略与风险加分策略的注册表工厂。
 
 类似 DataProviderFactory，采用懒加载 + 进程级缓存模式。
 """
+
 from __future__ import annotations
 
 import threading
@@ -12,10 +13,10 @@ from loguru import logger
 
 from trade_krono_cli.scoring.base import CompositeScorer, RiskBoostStrategy
 
-
 # ═══════════════════════════════════════════════════════
 # 综合打分器注册表
 # ═══════════════════════════════════════════════════════
+
 
 class ScorerRegistry:
     """综合打分策略注册表。"""
@@ -54,14 +55,17 @@ class ScorerRegistry:
         """按需导入内置策略类。"""
         if name == "linear":
             from trade_krono_cli.scoring.scorers import LinearScorer
+
             self.register(LinearScorer)
             return LinearScorer
         elif name == "multiplicative":
             from trade_krono_cli.scoring.scorers import MultiplicativeScorer
+
             self.register(MultiplicativeScorer)
             return MultiplicativeScorer
         elif name == "rank_based":
             from trade_krono_cli.scoring.scorers import RankBasedScorer
+
             self.register(RankBasedScorer)
             return RankBasedScorer
         return None
@@ -79,6 +83,7 @@ class ScorerRegistry:
 # ═══════════════════════════════════════════════════════
 # 风险加分策略注册表
 # ═══════════════════════════════════════════════════════
+
 
 class RiskBoostRegistry:
     """风险加分策略注册表。"""
@@ -111,14 +116,17 @@ class RiskBoostRegistry:
         """按需导入内置策略类。"""
         if name == "fixed_boost":
             from trade_krono_cli.scoring.risk_boosters import FixedBoostBooster
+
             self.register(FixedBoostBooster)
             return FixedBoostBooster
         elif name == "scaled_boost":
             from trade_krono_cli.scoring.risk_boosters import ScaledBoostBooster
+
             self.register(ScaledBoostBooster)
             return ScaledBoostBooster
         elif name == "diminishing_boost":
             from trade_krono_cli.scoring.risk_boosters import DiminishingBoostBooster
+
             self.register(DiminishingBoostBooster)
             return DiminishingBoostBooster
         return None
@@ -147,7 +155,12 @@ def get_scorer_registry() -> ScorerRegistry:
             if _scorer_registry is None:
                 _scorer_registry = ScorerRegistry()
                 # 注册内置策略
-                from trade_krono_cli.scoring.scorers import LinearScorer, MultiplicativeScorer, RankBasedScorer
+                from trade_krono_cli.scoring.scorers import (
+                    LinearScorer,
+                    MultiplicativeScorer,
+                    RankBasedScorer,
+                )
+
                 _scorer_registry.register(LinearScorer)
                 _scorer_registry.register(MultiplicativeScorer)
                 _scorer_registry.register(RankBasedScorer)
@@ -161,8 +174,11 @@ def get_risk_boost_registry() -> RiskBoostRegistry:
             if _boost_registry is None:
                 _boost_registry = RiskBoostRegistry()
                 from trade_krono_cli.scoring.risk_boosters import (
-                    FixedBoostBooster, ScaledBoostBooster, DiminishingBoostBooster,
+                    DiminishingBoostBooster,
+                    FixedBoostBooster,
+                    ScaledBoostBooster,
                 )
+
                 _boost_registry.register(FixedBoostBooster)
                 _boost_registry.register(ScaledBoostBooster)
                 _boost_registry.register(DiminishingBoostBooster)

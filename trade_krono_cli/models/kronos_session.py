@@ -8,15 +8,14 @@ kronos_session — Kronos 模型资源管理。
 
 业务逻辑（数据准备 / 预测执行 / 结果解析 / 缓存读写）由 KronosRunner 负责。
 """
+
 from __future__ import annotations
 
-from typing import Optional, Any
+from typing import Any, Optional
 
 from loguru import logger
-from trade_krono_cli.kronos_runner import KronosRunner
-from trade_krono_cli.errors import ModelLoadError
-from trade_krono_cli.security import ensure_import_path
 
+from trade_krono_cli.kronos_runner import KronosRunner
 
 # ── 进程级单例缓存（同进程内相同配置的 session 复用，避免重复加载模型）────────
 _SESSION_CACHE: dict[tuple, "KronosSession"] = {}
@@ -38,6 +37,7 @@ class KronosSession:
     进程级单例：相同 (device, model_name, sample_count) 配置的调用会复用同一实例，
     避免多次 run() 时重复加载模型到显存。
     """
+
     # 类级别缓存，key = (device, model_name, sample_count, T, top_p, lookback)
     _cache: dict[tuple, "KronosSession"] = _SESSION_CACHE
 
@@ -123,6 +123,7 @@ class KronosSession:
         if self._device_pref.startswith("cuda"):
             try:
                 import torch
+
                 if torch.cuda.is_available():
                     return self._device_pref
                 logger.warning("⚠️  CUDA 不可用，回退到 CPU")
@@ -136,6 +137,7 @@ class KronosSession:
         """懒加载 KronosAdapterImpl。"""
         if self._kronos_adapter is None:
             from trade_krono_cli.adapters import KronosAdapterImpl
+
             self._kronos_adapter = KronosAdapterImpl()
         return self._kronos_adapter
 
@@ -163,9 +165,7 @@ class KronosSession:
         self._device = adapter.device if adapter else "cpu"
         self._max_context = adapter._max_context if adapter else 512
 
-        logger.info(
-            f"✅ Kronos 模型加载完成 (device={self._device})"
-        )
+        logger.info(f"✅ Kronos 模型加载完成 (device={self._device})")
 
     def unload(self) -> None:
         """释放模型资源（测试或手动清理时使用）。"""

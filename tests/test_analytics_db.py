@@ -1,24 +1,24 @@
 """测试 ResearchAnalytics — DuckDB 分析引擎。"""
-import json
-import pytest
-import sqlite3
+
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from trade_krono_cli.analytics_db import (
     ParquetPaths,
     ParquetWriter,
     ResearchAnalytics,
-    get_analytics,
-    clear_analytics_singleton,
     _duckdb_available,
+    clear_analytics_singleton,
+    get_analytics,
 )
 from trade_krono_cli.research_db import ResearchDatabase, clear_research_singleton
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  跳过测试：DuckDB 未安装
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.skipif(not _duckdb_available(), reason="DuckDB not installed")
 class TestResearchAnalytics:
@@ -34,7 +34,7 @@ class TestResearchAnalytics:
 
     def test_create_analytics(self):
         """创建 Analytics 实例应成功。"""
-        research = ResearchDatabase(db_path=self.db_path)
+        _research = ResearchDatabase(db_path=self.db_path)
         analytics = ResearchAnalytics(self.db_path, ParquetPaths(self.parquet_root))
         assert analytics.conn is not None
         analytics.close()
@@ -53,18 +53,37 @@ class TestResearchAnalytics:
         """get_signals_by_job 应返回 signals 表数据。"""
         db = ResearchDatabase(db_path=self.db_path)
         job_id = db.create_job("2026-08-11", ["sh.600519", "sz.000858"])
-        db.insert_signals(job_id, [
-            {"ticker": "sh.600519", "rank": 1, "composite_score": 85.0,
-             "ta_signal": "BUY", "ta_confidence": 80.0,
-             "kronos_direction": "UP", "kronos_change_pct": 3.2,
-             "ta_reasoning": "", "uncertainty": None,
-             "ta_error": None, "kronos_error": None},
-            {"ticker": "sz.000858", "rank": 2, "composite_score": 72.0,
-             "ta_signal": "HOLD", "ta_confidence": 60.0,
-             "kronos_direction": "DOWN", "kronos_change_pct": -1.5,
-             "ta_reasoning": "", "uncertainty": None,
-             "ta_error": None, "kronos_error": None},
-        ])
+        db.insert_signals(
+            job_id,
+            [
+                {
+                    "ticker": "sh.600519",
+                    "rank": 1,
+                    "composite_score": 85.0,
+                    "ta_signal": "BUY",
+                    "ta_confidence": 80.0,
+                    "kronos_direction": "UP",
+                    "kronos_change_pct": 3.2,
+                    "ta_reasoning": "",
+                    "uncertainty": None,
+                    "ta_error": None,
+                    "kronos_error": None,
+                },
+                {
+                    "ticker": "sz.000858",
+                    "rank": 2,
+                    "composite_score": 72.0,
+                    "ta_signal": "HOLD",
+                    "ta_confidence": 60.0,
+                    "kronos_direction": "DOWN",
+                    "kronos_change_pct": -1.5,
+                    "ta_reasoning": "",
+                    "uncertainty": None,
+                    "ta_error": None,
+                    "kronos_error": None,
+                },
+            ],
+        )
         db.complete_job(job_id, n_success=2, elapsed=5.0)
 
         analytics = ResearchAnalytics(self.db_path, ParquetPaths(self.parquet_root))
@@ -80,39 +99,84 @@ class TestResearchAnalytics:
         job_id = db.create_job("2026-08-11", ["sh.600519", "sz.000858", "sh.600036"])
 
         # 插入 signals + ta_analysis（含 return）
-        db.insert_ta(job_id, MagicMock(
-            ticker="sh.600519", error=None, elapsed_sec=1.0,
-            llm_request=None, signal="BUY", confidence=80.0,
-            investment_decision=MagicMock(thesis="test", risks=[]),
-        ))
-        db.insert_ta(job_id, MagicMock(
-            ticker="sz.000858", error=None, elapsed_sec=1.0,
-            llm_request=None, signal="HOLD", confidence=60.0,
-            investment_decision=MagicMock(thesis="test", risks=[]),
-        ))
-        db.insert_ta(job_id, MagicMock(
-            ticker="sh.600036", error=None, elapsed_sec=1.0,
-            llm_request=None, signal="SELL", confidence=40.0,
-            investment_decision=MagicMock(thesis="test", risks=[]),
-        ))
+        db.insert_ta(
+            job_id,
+            MagicMock(
+                ticker="sh.600519",
+                error=None,
+                elapsed_sec=1.0,
+                llm_request=None,
+                signal="BUY",
+                confidence=80.0,
+                investment_decision=MagicMock(thesis="test", risks=[]),
+            ),
+        )
+        db.insert_ta(
+            job_id,
+            MagicMock(
+                ticker="sz.000858",
+                error=None,
+                elapsed_sec=1.0,
+                llm_request=None,
+                signal="HOLD",
+                confidence=60.0,
+                investment_decision=MagicMock(thesis="test", risks=[]),
+            ),
+        )
+        db.insert_ta(
+            job_id,
+            MagicMock(
+                ticker="sh.600036",
+                error=None,
+                elapsed_sec=1.0,
+                llm_request=None,
+                signal="SELL",
+                confidence=40.0,
+                investment_decision=MagicMock(thesis="test", risks=[]),
+            ),
+        )
 
-        db.insert_signals(job_id, [
-            {"ticker": "sh.600519", "rank": 1, "composite_score": 85.0,
-             "ta_signal": "BUY", "ta_confidence": 80.0,
-             "ta_reasoning": "", "uncertainty": None,
-             "ta_error": None, "kronos_error": None,
-             "actual_return_pct": 2.5},
-            {"ticker": "sz.000858", "rank": 2, "composite_score": 72.0,
-             "ta_signal": "HOLD", "ta_confidence": 60.0,
-             "ta_reasoning": "", "uncertainty": None,
-             "ta_error": None, "kronos_error": None,
-             "actual_return_pct": -0.5},
-            {"ticker": "sh.600036", "rank": 3, "composite_score": 60.0,
-             "ta_signal": "SELL", "ta_confidence": 40.0,
-             "ta_reasoning": "", "uncertainty": None,
-             "ta_error": None, "kronos_error": None,
-             "actual_return_pct": -1.0},
-        ])
+        db.insert_signals(
+            job_id,
+            [
+                {
+                    "ticker": "sh.600519",
+                    "rank": 1,
+                    "composite_score": 85.0,
+                    "ta_signal": "BUY",
+                    "ta_confidence": 80.0,
+                    "ta_reasoning": "",
+                    "uncertainty": None,
+                    "ta_error": None,
+                    "kronos_error": None,
+                    "actual_return_pct": 2.5,
+                },
+                {
+                    "ticker": "sz.000858",
+                    "rank": 2,
+                    "composite_score": 72.0,
+                    "ta_signal": "HOLD",
+                    "ta_confidence": 60.0,
+                    "ta_reasoning": "",
+                    "uncertainty": None,
+                    "ta_error": None,
+                    "kronos_error": None,
+                    "actual_return_pct": -0.5,
+                },
+                {
+                    "ticker": "sh.600036",
+                    "rank": 3,
+                    "composite_score": 60.0,
+                    "ta_signal": "SELL",
+                    "ta_confidence": 40.0,
+                    "ta_reasoning": "",
+                    "uncertainty": None,
+                    "ta_error": None,
+                    "kronos_error": None,
+                    "actual_return_pct": -1.0,
+                },
+            ],
+        )
 
         analytics = ResearchAnalytics(self.db_path, ParquetPaths(self.parquet_root))
         df = analytics.cross_sectional_ic(job_id)
@@ -128,10 +192,16 @@ class TestResearchAnalytics:
         writer = ParquetWriter(ParquetPaths(self.parquet_root))
 
         # 写入特征文件
-        path = writer.write_feature("sh.600519", "2026-08-11", {
-            "ticker": "sh.600519", "eval_date": "2026-08-11",
-            "signal": "BUY", "confidence": 80.0,
-        })
+        path = writer.write_feature(
+            "sh.600519",
+            "2026-08-11",
+            {
+                "ticker": "sh.600519",
+                "eval_date": "2026-08-11",
+                "signal": "BUY",
+                "confidence": 80.0,
+            },
+        )
         assert path.exists()
 
         analytics = ResearchAnalytics(self.db_path, ParquetPaths(self.parquet_root))
@@ -160,6 +230,7 @@ class TestResearchAnalytics:
 #  ParquetPaths / ParquetWriter 测试（不依赖 DuckDB）
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestParquetPaths:
     def test_feature_path_structure(self, tmp_path):
         paths = ParquetPaths(tmp_path / "data")
@@ -186,12 +257,19 @@ class TestParquetWriter:
     def test_write_feature(self, tmp_path):
         paths = ParquetPaths(tmp_path / "data")
         writer = ParquetWriter(paths)
-        path = writer.write_feature("sh.600519", "2026-08-11", {
-            "ticker": "sh.600519", "eval_date": "2026-08-11",
-            "signal": "BUY", "confidence": 85.0,
-        })
+        path = writer.write_feature(
+            "sh.600519",
+            "2026-08-11",
+            {
+                "ticker": "sh.600519",
+                "eval_date": "2026-08-11",
+                "signal": "BUY",
+                "confidence": 85.0,
+            },
+        )
         assert path.exists()
         import pandas as pd
+
         df = pd.read_parquet(path)
         assert len(df) == 1
         assert df.iloc[0]["signal"] == "BUY"
@@ -199,12 +277,20 @@ class TestParquetWriter:
     def test_write_prediction(self, tmp_path):
         paths = ParquetPaths(tmp_path / "data")
         writer = ParquetWriter(paths)
-        path = writer.write_prediction("sh.600519", "2026-08-11", 30, {
-            "ticker": "sh.600519", "eval_date": "2026-08-11",
-            "direction": "UP", "expected_change_pct": 2.5,
-        })
+        path = writer.write_prediction(
+            "sh.600519",
+            "2026-08-11",
+            30,
+            {
+                "ticker": "sh.600519",
+                "eval_date": "2026-08-11",
+                "direction": "UP",
+                "expected_change_pct": 2.5,
+            },
+        )
         assert path.exists()
         import pandas as pd
+
         df = pd.read_parquet(path)
         assert len(df) == 1
         assert df.iloc[0]["direction"] == "UP"
@@ -213,14 +299,25 @@ class TestParquetWriter:
         paths = ParquetPaths(tmp_path / "data")
         writer = ParquetWriter(paths)
         records = [
-            {"ticker": "sh.600519", "action": "BUY", "return_pct": 2.5,
-             "entry_date": "2026-08-11", "exit_date": "2026-08-16"},
-            {"ticker": "sz.000858", "action": "HOLD", "return_pct": -0.3,
-             "entry_date": "2026-08-11", "exit_date": "2026-08-16"},
+            {
+                "ticker": "sh.600519",
+                "action": "BUY",
+                "return_pct": 2.5,
+                "entry_date": "2026-08-11",
+                "exit_date": "2026-08-16",
+            },
+            {
+                "ticker": "sz.000858",
+                "action": "HOLD",
+                "return_pct": -0.3,
+                "entry_date": "2026-08-11",
+                "exit_date": "2026-08-16",
+            },
         ]
         path = writer.write_backtest("job-001", records)
         assert path.exists()
         import pandas as pd
+
         df = pd.read_parquet(path)
         assert len(df) == 2
         assert df.iloc[0]["ticker"] == "sh.600519"
@@ -229,6 +326,7 @@ class TestParquetWriter:
 # ══════════════════════════════════════════════════════════════════════════════
 #  DuckDB 不可用时降级行为
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestDuckdbFallback:
     def test_get_analytics_returns_none_when_no_duckdb(self):

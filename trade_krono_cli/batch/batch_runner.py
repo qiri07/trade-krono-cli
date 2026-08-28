@@ -4,6 +4,7 @@ batch_runner — 动态 batch 调度器。
 支持 asyncio 并发执行，动态调整 batch_size，
 内置限流防止 API rate limit。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -89,9 +90,7 @@ class BatchRunner:
                         t0 = time.time()
                         result = await process_fn(item)
                         elapsed = time.time() - t0
-                        logger.debug(
-                            f"  ✓ [{idx}] 完成 ({elapsed:.1f}s)"
-                        )
+                        logger.debug(f"  ✓ [{idx}] 完成 ({elapsed:.1f}s)")
                         return result, None
                     except Exception as e:
                         if attempt < self.config.retry_attempts:
@@ -134,14 +133,11 @@ class BatchRunner:
             batch_elapsed = time.time() - batch_start
             logger.info(
                 f"  📊 批次 {batch_idx + 1}/{total_batches} 完成 "
-                f"({batch_elapsed:.1f}s, 成功 {sum(1 for r,e in batch_results if r is not None)}/"
+                f"({batch_elapsed:.1f}s, 成功 {sum(1 for r, e in batch_results if r is not None)}/"
                 f"{len(batch)})"
             )
 
-        logger.info(
-            f"📊 BatchRunner 完成 | 成功 {len(results)}/{len(items)}, "
-            f"失败 {len(errors)}"
-        )
+        logger.info(f"📊 BatchRunner 完成 | 成功 {len(results)}/{len(items)}, 失败 {len(errors)}")
         return results
 
     def run_sync(
@@ -152,9 +148,11 @@ class BatchRunner:
         """
         同步版本：包装 asyncio.run。
         """
+
         async def _async_runner():
             async def _wrap(item):
                 return process_fn(item)
+
             return await self.run(items, _wrap)
 
         return asyncio.run(_async_runner())
@@ -162,4 +160,4 @@ class BatchRunner:
     @staticmethod
     def _split_batches(items: list[Any], size: int) -> list[list[Any]]:
         """将列表分割为固定大小的批次。"""
-        return [items[i:i + size] for i in range(0, len(items), size)]
+        return [items[i : i + size] for i in range(0, len(items), size)]

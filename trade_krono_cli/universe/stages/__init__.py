@@ -1,6 +1,7 @@
 """
 Stage — 抽象基类：单一过滤阶段。
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

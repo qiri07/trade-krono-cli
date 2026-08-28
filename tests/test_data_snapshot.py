@@ -1,19 +1,20 @@
 """测试 DataSnapshot 模块。"""
+
 from __future__ import annotations
 
 import pandas as pd
 import pytest
 
 from trade_krono_cli.data_snapshot import (
-    DataSourceSnapshot,
     DataSnapshot,
+    DataSourceSnapshot,
     filter_kline_to_cut_date,
 )
-
 
 # ═══════════════════════════════════════════════════════
 # DataSourceSnapshot
 # ═══════════════════════════════════════════════════════
+
 
 class TestDataSourceSnapshot:
     def test_basic_creation(self):
@@ -76,6 +77,7 @@ class TestDataSourceSnapshot:
 
     def test_frozen(self):
         import dataclasses
+
         s = DataSourceSnapshot(
             source="test",
             cut_date="2024-01-01",
@@ -95,6 +97,7 @@ class TestDataSourceSnapshot:
 # ═══════════════════════════════════════════════════════
 # DataSnapshot
 # ═══════════════════════════════════════════════════════
+
 
 class TestDataSnapshot:
     def test_empty_sources(self):
@@ -191,6 +194,7 @@ class TestDataSnapshot:
 
     def test_frozen(self):
         import dataclasses
+
         snap = DataSnapshot(cut_date="2024-06-30")
         assert dataclasses.is_dataclass(snap)
         assert snap.__dataclass_params__.frozen is True
@@ -212,6 +216,7 @@ class TestDataSnapshot:
 # filter_kline_to_cut_date
 # ═══════════════════════════════════════════════════════
 
+
 class TestFilterKlineToCutDate:
     def test_none_input(self):
         result = filter_kline_to_cut_date(None, "2024-06-30")
@@ -223,55 +228,67 @@ class TestFilterKlineToCutDate:
         assert len(result) == 0
 
     def test_filter_cuts_before_date(self):
-        df = pd.DataFrame({
-            "timestamps": ["2024-06-20", "2024-06-25", "2024-06-28", "2024-06-30"],
-            "close": [100.0, 101.0, 102.0, 103.0],
-        })
+        df = pd.DataFrame(
+            {
+                "timestamps": ["2024-06-20", "2024-06-25", "2024-06-28", "2024-06-30"],
+                "close": [100.0, 101.0, 102.0, 103.0],
+            }
+        )
         result = filter_kline_to_cut_date(df, "2024-06-29")
         # 应包含 2024-06-29 及之前的数据（含 2024-06-28，不含 2024-06-30）
         assert len(result) == 3
         assert str(result.iloc[-1]["timestamps"]) == "2024-06-28"
 
     def test_filter_exact_cutoff(self):
-        df = pd.DataFrame({
-            "timestamps": ["2024-06-28", "2024-06-29", "2024-06-30"],
-            "close": [100.0, 101.0, 102.0],
-        })
+        df = pd.DataFrame(
+            {
+                "timestamps": ["2024-06-28", "2024-06-29", "2024-06-30"],
+                "close": [100.0, 101.0, 102.0],
+            }
+        )
         result = filter_kline_to_cut_date(df, "2024-06-29")
         # cutoff=2024-06-29，dates <= cutoff → 包含 29
         assert len(result) == 2
         assert str(result.iloc[-1]["timestamps"]) == "2024-06-29"
 
     def test_filter_no_data_before_cutoff(self):
-        df = pd.DataFrame({
-            "timestamps": ["2024-07-01", "2024-07-02"],
-            "close": [100.0, 101.0],
-        })
+        df = pd.DataFrame(
+            {
+                "timestamps": ["2024-07-01", "2024-07-02"],
+                "close": [100.0, 101.0],
+            }
+        )
         result = filter_kline_to_cut_date(df, "2024-06-30")
         assert len(result) == 0
 
     def test_custom_date_col(self):
-        df = pd.DataFrame({
-            "date": ["2024-06-20", "2024-06-25", "2024-06-28"],
-            "close": [100.0, 101.0, 102.0],
-        })
+        df = pd.DataFrame(
+            {
+                "date": ["2024-06-20", "2024-06-25", "2024-06-28"],
+                "close": [100.0, 101.0, 102.0],
+            }
+        )
         result = filter_kline_to_cut_date(df, "2024-06-27", date_col="date")
         assert len(result) == 2
 
     def test_bad_date_col_returns_original(self):
-        df = pd.DataFrame({
-            "wrong_col": ["2024-06-20", "2024-06-25"],
-            "close": [100.0, 101.0],
-        })
+        df = pd.DataFrame(
+            {
+                "wrong_col": ["2024-06-20", "2024-06-25"],
+                "close": [100.0, 101.0],
+            }
+        )
         # 日期列不存在时，应 catch 异常并返回原 df
         result = filter_kline_to_cut_date(df, "2024-06-30")
         assert len(result) == 2
 
     def test_returns_copy(self):
-        df = pd.DataFrame({
-            "timestamps": ["2024-06-20", "2024-06-25"],
-            "close": [100.0, 101.0],
-        })
+        df = pd.DataFrame(
+            {
+                "timestamps": ["2024-06-20", "2024-06-25"],
+                "close": [100.0, 101.0],
+            }
+        )
         result = filter_kline_to_cut_date(df, "2024-06-30")
         # 修改 result 不应影响原 df
         result.loc[0, "close"] = 999.0

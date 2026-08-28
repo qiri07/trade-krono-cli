@@ -1,14 +1,17 @@
 """测试 ResourceManager — 统一资源管理器。"""
+
 import asyncio
 import time
+
 import pytest
+
 from trade_krono_cli.pipeline.resource_manager import (
-    ResourceManager,
-    ResourceBudget,
     GpuQueue,
     LlmSemaphore,
-    get_manager,
+    ResourceBudget,
+    ResourceManager,
     clear_manager,
+    get_manager,
 )
 
 
@@ -59,11 +62,16 @@ class TestGpuQueue:
                 results.append(f"{name}_out")
 
         import threading
+
         t1 = threading.Thread(target=task, args=("a",))
         t2 = threading.Thread(target=task, args=("b",))
         t3 = threading.Thread(target=task, args=("c",))
-        t1.start(); t2.start(); t3.start()
-        t1.join(); t2.join(); t3.join()
+        t1.start()
+        t2.start()
+        t3.start()
+        t1.join()
+        t2.join()
+        t3.join()
 
         # 同一时刻最多 2 个任务在飞
         assert results.count("a_in") == 1
@@ -258,6 +266,7 @@ class TestBackwardCompat:
 
     def test_get_pool_returns_manager(self):
         from trade_krono_cli.pipeline.resource_manager import get_pool
+
         p = get_pool()
         assert hasattr(p, "submit_cpu")
         assert hasattr(p, "submit_io")
@@ -267,6 +276,7 @@ class TestBackwardCompat:
 
     def test_clear_pool_singleton(self):
         from trade_krono_cli.pipeline.resource_manager import clear_pool_singleton
+
         m1 = get_manager()
         clear_pool_singleton()
         m2 = get_manager()

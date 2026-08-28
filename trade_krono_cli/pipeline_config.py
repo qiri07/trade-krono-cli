@@ -27,32 +27,33 @@ PipelineConfig 是顶层容器，通过属性代理保持向后兼容：
   3. PipelineConfig（YAML/JSON 文件）
   4. 各子配置默认值
 """
+
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, field
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional
 
-from trade_krono_cli.config import get_settings, Settings
+from trade_krono_cli.config import Settings, get_settings
+from trade_krono_cli.configs.abnormality import AbnormalityConfig
+from trade_krono_cli.configs.degradation import DegradationConfig
+from trade_krono_cli.configs.filters import FilterConfig
 from trade_krono_cli.configs.kronos import KronosConfig
-from trade_krono_cli.configs.ta import TAConfig
+from trade_krono_cli.configs.logging import LoggingConfig
+from trade_krono_cli.configs.output import OutputConfig
+from trade_krono_cli.configs.retry import RetryConfig
+from trade_krono_cli.configs.risk import RiskConfig
 from trade_krono_cli.configs.scoring import (
+    RiskBoostStrategyConfig,
     ScoringConfig,
     ScoringStrategyConfig,
-    RiskBoostStrategyConfig,
 )
-from trade_krono_cli.configs.risk import RiskConfig
-from trade_krono_cli.configs.filters import FilterConfig
-from trade_krono_cli.configs.abnormality import AbnormalityConfig
+from trade_krono_cli.configs.ta import TAConfig
 from trade_krono_cli.configs.trading import ConstraintConfig
-from trade_krono_cli.configs.output import OutputConfig
-from trade_krono_cli.configs.logging import LoggingConfig
-from trade_krono_cli.configs.retry import RetryConfig
-from trade_krono_cli.configs.degradation import DegradationConfig
-
 
 # ── 配置解析辅助函数 ─────────────────────────────────────────────────────────
+
 
 def _parse_range(s: str) -> tuple[float, float] | None:
     if not s or not s.strip():
@@ -82,6 +83,7 @@ def _parse_float(s: str) -> float | None:
 
 
 # ── PipelineConfig ────────────────────────────────────────────────────────────
+
 
 class PipelineConfig:
     """
@@ -161,58 +163,80 @@ class PipelineConfig:
         self.kronos = self._merge_sub(
             KronosConfig(),
             kronos,
-            {k: v for k, v in [
-                ("sample_count", sample_count), ("pred_len", pred_len),
-                ("lookback", lookback), ("model_name", model_name),
-                ("device", device), ("T", T), ("top_p", top_p),
-                ("use_cache", use_cache),
-            ] if v is not None},
+            {
+                k: v
+                for k, v in [
+                    ("sample_count", sample_count),
+                    ("pred_len", pred_len),
+                    ("lookback", lookback),
+                    ("model_name", model_name),
+                    ("device", device),
+                    ("T", T),
+                    ("top_p", top_p),
+                    ("use_cache", use_cache),
+                ]
+                if v is not None
+            },
         )
         self.ta = self._merge_sub(
             TAConfig(),
             ta,
-            {k: v for k, v in [
-                ("llm_provider", llm_provider),
-                ("deep_think_llm", deep_think_llm),
-                ("quick_think_llm", quick_think_llm),
-                ("max_debate_rounds", max_debate_rounds),
-                ("output_language", output_language),
-            ] if v is not None},
+            {
+                k: v
+                for k, v in [
+                    ("llm_provider", llm_provider),
+                    ("deep_think_llm", deep_think_llm),
+                    ("quick_think_llm", quick_think_llm),
+                    ("max_debate_rounds", max_debate_rounds),
+                    ("output_language", output_language),
+                ]
+                if v is not None
+            },
         )
         self.scoring = self._merge_sub(ScoringConfig(), scoring, {})
         self.scoring_strategy = self._merge_sub(ScoringStrategyConfig(), scoring_strategy, {})
-        self.risk_boost_strategy = self._merge_sub(RiskBoostStrategyConfig(), risk_boost_strategy, {})
+        self.risk_boost_strategy = self._merge_sub(
+            RiskBoostStrategyConfig(), risk_boost_strategy, {}
+        )
         self.risk = self._merge_sub(RiskConfig(), risk, {})
         self.filters = self._merge_sub(
             FilterConfig(),
             filters,
-            {k: v for k, v in [
-                ("min_confidence", min_confidence),
-                ("allowed_signals", allowed_signals),
-                ("market_cap_range", market_cap_range),
-                ("industry_whitelist", industry_whitelist),
-                ("industry_blacklist", industry_blacklist),
-                ("pe_range", pe_range),
-                ("pb_range", pb_range),
-                ("max_risk_score", max_risk_score),
-                ("min_volume_ratio", min_volume_ratio),
-                ("min_turnover_rate", min_turnover_rate),
-                ("exclude_st", exclude_st),
-                ("exclude_low_price", exclude_low_price),
-                ("low_price_threshold", low_price_threshold),
-                ("min_pb", min_pb),
-                ("universe_source", universe_source),
-            ] if v is not None},
+            {
+                k: v
+                for k, v in [
+                    ("min_confidence", min_confidence),
+                    ("allowed_signals", allowed_signals),
+                    ("market_cap_range", market_cap_range),
+                    ("industry_whitelist", industry_whitelist),
+                    ("industry_blacklist", industry_blacklist),
+                    ("pe_range", pe_range),
+                    ("pb_range", pb_range),
+                    ("max_risk_score", max_risk_score),
+                    ("min_volume_ratio", min_volume_ratio),
+                    ("min_turnover_rate", min_turnover_rate),
+                    ("exclude_st", exclude_st),
+                    ("exclude_low_price", exclude_low_price),
+                    ("low_price_threshold", low_price_threshold),
+                    ("min_pb", min_pb),
+                    ("universe_source", universe_source),
+                ]
+                if v is not None
+            },
         )
         self.abnormality = self._merge_sub(
             AbnormalityConfig(),
             abnormality,
-            {k: v for k, v in [
-                ("skip_new_stock", skip_new_stock),
-                ("new_stock_min_days", new_stock_min_days),
-                ("kline_min_completeness", kline_min_completeness),
-                ("abnormality_risk_boost_enabled", abnormality_risk_boost_enabled),
-            ] if v is not None},
+            {
+                k: v
+                for k, v in [
+                    ("skip_new_stock", skip_new_stock),
+                    ("new_stock_min_days", new_stock_min_days),
+                    ("kline_min_completeness", kline_min_completeness),
+                    ("abnormality_risk_boost_enabled", abnormality_risk_boost_enabled),
+                ]
+                if v is not None
+            },
         )
         self.trading = self._merge_sub(
             ConstraintConfig(),
@@ -222,39 +246,55 @@ class PipelineConfig:
         self.output = self._merge_sub(
             OutputConfig(),
             output,
-            {k: v for k, v in [
-                ("output_dir", output_dir),
-                ("json_path", json_path),
-                ("html_path", html_path),
-            ] if v is not None},
+            {
+                k: v
+                for k, v in [
+                    ("output_dir", output_dir),
+                    ("json_path", json_path),
+                    ("html_path", html_path),
+                ]
+                if v is not None
+            },
         )
         self.logging = self._merge_sub(
             LoggingConfig(),
             logging,
-            {k: v for k, v in [
-                ("log_level", log_level),
-                ("log_json", log_json),
-            ] if v is not None},
+            {
+                k: v
+                for k, v in [
+                    ("log_level", log_level),
+                    ("log_json", log_json),
+                ]
+                if v is not None
+            },
         )
         self.retry = self._merge_sub(
             RetryConfig(),
             retry,
-            {k: v for k, v in [
-                ("retry_max_attempts", retry_max_attempts),
-                ("retry_base_delay", retry_base_delay),
-                ("retry_jitter", retry_jitter),
-                ("retry_rate_limit_backoff", retry_rate_limit_backoff),
-                ("retry_rate_limit_max_wait", retry_rate_limit_max_wait),
-            ] if v is not None},
+            {
+                k: v
+                for k, v in [
+                    ("retry_max_attempts", retry_max_attempts),
+                    ("retry_base_delay", retry_base_delay),
+                    ("retry_jitter", retry_jitter),
+                    ("retry_rate_limit_backoff", retry_rate_limit_backoff),
+                    ("retry_rate_limit_max_wait", retry_rate_limit_max_wait),
+                ]
+                if v is not None
+            },
         )
         self.degradation = self._merge_sub(
             DegradationConfig(),
             degradation,
-            {k: v for k, v in [
-                ("degrade_mode", degrade_mode),
-                ("ta_cache_fallback_enabled", ta_cache_fallback_enabled),
-                ("ta_cache_max_age_days", ta_cache_max_age_days),
-            ] if v is not None},
+            {
+                k: v
+                for k, v in [
+                    ("degrade_mode", degrade_mode),
+                    ("ta_cache_fallback_enabled", ta_cache_fallback_enabled),
+                    ("ta_cache_max_age_days", ta_cache_max_age_days),
+                ]
+                if v is not None
+            },
         )
 
     @staticmethod
@@ -354,30 +394,68 @@ class PipelineConfig:
         """
         # 分离扁平字段和嵌套子配置
         flat_keys = {
-            "sample_count", "pred_len", "lookback", "model_name", "device",
-            "T", "top_p", "use_cache",
-            "llm_provider", "deep_think_llm", "quick_think_llm",
-            "max_debate_rounds", "output_language",
-            "min_confidence", "allowed_signals",
-            "market_cap_range", "industry_whitelist", "industry_blacklist",
-            "pe_range", "pb_range", "max_risk_score",
-            "min_volume_ratio", "min_turnover_rate", "exclude_st",
-            "exclude_low_price", "low_price_threshold", "min_pb",
-            "skip_new_stock", "new_stock_min_days",
-            "kline_min_completeness", "abnormality_risk_boost_enabled",
-            "output_dir", "json_path", "html_path",
-            "log_level", "log_json",
-            "retry_max_attempts", "retry_base_delay", "retry_jitter",
-            "retry_rate_limit_backoff", "retry_rate_limit_max_wait",
-            "degrade_mode", "ta_cache_fallback_enabled", "ta_cache_max_age_days",
+            "sample_count",
+            "pred_len",
+            "lookback",
+            "model_name",
+            "device",
+            "T",
+            "top_p",
+            "use_cache",
+            "llm_provider",
+            "deep_think_llm",
+            "quick_think_llm",
+            "max_debate_rounds",
+            "output_language",
+            "min_confidence",
+            "allowed_signals",
+            "market_cap_range",
+            "industry_whitelist",
+            "industry_blacklist",
+            "pe_range",
+            "pb_range",
+            "max_risk_score",
+            "min_volume_ratio",
+            "min_turnover_rate",
+            "exclude_st",
+            "exclude_low_price",
+            "low_price_threshold",
+            "min_pb",
+            "skip_new_stock",
+            "new_stock_min_days",
+            "kline_min_completeness",
+            "abnormality_risk_boost_enabled",
+            "output_dir",
+            "json_path",
+            "html_path",
+            "log_level",
+            "log_json",
+            "retry_max_attempts",
+            "retry_base_delay",
+            "retry_jitter",
+            "retry_rate_limit_backoff",
+            "retry_rate_limit_max_wait",
+            "degrade_mode",
+            "ta_cache_fallback_enabled",
+            "ta_cache_max_age_days",
             "universe_source",
             # 向后兼容别名
             "constraints",
         }
         sub_config_keys = {
-            "kronos", "ta", "scoring", "risk", "filters", "abnormality",
-            "trading", "output", "logging", "retry", "degradation",
-            "scoring_strategy", "risk_boost_strategy",
+            "kronos",
+            "ta",
+            "scoring",
+            "risk",
+            "filters",
+            "abnormality",
+            "trading",
+            "output",
+            "logging",
+            "retry",
+            "degradation",
+            "scoring_strategy",
+            "risk_boost_strategy",
         }
         # 向后兼容别名：key → 实际子配置名
         _sub_config_aliases: dict[str, str] = {"constraints": "trading"}
@@ -412,8 +490,9 @@ class PipelineConfig:
         flat_filtered = {k: v for k, v in flat_overrides.items() if v is not None}
 
         # 构建新实例：先传入所有子配置，再传入扁平覆盖
-        kwargs_new: dict[str, Any] = {name: merged_sub.get(name, getattr(self, name))
-                                       for name in sub_config_keys}
+        kwargs_new: dict[str, Any] = {
+            name: merged_sub.get(name, getattr(self, name)) for name in sub_config_keys
+        }
         kwargs_new.update(flat_filtered)
         return PipelineConfig(**kwargs_new)
 
@@ -435,6 +514,7 @@ class PipelineConfig:
 
     def to_dict(self) -> dict:
         """序列化为扁平 dict（含嵌套子配置）。"""
+
         def _to_plain(obj: Any) -> Any:
             if isinstance(obj, Path):
                 return str(obj)
@@ -445,56 +525,69 @@ class PipelineConfig:
             if hasattr(obj, "__dataclass_fields__"):
                 return {k: _to_plain(v) for k, v in asdict(obj).items()}
             return obj
+
         result: dict[str, Any] = {}
-        for name in ("kronos", "ta", "scoring", "scoring_strategy",
-                      "risk_boost_strategy", "risk", "filters", "abnormality",
-                      "trading", "output", "logging", "retry", "degradation"):
+        for name in (
+            "kronos",
+            "ta",
+            "scoring",
+            "scoring_strategy",
+            "risk_boost_strategy",
+            "risk",
+            "filters",
+            "abnormality",
+            "trading",
+            "output",
+            "logging",
+            "retry",
+            "degradation",
+        ):
             val = getattr(self, name)
             result[name] = _to_plain(val)
         # 同时输出扁平委托键，保持与旧测试的向后兼容
         _DELEGATES = {
-            "sample_count":      ("kronos", "sample_count"),
-            "pred_len":          ("kronos", "pred_len"),
-            "lookback":          ("kronos", "lookback"),
-            "model_name":        ("kronos", "model_name"),
-            "device":            ("kronos", "device"),
-            "T":                 ("kronos", "T"),
-            "top_p":             ("kronos", "top_p"),
-            "use_cache":         ("kronos", "use_cache"),
-            "llm_provider":      ("ta", "llm_provider"),
-            "deep_think_llm":    ("ta", "deep_think_llm"),
-            "quick_think_llm":   ("ta", "quick_think_llm"),
+            "sample_count": ("kronos", "sample_count"),
+            "pred_len": ("kronos", "pred_len"),
+            "lookback": ("kronos", "lookback"),
+            "model_name": ("kronos", "model_name"),
+            "device": ("kronos", "device"),
+            "T": ("kronos", "T"),
+            "top_p": ("kronos", "top_p"),
+            "use_cache": ("kronos", "use_cache"),
+            "llm_provider": ("ta", "llm_provider"),
+            "deep_think_llm": ("ta", "deep_think_llm"),
+            "quick_think_llm": ("ta", "quick_think_llm"),
             "max_debate_rounds": ("ta", "max_debate_rounds"),
-            "output_language":   ("ta", "output_language"),
-            "min_confidence":    ("filters", "min_confidence"),
-            "allowed_signals":   ("filters", "allowed_signals"),
-            "market_cap_range":  ("filters", "market_cap_range"),
+            "output_language": ("ta", "output_language"),
+            "min_confidence": ("filters", "min_confidence"),
+            "allowed_signals": ("filters", "allowed_signals"),
+            "market_cap_range": ("filters", "market_cap_range"),
             "industry_whitelist": ("filters", "industry_whitelist"),
             "industry_blacklist": ("filters", "industry_blacklist"),
-            "pe_range":          ("filters", "pe_range"),
-            "pb_range":          ("filters", "pb_range"),
-            "max_risk_score":    ("filters", "max_risk_score"),
-            "min_volume_ratio":  ("filters", "min_volume_ratio"),
+            "pe_range": ("filters", "pe_range"),
+            "pb_range": ("filters", "pb_range"),
+            "max_risk_score": ("filters", "max_risk_score"),
+            "min_volume_ratio": ("filters", "min_volume_ratio"),
             "min_turnover_rate": ("filters", "min_turnover_rate"),
-            "exclude_st":        ("filters", "exclude_st"),
-            "skip_new_stock":    ("abnormality", "skip_new_stock"),
+            "exclude_st": ("filters", "exclude_st"),
+            "skip_new_stock": ("abnormality", "skip_new_stock"),
             "new_stock_min_days": ("abnormality", "new_stock_min_days"),
             "kline_min_completeness": ("abnormality", "kline_min_completeness"),
             "abnormality_risk_boost_enabled": ("abnormality", "abnormality_risk_boost_enabled"),
-            "output_dir":        ("output", "output_dir"),
-            "json_path":         ("output", "json_path"),
-            "html_path":         ("output", "html_path"),
-            "log_level":         ("logging", "log_level"),
-            "log_json":          ("logging", "log_json"),
+            "output_dir": ("output", "output_dir"),
+            "json_path": ("output", "json_path"),
+            "html_path": ("output", "html_path"),
+            "log_level": ("logging", "log_level"),
+            "log_json": ("logging", "log_json"),
             "retry_max_attempts": ("retry", "retry_max_attempts"),
-            "retry_base_delay":  ("retry", "retry_base_delay"),
-            "retry_jitter":      ("retry", "retry_jitter"),
+            "retry_base_delay": ("retry", "retry_base_delay"),
+            "retry_jitter": ("retry", "retry_jitter"),
             "retry_rate_limit_backoff": ("retry", "retry_rate_limit_backoff"),
             "retry_rate_limit_max_wait": ("retry", "retry_rate_limit_max_wait"),
-            "degrade_mode":      ("degradation", "degrade_mode"),
+            "degrade_mode": ("degradation", "degrade_mode"),
             "ta_cache_fallback_enabled": ("degradation", "ta_cache_fallback_enabled"),
             "ta_cache_max_age_days": ("degradation", "ta_cache_max_age_days"),
-            "universe_source":   ("filters", "universe_source"),
+            "universe_source": ("filters", "universe_source"),
         }
         for flat_key, (container, attr) in _DELEGATES.items():
             result[flat_key] = _to_plain(getattr(getattr(self, container), attr))
@@ -506,9 +599,19 @@ class PipelineConfig:
         copy = dict(data)
         # 提取已知的子配置 key
         sub_keys = {
-            "kronos", "ta", "scoring", "scoring_strategy", "risk_boost_strategy",
-            "risk", "filters", "abnormality", "trading", "output",
-            "logging", "retry", "degradation",
+            "kronos",
+            "ta",
+            "scoring",
+            "scoring_strategy",
+            "risk_boost_strategy",
+            "risk",
+            "filters",
+            "abnormality",
+            "trading",
+            "output",
+            "logging",
+            "retry",
+            "degradation",
         }
         sub_data: dict[str, dict] = {}
         flat_data: dict[str, Any] = {}
@@ -556,6 +659,7 @@ class PipelineConfig:
         data = self.to_dict()
         if p.suffix.lower() in (".yaml", ".yml"):
             import yaml
+
             with open(p, "w", encoding="utf-8") as f:
                 yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False)
         else:
@@ -573,69 +677,78 @@ class PipelineConfig:
         """向后兼容：将扁平字段访问委托给子配置。"""
         # 避免递归：只处理已知属性名
         _DELEGATES = {
-            "sample_count":      ("kronos", "sample_count"),
-            "pred_len":          ("kronos", "pred_len"),
-            "lookback":          ("kronos", "lookback"),
-            "model_name":        ("kronos", "model_name"),
-            "device":            ("kronos", "device"),
-            "T":                 ("kronos", "T"),
-            "top_p":             ("kronos", "top_p"),
-            "use_cache":         ("kronos", "use_cache"),
-            "llm_provider":      ("ta", "llm_provider"),
-            "deep_think_llm":    ("ta", "deep_think_llm"),
-            "quick_think_llm":   ("ta", "quick_think_llm"),
+            "sample_count": ("kronos", "sample_count"),
+            "pred_len": ("kronos", "pred_len"),
+            "lookback": ("kronos", "lookback"),
+            "model_name": ("kronos", "model_name"),
+            "device": ("kronos", "device"),
+            "T": ("kronos", "T"),
+            "top_p": ("kronos", "top_p"),
+            "use_cache": ("kronos", "use_cache"),
+            "llm_provider": ("ta", "llm_provider"),
+            "deep_think_llm": ("ta", "deep_think_llm"),
+            "quick_think_llm": ("ta", "quick_think_llm"),
             "max_debate_rounds": ("ta", "max_debate_rounds"),
-            "output_language":   ("ta", "output_language"),
-            "min_confidence":    ("filters", "min_confidence"),
-            "allowed_signals":   ("filters", "allowed_signals"),
-            "market_cap_range":  ("filters", "market_cap_range"),
+            "output_language": ("ta", "output_language"),
+            "min_confidence": ("filters", "min_confidence"),
+            "allowed_signals": ("filters", "allowed_signals"),
+            "market_cap_range": ("filters", "market_cap_range"),
             "industry_whitelist": ("filters", "industry_whitelist"),
             "industry_blacklist": ("filters", "industry_blacklist"),
-            "pe_range":          ("filters", "pe_range"),
-            "pb_range":          ("filters", "pb_range"),
-            "max_risk_score":    ("filters", "max_risk_score"),
-            "min_volume_ratio":  ("filters", "min_volume_ratio"),
+            "pe_range": ("filters", "pe_range"),
+            "pb_range": ("filters", "pb_range"),
+            "max_risk_score": ("filters", "max_risk_score"),
+            "min_volume_ratio": ("filters", "min_volume_ratio"),
             "min_turnover_rate": ("filters", "min_turnover_rate"),
-            "exclude_st":        ("filters", "exclude_st"),
-            "skip_new_stock":    ("abnormality", "skip_new_stock"),
+            "exclude_st": ("filters", "exclude_st"),
+            "skip_new_stock": ("abnormality", "skip_new_stock"),
             "new_stock_min_days": ("abnormality", "new_stock_min_days"),
             "kline_min_completeness": ("abnormality", "kline_min_completeness"),
             "abnormality_risk_boost_enabled": ("abnormality", "abnormality_risk_boost_enabled"),
-            "output_dir":        ("output", "output_dir"),
-            "json_path":         ("output", "json_path"),
-            "html_path":         ("output", "html_path"),
-            "log_level":         ("logging", "log_level"),
-            "log_json":          ("logging", "log_json"),
+            "output_dir": ("output", "output_dir"),
+            "json_path": ("output", "json_path"),
+            "html_path": ("output", "html_path"),
+            "log_level": ("logging", "log_level"),
+            "log_json": ("logging", "log_json"),
             "retry_max_attempts": ("retry", "retry_max_attempts"),
-            "retry_base_delay":  ("retry", "retry_base_delay"),
-            "retry_jitter":      ("retry", "retry_jitter"),
+            "retry_base_delay": ("retry", "retry_base_delay"),
+            "retry_jitter": ("retry", "retry_jitter"),
             "retry_rate_limit_backoff": ("retry", "retry_rate_limit_backoff"),
             "retry_rate_limit_max_wait": ("retry", "retry_rate_limit_max_wait"),
-            "degrade_mode":      ("degradation", "degrade_mode"),
+            "degrade_mode": ("degradation", "degrade_mode"),
             "ta_cache_fallback_enabled": ("degradation", "ta_cache_fallback_enabled"),
             "ta_cache_max_age_days": ("degradation", "ta_cache_max_age_days"),
-            "universe_source":   ("filters", "universe_source"),
+            "universe_source": ("filters", "universe_source"),
         }
         if name in _DELEGATES:
             container, attr = _DELEGATES[name]
             return getattr(getattr(self, container), attr)
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def validate(self) -> tuple[list[str], list[str]]:
         """校验所有子配置，返回 (errors, warnings)。"""
         errors: list[str] = []
         warnings: list[str] = []
-        for name in ("kronos", "ta", "scoring", "risk", "filters",
-                      "abnormality", "trading", "retry", "degradation"):
+        for name in (
+            "kronos",
+            "ta",
+            "scoring",
+            "risk",
+            "filters",
+            "abnormality",
+            "trading",
+            "retry",
+            "degradation",
+        ):
             sub = getattr(self, name)
             if hasattr(sub, "validate"):
                 errs = sub.validate()
                 errors.extend(errs)
         # 语义警告：ta_cache_fallback_enabled 与 degrade_mode 不匹配
-        if self.degradation.ta_cache_fallback_enabled and \
-                self.degradation.degrade_mode != "ta_cache_fallback":
+        if (
+            self.degradation.ta_cache_fallback_enabled
+            and self.degradation.degrade_mode != "ta_cache_fallback"
+        ):
             warnings.append(
                 f"TA_CACHE_FALLBACK_ENABLED=true 但 DEGRADE_MODE="
                 f"{self.degradation.degrade_mode}，"

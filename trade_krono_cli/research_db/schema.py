@@ -3,19 +3,31 @@
 
 本模块不含任何运行时数据库逻辑，仅供 migrations.py 和 base.py 引用。
 """
+
 from __future__ import annotations
 
 # Truncation length for thesis stored in research db
 REASONING_TRUNCATE_LEN = 500
 
 # Whitelist of allowed research table names — prevents SQL injection via f-strings
-RESEARCH_TABLES: frozenset[str] = frozenset({
-    "jobs", "ta_analysis", "kronos_forecast",
-    "signals", "decisions", "raw_reports",
-    "backtest_results", "strategy_runs",
-    "evaluation_results", "signal_history", "committee_deliberations",
-    "data_snapshots", "walkforward_runs", "experiments",
-})
+RESEARCH_TABLES: frozenset[str] = frozenset(
+    {
+        "jobs",
+        "ta_analysis",
+        "kronos_forecast",
+        "signals",
+        "decisions",
+        "raw_reports",
+        "backtest_results",
+        "strategy_runs",
+        "evaluation_results",
+        "signal_history",
+        "committee_deliberations",
+        "data_snapshots",
+        "walkforward_runs",
+        "experiments",
+    }
+)
 
 
 def validate_table_name(table: str, allowed: frozenset[str] | None = None) -> str:

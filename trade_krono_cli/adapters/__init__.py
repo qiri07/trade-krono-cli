@@ -3,6 +3,7 @@
 
 对外暴露适配器实现类，业务代码（runner / pipeline）只依赖此处导出的接口。
 """
+
 from __future__ import annotations
 
 from trade_krono_cli.adapters.base import KronosAdapter, TradingAgentsAdapter

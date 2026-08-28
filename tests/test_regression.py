@@ -1,6 +1,4 @@
 """Regression tests for bugs fixed in previous phases."""
-import pytest
-from unittest.mock import MagicMock, patch
 
 
 class TestRegressionCacheStale:
@@ -8,9 +6,11 @@ class TestRegressionCacheStale:
 
     def test_different_sample_count_different_cache_key(self):
         """不同 sample_count 应产生不同的缓存 key。"""
-        from trade_krono_cli.cache import Cache
+        import os
+        import tempfile
         from pathlib import Path
-        import tempfile, os
+
+        from trade_krono_cli.cache import Cache
 
         fd, path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
@@ -55,8 +55,8 @@ class TestRegressionLimitPrices:
 
     def test_star_market_uses_20_percent(self):
         """科创板（688）应使用 20% 涨跌停。"""
-        from trade_krono_cli.trading_constraints import compute_limit_prices
         from trade_krono_cli.constraints_config import ConstraintConfig
+        from trade_krono_cli.trading_constraints import compute_limit_prices
 
         cfg = ConstraintConfig(enable_limit_check=True)
         up, down = compute_limit_prices(100.0, "sh.688001", config=cfg)
@@ -65,8 +65,8 @@ class TestRegressionLimitPrices:
 
     def test_gem_uses_20_percent(self):
         """创业板（300）应使用 20% 涨跌停。"""
-        from trade_krono_cli.trading_constraints import compute_limit_prices
         from trade_krono_cli.constraints_config import ConstraintConfig
+        from trade_krono_cli.trading_constraints import compute_limit_prices
 
         cfg = ConstraintConfig(enable_limit_check=True)
         up, down = compute_limit_prices(100.0, "sz.300001", config=cfg)
@@ -79,6 +79,7 @@ class TestRegressionSampleCountDefault:
 
     def test_default_is_five(self):
         from trade_krono_cli.config import get_settings
+
         s = get_settings()
         assert s.kronos_sample_count == 5
 
@@ -87,23 +88,27 @@ class TestRegressionUncertaintyBonus:
     """Phase 2: 不确定性置信度映射回归测试。"""
 
     def test_high_confidence_bonus(self):
-        from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
         from trade_krono_cli.configs.schema import ScoringConfig
+        from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
+
         assert _uncertainty_confidence_bonus({"confidence_score": 75.0}, ScoringConfig()) == 3.0
 
     def test_medium_confidence_bonus(self):
-        from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
         from trade_krono_cli.configs.schema import ScoringConfig
+        from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
+
         assert _uncertainty_confidence_bonus({"confidence_score": 60.0}, ScoringConfig()) == 1.0
 
     def test_low_confidence_penalty(self):
-        from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
         from trade_krono_cli.configs.schema import ScoringConfig
+        from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
+
         assert _uncertainty_confidence_bonus({"confidence_score": 30.0}, ScoringConfig()) == -2.0
 
     def test_none_returns_zero(self):
-        from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
         from trade_krono_cli.configs.schema import ScoringConfig
+        from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
+
         assert _uncertainty_confidence_bonus(None, ScoringConfig()) == 0.0
 
 
@@ -112,13 +117,13 @@ class TestRegressionPipelineConfig:
 
     def test_to_dict_converts_tuple_to_list(self):
         from trade_krono_cli.pipeline_config import PipelineConfig
+
         cfg = PipelineConfig()
         d = cfg.to_dict()
         # allowed_signals 是 tuple，应转为 list
         assert isinstance(d["allowed_signals"], list)
 
     def test_yaml_roundtrip(self, tmp_path):
-        import yaml
         from trade_krono_cli.pipeline_config import PipelineConfig
 
         cfg = PipelineConfig(sample_count=10, min_confidence=60.0)
@@ -133,12 +138,13 @@ class TestRegressionLoggingJson:
     """Phase 3: JSON 结构化日志回归测试。"""
 
     def test_json_sink_produces_valid_json(self):
-        from trade_krono_cli.logging_config import _JsonLogSink
         import json
+
+        from trade_krono_cli.logging_config import _JsonLogSink
 
         sink = _JsonLogSink()
         # write() 接收格式化后的字符串
-        json_str = sink.write('{"time":"2026-08-12T10:00:00","level":"INFO","message":"test"}\n')
+        _json_str = sink.write('{"time":"2026-08-12T10:00:00","level":"INFO","message":"test"}\n')
         # 验证 records 中有内容
         assert len(sink.records) >= 1
         # 尝试解析最后一条
@@ -149,6 +155,7 @@ class TestRegressionLoggingJson:
 
     def test_setup_logger_creates_sink(self):
         from trade_krono_cli.logging_config import setup_logger
+
         # setup_logger 返回 None（它直接配置 loguru）
         result = setup_logger(level="DEBUG", json_format=True)
         assert result is None
@@ -179,13 +186,16 @@ class TestRegressionModuleError:
         assert result.error is not None
         # error 是 ModuleError 实例
         from trade_krono_cli.errors import ModuleError
+
         assert isinstance(result.error, ModuleError)
         assert result.error.module == "test"
 
     def test_module_error_context(self):
         from trade_krono_cli.errors import ModuleError
 
-        e = ModuleError(module="kronos", message="OOM", original_exception=RuntimeError("out of memory"))
+        e = ModuleError(
+            module="kronos", message="OOM", original_exception=RuntimeError("out of memory")
+        )
         assert e.module == "kronos"
         assert "kronos" in str(e)
         assert "OOM" in str(e)

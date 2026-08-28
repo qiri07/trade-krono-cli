@@ -11,13 +11,15 @@ UnifiedInvestmentDecision — 跨源统一投资决策。
   · 支持多源信号冲突检测（TA BUY vs Kronos DOWN → flag conflict）
   · 所有数值字段均可序列化，支持持久化和实验比较
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
 
-from trade_krono_cli.ta_decision import Signal, InvestmentDecision as TADecision
 from trade_krono_cli.domain.signal import SignalConflict
+from trade_krono_cli.ta_decision import InvestmentDecision as TADecision
+from trade_krono_cli.ta_decision import Signal
 
 # 兼容：domain.SignalConflict 是常量类，直接用字符串值
 _NoneConflict = SignalConflict.NONE
@@ -30,6 +32,7 @@ _AllConflict = SignalConflict.ALL_CONFLICT
 # ═══════════════════════════════════════════════════════
 #  UnifiedInvestmentDecision
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass
 class UnifiedInvestmentDecision:
@@ -81,6 +84,7 @@ class UnifiedInvestmentDecision:
     risks               风险清单
     invalidations       失效条件列表
     """
+
     # 基础
     ticker: str
     eval_date: str
@@ -93,7 +97,7 @@ class UnifiedInvestmentDecision:
     ta_reasoning: str = ""
 
     # Kronos 源
-    kronos_direction: Optional[str] = None   # "UP"/"DOWN"/"FLAT"
+    kronos_direction: Optional[str] = None  # "UP"/"DOWN"/"FLAT"
     kronos_expected_return: Optional[float] = None
     p10: Optional[float] = None
     p25: Optional[float] = None
@@ -113,9 +117,9 @@ class UnifiedInvestmentDecision:
     prob_loss: Optional[float] = None
     avg_win_return: Optional[float] = None
     avg_loss_return: Optional[float] = None
-    expected_value: Optional[float] = None      # 百分比，如 1.5 = 1.5%
-    risk_adjusted_ev: Optional[float] = None    # EV / vol，类 Sharpe
-    cost_bps: float = 17.0                       # 双边交易成本（bps）
+    expected_value: Optional[float] = None  # 百分比，如 1.5 = 1.5%
+    risk_adjusted_ev: Optional[float] = None  # EV / vol，类 Sharpe
+    cost_bps: float = 17.0  # 双边交易成本（bps）
 
     # 交易执行
     position_size: Optional[float] = None
@@ -149,7 +153,8 @@ class UnifiedInvestmentDecision:
 
         ret = self.kronos_expected_return  # %
         p10, p90 = (self.p10 or 0.0), (self.p90 or 0.0)
-        p50_val = self.p50 or self.p50
+        # p50 未使用，保留变量名避免死代码警告
+        _p50_val = self.p50
 
         # 从分位数估算收益分布中心
         # 假设：p10 = last_close*(1 + loss_10/100), p90 = last_close*(1 + win_90/100)
@@ -166,15 +171,13 @@ class UnifiedInvestmentDecision:
 
         # 收益区间中点
         self.avg_win_return = round((ret + ret_p90) / 2, 4) if ret > 0 else round(ret_p90, 4)
-        self.avg_loss_return = round(abs((ret + ret_p10) / 2), 4) if ret < 0 else round(abs(ret_p10), 4)
+        self.avg_loss_return = (
+            round(abs((ret + ret_p10) / 2), 4) if ret < 0 else round(abs(ret_p10), 4)
+        )
 
         # EV = P(win)×avg_win − P(lose)×avg_loss − cost
         cost_pct = self.cost_bps / 100.0  # bps → %
-        ev = (
-            self.prob_win * self.avg_win_return
-            - self.prob_loss * self.avg_loss_return
-            - cost_pct
-        )
+        ev = self.prob_win * self.avg_win_return - self.prob_loss * self.avg_loss_return - cost_pct
         self.expected_value = round(ev, 4)
 
         # Risk-adjusted EV（类 Sharpe，用 range 作 vol proxy）
@@ -223,7 +226,7 @@ class UnifiedInvestmentDecision:
         kronos_sig = _direction_to_signal(self.kronos_direction)
         if kronos_sig:
             # Kronos 置信度用 direction_score * 100
-            ks = getattr(self, '_kronos_direction_score', None)
+            ks = getattr(self, "_kronos_direction_score", None)
             votes.append((kronos_sig, (ks or 0.5) * 100, "kronos"))
         if self.committee_rec:
             votes.append((self.committee_rec, self.committee_confidence or 50.0, "committee"))
@@ -242,7 +245,9 @@ class UnifiedInvestmentDecision:
 
         # confidence = 加权平均， dissent 扣分
         total_weight = sum(w for _, w, _ in votes)
-        weighted_conf = sum(w for s, w, _ in votes if s == final) / total_weight * 100 if total_weight else 50
+        weighted_conf = (
+            sum(w for s, w, _ in votes if s == final) / total_weight * 100 if total_weight else 50
+        )
         dissent_penalty = (3 - majority_count) * 10  # 每多一个 dissent 扣 10 分
         self.final_confidence = round(max(0, min(100, weighted_conf - dissent_penalty)), 1)
         self.final_signal = final
@@ -252,6 +257,7 @@ class UnifiedInvestmentDecision:
 
     def to_dict(self) -> dict:
         from dataclasses import asdict
+
         d = asdict(self)
         d["final_signal"] = self.final_signal.value
         # conflict is a plain string (domain.SignalConflict constants)
@@ -265,7 +271,6 @@ class UnifiedInvestmentDecision:
 
     @classmethod
     def from_dict(cls, data: dict) -> "UnifiedInvestmentDecision":
-        from dataclasses import asdict
         d = dict(data)
         # 还原枚举
         if isinstance(d.get("final_signal"), str):
@@ -296,6 +301,7 @@ class UnifiedInvestmentDecision:
 # ═══════════════════════════════════════════════════════
 #  辅助函数
 # ═══════════════════════════════════════════════════════
+
 
 def _direction_to_signal(direction: Optional[str]) -> Optional[Signal]:
     """将 Kronos direction (UP/DOWN/FLAT) 映射到 Signal。"""
@@ -343,8 +349,11 @@ def build_unified_decision(
         ta_reasoning=ta_decision.thesis[:200] if ta_decision else "",
         kronos_direction=kronos_direction,
         kronos_expected_return=kronos_expected_return,
-        p10=d.get("p10"), p25=d.get("p25"), p50=d.get("p50"),
-        p75=d.get("p75"), p90=d.get("p90"),
+        p10=d.get("p10"),
+        p25=d.get("p25"),
+        p50=d.get("p50"),
+        p75=d.get("p75"),
+        p90=d.get("p90"),
         last_close=d.get("predicted_close_final"),
         committee_rec=committee_rec,
         committee_confidence=committee_confidence,

@@ -4,6 +4,7 @@
 本文件已被 trade_krono_cli/research_db/ 包替代。
 为保持旧 import 路径兼容，此处仅重新导出所有公开 API。
 """
+
 from __future__ import annotations
 
 # 所有导出由 research_db 包提供

@@ -1,8 +1,10 @@
 """测试合并和打分逻辑。"""
+
 import pytest
-from trade_krono_cli.pipeline.merge import default_scorer, merge_results, filter_pool
-from trade_krono_cli.ta_runner import StockAnalysisResult
+
 from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
+from trade_krono_cli.pipeline.merge import default_scorer, filter_pool, merge_results
+from trade_krono_cli.ta_runner import StockAnalysisResult
 
 
 def test_default_scorer_buy_up():
@@ -62,21 +64,35 @@ def test_merge_results():
         StockAnalysisResult(ticker="sz.000858", date="2026-08-11", signal="SELL", confidence=70.0),
     ]
     pu = PredictionUncertainty(
-        expected_return=3.2, direction="UP", direction_score=0.8,
-        confidence_score=75.0, sample_count_used=1,
+        expected_return=3.2,
+        direction="UP",
+        direction_score=0.8,
+        confidence_score=75.0,
+        sample_count_used=1,
     )
     kronos_results = [
         KronosForecastResult(
-            ticker="sh.600519", eval_date="2026-08-11", horizon=30,
-            direction="UP", expected_change_pct=3.2, last_close=1780.5,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            horizon=30,
+            direction="UP",
+            expected_change_pct=3.2,
+            last_close=1780.5,
             prediction_uncertainty=pu,
         ),
         KronosForecastResult(
-            ticker="sz.000858", eval_date="2026-08-11", horizon=30,
-            direction="DOWN", expected_change_pct=-1.5, last_close=25.3,
+            ticker="sz.000858",
+            eval_date="2026-08-11",
+            horizon=30,
+            direction="DOWN",
+            expected_change_pct=-1.5,
+            last_close=25.3,
             prediction_uncertainty=PredictionUncertainty(
-                expected_return=-1.5, direction="DOWN", direction_score=0.6,
-                confidence_score=60.0, sample_count_used=1,
+                expected_return=-1.5,
+                direction="DOWN",
+                direction_score=0.6,
+                confidence_score=60.0,
+                sample_count_used=1,
             ),
         ),
     ]
@@ -97,8 +113,11 @@ def test_merge_results_with_errors():
     ]
     kronos_results = [
         KronosForecastResult(
-            ticker="sh.600519", eval_date="2026-08-11", horizon=30,
-            direction="UP", expected_change_pct=3.2,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            horizon=30,
+            direction="UP",
+            expected_change_pct=3.2,
         ),
     ]
 
@@ -132,18 +151,24 @@ def test_empty_merge():
 
 # ── TA 决策提取逻辑测试 ─────────────────────────────────────────────────────
 
+
 def test_merge_with_confidence():
     """merged 结果中 ta_confidence 不再为 None。"""
-    from trade_krono_cli.ta_runner import StockAnalysisResult
     from trade_krono_cli.kronos_runner import KronosForecastResult
+    from trade_krono_cli.ta_runner import StockAnalysisResult
 
     ta = StockAnalysisResult(
-        ticker="sh.600519", date="2026-08-11",
-        signal="BUY", confidence=80.0,
+        ticker="sh.600519",
+        date="2026-08-11",
+        signal="BUY",
+        confidence=80.0,
     )
     kronos = KronosForecastResult(
-        ticker="sh.600519", eval_date="2026-08-11", horizon=30,
-        direction="UP", expected_change_pct=3.2,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        horizon=30,
+        direction="UP",
+        expected_change_pct=3.2,
     )
 
     merged = merge_results([ta], [kronos])
@@ -155,22 +180,34 @@ def test_merge_with_confidence():
 
 # ── Risk Engine 集成测试 ─────────────────────────────────────────────────────
 
+
 def test_merge_with_risk_data():
     """有 K 线数据时应计算风险分并影响综合得分。"""
-    import pandas as pd
     import numpy as np
+    import pandas as pd
+
     from trade_krono_cli.pipeline.merge import merge_results
 
     ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0)
-    kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=3.2)
+    kronos = KronosForecastResult(
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        horizon=30,
+        direction="UP",
+        expected_change_pct=3.2,
+    )
 
     np.random.seed(42)
     close_vals = 100 * (1 + np.random.randn(60) * 0.04)
-    kline_df = pd.DataFrame({
-        "open": close_vals * 0.99, "high": close_vals * 1.01,
-        "low": close_vals * 0.98, "close": close_vals,
-        "volume": pd.Series([1e7] * 60),
-    })
+    kline_df = pd.DataFrame(
+        {
+            "open": close_vals * 0.99,
+            "high": close_vals * 1.01,
+            "low": close_vals * 0.98,
+            "close": close_vals,
+            "volume": pd.Series([1e7] * 60),
+        }
+    )
 
     merged = merge_results([ta], [kronos], kline_data={"sh.600519": kline_df})
     assert len(merged) == 1
@@ -183,12 +220,19 @@ def test_merge_with_risk_data():
 
 def test_risk_penalty_reduces_score():
     """高风险应降低综合得分。"""
-    import pandas as pd
     import numpy as np
+    import pandas as pd
+
     from trade_krono_cli.pipeline.merge import merge_results
 
     ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0)
-    kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=3.2)
+    kronos = KronosForecastResult(
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        horizon=30,
+        direction="UP",
+        expected_change_pct=3.2,
+    )
 
     # 无风险数据
     merged_no_risk = merge_results([ta], [kronos])
@@ -197,11 +241,15 @@ def test_risk_penalty_reduces_score():
     # 高波动数据（高风险）
     np.random.seed(99)
     close_high_vol = 100 * (1 + np.random.randn(60) * 0.06)
-    kline_high_vol = pd.DataFrame({
-        "open": close_high_vol * 0.99, "high": close_high_vol * 1.01,
-        "low": close_high_vol * 0.98, "close": close_high_vol,
-        "volume": pd.Series([5e6] * 60),
-    })
+    kline_high_vol = pd.DataFrame(
+        {
+            "open": close_high_vol * 0.99,
+            "high": close_high_vol * 1.01,
+            "low": close_high_vol * 0.98,
+            "close": close_high_vol,
+            "volume": pd.Series([5e6] * 60),
+        }
+    )
     merged_with_risk = merge_results([ta], [kronos], kline_data={"sh.600519": kline_high_vol})
     score_with_risk = merged_with_risk[0]["composite_score"]
 
@@ -215,22 +263,32 @@ def test_risk_penalty_reduces_score():
 def test_merge_with_quote_data():
     """提供 quote_data 时应计算换手率。"""
     import pandas as pd
+
     from trade_krono_cli.pipeline.merge import merge_results
 
     ta = StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=70.0)
-    kronos = KronosForecastResult(ticker="sh.600519", eval_date="2026-08-11", horizon=30, direction="UP", expected_change_pct=2.0)
+    kronos = KronosForecastResult(
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        horizon=30,
+        direction="UP",
+        expected_change_pct=2.0,
+    )
 
     close_vals = [100 + i * 0.1 for i in range(60)]
-    kline_df = pd.DataFrame({
-        "open": [c * 0.99 for c in close_vals],
-        "high": [c * 1.01 for c in close_vals],
-        "low": [c * 0.98 for c in close_vals],
-        "close": close_vals,
-        "volume": [1e7] * 60,
-    })
+    kline_df = pd.DataFrame(
+        {
+            "open": [c * 0.99 for c in close_vals],
+            "high": [c * 1.01 for c in close_vals],
+            "low": [c * 0.98 for c in close_vals],
+            "close": close_vals,
+            "volume": [1e7] * 60,
+        }
+    )
 
     merged = merge_results(
-        [ta], [kronos],
+        [ta],
+        [kronos],
         kline_data={"sh.600519": kline_df},
         quote_data={"sh.600519": {"market_cap": 200.0}},
     )

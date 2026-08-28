@@ -25,17 +25,18 @@
     p75                   75% 分位收盘价
     p90                   90% 分位收盘价
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 import numpy as np
 
-
 # ═══════════════════════════════════════════════════════
 #  PredictionDistribution — 核心数据类
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass
 class PredictionDistribution:
@@ -57,6 +58,7 @@ class PredictionDistribution:
       # 分位数字段（多样本时填充，单样本时退化为最终价）
       p10 / p25 / p50 / p75 / p90 : 各分位收盘价
     """
+
     # ── 摘要字段 ───────────────────────────────────────────────────────────
     expected_return: Optional[float] = None
     direction: Optional[str] = None
@@ -286,13 +288,23 @@ def build_result_dict(
     # 计算分布指标
     if stacked is not None and len(stacked) > 1:
         (
-            change_pct, direction, vol, path_disp,
-            direction_score, confidence_score, percentiles,
+            change_pct,
+            direction,
+            vol,
+            path_disp,
+            direction_score,
+            confidence_score,
+            percentiles,
         ) = compute_multi_sample(closes_f, stacked, last_close)
     else:
         (
-            change_pct, direction, vol, path_disp,
-            direction_score, confidence_score, percentiles,
+            change_pct,
+            direction,
+            vol,
+            path_disp,
+            direction_score,
+            confidence_score,
+            percentiles,
         ) = compute_single_sample(closes_f, last_close)
 
     distribution = PredictionDistribution(

@@ -1,12 +1,14 @@
 """测试安全工具。"""
+
 import pytest
+
 from trade_krono_cli.security import (
-    validate_ticker,
-    validate_date,
-    retry,
-    TokenBucket,
     KeyVault,
+    TokenBucket,
+    retry,
     ticker_hash,
+    validate_date,
+    validate_ticker,
 )
 
 
@@ -58,6 +60,7 @@ def test_token_bucket():
         bucket.acquire()  # 应该不阻塞
     # 第 6 次应该需要等待
     import time
+
     start = time.monotonic()
     bucket.acquire()
     elapsed = time.monotonic() - start
@@ -99,12 +102,14 @@ def test_key_vault():
 
 def test_sanitize_for_log_no_secrets():
     from trade_krono_cli.security import sanitize_for_log
+
     assert sanitize_for_log("some normal message") == "some normal message"
     assert sanitize_for_log("no secrets here") == "no secrets here"
 
 
 def test_sanitize_for_log_redacts_sk_key():
     from trade_krono_cli.security import sanitize_for_log
+
     msg = "Error: sk-abc123def456ghi789jkl012mno345pqr678stu failed"
     result = sanitize_for_log(msg)
     assert "sk-" not in result
@@ -116,6 +121,7 @@ def test_sanitize_for_log_redacts_sk_key():
 
 def test_sanitize_for_log_redacts_bearer():
     from trade_krono_cli.security import sanitize_for_log
+
     msg = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test"
     result = sanitize_for_log(msg)
     assert "Bearer" not in result
@@ -125,6 +131,7 @@ def test_sanitize_for_log_redacts_bearer():
 def test_sanitize_for_log_redacts_anthropic_key():
     """Anthropic sk-ant-* 格式的密钥也应被脱敏。"""
     from trade_krono_cli.security import sanitize_for_log
+
     msg = "Error connecting with sk-ant-api03-XyZ123abc456def789ghiJKLmnopqrstu"
     result = sanitize_for_log(msg)
     assert "sk-ant-" not in result
@@ -133,9 +140,11 @@ def test_sanitize_for_log_redacts_anthropic_key():
 
 
 def test_ensure_import_path():
-    from pathlib import Path
-    from trade_krono_cli.security import ensure_import_path
     import sys
+    from pathlib import Path
+
+    from trade_krono_cli.security import ensure_import_path
+
     # Use a path that definitely exists (/tmp)
     before = sys.path.copy()
     ensure_import_path(Path("/tmp"))

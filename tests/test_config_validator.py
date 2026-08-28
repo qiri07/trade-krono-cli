@@ -1,10 +1,12 @@
 """测试配置校验模块 (config_validator.py)。"""
-import pytest
+
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from trade_krono_cli.config_validator import validate_settings, print_validation_report
+import pytest
+
+from trade_krono_cli.config_validator import print_validation_report, validate_settings
 
 
 def _make_settings(**overrides) -> SimpleNamespace:
@@ -80,6 +82,7 @@ def _make_settings(**overrides) -> SimpleNamespace:
 
 # ── 默认配置应通过校验 ────────────────────────────────────────────────────────
 
+
 def test_default_settings_pass():
     """使用默认值构造的 Settings 不应产生错误。"""
     s = _make_settings()
@@ -89,32 +92,36 @@ def test_default_settings_pass():
 
 # ── 各字段的错误校验 ─────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("field,value,error_sub", [
-    ("kronos_lookback",  5,    "kronos_lookback"),
-    ("kronos_pred_len",  0,    "kronos_pred_len"),
-    ("kronos_sample_count", 0, "kronos_sample_count"),
-    ("max_debate_rounds",  0,  "max_debate_rounds"),
-    ("max_risk_discuss_rounds", 0, "max_risk_discuss_rounds"),
-    ("baostock_sleep_sec", -1.0, "baostock_sleep_sec"),
-    ("kronos_T",           0.0, "kronos_T"),
-    ("default_min_confidence", -1.0, "default_min_confidence"),
-    ("default_min_confidence", 101.0, "default_min_confidence"),
-    ("kronos_top_p",       0.0, "kronos_top_p"),
-    ("kronos_top_p",       1.5, "kronos_top_p"),
-    ("llm_provider",       "",  "llm_provider"),
-    ("output_language",    "",  "output_language"),
-    ("kronos_model",       "",  "kronos_model"),
-    ("default_allowed_signals", [], "default_allowed_signals"),
-    ("scoring_strategy",   "invalid_xyz", "SCORING_STRATEGY"),
-    ("risk_boost_strategy", "bad_strategy", "RISK_BOOST_STRATEGY"),
-    ("risk_boost_multiplier", 0.0, "RISK_BOOST_MULTIPLIER"),
-    ("risk_boost_multiplier", 6.0, "RISK_BOOST_MULTIPLIER"),
-    ("risk_boost_diminishing_power", 0.0, "RISK_BOOST_DIMINISHING_POWER"),
-    ("risk_boost_diminishing_power", 1.5, "RISK_BOOST_DIMINISHING_POWER"),
-    ("degrade_mode", "invalid_mode", "DEGRADE_MODE"),
-    ("ta_cache_max_age_days", 0, "TA_CACHE_MAX_AGE_DAYS"),
-    ("ta_cache_max_age_days", 400, "TA_CACHE_MAX_AGE_DAYS"),
-])
+
+@pytest.mark.parametrize(
+    "field,value,error_sub",
+    [
+        ("kronos_lookback", 5, "kronos_lookback"),
+        ("kronos_pred_len", 0, "kronos_pred_len"),
+        ("kronos_sample_count", 0, "kronos_sample_count"),
+        ("max_debate_rounds", 0, "max_debate_rounds"),
+        ("max_risk_discuss_rounds", 0, "max_risk_discuss_rounds"),
+        ("baostock_sleep_sec", -1.0, "baostock_sleep_sec"),
+        ("kronos_T", 0.0, "kronos_T"),
+        ("default_min_confidence", -1.0, "default_min_confidence"),
+        ("default_min_confidence", 101.0, "default_min_confidence"),
+        ("kronos_top_p", 0.0, "kronos_top_p"),
+        ("kronos_top_p", 1.5, "kronos_top_p"),
+        ("llm_provider", "", "llm_provider"),
+        ("output_language", "", "output_language"),
+        ("kronos_model", "", "kronos_model"),
+        ("default_allowed_signals", [], "default_allowed_signals"),
+        ("scoring_strategy", "invalid_xyz", "SCORING_STRATEGY"),
+        ("risk_boost_strategy", "bad_strategy", "RISK_BOOST_STRATEGY"),
+        ("risk_boost_multiplier", 0.0, "RISK_BOOST_MULTIPLIER"),
+        ("risk_boost_multiplier", 6.0, "RISK_BOOST_MULTIPLIER"),
+        ("risk_boost_diminishing_power", 0.0, "RISK_BOOST_DIMINISHING_POWER"),
+        ("risk_boost_diminishing_power", 1.5, "RISK_BOOST_DIMINISHING_POWER"),
+        ("degrade_mode", "invalid_mode", "DEGRADE_MODE"),
+        ("ta_cache_max_age_days", 0, "TA_CACHE_MAX_AGE_DAYS"),
+        ("ta_cache_max_age_days", 400, "TA_CACHE_MAX_AGE_DAYS"),
+    ],
+)
 def test_validation_errors(field, value, error_sub):
     """各非法字段应产生对应的错误消息。"""
     s = _make_settings(**{field: value})
@@ -125,6 +132,7 @@ def test_validation_errors(field, value, error_sub):
 
 
 # ── 警告项 ────────────────────────────────────────────────────────────────────
+
 
 def test_warning_for_missing_external_dir(tmp_path):
     """外部依赖目录不存在时应产生警告而非错误。"""
@@ -149,6 +157,7 @@ def test_warning_for_missing_api_key(monkeypatch):
 
 # ── print_validation_report ──────────────────────────────────────────────────
 
+
 def test_print_validation_report_no_errors():
     """无错误时应返回 True。"""
     assert print_validation_report([], []) is True
@@ -160,12 +169,12 @@ def test_print_validation_report_with_errors():
     from loguru import logger
 
     captured: list[str] = []
+
     def _capture(*args, **kwargs):
         if args:
             captured.append(str(args[0]))
 
-    with patch.object(logger, "error", _capture), \
-         patch.object(logger, "warning", _capture):
+    with patch.object(logger, "error", _capture), patch.object(logger, "warning", _capture):
         result = print_validation_report(["config error"], ["some warning"])
     full = "\n".join(captured)
     assert result is False
@@ -178,6 +187,7 @@ def test_print_validation_report_warnings_only():
     from loguru import logger
 
     captured: list[str] = []
+
     def _capture(*args, **kwargs):
         if args:
             captured.append(str(args[0]))

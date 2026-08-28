@@ -1,4 +1,5 @@
 """测试 PredictionDistribution 及计算函数。"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -6,17 +7,17 @@ import pytest
 
 from trade_krono_cli.prediction_distribution import (
     PredictionDistribution,
-    compute_single_sample,
-    compute_multi_sample,
+    _compute_percentiles,
     build_distribution,
     build_result_dict,
-    _compute_percentiles,
+    compute_multi_sample,
+    compute_single_sample,
 )
-
 
 # ═══════════════════════════════════════════════════════
 # PredictionDistribution 数据类
 # ═══════════════════════════════════════════════════════
+
 
 class TestPredictionDistribution:
     def test_basic_creation(self):
@@ -86,6 +87,7 @@ class TestPredictionDistribution:
 # compute_single_sample
 # ═══════════════════════════════════════════════════════
 
+
 class TestComputeSingleSample:
     def test_up_movement(self):
         closes = np.array([100.0, 102.0, 105.0, 108.0])
@@ -102,8 +104,8 @@ class TestComputeSingleSample:
     def test_down_movement(self):
         closes = np.array([100.0, 97.0, 94.0, 90.0])
         last_close = 100.0
-        change_pct, direction, vol, path_disp, dir_score, conf_score, _ = (
-            compute_single_sample(closes, last_close)
+        change_pct, direction, vol, path_disp, dir_score, conf_score, _ = compute_single_sample(
+            closes, last_close
         )
         assert direction == "DOWN"
         assert change_pct < 0
@@ -112,9 +114,7 @@ class TestComputeSingleSample:
         # 完全平坦的路径，change_pct=0 → direction_score≈0.5 → conf_score≈50
         closes = np.array([100.0, 100.0, 100.0, 100.0])
         last_close = 100.0
-        change_pct, direction, _, _, _, conf_score, _ = (
-            compute_single_sample(closes, last_close)
-        )
+        change_pct, direction, _, _, _, conf_score, _ = compute_single_sample(closes, last_close)
         assert direction == "FLAT"
         assert change_pct == 0.0
         assert conf_score == pytest.approx(50.0, abs=1.0)
@@ -122,8 +122,8 @@ class TestComputeSingleSample:
     def test_high_volatility(self):
         closes = np.array([100.0, 200.0, 0.0, 150.0])
         last_close = 100.0
-        change_pct, direction, vol, _, dir_score, conf_score, _ = (
-            compute_single_sample(closes, last_close)
+        change_pct, direction, vol, _, dir_score, conf_score, _ = compute_single_sample(
+            closes, last_close
         )
         assert vol > 50.0  # 极高波动
         # 高波动稀释 direction_score（分母大），但 change_pct=50% 较大
@@ -152,15 +152,18 @@ class TestComputeSingleSample:
 # compute_multi_sample
 # ═══════════════════════════════════════════════════════
 
+
 class TestComputeMultiSample:
     def test_multi_sample_basic(self):
         # 3 条路径，均值路径向上
         avg_close = np.array([100.0, 103.0, 107.0])
-        stacked = np.array([
-            [100.0, 104.0, 108.0],  # 路径 1：更乐观
-            [100.0, 102.0, 106.0],  # 路径 2：更悲观
-            [100.0, 104.0, 106.0],  # 路径 3：接近均值
-        ])
+        stacked = np.array(
+            [
+                [100.0, 104.0, 108.0],  # 路径 1：更乐观
+                [100.0, 102.0, 106.0],  # 路径 2：更悲观
+                [100.0, 104.0, 106.0],  # 路径 3：接近均值
+            ]
+        )
         last_close = 100.0
         change_pct, direction, vol, path_disp, dir_score, conf_score, pctiles = (
             compute_multi_sample(avg_close, stacked, last_close)
@@ -174,13 +177,15 @@ class TestComputeMultiSample:
     def test_multi_sample_high_dispersion(self):
         # 路径间差异大 → 高 dispersion → 低 confidence
         avg_close = np.array([100.0, 105.0, 110.0])
-        stacked = np.array([
-            [100.0, 120.0, 140.0],  # 路径 1：大涨
-            [100.0, 90.0, 80.0],    # 路径 2：大跌
-        ])
+        stacked = np.array(
+            [
+                [100.0, 120.0, 140.0],  # 路径 1：大涨
+                [100.0, 90.0, 80.0],  # 路径 2：大跌
+            ]
+        )
         last_close = 100.0
-        _, _, _, path_disp, dir_score, conf_score, _ = (
-            compute_multi_sample(avg_close, stacked, last_close)
+        _, _, _, path_disp, dir_score, conf_score, _ = compute_multi_sample(
+            avg_close, stacked, last_close
         )
         assert path_disp > 0.1  # 高分散
         # 高 dispersion 会降低 confidence_score
@@ -189,26 +194,30 @@ class TestComputeMultiSample:
     def test_multi_sample_low_dispersion(self):
         # 路径高度一致 → 低 dispersion → 高 confidence
         avg_close = np.array([100.0, 103.0, 106.0])
-        stacked = np.array([
-            [100.0, 103.0, 106.0],
-            [100.0, 103.1, 106.1],
-            [100.0, 102.9, 105.9],
-        ])
+        stacked = np.array(
+            [
+                [100.0, 103.0, 106.0],
+                [100.0, 103.1, 106.1],
+                [100.0, 102.9, 105.9],
+            ]
+        )
         last_close = 100.0
-        _, _, _, path_disp, dir_score, conf_score, _ = (
-            compute_multi_sample(avg_close, stacked, last_close)
+        _, _, _, path_disp, dir_score, conf_score, _ = compute_multi_sample(
+            avg_close, stacked, last_close
         )
         assert path_disp < 0.01  # 极低分散
         assert conf_score > dir_score * 50  # 高 confidence
 
     def test_multi_sample_percentiles(self):
         avg_close = np.array([100.0, 105.0, 110.0])
-        stacked = np.array([
-            [100.0, 104.0, 108.0],
-            [100.0, 106.0, 112.0],
-            [100.0, 103.0, 107.0],
-            [100.0, 107.0, 113.0],
-        ])
+        stacked = np.array(
+            [
+                [100.0, 104.0, 108.0],
+                [100.0, 106.0, 112.0],
+                [100.0, 103.0, 107.0],
+                [100.0, 107.0, 113.0],
+            ]
+        )
         last_close = 100.0
         _, _, _, _, _, _, pctiles = compute_multi_sample(avg_close, stacked, last_close)
         p10, p25, p50, p75, p90 = pctiles
@@ -218,6 +227,7 @@ class TestComputeMultiSample:
 # ═══════════════════════════════════════════════════════
 # build_distribution
 # ═══════════════════════════════════════════════════════
+
 
 class TestBuildDistribution:
     def test_build_single_sample(self):
@@ -257,6 +267,7 @@ class TestBuildDistribution:
 # build_result_dict
 # ═══════════════════════════════════════════════════════
 
+
 class TestBuildResultDict:
     def test_single_sample_result(self):
         closes = np.array([100.0, 103.0, 107.0])
@@ -272,10 +283,12 @@ class TestBuildResultDict:
 
     def test_multi_sample_result(self):
         avg_close = np.array([100.0, 104.0, 108.0])
-        stacked = np.array([
-            [100.0, 105.0, 110.0],
-            [100.0, 103.0, 106.0],
-        ])
+        stacked = np.array(
+            [
+                [100.0, 105.0, 110.0],
+                [100.0, 103.0, 106.0],
+            ]
+        )
         last_close = 100.0
         result = build_result_dict(avg_close, last_close, stacked=stacked, sample_count=2)
         assert result["direction"] == "UP"
@@ -305,6 +318,7 @@ class TestBuildResultDict:
 # _compute_percentiles
 # ═══════════════════════════════════════════════════════
 
+
 class TestComputePercentiles:
     def test_single_sample_degenerates(self):
         stacked = np.array([[100.0, 105.0, 110.0]])
@@ -314,12 +328,14 @@ class TestComputePercentiles:
         assert p10 == p25 == p50 == p75 == p90 == final
 
     def test_multi_sample_sorted(self):
-        stacked = np.array([
-            [100.0, 105.0, 108.0],
-            [100.0, 103.0, 106.0],
-            [100.0, 107.0, 112.0],
-            [100.0, 104.0, 109.0],
-        ])
+        stacked = np.array(
+            [
+                [100.0, 105.0, 108.0],
+                [100.0, 103.0, 106.0],
+                [100.0, 107.0, 112.0],
+                [100.0, 104.0, 109.0],
+            ]
+        )
         last_close = 100.0
         p10, p25, p50, p75, p90 = _compute_percentiles(stacked, 4, last_close)
         assert p10 <= p25 <= p50 <= p75 <= p90

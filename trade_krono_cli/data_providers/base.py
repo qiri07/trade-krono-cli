@@ -11,6 +11,7 @@ data_providers — 多数据源抽象层。
       → 失败时 Factory 自动切换备用源
   缓存层（cache.py）— 对上层透明，key 格式不变
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -18,10 +19,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-
 # ═══════════════════════════════════════════════════════
 # 标准化数据模型
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass
 class KlineData:
@@ -31,6 +32,7 @@ class KlineData:
     所有 Provider 返回此格式，上层无需关心数据来源。
     None 字段表示该 Provider 不支持此维度。
     """
+
     timestamps: list[datetime] = field(default_factory=list)
     open: list[float] = field(default_factory=list)
     high: list[float] = field(default_factory=list)
@@ -50,20 +52,24 @@ class KlineData:
     def to_dataframe(self):
         """转换为 DataFrame（供缓存和上层使用）。"""
         import pandas as pd
-        return pd.DataFrame({
-            "timestamps": self.timestamps,
-            "open":       self.open,
-            "high":       self.high,
-            "low":        self.low,
-            "close":      self.close,
-            "volume":     self.volume,
-            "amount":     self.amount,
-        }).reset_index(drop=True)
+
+        return pd.DataFrame(
+            {
+                "timestamps": self.timestamps,
+                "open": self.open,
+                "high": self.high,
+                "low": self.low,
+                "close": self.close,
+                "volume": self.volume,
+                "amount": self.amount,
+            }
+        ).reset_index(drop=True)
 
     @classmethod
     def from_dataframe(cls, df) -> "KlineData":
         """从 DataFrame 构造 KlineData。"""
         import pandas as pd
+
         ts = pd.to_datetime(df["timestamps"])
         return cls(
             timestamps=ts.tolist(),
@@ -83,13 +89,14 @@ class RealtimeQuote:
 
     字段均可为 None（数据不可用时）。
     """
+
     ticker: str = ""
-    price: Optional[float] = None        # 当前价（元）
-    pe: Optional[float] = None           # 市盈率（动态）
-    pb: Optional[float] = None           # 市净率
-    market_cap: Optional[float] = None   # 总市值（亿元）
-    turnover: Optional[float] = None     # 换手率（%）
-    source: str = ""                     # 数据来源标识
+    price: Optional[float] = None  # 当前价（元）
+    pe: Optional[float] = None  # 市盈率（动态）
+    pb: Optional[float] = None  # 市净率
+    market_cap: Optional[float] = None  # 总市值（亿元）
+    turnover: Optional[float] = None  # 换手率（%）
+    source: str = ""  # 数据来源标识
 
 
 @dataclass
@@ -99,20 +106,22 @@ class StockMetadata:
 
     用于过滤、风险评分等场景。
     """
+
     ticker: str = ""
-    industry: Optional[str] = None       # 行业名称（如 "银行"）
+    industry: Optional[str] = None  # 行业名称（如 "银行"）
     industry_code: Optional[str] = None  # 行业代码
-    pe_ttm: Optional[float] = None       # 市盈率 TTM
-    pb: Optional[float] = None           # 市净率
-    ipo_date: Optional[str] = None       # 上市日期 YYYY-MM-DD
-    out_date: Optional[str] = None       # 退市日期 YYYY-MM-DD
-    is_st: bool = False                  # 是否 ST 标的
-    source: str = ""                     # 数据来源标识
+    pe_ttm: Optional[float] = None  # 市盈率 TTM
+    pb: Optional[float] = None  # 市净率
+    ipo_date: Optional[str] = None  # 上市日期 YYYY-MM-DD
+    out_date: Optional[str] = None  # 退市日期 YYYY-MM-DD
+    is_st: bool = False  # 是否 ST 标的
+    source: str = ""  # 数据来源标识
 
 
 # ═══════════════════════════════════════════════════════
 # Provider 抽象基类
 # ═══════════════════════════════════════════════════════
+
 
 class DataProvider(ABC):
     """

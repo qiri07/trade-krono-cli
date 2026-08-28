@@ -9,26 +9,26 @@ tests/test_abnormal_stock.py — 异常股票检测与标记测试。
   · _check_new_stock / _check_delisted 边界情况
   · StockMeta 异常字段
 """
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timedelta
+
+from datetime import timedelta
 
 import pandas as pd
+import pytest
 
 from trade_krono_cli.abnormal_stock import (
-    StockAbnormality,
     AbnormalityFlag,
-    check_kline_completeness,
-    apply_abnormality_risk_boost,
-    precheck_stock_status,
+    StockAbnormality,
     _compute_severity,
+    apply_abnormality_risk_boost,
+    check_kline_completeness,
+    precheck_stock_status,
 )
 from trade_krono_cli.stock_filter import StockMeta
-
 
 # ═══════════════════════════════════════════════════════
 # AbnormalityFlag 基础
 # ═══════════════════════════════════════════════════════
+
 
 class TestAbnormalityFlag:
     def test_normal_flag(self):
@@ -65,6 +65,7 @@ class TestAbnormalityFlag:
 # check_kline_completeness
 # ═══════════════════════════════════════════════════════
 
+
 class TestCheckKlineCompleteness:
     def _make_df(self, n_rows=400, gap_at=None):
         """构造连续交易日 DataFrame。"""
@@ -76,15 +77,17 @@ class TestCheckKlineCompleteness:
             after_start = dates_list[gap_at] + timedelta(days=5)
             after = pd.bdate_range(start=after_start, periods=n_rows - gap_at)
             dates = pd.DatetimeIndex(list(before) + list(after))
-        return pd.DataFrame({
-            "timestamps": dates,
-            "open":   [100.0] * len(dates),
-            "high":   [101.0] * len(dates),
-            "low":    [99.0] * len(dates),
-            "close":  [100.5] * len(dates),
-            "volume": [1000.0] * len(dates),
-            "amount": [100000.0] * len(dates),
-        })
+        return pd.DataFrame(
+            {
+                "timestamps": dates,
+                "open": [100.0] * len(dates),
+                "high": [101.0] * len(dates),
+                "low": [99.0] * len(dates),
+                "close": [100.5] * len(dates),
+                "volume": [1000.0] * len(dates),
+                "amount": [100000.0] * len(dates),
+            }
+        )
 
     def test_complete_data_passes(self):
         df = self._make_df(n_rows=400)
@@ -123,10 +126,12 @@ class TestCheckKlineCompleteness:
 
     def test_all_nan_in_column(self):
         """所有 close 为 NaN → 应被 dropna 后行数极少。"""
-        df = pd.DataFrame({
-            "timestamps": pd.bdate_range(end=pd.Timestamp("2026-08-13"), periods=10),
-            "close": [float("nan")] * 10,
-        })
+        df = pd.DataFrame(
+            {
+                "timestamps": pd.bdate_range(end=pd.Timestamp("2026-08-13"), periods=10),
+                "close": [float("nan")] * 10,
+            }
+        )
         passed, reason = check_kline_completeness(df, "sh.600519")
         # 有数据但 close 全 NaN，行数仍 10，完整率 100%，但无实际意义
         # 此测试仅确保不崩溃
@@ -136,6 +141,7 @@ class TestCheckKlineCompleteness:
 # ═══════════════════════════════════════════════════════
 # apply_abnormality_risk_boost
 # ═══════════════════════════════════════════════════════
+
 
 class TestApplyRiskBoost:
     def test_no_flags(self):
@@ -183,6 +189,7 @@ class TestApplyRiskBoost:
 # _compute_severity
 # ═══════════════════════════════════════════════════════
 
+
 class TestComputeSeverity:
     def test_empty(self):
         assert _compute_severity([]) == 0.0
@@ -197,10 +204,15 @@ class TestComputeSeverity:
         assert _compute_severity([StockAbnormality.DELISTED]) == 1.0
 
     def test_multiple_takes_max(self):
-        assert _compute_severity([
-            StockAbnormality.NEW_STOCK,
-            StockAbnormality.ST,
-        ]) == 0.7  # max(0.3, 0.7)
+        assert (
+            _compute_severity(
+                [
+                    StockAbnormality.NEW_STOCK,
+                    StockAbnormality.ST,
+                ]
+            )
+            == 0.7
+        )  # max(0.3, 0.7)
 
     def test_new_stock(self):
         assert _compute_severity([StockAbnormality.NEW_STOCK]) == 0.3
@@ -215,11 +227,15 @@ class TestPrecheckStockStatus:
     def test_all_normal(self, monkeypatch):
         """所有股票正常时，不产生任何异常标记。"""
         from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
+
         monkeypatch.setattr(BaostockProvider, "check_st_status", lambda self, t: False)
         monkeypatch.setattr(BaostockProvider, "check_delisted", lambda self, t: False)
-        monkeypatch.setattr(BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, ""))
+        monkeypatch.setattr(
+            BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, "")
+        )
 
         import trade_krono_cli.abnormal_stock as m
+
         m._st_cache.clear()
 
         results = precheck_stock_status(
@@ -235,11 +251,15 @@ class TestPrecheckStockStatus:
     def test_st_detection(self, monkeypatch):
         """模拟 ST 股票检测。"""
         from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
+
         monkeypatch.setattr(BaostockProvider, "check_st_status", lambda self, t: True)
         monkeypatch.setattr(BaostockProvider, "check_delisted", lambda self, t: False)
-        monkeypatch.setattr(BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, ""))
+        monkeypatch.setattr(
+            BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, "")
+        )
 
         import trade_krono_cli.abnormal_stock as m
+
         m._st_cache.clear()
 
         results = precheck_stock_status(
@@ -255,11 +275,15 @@ class TestPrecheckStockStatus:
     def test_delisted_detection(self, monkeypatch):
         """模拟退市股票检测。"""
         from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
+
         monkeypatch.setattr(BaostockProvider, "check_st_status", lambda self, t: False)
         monkeypatch.setattr(BaostockProvider, "check_delisted", lambda self, t: True)
-        monkeypatch.setattr(BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, ""))
+        monkeypatch.setattr(
+            BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, "")
+        )
 
         import trade_krono_cli.abnormal_stock as m
+
         m._st_cache.clear()
 
         results = precheck_stock_status(
@@ -274,14 +298,17 @@ class TestPrecheckStockStatus:
     def test_new_stock_detection(self, monkeypatch):
         """模拟次新股检测（IPO 日期很近）。"""
         from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
+
         monkeypatch.setattr(BaostockProvider, "check_st_status", lambda self, t: False)
         monkeypatch.setattr(BaostockProvider, "check_delisted", lambda self, t: False)
         monkeypatch.setattr(
-            BaostockProvider, "check_new_stock",
+            BaostockProvider,
+            "check_new_stock",
             lambda self, t, d, n=60: (True, f"{t}: 次新股"),
         )
 
         import trade_krono_cli.abnormal_stock as m
+
         m._st_cache.clear()
 
         results = precheck_stock_status(
@@ -297,11 +324,15 @@ class TestPrecheckStockStatus:
     def test_skip_suspended_false(self, monkeypatch):
         """skip_suspended=False 时，停牌检测不执行。"""
         from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
+
         monkeypatch.setattr(BaostockProvider, "check_st_status", lambda self, t: False)
         monkeypatch.setattr(BaostockProvider, "check_delisted", lambda self, t: False)
-        monkeypatch.setattr(BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, ""))
+        monkeypatch.setattr(
+            BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, "")
+        )
 
         import trade_krono_cli.abnormal_stock as m
+
         m._st_cache.clear()
 
         results = precheck_stock_status(
@@ -317,6 +348,7 @@ class TestPrecheckStockStatus:
 # ═══════════════════════════════════════════════════════
 # StockMeta 异常字段
 # ═══════════════════════════════════════════════════════
+
 
 class TestStockMetaAbnormal:
     def test_default_values(self):

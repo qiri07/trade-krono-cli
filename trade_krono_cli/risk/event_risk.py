@@ -3,6 +3,7 @@ Event Risk — 事件驱动风险。
 
 基于短期/长期波动率比值的异常检测。
 """
+
 from __future__ import annotations
 
 import pandas as pd

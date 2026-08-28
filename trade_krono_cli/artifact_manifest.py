@@ -21,28 +21,27 @@ artifact_manifest — 实验可复现性清单（Experiment Artifact Manifest）
   experiment_id = sha256(manifest_json) → 唯一标识一次完整配置快照
   每次 run 写入一条 artifact 记录到 research_db.jobs 表
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import platform
 import subprocess
-import time
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from loguru import logger
-from trade_krono_cli.config import get_settings, Settings
-from trade_krono_cli.external import get_repos, load_lock
+
+from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.version import (
     compute_config_hash,
     get_kronos_model_version,
-    get_ta_prompt_version,
     get_llm_version,
+    get_ta_prompt_version,
 )
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  Git 工具
@@ -54,20 +53,36 @@ def _git_sha(repo_path: Path) -> tuple[Optional[str], Optional[str]]:
     if not (repo_path / ".git").exists():
         return None, None
     try:
-        rc, full, _ = subprocess.run(
-            ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5,
-        ).returncode, subprocess.run(
-            ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5,
-        ).stdout.strip(), ""
-        rc2, short, _ = subprocess.run(
-            ["git", "-C", str(repo_path), "rev-parse", "--short=12", "HEAD"],
-            capture_output=True, text=True, timeout=5,
-        ).returncode, subprocess.run(
-            ["git", "-C", str(repo_path), "rev-parse", "--short=12", "HEAD"],
-            capture_output=True, text=True, timeout=5,
-        ).stdout.strip(), ""
+        rc, full, _ = (
+            subprocess.run(
+                ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).returncode,
+            subprocess.run(
+                ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip(),
+            "",
+        )
+        rc2, short, _ = (
+            subprocess.run(
+                ["git", "-C", str(repo_path), "rev-parse", "--short=12", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).returncode,
+            subprocess.run(
+                ["git", "-C", str(repo_path), "rev-parse", "--short=12", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip(),
+            "",
+        )
         if rc == 0:
             return full, (short if rc2 == 0 else full[:12])
     except Exception:
@@ -79,13 +94,21 @@ def _git_dirty(repo_path: Path) -> bool:
     if not (repo_path / ".git").exists():
         return False
     try:
-        rc, out, _ = subprocess.run(
-            ["git", "-C", str(repo_path), "status", "--porcelain"],
-            capture_output=True, text=True, timeout=5,
-        ).returncode, subprocess.run(
-            ["git", "-C", str(repo_path), "status", "--porcelain"],
-            capture_output=True, text=True, timeout=5,
-        ).stdout, ""
+        rc, out, _ = (
+            subprocess.run(
+                ["git", "-C", str(repo_path), "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).returncode,
+            subprocess.run(
+                ["git", "-C", str(repo_path), "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout,
+            "",
+        )
         return bool(out.strip()) if rc == 0 else False
     except Exception:
         return False
@@ -99,6 +122,7 @@ def _git_dirty(repo_path: Path) -> bool:
 @dataclass(frozen=True)
 class CodeArtifact:
     """代码版本。"""
+
     trade_krono_cli: dict = field(default_factory=dict)
     """{"commit": str, "commit_short": str, "dirty": bool}"""
     tradingagents: dict = field(default_factory=dict)
@@ -108,6 +132,7 @@ class CodeArtifact:
 @dataclass(frozen=True)
 class ModelArtifact:
     """模型版本。"""
+
     name: str = "kronos-base"
     tokenizer: str = "kronos-Tokenizer-base"
     device: str = "cpu"
@@ -126,6 +151,7 @@ class ModelArtifact:
 @dataclass(frozen=True)
 class LlmArtifact:
     """LLM 版本。"""
+
     provider: str = "deepseek"
     deep_think_model: str = "deepseek-chat"
     quick_think_model: str = "deepseek-chat"
@@ -139,6 +165,7 @@ class LlmArtifact:
 @dataclass(frozen=True)
 class DataArtifact:
     """数据版本。"""
+
     source: str = "baostock"
     latest_date: Optional[str] = None
     """数据源中最新一条 K 线的日期（用于标识数据新鲜度）。"""
@@ -147,6 +174,7 @@ class DataArtifact:
 @dataclass(frozen=True)
 class PromptArtifact:
     """提示词版本。"""
+
     max_debate_rounds: int = 1
     max_risk_discuss_rounds: int = 1
     output_language: str = "Chinese"
@@ -165,6 +193,7 @@ class PromptArtifact:
 @dataclass(frozen=True)
 class StrategyArtifact:
     """策略配置版本。"""
+
     scoring_strategy: str = "linear"
     risk_boost_strategy: str = "fixed_boost"
     min_confidence: float = 55.0
@@ -176,6 +205,7 @@ class StrategyArtifact:
 @dataclass(frozen=True)
 class EnvironmentArtifact:
     """运行环境。"""
+
     python_version: str = platform.python_version()
     platform_system: str = platform.system()
     platform_machine: str = platform.machine()
@@ -198,6 +228,7 @@ class ArtifactManifest:
     所有字段均为 frozen dataclass，可直接作为 dict 序列化或用于计算 hash。
     experiment_id = sha256(json.dumps(manifest.to_dict(), sort_keys=True))
     """
+
     code: CodeArtifact = field(default_factory=CodeArtifact)
     model: ModelArtifact = field(default_factory=ModelArtifact)
     llm: LlmArtifact = field(default_factory=LlmArtifact)
@@ -235,6 +266,7 @@ class ArtifactManifest:
 
 def _build_code_artifact(project_root: Path) -> CodeArtifact:
     """扫描 trade-krono-cli / TradingAgents / Kronos 的 git 状态。"""
+
     def _repo_info(rel_path: str) -> dict:
         repo_path = project_root / rel_path
         full, short = _git_sha(repo_path)
@@ -253,6 +285,7 @@ def _build_model_artifact(settings: Settings) -> ModelArtifact:
     torch_ver, cuda_avail, cuda_ver, gpu_model = None, False, None, None
     try:
         import torch  # noqa: F401 — 仅用于查询版本
+
         torch_ver = torch.__version__
         cuda_avail = torch.cuda.is_available()
         if cuda_avail:
@@ -289,6 +322,7 @@ def _build_data_artifact(settings: Settings) -> DataArtifact:
     latest_date: Optional[str] = None
     try:
         from trade_krono_cli.data_providers import get_data_factory
+
         factory = get_data_factory()
         provider = factory.get_provider(source)
         if provider is not None and hasattr(provider, "get_latest_date"):
@@ -437,32 +471,32 @@ def describe(manifest: Optional[ArtifactManifest] = None) -> str:
     m = manifest or build_manifest()
     lines = [
         f"experiment_id  : {m.experiment_id()}",
-        f"",
-        f"  code:",
+        "",
+        "  code:",
         f"    trade-krono-cli : {m.code.trade_krono_cli.get('commit_short', '?')}",
         f"    tradingagents   : {m.code.tradingagents.get('commit_short', '?')}",
         f"    kronos          : {m.code.kronos.get('commit_short', '?')}",
-        f"",
-        f"  model:",
+        "",
+        "  model:",
         f"    {m.model.name} / {m.model.tokenizer} / {m.model.device}",
         f"    torch={m.model.torch_version or '?'}  cuda={'yes' if m.model.cuda_available else 'no'}",
         f"    sample_count={m.model.sample_count}  pred_len={m.model.pred_len}",
-        f"",
-        f"  llm:",
+        "",
+        "  llm:",
         f"    {m.llm.provider}/{m.llm.deep_think_model}",
-        f"",
-        f"  data:",
+        "",
+        "  data:",
         f"    source={m.data.source}  latest={m.data.latest_date or '?'}",
-        f"",
-        f"  prompt:",
+        "",
+        "  prompt:",
         f"    {m.prompt.version_tag}",
-        f"",
-        f"  strategy:",
+        "",
+        "  strategy:",
         f"    scoring={m.strategy.scoring_strategy}  risk={m.strategy.risk_boost_strategy}",
         f"    min_confidence={m.strategy.min_confidence}  signals={m.strategy.allowed_signals}",
         f"    config_hash={m.strategy.config_hash[:12]}",
-        f"",
-        f"  environment:",
+        "",
+        "  environment:",
         f"    python={m.environment.python_version}  {m.environment.platform_system}/{m.environment.platform_machine}",
     ]
     return "\n".join(lines)
@@ -470,4 +504,5 @@ def describe(manifest: Optional[ArtifactManifest] = None) -> str:
 
 def print_manifest(manifest: Optional[ArtifactManifest] = None) -> None:
     from loguru import logger
+
     logger.info(describe(manifest))

@@ -6,19 +6,18 @@ scoring.risk_boosters — 三种异常标记风险加分策略实现。
   scaled_boost       : 按比例缩放（可配置倍率）
   diminishing_boost  : 边际递减（多 flag 叠加时平方根缩放，防止过度惩罚）
 """
+
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass, field
 from typing import Optional
 
-from trade_krono_cli.abnormal_stock import StockAbnormality, _RISK_BOOST_MAP
-from trade_krono_cli.scoring.base import RiskBoostStrategy, BoostResult
-
+from trade_krono_cli.abnormal_stock import _RISK_BOOST_MAP, StockAbnormality
+from trade_krono_cli.scoring.base import BoostResult, RiskBoostStrategy
 
 # ═══════════════════════════════════════════════════════
 # FixedBoostBooster（默认）
 # ═══════════════════════════════════════════════════════
+
 
 class FixedBoostBooster(RiskBoostStrategy):
     """
@@ -30,7 +29,9 @@ class FixedBoostBooster(RiskBoostStrategy):
 
     name = "fixed_boost"
 
-    def _boost_impl(self, base_risk: float, flags: list[str], params: Optional[dict] = None) -> BoostResult:
+    def _boost_impl(
+        self, base_risk: float, flags: list[str], params: Optional[dict] = None
+    ) -> BoostResult:
         multiplier = (params or {}).get("multiplier", 1.0)
         total_boost = 0.0
         applied: list[str] = []
@@ -57,6 +58,7 @@ class FixedBoostBooster(RiskBoostStrategy):
 # ScaledBoostBooster（可配置倍率）
 # ═══════════════════════════════════════════════════════
 
+
 class ScaledBoostBooster(RiskBoostStrategy):
     """
     缩放型风险加分。
@@ -67,7 +69,9 @@ class ScaledBoostBooster(RiskBoostStrategy):
 
     name = "scaled_boost"
 
-    def _boost_impl(self, base_risk: float, flags: list[str], params: Optional[dict] = None) -> BoostResult:
+    def _boost_impl(
+        self, base_risk: float, flags: list[str], params: Optional[dict] = None
+    ) -> BoostResult:
         multiplier = (params or {}).get("multiplier", 1.0)
         total_boost = 0.0
         applied: list[str] = []
@@ -94,6 +98,7 @@ class ScaledBoostBooster(RiskBoostStrategy):
 # DiminishingBoostBooster（边际递减）
 # ═══════════════════════════════════════════════════════
 
+
 class DiminishingBoostBooster(RiskBoostStrategy):
     """
     边际递减型风险加分。
@@ -108,11 +113,15 @@ class DiminishingBoostBooster(RiskBoostStrategy):
 
     name = "diminishing_boost"
 
-    def _boost_impl(self, base_risk: float, flags: list[str], params: Optional[dict] = None) -> BoostResult:
+    def _boost_impl(
+        self, base_risk: float, flags: list[str], params: Optional[dict] = None
+    ) -> BoostResult:
         power = (params or {}).get("diminishing_power", 0.5)
         n_flags = len(flags)
         if n_flags == 0:
-            return BoostResult(boosted_risk=base_risk, base_risk=base_risk, total_boost=0.0, flags_applied=[])
+            return BoostResult(
+                boosted_risk=base_risk, base_risk=base_risk, total_boost=0.0, flags_applied=[]
+            )
 
         # 计算原始总加分
         raw_total = 0.0
@@ -142,6 +151,7 @@ class DiminishingBoostBooster(RiskBoostStrategy):
 # ═══════════════════════════════════════════════════════
 # 便捷函数（向后兼容）
 # ═══════════════════════════════════════════════════════
+
 
 def apply_abnormality_risk_boost(
     base_risk_score: float,
@@ -175,6 +185,7 @@ def apply_abnormality_risk_boost(
         return base_risk_score
 
     from trade_krono_cli.scoring.registry import get_risk_boost_registry
+
     registry = get_risk_boost_registry()
     booster = registry.get(strategy) or registry.get("fixed_boost")
     result = booster.boost(base_risk_score, flags, params)

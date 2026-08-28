@@ -6,8 +6,9 @@ pipeline — 投研流水线核心模块。
   - from trade_krono_cli.pipeline.merge import merge_results, filter_pool, default_scorer
   - from trade_krono_cli.pipeline.reporter import save_json_report, save_html_report, ...
 """
+
 from __future__ import annotations
 
-from trade_krono_cli.pipeline.orchestrator import QuantPipeline, PipelineFactory
+from trade_krono_cli.pipeline.orchestrator import PipelineFactory, QuantPipeline
 
 __all__ = ["QuantPipeline", "PipelineFactory"]

@@ -4,6 +4,7 @@ Experiment — 实验与假设检验领域对象。
 Experiment 记录一次假设检验的完整生命周期：
   注册 → 运行 → 评估 → 验证 → 归档
 """
+
 from __future__ import annotations
 
 import json
@@ -14,10 +15,10 @@ from typing import Optional
 
 from trade_krono_cli.domain.types import ExperimentType
 
-
 # ═══════════════════════════════════════════════════════
 #  Hypothesis
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass(frozen=True)
 class Hypothesis:
@@ -33,6 +34,7 @@ class Hypothesis:
     threshold       阈值
     direction       ">" / "<" / "=="
     """
+
     statement: str
     prediction: str
     falsification: str
@@ -84,6 +86,7 @@ class Hypothesis:
 #  Experiment
 # ═══════════════════════════════════════════════════════
 
+
 @dataclass(frozen=True)
 class Experiment:
     """
@@ -104,6 +107,7 @@ class Experiment:
     notes             自由备注
     created_at        创建时间戳
     """
+
     experiment_id: str
     experiment_type: ExperimentType
     hypothesis: Hypothesis
@@ -114,18 +118,19 @@ class Experiment:
     result_summary: dict = field(default_factory=dict)
     passed: Optional[bool] = None
     notes: str = ""
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     @property
     def full_id(self) -> str:
-        raw = json.dumps({
-            "id": self.experiment_id,
-            "type": self.experiment_type.value,
-            "created_at": self.created_at,
-            "hypothesis": self.hypothesis.statement,
-        }, sort_keys=True)
+        raw = json.dumps(
+            {
+                "id": self.experiment_id,
+                "type": self.experiment_type.value,
+                "created_at": self.created_at,
+                "hypothesis": self.hypothesis.statement,
+            },
+            sort_keys=True,
+        )
         return sha256(raw.encode()).hexdigest()[:32]
 
     def evaluate(self) -> tuple[bool, str]:
@@ -154,8 +159,10 @@ class Experiment:
     @classmethod
     def from_dict(cls, data: dict) -> "Experiment":
         hyp_data = data.get("hypothesis", {})
-        hyp = Hypothesis.from_dict(hyp_data) if hyp_data else Hypothesis(
-            statement="", prediction="", falsification=""
+        hyp = (
+            Hypothesis.from_dict(hyp_data)
+            if hyp_data
+            else Hypothesis(statement="", prediction="", falsification="")
         )
         exp_type = ExperimentType(data.get("experiment_type", "alpha"))
         return cls(
@@ -176,6 +183,7 @@ class Experiment:
 # ═══════════════════════════════════════════════════════
 #  便捷工厂
 # ═══════════════════════════════════════════════════════
+
 
 def build_alpha_experiment(
     experiment_id: str,

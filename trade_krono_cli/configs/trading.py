@@ -1,4 +1,5 @@
 """A 股交易约束配置。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

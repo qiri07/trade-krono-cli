@@ -9,24 +9,25 @@ Signal IC 评估模块。
 
 分 horizon 计算，支持 TA signal、Kronos score、composite score 三类信号。
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import numpy as np
 from loguru import logger
 
 from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics
 
-
 # ═══════════════════════════════════════════════════════
 # IC 统计量
 # ═══════════════════════════════════════════════════════
 
+
 @dataclass
 class ICResult:
     """单次 IC 计算结果。"""
+
     # Pearson IC
     ic_mean: float = 0.0
     ic_std: float = 0.0
@@ -49,7 +50,7 @@ def _safe_pearson(x: np.ndarray, y: np.ndarray) -> float:
         return 0.0
     mx, my = np.mean(x), np.mean(y)
     dx, dy = x - mx, y - my
-    denom = np.sqrt(np.sum(dx ** 2) * np.sum(dy ** 2))
+    denom = np.sqrt(np.sum(dx**2) * np.sum(dy**2))
     if denom < 1e-15:
         return 0.0
     return float(np.sum(dx * dy) / denom)
@@ -75,11 +76,13 @@ def _rank_transform(arr: np.ndarray) -> np.ndarray:
     # 沿排序后数组找并列组，取平均秩
     sorted_arr = arr[order]
     # tie[i]=True 表示排序位置 i 与相邻位置有并列
-    tie = np.concatenate((
-        [sorted_arr[0] == sorted_arr[1]] if n > 1 else [False],
-        (sorted_arr[1:-1] == sorted_arr[:-2]) | (sorted_arr[1:-1] == sorted_arr[2:]),
-        [sorted_arr[-1] == sorted_arr[-2]] if n > 1 else [False],
-    ))
+    tie = np.concatenate(
+        (
+            [sorted_arr[0] == sorted_arr[1]] if n > 1 else [False],
+            (sorted_arr[1:-1] == sorted_arr[:-2]) | (sorted_arr[1:-1] == sorted_arr[2:]),
+            [sorted_arr[-1] == sorted_arr[-2]] if n > 1 else [False],
+        )
+    )
     i = 0
     while i < n:
         if tie[i]:
@@ -91,8 +94,8 @@ def _rank_transform(arr: np.ndarray) -> np.ndarray:
             end = i
             while end < n - 1 and tie[end + 1]:
                 end += 1
-            avg = np.mean(ranks[order[start:end + 1]])
-            ranks[order[start:end + 1]] = avg
+            avg = np.mean(ranks[order[start : end + 1]])
+            ranks[order[start : end + 1]] = avg
             i = end + 1
         else:
             i += 1
@@ -160,11 +163,15 @@ def compute_ic_aggregated(results: list[ICResult]) -> ICResult:
     ic_means = [r.ic_mean for r in results if r.n_groups > 0]
     ric_means = [r.rank_ic_mean for r in results if r.n_groups > 0]
 
-    ic_std = float(np.std(ic_means, ddof=1)) if len(ic_means) > 1 else (
-        abs(ic_means[0]) if ic_means else 0.0
+    ic_std = (
+        float(np.std(ic_means, ddof=1))
+        if len(ic_means) > 1
+        else (abs(ic_means[0]) if ic_means else 0.0)
     )
-    ric_std = float(np.std(ric_means, ddof=1)) if len(ric_means) > 1 else (
-        abs(ric_means[0]) if ric_means else 0.0
+    ric_std = (
+        float(np.std(ric_means, ddof=1))
+        if len(ric_means) > 1
+        else (abs(ric_means[0]) if ric_means else 0.0)
     )
 
     ic_mean_val = float(np.mean(ic_means)) if ic_means else 0.0
@@ -180,9 +187,7 @@ def compute_ic_aggregated(results: list[ICResult]) -> ICResult:
         rank_ic_mean=round(ric_mean_val, 4),
         rank_ic_std=round(ric_std, 4),
         rank_icir=round(ric_mean_val / ric_std, 4) if ric_std > 1e-9 else 0.0,
-        ic_positive_pct=round(
-            sum(1 for r in ric_means if r > 0) / max(len(ric_means), 1) * 100, 1
-        ),
+        ic_positive_pct=round(sum(1 for r in ric_means if r > 0) / max(len(ric_means), 1) * 100, 1),
         n_groups=len(results),
         n_records=total_records,
     )
@@ -191,6 +196,7 @@ def compute_ic_aggregated(results: list[ICResult]) -> ICResult:
 # ═══════════════════════════════════════════════════════
 # 主入口：按 horizon 计算各类信号的 IC
 # ═══════════════════════════════════════════════════════
+
 
 def compute_ic_metrics(
     h_records: list[EvalRecord],

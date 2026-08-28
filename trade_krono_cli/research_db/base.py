@@ -1,6 +1,7 @@
 """
 研究数据库 base — ResearchDatabase 核心基础设施（连接、建表、迁移）。
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -20,15 +21,17 @@ class ResearchDatabase:
 
     # 版本追踪列（jobs 表）— 供 migrations 使用
     _VERSION_COLS: tuple[str, ...] = (
-        "run_id", "data_version", "model_versions",
-        "prompt_version", "strategy_version", "config_hash",
+        "run_id",
+        "data_version",
+        "model_versions",
+        "prompt_version",
+        "strategy_version",
+        "config_hash",
         "external_repos",
     )
 
     def __init__(self, db_path: Path | None = None, settings: Settings | None = None):
-        self._db_path = db_path or (
-            (settings or get_settings()).cache_dir / "pipeline_cache.db"
-        )
+        self._db_path = db_path or ((settings or get_settings()).cache_dir / "pipeline_cache.db")
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
         self._migrate_schema()

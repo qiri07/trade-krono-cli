@@ -3,6 +3,7 @@
 
 计算基于 K 线日收益率的年化波动率，映射为 0-100 风险分。
 """
+
 from __future__ import annotations
 
 from typing import Optional, Tuple

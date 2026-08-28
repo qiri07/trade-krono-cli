@@ -4,6 +4,7 @@ data_providers.baostock_provider — baostock 数据源实现。
 封装现有 baostock 调用逻辑，适配 DataProvider 接口。
 保留原有的 login/logout、限流、缓存兼容等特性。
 """
+
 from __future__ import annotations
 
 import re
@@ -14,9 +15,13 @@ from typing import Optional
 from loguru import logger
 
 from trade_krono_cli.config import get_settings
-from trade_krono_cli.security import TokenBucket, validate_ticker, validate_date
-from trade_krono_cli.data_providers.base import DataProvider, KlineData, RealtimeQuote, StockMetadata
-
+from trade_krono_cli.data_providers.base import (
+    DataProvider,
+    KlineData,
+    RealtimeQuote,
+    StockMetadata,
+)
+from trade_krono_cli.security import TokenBucket, validate_date, validate_ticker
 
 # baostock 模块级状态（保持与 data.py 原有的全局状态兼容）
 _bs = None
@@ -56,6 +61,7 @@ class BaostockProvider(DataProvider):
             return
         try:
             import baostock as _bs_mod  # type: ignore
+
             _bs = _bs_mod
             _HAS_BS = True
         except ImportError:
@@ -141,6 +147,7 @@ class BaostockProvider(DataProvider):
             return None
 
         import pandas as pd
+
         df = pd.DataFrame(rows, columns=rs.fields)
         df = df.dropna(subset=["close"])
 
@@ -170,7 +177,7 @@ class BaostockProvider(DataProvider):
         row = rows[0]
         # baostock stock_basic 字段顺序：
         # 0=code, 1=code_name, 2=ipoDate, 3=outDate, ...
-        code = row[0] if len(row) > 0 else ticker
+        _ = row[0] if len(row) > 0 else ticker  # code: 保留用于调试日志
         name = row[1] if len(row) > 1 else ""
         ipo_date = row[2] if len(row) > 2 else None
         out_date = row[3] if len(row) > 3 else None

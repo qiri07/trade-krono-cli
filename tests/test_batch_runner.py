@@ -1,6 +1,6 @@
 """测试 BatchRunner 动态调度（Phase 4）。"""
-import pytest
-from trade_krono_cli.batch.batch_runner import BatchRunner, BatchConfig
+
+from trade_krono_cli.batch.batch_runner import BatchConfig, BatchRunner
 
 
 class TestBatchRunner:
@@ -41,11 +41,13 @@ class TestBatchRunner:
 
     def test_error_handling(self):
         """单个任务失败不影响其他任务。"""
-        runner = BatchRunner(config=BatchConfig(
-            batch_size=2,
-            max_concurrent=2,
-            retry_attempts=0,
-        ))
+        runner = BatchRunner(
+            config=BatchConfig(
+                batch_size=2,
+                max_concurrent=2,
+                retry_attempts=0,
+            )
+        )
 
         def flaky_process(x):
             if x == 2:
@@ -59,12 +61,14 @@ class TestBatchRunner:
 
     def test_retry_on_failure(self):
         """失败后重试，最终成功。"""
-        runner = BatchRunner(config=BatchConfig(
-            batch_size=1,
-            max_concurrent=1,
-            retry_attempts=2,
-            retry_delay=0.01,
-        ))
+        runner = BatchRunner(
+            config=BatchConfig(
+                batch_size=1,
+                max_concurrent=1,
+                retry_attempts=2,
+                retry_delay=0.01,
+            )
+        )
 
         call_count = 0
 

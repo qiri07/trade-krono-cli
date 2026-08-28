@@ -3,6 +3,7 @@ Gap Risk — 跳空缺口风险。
 
 基于收盘价突变的缺口频率计算风险分。
 """
+
 from __future__ import annotations
 
 import pandas as pd

@@ -9,14 +9,15 @@ InvestmentDecision 是 pipeline 的终点：融合 SignalAssessment + RiskAssess
   - auxiliary: ranking_score（原 composite_score 降级）—— 仅用于辅助排序
   - backward compat: composite_score 保留为 ranking_score 的别名
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
 
-from trade_krono_cli.domain.types import Signal
-from trade_krono_cli.domain.signal import SignalAssessment
 from trade_krono_cli.domain.risk import RiskAssessment
+from trade_krono_cli.domain.signal import SignalAssessment
+from trade_krono_cli.domain.types import Signal
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ class InvestmentDecision:
     ranking_score         辅助排序分 0-100（原 composite_score 降级）
     job_id                关联的研究作业 ID
     """
+
     ticker: str
     eval_date: str
     signal: Signal
@@ -166,11 +168,14 @@ class InvestmentDecision:
         )
 
     @classmethod
-    def fallback(cls, ticker: str, eval_date: str, signal: Signal = Signal.HOLD,
-                 confidence: float = 50.0) -> "InvestmentDecision":
+    def fallback(
+        cls, ticker: str, eval_date: str, signal: Signal = Signal.HOLD, confidence: float = 50.0
+    ) -> "InvestmentDecision":
         return cls(
-            ticker=ticker, eval_date=eval_date,
-            signal=signal, confidence=confidence,
+            ticker=ticker,
+            eval_date=eval_date,
+            signal=signal,
+            confidence=confidence,
         )
 
     def to_legacy_dict(self) -> dict:
@@ -187,10 +192,22 @@ class InvestmentDecision:
             "risks": self.risks,
         }
         if self.signal_assessment:
-            d["ta_signal"] = self.signal_assessment.ta.signal.value if self.signal_assessment.ta else None
-            d["ta_confidence"] = self.signal_assessment.ta.confidence if self.signal_assessment.ta else None
-            d["kronos_direction"] = self.signal_assessment.kronos.direction.value if self.signal_assessment.kronos else None
-            d["kronos_change_pct"] = self.signal_assessment.kronos.expected_return if self.signal_assessment.kronos else None
+            d["ta_signal"] = (
+                self.signal_assessment.ta.signal.value if self.signal_assessment.ta else None
+            )
+            d["ta_confidence"] = (
+                self.signal_assessment.ta.confidence if self.signal_assessment.ta else None
+            )
+            d["kronos_direction"] = (
+                self.signal_assessment.kronos.direction.value
+                if self.signal_assessment.kronos
+                else None
+            )
+            d["kronos_change_pct"] = (
+                self.signal_assessment.kronos.expected_return
+                if self.signal_assessment.kronos
+                else None
+            )
             if self.signal_assessment.kronos:
                 dist = self.signal_assessment.kronos.distribution
                 d["kronos_prediction_uncertainty"] = dist.to_dict()

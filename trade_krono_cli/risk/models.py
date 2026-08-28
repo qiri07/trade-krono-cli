@@ -28,6 +28,7 @@ Risk Models — 风险量化模型。
     })
     # → -0.08 (预期收益降低 8%)
 """
+
 from __future__ import annotations
 
 import math
@@ -35,7 +36,6 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-
 
 # ═══════════════════════════════════════════════════════
 # 共享权重 — 同时驱动总风险分加权和预期收益调整
@@ -52,23 +52,24 @@ import pandas as pd
 #:   concentration       → weights.concentration
 #:   market_regime       → weights.market_regime
 RISK_NORMALIZATION_WEIGHTS: dict[str, float] = {
-    "var_95":         0.15,
-    "cvar_95":        0.15,
-    "beta":           0.10,
+    "var_95": 0.15,
+    "cvar_95": 0.15,
+    "beta": 0.10,
     "annualized_vol": 0.15,
-    "max_drawdown":   0.15,
+    "max_drawdown": 0.15,
     "liquidity_score": 0.10,
-    "gap_risk":       0.05,
-    "event_risk":     0.05,
+    "gap_risk": 0.05,
+    "event_risk": 0.05,
     "valuation_risk": 0.03,
-    "concentration":  0.02,
-    "market_regime":  0.05,
+    "concentration": 0.02,
+    "market_regime": 0.05,
 }
 
 
 # ═══════════════════════════════════════════════════════
 # VaR / CVaR
 # ═══════════════════════════════════════════════════════
+
 
 def historical_var(
     returns: np.ndarray | list[float],
@@ -135,6 +136,7 @@ def cvar_annualized(returns: np.ndarray | list[float], confidence: float = 0.95)
 # ═══════════════════════════════════════════════════════
 # Beta & Sharpe
 # ═══════════════════════════════════════════════════════
+
 
 def beta(
     stock_returns: np.ndarray | list[float],
@@ -216,6 +218,7 @@ def sharpe_ratio(
 # Expected Return Adjustment
 # ═══════════════════════════════════════════════════════
 
+
 def expected_return_adjustment(
     risk_metrics: dict,
     weights: Optional[dict] = None,
@@ -265,15 +268,19 @@ def expected_return_adjustment(
             return max(0.0, min(1.0, raw / 60.0))
         elif key == "max_drawdown":
             return max(0.0, min(1.0, (-raw / 30.0)))
-        elif key in ("liquidity_score", "gap_risk", "event_risk",
-                      "valuation_risk", "concentration", "market_regime"):
+        elif key in (
+            "liquidity_score",
+            "gap_risk",
+            "event_risk",
+            "valuation_risk",
+            "concentration",
+            "market_regime",
+        ):
             return max(0.0, min(1.0, raw / 100.0))
         return 0.5
 
     weighted_sum = sum(
-        w[key] * _normalize(key, score)
-        for key, score in risk_metrics.items()
-        if key in w
+        w[key] * _normalize(key, score) for key, score in risk_metrics.items() if key in w
     )
 
     return round(math.exp(-weighted_sum) - 1.0, 4)
@@ -304,6 +311,7 @@ def adjust_expected_return(
 # ═══════════════════════════════════════════════════════
 # Gap Risk
 # ═══════════════════════════════════════════════════════
+
 
 def gap_risk_score(
     close: pd.Series,
@@ -345,6 +353,7 @@ def gap_risk_score(
 # ═══════════════════════════════════════════════════════
 # Event Risk（波动率突变）
 # ═══════════════════════════════════════════════════════
+
 
 def event_risk_score(
     close: pd.Series,
@@ -388,6 +397,7 @@ def event_risk_score(
 # ═══════════════════════════════════════════════════════
 # Valuation Risk（估值风险）
 # ═══════════════════════════════════════════════════════
+
 
 def valuation_risk_score(
     pe_ttm: Optional[float],

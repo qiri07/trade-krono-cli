@@ -1,37 +1,33 @@
 """
 测试评分插件系统：三种打分策略、三种风险加分策略、注册表、配置校验、DB 历史记录。
 """
+
 from __future__ import annotations
 
-import pytest
 import time
-from types import SimpleNamespace
-from unittest.mock import MagicMock
 
+from trade_krono_cli.configs.schema import (
+    RiskBoostStrategyConfig,
+    ScoringStrategyConfig,
+)
+from trade_krono_cli.research_db import ResearchDatabase, clear_research_singleton
 from trade_krono_cli.scoring import (
+    DiminishingBoostBooster,
+    FixedBoostBooster,
     LinearScorer,
     MultiplicativeScorer,
     RankBasedScorer,
-    FixedBoostBooster,
     ScaledBoostBooster,
-    DiminishingBoostBooster,
-    get_scorer_registry,
-    get_risk_boost_registry,
-    reset_scoring_registries,
     apply_abnormality_risk_boost,
+    get_risk_boost_registry,
+    get_scorer_registry,
+    reset_scoring_registries,
 )
-from trade_krono_cli.scoring.registry import ScorerRegistry, RiskBoostRegistry
-from trade_krono_cli.configs.schema import (
-    ScoringStrategyConfig,
-    RiskBoostStrategyConfig,
-    ScoringConfig,
-)
-from trade_krono_cli.research_db import ResearchDatabase, clear_research_singleton
-
 
 # ═══════════════════════════════════════════════════════
 # 测试辅助数据
 # ═══════════════════════════════════════════════════════
+
 
 def _make_merged(
     ta_confidence=80.0,
@@ -61,6 +57,7 @@ def _make_merged(
 # ═══════════════════════════════════════════════════════
 # LinearScorer
 # ═══════════════════════════════════════════════════════
+
 
 class TestLinearScorer:
     def test_basic_score(self):
@@ -130,6 +127,7 @@ class TestLinearScorer:
 # MultiplicativeScorer
 # ═══════════════════════════════════════════════════════
 
+
 class TestMultiplicativeScorer:
     def test_risk_sensitive(self):
         """高风险股票在乘法模型中得分压缩更明显。"""
@@ -164,6 +162,7 @@ class TestMultiplicativeScorer:
 # RankBasedScorer
 # ═══════════════════════════════════════════════════════
 
+
 class TestRankBasedScorer:
     def test_rank_one_is_highest(self):
         """排名 1 应得最高分（接近 100）。"""
@@ -192,6 +191,7 @@ class TestRankBasedScorer:
 # ═══════════════════════════════════════════════════════
 # FixedBoostBooster
 # ═══════════════════════════════════════════════════════
+
 
 class TestFixedBoostBooster:
     def test_single_st_flag(self):
@@ -227,6 +227,7 @@ class TestFixedBoostBooster:
 # ScaledBoostBooster
 # ═══════════════════════════════════════════════════════
 
+
 class TestScaledBoostBooster:
     def test_multiplier_applied(self):
         """倍率参数生效：multiplier=2.0 → ST 加 40 分。"""
@@ -248,6 +249,7 @@ class TestScaledBoostBooster:
 # DiminishingBoostBooster
 # ═══════════════════════════════════════════════════════
 
+
 class TestDiminishingBoostBooster:
     def test_single_flag_no_decay(self):
         """单标记不减幅。"""
@@ -262,7 +264,7 @@ class TestDiminishingBoostBooster:
         # 除以 3^(1-0.5) = √3 ≈ 1.732 → 57.7
         result = b.boost(base_risk=0.0, flags=["ST", "DELISTED", "SUSPENDED"])
         assert result < 100.0  # 确认递减
-        assert result > 50.0   # 但仍有显著加分
+        assert result > 50.0  # 但仍有显著加分
 
     def test_power_param(self):
         """power=1.0 时无递减。"""
@@ -289,6 +291,7 @@ class TestDiminishingBoostBooster:
 # apply_abnormality_risk_boost (compat wrapper)
 # ═══════════════════════════════════════════════════════
 
+
 class TestApplyAbnormalityRiskBoost:
     def test_default_strategy(self):
         """默认 fixed_boost 策略。"""
@@ -296,7 +299,9 @@ class TestApplyAbnormalityRiskBoost:
         assert result == 60.0
 
     def test_scaled_strategy(self):
-        result = apply_abnormality_risk_boost(40.0, ["ST"], strategy="scaled_boost", params={"multiplier": 2.0})
+        result = apply_abnormality_risk_boost(
+            40.0, ["ST"], strategy="scaled_boost", params={"multiplier": 2.0}
+        )
         assert result == 80.0
 
     def test_disabled(self):
@@ -313,6 +318,7 @@ class TestApplyAbnormalityRiskBoost:
 # ═══════════════════════════════════════════════════════
 # Registry
 # ═══════════════════════════════════════════════════════
+
 
 class TestScorerRegistry:
     def setup_method(self):
@@ -395,6 +401,7 @@ class TestRiskBoostRegistry:
 # Config Validation
 # ═══════════════════════════════════════════════════════
 
+
 class TestScoringStrategyConfig:
     def test_valid_linear(self):
         cfg = ScoringStrategyConfig(strategy="linear")
@@ -466,23 +473,25 @@ class TestRiskBoostStrategyConfig:
 # PipelineConfig Strategy Integration
 # ═══════════════════════════════════════════════════════
 
+
 class TestPipelineConfigStrategy:
     def test_default_strategy(self):
         from trade_krono_cli.pipeline_config import PipelineConfig
+
         cfg = PipelineConfig.default()
         assert cfg.scoring_strategy.strategy == "linear"
         assert cfg.risk_boost_strategy.strategy == "fixed_boost"
 
     def test_override_scoring_strategy(self):
         from trade_krono_cli.pipeline_config import PipelineConfig
-        cfg = PipelineConfig.default().override(
-            scoring_strategy={"strategy": "multiplicative"}
-        )
+
+        cfg = PipelineConfig.default().override(scoring_strategy={"strategy": "multiplicative"})
         assert cfg.scoring_strategy.strategy == "multiplicative"
         assert cfg.risk_boost_strategy.strategy == "fixed_boost"  # 未被影响
 
     def test_override_risk_boost(self):
         from trade_krono_cli.pipeline_config import PipelineConfig
+
         cfg = PipelineConfig.default().override(
             risk_boost_strategy={"strategy": "diminishing_boost", "multiplier": 2.0}
         )
@@ -492,6 +501,7 @@ class TestPipelineConfigStrategy:
 
     def test_from_dict_strategy(self):
         from trade_krono_cli.pipeline_config import PipelineConfig
+
         data = {
             "scoring_strategy": {"strategy": "rank_based"},
             "risk_boost_strategy": {
@@ -507,6 +517,7 @@ class TestPipelineConfigStrategy:
 
     def test_to_dict_roundtrip(self):
         from trade_krono_cli.pipeline_config import PipelineConfig
+
         cfg = PipelineConfig.default().override(
             scoring_strategy={"strategy": "multiplicative"},
             risk_boost_strategy={"strategy": "diminishing_boost", "multiplier": 2.0},
@@ -521,6 +532,7 @@ class TestPipelineConfigStrategy:
 # ═══════════════════════════════════════════════════════
 # research_db Strategy History
 # ═══════════════════════════════════════════════════════
+
 
 class TestStrategyRunHistory:
     def setup_method(self):
@@ -558,8 +570,12 @@ class TestStrategyRunHistory:
     def test_query_all(self, tmp_path):
         db = ResearchDatabase(db_path=tmp_path / "test_strategy_all.db")
         t = time.time()
-        db.insert_strategy_run(run_at=t, strategy="linear", params={}, tickers=["sh.600519"], results=[])
-        db.insert_strategy_run(run_at=t + 1, strategy="multiplicative", params={}, tickers=["sz.000001"], results=[])
+        db.insert_strategy_run(
+            run_at=t, strategy="linear", params={}, tickers=["sh.600519"], results=[]
+        )
+        db.insert_strategy_run(
+            run_at=t + 1, strategy="multiplicative", params={}, tickers=["sz.000001"], results=[]
+        )
 
         all_rows = db.query_strategy_history()
         assert len(all_rows) == 2
@@ -571,7 +587,9 @@ class TestStrategyRunHistory:
         t = time.time()
         db.insert_strategy_run(run_at=t, strategy="linear", params={}, tickers=[], results=[])
         db.insert_strategy_run(run_at=t + 1, strategy="linear", params={}, tickers=[], results=[])
-        db.insert_strategy_run(run_at=t + 2, strategy="multiplicative", params={}, tickers=[], results=[])
+        db.insert_strategy_run(
+            run_at=t + 2, strategy="multiplicative", params={}, tickers=[], results=[]
+        )
 
         linear_rows = db.query_strategy_history(strategy="linear")
         assert len(linear_rows) == 2
@@ -582,8 +600,11 @@ class TestStrategyRunHistory:
         db = ResearchDatabase(db_path=tmp_path / "test_strategy_limit.db")
         for i in range(5):
             db.insert_strategy_run(
-                run_at=time.time() + i, strategy="linear", params={},
-                tickers=[], results=[],
+                run_at=time.time() + i,
+                strategy="linear",
+                params={},
+                tickers=[],
+                results=[],
             )
         rows = db.query_strategy_history(limit=3)
         assert len(rows) == 3
@@ -591,8 +612,11 @@ class TestStrategyRunHistory:
     def test_stats_includes_strategy_runs(self, tmp_path):
         db = ResearchDatabase(db_path=tmp_path / "test_strategy_stats.db")
         db.insert_strategy_run(
-            run_at=time.time(), strategy="linear", params={},
-            tickers=[], results=[],
+            run_at=time.time(),
+            strategy="linear",
+            params={},
+            tickers=[],
+            results=[],
         )
         stats = db.stats()
         assert stats["research_strategy_runs"] == 1

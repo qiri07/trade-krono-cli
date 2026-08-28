@@ -4,14 +4,13 @@ Kronos 适配器实现。
 封装 cli_anything.kronos 的全部导入和调用，
 业务代码只通过 KronosAdapter 与 Kronos 外部项目交互。
 """
+
 from __future__ import annotations
 
 import time
 from typing import Any, Optional
 
-import numpy as np
 import pandas as pd
-
 from loguru import logger
 
 from trade_krono_cli.adapters.base import KronosAdapter
@@ -34,6 +33,7 @@ class KronosAdapterImpl(KronosAdapter):
         if device_pref.startswith("cuda"):
             try:
                 import torch
+
                 if torch.cuda.is_available():
                     return device_pref
                 logger.warning("⚠️  CUDA 不可用，回退到 CPU")
@@ -56,7 +56,7 @@ class KronosAdapterImpl(KronosAdapter):
         device = self._resolve_device(settings.kronos_device)
         self._device = device
 
-        logger.info(f"⏳ 加载 Kronos 模型（首次约 1-3 分钟）...")
+        logger.info("⏳ 加载 Kronos 模型（首次约 1-3 分钟）...")
         t0 = time.time()
 
         try:
@@ -68,9 +68,7 @@ class KronosAdapterImpl(KronosAdapter):
             )
             self._predictor = predictor
             self._max_context = meta.get("max_context", 512)
-            logger.info(
-                f"✅ KronosAdapter 模型加载完成 ({time.time()-t0:.1f}s, device={device})"
-            )
+            logger.info(f"✅ KronosAdapter 模型加载完成 ({time.time() - t0:.1f}s, device={device})")
 
         except ImportError as e:
             raise ModelLoadError(
@@ -102,9 +100,7 @@ class KronosAdapterImpl(KronosAdapter):
     ) -> pd.DataFrame:
         """单只股票预测，返回含 'close' 列的 DataFrame。"""
         if self._predictor is None:
-            raise RuntimeError(
-                "KronosAdapter 模型尚未加载，请先调用 load_model()"
-            )
+            raise RuntimeError("KronosAdapter 模型尚未加载，请先调用 load_model()")
         return self._predictor.predict(
             df=df,
             x_timestamp=x_timestamp,
@@ -128,9 +124,7 @@ class KronosAdapterImpl(KronosAdapter):
     ) -> list[pd.DataFrame]:
         """批量预测，返回 DataFrame 列表。"""
         if self._predictor is None:
-            raise RuntimeError(
-                "KronosAdapter 模型尚未加载，请先调用 load_model()"
-            )
+            raise RuntimeError("KronosAdapter 模型尚未加载，请先调用 load_model()")
         return self._predictor.predict_batch(
             df_list=df_list,
             x_timestamp_list=x_timestamp_list,

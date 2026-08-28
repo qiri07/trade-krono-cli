@@ -1,8 +1,10 @@
 """股票过滤配置。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
+
 from trade_krono_cli.stock_filter import FilterRule
 
 
@@ -47,17 +49,11 @@ class FilterConfig:
     def validate(self) -> list[str]:
         errors: list[str] = []
         if not (0 <= self.min_confidence <= 100):
-            errors.append(
-                f"filter.min_confidence={self.min_confidence} 必须在 [0, 100] 范围内"
-            )
+            errors.append(f"filter.min_confidence={self.min_confidence} 必须在 [0, 100] 范围内")
         if not self.allowed_signals:
             errors.append("filter.allowed_signals 不能为空")
         if self.exclude_low_price and self.low_price_threshold <= 0:
-            errors.append(
-                f"filter.low_price_threshold={self.low_price_threshold} 必须 > 0"
-            )
+            errors.append(f"filter.low_price_threshold={self.low_price_threshold} 必须 > 0")
         if self.min_pb is not None and self.min_pb < 0:
-            errors.append(
-                f"filter.min_pb={self.min_pb} 必须 >= 0"
-            )
+            errors.append(f"filter.min_pb={self.min_pb} 必须 >= 0")
         return errors

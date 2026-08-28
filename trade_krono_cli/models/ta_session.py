@@ -8,13 +8,14 @@ ta_session — TradingAgents 模型资源管理。
 
 业务逻辑（分析执行 / 报告提取 / 决策解析 / 缓存读写）由 TradingAgentsRunner 负责。
 """
+
 from __future__ import annotations
 
-from typing import Optional, Any
+from typing import Any, Optional
 
 from loguru import logger
-from trade_krono_cli.ta_runner import TradingAgentsRunner
 
+from trade_krono_cli.ta_runner import TradingAgentsRunner
 
 # ── 进程级单例缓存（同进程内相同配置的 session 复用，避免重复初始化 adapter）──
 _SESSION_CACHE: dict[tuple, "TASession"] = {}
@@ -35,6 +36,7 @@ class TASession:
 
     进程级单例：相同配置的调用会复用同一实例，避免重复初始化 adapter。
     """
+
     # 类级别缓存，key = (llm_provider, max_debate_rounds, output_language)
     _cache: dict[tuple, "TASession"] = {}
 
@@ -96,6 +98,7 @@ class TASession:
     def _validate_provider(self) -> None:
         """检查 LLM 密钥是否可用。"""
         from trade_krono_cli.security import KeyVault
+
         vault = KeyVault()
         available = vault.available_providers()
         if not available:
@@ -105,8 +108,7 @@ class TASession:
             )
         if self._llm_provider and self._llm_provider not in available:
             logger.warning(
-                f"⚠️  选定 provider '{self._llm_provider}' 无可用密钥，"
-                f"回退到: {available[0]}"
+                f"⚠️  选定 provider '{self._llm_provider}' 无可用密钥，回退到: {available[0]}"
             )
 
     def _get_adapter(self) -> Any:

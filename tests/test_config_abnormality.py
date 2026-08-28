@@ -1,7 +1,6 @@
 """测试 AbnormalityConfig 配置类。"""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from trade_krono_cli.configs.abnormality import AbnormalityConfig
 

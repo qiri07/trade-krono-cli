@@ -19,32 +19,33 @@ scoring — 评分与风险引擎插件系统。
     from trade_krono_cli.scoring import apply_abnormality_risk_boost
     new_risk = apply_abnormality_risk_boost(40.0, ["ST"], strategy="scaled_boost", params={"multiplier": 0.5})
 """
+
 from __future__ import annotations
 
 from trade_krono_cli.scoring.base import (
-    CompositeScorer,
-    RiskBoostStrategy,
-    RatingMapper,
-    ScoreResult,
     BoostResult,
+    CompositeScorer,
+    RatingMapper,
+    RiskBoostStrategy,
+    ScoreResult,
 )
 from trade_krono_cli.scoring.registry import (
-    ScorerRegistry,
     RiskBoostRegistry,
-    get_scorer_registry,
+    ScorerRegistry,
     get_risk_boost_registry,
+    get_scorer_registry,
     reset_scoring_registries,
+)
+from trade_krono_cli.scoring.risk_boosters import (
+    DiminishingBoostBooster,
+    FixedBoostBooster,
+    ScaledBoostBooster,
+    apply_abnormality_risk_boost,
 )
 from trade_krono_cli.scoring.scorers import (
     LinearScorer,
     MultiplicativeScorer,
     RankBasedScorer,
-)
-from trade_krono_cli.scoring.risk_boosters import (
-    FixedBoostBooster,
-    ScaledBoostBooster,
-    DiminishingBoostBooster,
-    apply_abnormality_risk_boost,
 )
 
 __all__ = [

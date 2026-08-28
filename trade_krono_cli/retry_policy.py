@@ -11,6 +11,7 @@
   · 限流（429）→ 解析 Retry-After 头，自适应等待
   · 参数/数据缺失 → 直接放弃，不浪费重试
 """
+
 from __future__ import annotations
 
 import json
@@ -33,6 +34,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 # 错误分类层次
 # ═══════════════════════════════════════════════════════
 
+
 class TradeKronoRetryableError(Exception):
     """可重试错误的基类：网络超时、限流、服务端 5xx 等瞬时故障。"""
 
@@ -42,6 +44,7 @@ class TradeKronoNonRetryableError(Exception):
 
 
 # ── 可重试子类 ────────────────────────────────────────────────────────────────
+
 
 class NetworkError(TradeKronoRetryableError):
     """网络连接/超时错误。"""
@@ -81,6 +84,7 @@ class Server5xxError(TradeKronoRetryableError):
 
 # ── 不可重试子类 ──────────────────────────────────────────────────────────────
 
+
 class ParameterError(TradeKronoNonRetryableError):
     """参数校验失败。"""
 
@@ -100,6 +104,7 @@ class ValidationError(TradeKronoNonRetryableError):
 # ═══════════════════════════════════════════════════════
 # 错误分类器
 # ═══════════════════════════════════════════════════════
+
 
 def classify_error(exc: Exception) -> tuple[str, str]:
     """
@@ -131,19 +136,41 @@ def classify_error(exc: Exception) -> tuple[str, str]:
         return ("non_retriable", f"参数错误: {exc}")
 
     # 数据不存在
-    if any(kw in msg for kw in ("not found", "no data", "empty data", "data not found",
-                                 "数据不足", "空数据", "数据不存在", "数据为空")):
+    if any(
+        kw in msg
+        for kw in (
+            "not found",
+            "no data",
+            "empty data",
+            "data not found",
+            "数据不足",
+            "空数据",
+            "数据不存在",
+            "数据为空",
+        )
+    ):
         return ("non_retriable", f"数据缺失: {exc}")
 
     # 鉴权失败
-    if any(kw in msg for kw in ("auth", "unauthorized", "forbidden", "invalid api key",
-                                 "鉴权", "认证失败", "权限不足", "密钥无效",
-                                 "401", "403")):
+    if any(
+        kw in msg
+        for kw in (
+            "auth",
+            "unauthorized",
+            "forbidden",
+            "invalid api key",
+            "鉴权",
+            "认证失败",
+            "权限不足",
+            "密钥无效",
+            "401",
+            "403",
+        )
+    ):
         return ("non_retriable", f"鉴权失败: {exc}")
 
     # 限流
-    if any(kw in msg for kw in ("rate limit", "too many request", "429",
-                                 "限流", "请求过于频繁")):
+    if any(kw in msg for kw in ("rate limit", "too many request", "429", "限流", "请求过于频繁")):
         return ("retriable", f"限流: {exc}")
 
     # 服务端 5xx
@@ -151,14 +178,21 @@ def classify_error(exc: Exception) -> tuple[str, str]:
         return ("retriable", f"服务端错误: {exc}")
 
     # 网络/超时
-    if exc_type in ("ConnectionError", "TimeoutError", "ConnectTimeout",
-                    "ReadTimeout", "URLError", "OSError") or \
-       any(kw in msg for kw in ("connection", "timeout", "network", "网络", "超时")):
+    if exc_type in (
+        "ConnectionError",
+        "TimeoutError",
+        "ConnectTimeout",
+        "ReadTimeout",
+        "URLError",
+        "OSError",
+    ) or any(kw in msg for kw in ("connection", "timeout", "network", "网络", "超时")):
         return ("retriable", f"网络错误: {exc}")
 
     # 数据验证失败
-    if any(kw in msg for kw in ("invalid date", "data validation", "format",
-                                 "数据格式", "数据过旧", "未来数据")):
+    if any(
+        kw in msg
+        for kw in ("invalid date", "data validation", "format", "数据格式", "数据过旧", "未来数据")
+    ):
         return ("non_retriable", f"数据验证失败: {exc}")
 
     # 默认：未知错误，保守处理为不可重试（避免无限重试消耗资源）
@@ -168,6 +202,7 @@ def classify_error(exc: Exception) -> tuple[str, str]:
 # ═══════════════════════════════════════════════════════
 # 重试策略配置
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass
 class RetryPolicy:
@@ -202,6 +237,7 @@ class RetryPolicy:
 # 智能重试装饰器
 # ═══════════════════════════════════════════════════════
 
+
 def smart_retry(
     policy: Optional[Union[RetryPolicy, F]] = None,
 ) -> Union[Callable[[F], F], F]:
@@ -234,6 +270,7 @@ def smart_retry(
 
 def _make_smart_retry_decorator(fn: F, policy: RetryPolicy) -> F:
     """内部：创建带有指定策略的重试装饰器。"""
+
     @wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         last_exc: Optional[Exception] = None
@@ -242,9 +279,7 @@ def _make_smart_retry_decorator(fn: F, policy: RetryPolicy) -> F:
             try:
                 return fn(*args, **kwargs)
             except TradeKronoNonRetryableError as e:
-                logger.warning(
-                    f"❌ [{fn.__name__}] 不可重试错误（放弃）: {e}"
-                )
+                logger.warning(f"❌ [{fn.__name__}] 不可重试错误（放弃）: {e}")
                 raise
 
             except Exception as e:
@@ -252,9 +287,7 @@ def _make_smart_retry_decorator(fn: F, policy: RetryPolicy) -> F:
                 category, desc = classify_error(e)
 
                 if category == "non_retriable" and policy.skip_non_retriable:
-                    logger.warning(
-                        f"❌ [{fn.__name__}] 不可重试错误（放弃）: {desc}"
-                    )
+                    logger.warning(f"❌ [{fn.__name__}] 不可重试错误（放弃）: {desc}")
                     raise
 
                 if attempt >= policy.max_attempts:
@@ -288,9 +321,7 @@ def _compute_delay(exc: Exception, attempt: int, policy: RetryPolicy) -> float:
     if isinstance(exc, RateLimitError) and policy.rate_limit_backoff:
         if exc.retry_after is not None and exc.retry_after > 0:
             wait = min(float(exc.retry_after), policy.rate_limit_max_wait)
-            logger.debug(
-                f"🔄 限流退避：Retry-After={exc.retry_after}s，等待 {wait:.1f}s"
-            )
+            logger.debug(f"🔄 限流退避：Retry-After={exc.retry_after}s，等待 {wait:.1f}s")
             return wait
         # 无 Retry-After 头时回退到指数退避
         return _exp_backoff(attempt, policy.rate_limit_delay or policy.base_delay, policy.jitter)
@@ -310,6 +341,7 @@ def _exp_backoff(attempt: int, base_delay: float, jitter: bool) -> float:
 # ═══════════════════════════════════════════════════════
 # 失败记录与持久化
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass
 class FailureRecord:
@@ -357,9 +389,7 @@ class FailureStore:
     """
 
     def __init__(self, store_path: Optional[Path] = None) -> None:
-        self._path = store_path or (
-            get_settings().cache_dir / "failure_store.json"
-        )
+        self._path = store_path or (get_settings().cache_dir / "failure_store.json")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._records: list[FailureRecord] = []
         self._lock = threading.Lock()
@@ -383,7 +413,8 @@ class FailureStore:
         self._path.write_text(
             json.dumps(
                 [r.to_dict() for r in self._records],
-                ensure_ascii=False, indent=2,
+                ensure_ascii=False,
+                indent=2,
             ),
             encoding="utf-8",
         )
@@ -502,6 +533,7 @@ class FailureStore:
 # 工具函数
 # ═══════════════════════════════════════════════════════
 
+
 def parse_retry_after(header_value: Optional[str]) -> Optional[float]:
     """
     解析 HTTP Retry-After 响应头。
@@ -530,6 +562,7 @@ def parse_retry_after(header_value: Optional[str]) -> Optional[float]:
     # 格式 2：HTTP 日期
     try:
         from email.utils import parsedate_to_datetime
+
         dt = parsedate_to_datetime(header_value)
         now = time.time()
         wait = dt.timestamp() - now

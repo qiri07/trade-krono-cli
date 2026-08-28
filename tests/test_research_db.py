@@ -1,10 +1,12 @@
 """测试 ResearchDatabase — 研究数据库（永久存储，无 TTL）。"""
+
 import json
-import pytest
 import sqlite3
-from pathlib import Path
-from trade_krono_cli.research_db import ResearchDatabase
+
+import pytest
+
 from trade_krono_cli.cache import Cache
+from trade_krono_cli.research_db import ResearchDatabase
 from trade_krono_cli.version import reset_run_id_counter
 
 
@@ -22,6 +24,7 @@ def cache_only():
 
 
 # ── Jobs ────────────────────────────────────────────────────────────────────
+
 
 def test_create_job(research_db):
     job_id = research_db.create_job("2026-08-11", ["sh.600519", "sz.000858"])
@@ -64,18 +67,23 @@ def test_list_jobs_limit(research_db):
 
 # ── TA Analysis ─────────────────────────────────────────────────────────────
 
+
 def test_insert_ta(research_db):
-    from trade_krono_cli.ta_runner import StockAnalysisResult
     from trade_krono_cli.ta_decision import InvestmentDecision, Signal
+    from trade_krono_cli.ta_runner import StockAnalysisResult
 
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     result = StockAnalysisResult(
-        ticker="sh.600519", date="2026-08-11",
-        signal="BUY", confidence=85.0,
+        ticker="sh.600519",
+        date="2026-08-11",
+        signal="BUY",
+        confidence=85.0,
         reasoning="基本面良好",
         investment_decision=InvestmentDecision(
-            signal=Signal.BUY, confidence=85.0,
-            thesis="核心论点", risks=["风险A"],
+            signal=Signal.BUY,
+            confidence=85.0,
+            thesis="核心论点",
+            risks=["风险A"],
         ),
     )
     research_db.insert_ta(job_id, result)
@@ -92,7 +100,8 @@ def test_insert_ta_with_error(research_db):
 
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     result = StockAnalysisResult(
-        ticker="sh.600519", date="2026-08-11",
+        ticker="sh.600519",
+        date="2026-08-11",
         error="Network timeout",
     )
     research_db.insert_ta(job_id, result)
@@ -103,17 +112,23 @@ def test_insert_ta_with_error(research_db):
 
 # ── Kronos Forecast ─────────────────────────────────────────────────────────
 
+
 def test_insert_kronos(research_db):
     from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
 
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     result = KronosForecastResult(
-        ticker="sh.600519", eval_date="2026-08-11", horizon=30,
-        direction="UP", expected_change_pct=3.2,
+        ticker="sh.600519",
+        eval_date="2026-08-11",
+        horizon=30,
+        direction="UP",
+        expected_change_pct=3.2,
         predicted_close_final=1837.73,
         prediction_uncertainty=PredictionUncertainty(
-            expected_return=3.2, direction="UP",
-            direction_score=0.72, confidence_score=72.0,
+            expected_return=3.2,
+            direction="UP",
+            direction_score=0.72,
+            confidence_score=72.0,
         ),
     )
     research_db.insert_kronos(job_id, result)
@@ -126,17 +141,22 @@ def test_insert_kronos(research_db):
 
 # ── Signals ─────────────────────────────────────────────────────────────────
 
+
 def test_insert_signals(research_db):
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     merged = [
         {
-            "ticker": "sh.600519", "rank": 1,
+            "ticker": "sh.600519",
+            "rank": 1,
             "composite_score": 82.1,
-            "ta_signal": "BUY", "ta_confidence": 80.0,
+            "ta_signal": "BUY",
+            "ta_confidence": 80.0,
             "ta_reasoning": "基本面良好",
-            "kronos_direction": "UP", "kronos_change_pct": 3.2,
+            "kronos_direction": "UP",
+            "kronos_change_pct": 3.2,
             "kronos_prediction_uncertainty": {"confidence_score": 72.0},
-            "ta_error": None, "kronos_error": None,
+            "ta_error": None,
+            "kronos_error": None,
         },
     ]
     research_db.insert_signals(job_id, merged)
@@ -151,14 +171,18 @@ def test_insert_signals(research_db):
 
 # ── Decisions ───────────────────────────────────────────────────────────────
 
+
 def test_insert_decision(research_db):
     from trade_krono_cli.ta_decision import InvestmentDecision, Signal
 
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     decision = InvestmentDecision(
-        signal=Signal.BUY, confidence=82.0,
-        expected_return=12.5, position_size=0.08,
-        thesis="核心论点摘要", risks=["估值风险", "政策风险"],
+        signal=Signal.BUY,
+        confidence=82.0,
+        expected_return=12.5,
+        position_size=0.08,
+        thesis="核心论点摘要",
+        risks=["估值风险", "政策风险"],
     )
     research_db.insert_decision(job_id, "sh.600519", decision, decision.thesis, decision.risks)
 
@@ -172,11 +196,14 @@ def test_insert_decision(research_db):
 
 # ── Raw Reports Index ───────────────────────────────────────────────────────
 
+
 def test_index_raw_report(research_db):
     import sqlite3
+
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     research_db.index_raw_report(
-        job_id, "sh.600519",
+        job_id,
+        "sh.600519",
         "/path/to/raw/sh.600519.json",
         {"market": 2400, "fundamentals": 1800},
     )
@@ -192,6 +219,7 @@ def test_index_raw_report(research_db):
 
 
 # ── Stats ───────────────────────────────────────────────────────────────────
+
 
 def test_stats_empty(research_db):
     stats = research_db.stats()
@@ -211,26 +239,49 @@ def test_stats_after_insert(research_db):
 
 # ── Query History ───────────────────────────────────────────────────────────
 
+
 def test_query_history(research_db):
     # Create two jobs with signals
     j1 = research_db.create_job("2026-08-10", ["sh.600519"])
-    research_db.insert_signals(j1, [{
-        "ticker": "sh.600519", "rank": 1, "composite_score": 80.0,
-        "ta_signal": "BUY", "ta_confidence": 80.0,
-        "kronos_direction": "UP", "kronos_change_pct": 2.5,
-        "ta_reasoning": "", "uncertainty": None,
-        "ta_error": None, "kronos_error": None,
-    }])
+    research_db.insert_signals(
+        j1,
+        [
+            {
+                "ticker": "sh.600519",
+                "rank": 1,
+                "composite_score": 80.0,
+                "ta_signal": "BUY",
+                "ta_confidence": 80.0,
+                "kronos_direction": "UP",
+                "kronos_change_pct": 2.5,
+                "ta_reasoning": "",
+                "uncertainty": None,
+                "ta_error": None,
+                "kronos_error": None,
+            }
+        ],
+    )
     research_db.complete_job(j1, n_success=1, elapsed=5.0)
 
     j2 = research_db.create_job("2026-08-11", ["sh.600519"])
-    research_db.insert_signals(j2, [{
-        "ticker": "sh.600519", "rank": 2, "composite_score": 75.0,
-        "ta_signal": "HOLD", "ta_confidence": 60.0,
-        "kronos_direction": "DOWN", "kronos_change_pct": -1.0,
-        "ta_reasoning": "", "uncertainty": None,
-        "ta_error": None, "kronos_error": None,
-    }])
+    research_db.insert_signals(
+        j2,
+        [
+            {
+                "ticker": "sh.600519",
+                "rank": 2,
+                "composite_score": 75.0,
+                "ta_signal": "HOLD",
+                "ta_confidence": 60.0,
+                "kronos_direction": "DOWN",
+                "kronos_change_pct": -1.0,
+                "ta_reasoning": "",
+                "uncertainty": None,
+                "ta_error": None,
+                "kronos_error": None,
+            }
+        ],
+    )
     research_db.complete_job(j2, n_success=1, elapsed=6.0)
 
     records = research_db.query_history("sh.600519")
@@ -248,6 +299,7 @@ def test_query_history_no_records(research_db):
 
 
 # ── Cache vs Research Separation ────────────────────────────────────────────
+
 
 def test_cache_and_research_are_separate(tmp_path):
     """Cache 操作不影响 Research 表，反之亦然。"""
@@ -288,8 +340,10 @@ def test_clear_cache_does_not_affect_research(tmp_path):
 
 # ── 版本追踪 ─────────────────────────────────────────────────────────────────
 
+
 class _MockSettings:
     """模拟 Settings 对象用于版本快照测试。"""
+
     max_debate_rounds = 1
     max_risk_discuss_rounds = 1
     kronos_model = "kronos-base"
@@ -313,7 +367,8 @@ def test_create_job_with_version_snapshot(research_db):
     """create_job 传入 settings 应填充版本字段。"""
     reset_run_id_counter()
     job_id = research_db.create_job(
-        "2026-08-11", ["sh.600519"],
+        "2026-08-11",
+        ["sh.600519"],
         settings=_MockSettings(),
     )
     job = research_db.get_job(job_id)
@@ -331,7 +386,8 @@ def test_get_run_snapshot(research_db):
     """get_run_snapshot 返回完整的版本快照。"""
     reset_run_id_counter()
     job_id = research_db.create_job(
-        "2026-08-11", ["sh.600519"],
+        "2026-08-11",
+        ["sh.600519"],
         settings=_MockSettings(),
     )
     snapshot = research_db.get_run_snapshot(job_id)
@@ -425,8 +481,7 @@ def test_schema_migration_old_db(tmp_path):
         conn.execute(
             "INSERT INTO jobs (job_id, run_at, date, tickers, n_tickers, "
             "n_success, elapsed, notes) VALUES (?,?,?,?,?,?,?,?)",
-            ("old-job-001", 1000.0, "2026-01-01",
-             '["sh.600519"]', 1, 1, 5.0, "旧数据"),
+            ("old-job-001", 1000.0, "2026-01-01", '["sh.600519"]', 1, 1, 5.0, "旧数据"),
         )
         conn.commit()
 
@@ -441,8 +496,7 @@ def test_schema_migration_old_db(tmp_path):
 
     # 新创建的作业应有完整版本
     reset_run_id_counter()
-    new_job_id = research.create_job("2026-08-11", ["sh.600519"],
-                                      settings=_MockSettings())
+    new_job_id = research.create_job("2026-08-11", ["sh.600519"], settings=_MockSettings())
     new_job = research.get_job(new_job_id)
     assert new_job["run_id"] is not None
     assert new_job["config_hash"] is not None
@@ -450,13 +504,19 @@ def test_schema_migration_old_db(tmp_path):
 
 # ── Committee Deliberations ──────────────────────────────────────────────────
 
+
 def test_insert_committee_deliberation(research_db):
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     research_db.insert_committee_deliberation(
-        job_id=job_id, ticker="sh.600519", date="2026-08-11",
-        bull_case="业绩超预期", bear_case="估值偏高",
-        recommendation="BUY", recommendation_confidence=75.0,
-        reasoning="综合判断", agent_consensus={"fundamental": "BUY"},
+        job_id=job_id,
+        ticker="sh.600519",
+        date="2026-08-11",
+        bull_case="业绩超预期",
+        bear_case="估值偏高",
+        recommendation="BUY",
+        recommendation_confidence=75.0,
+        reasoning="综合判断",
+        agent_consensus={"fundamental": "BUY"},
     )
     result = research_db.get_committee_for_ticker("sh.600519")
     assert result is not None
@@ -473,6 +533,7 @@ def test_get_committee_for_ticker_miss(research_db):
 
 # ── Stats Edge Cases ────────────────────────────────────────────────────────
 
+
 def test_stats_all_tables_empty(research_db):
     stats = research_db.stats()
     assert stats["research_jobs"] == 0
@@ -482,6 +543,7 @@ def test_stats_all_tables_empty(research_db):
 
 
 # ── Signal History ───────────────────────────────────────────────────────────
+
 
 def test_get_latest_signal_for_ticker(research_db):
     j1 = research_db.create_job("2026-08-10", ["sh.600519"])
@@ -493,16 +555,40 @@ def test_get_latest_signal_for_ticker(research_db):
             "(ticker, date, signal, confidence, composite_score, "
             " lifecycle_state, previous_state, transition_reason, job_id, run_id, thesis_snapshot, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            ("sh.600519", "2026-08-10", "HOLD", 55.0, 70.0,
-             "HOLD", None, "initial", j1, None, "", 0.0),
+            (
+                "sh.600519",
+                "2026-08-10",
+                "HOLD",
+                55.0,
+                70.0,
+                "HOLD",
+                None,
+                "initial",
+                j1,
+                None,
+                "",
+                0.0,
+            ),
         )
         conn.execute(
             "INSERT INTO signal_history "
             "(ticker, date, signal, confidence, composite_score, "
             " lifecycle_state, previous_state, transition_reason, job_id, run_id, thesis_snapshot, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            ("sh.600519", "2026-08-11", "BUY", 80.0, 80.0,
-             "BUY", "HOLD", "improvement", j2, None, "", 0.0),
+            (
+                "sh.600519",
+                "2026-08-11",
+                "BUY",
+                80.0,
+                80.0,
+                "BUY",
+                "HOLD",
+                "improvement",
+                j2,
+                None,
+                "",
+                0.0,
+            ),
         )
         conn.commit()
     latest = research_db.get_latest_signal_for_ticker("sh.600519")

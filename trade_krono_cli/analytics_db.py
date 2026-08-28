@@ -17,9 +17,9 @@ Analytics 引擎 — DuckDB + Parquet 分析层。
 
 DuckDB 未安装时自动降级为 SQLite 直接查询（向后兼容）。
 """
+
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -28,11 +28,11 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from trade_krono_cli.config import Settings
-    from trade_krono_cli.research_db import ResearchDatabase
 
 # ── 可选 DuckDB 导入 ───────────────────────────────────────────────────────────
 try:
     import duckdb
+
     _HAS_DUCKDB = True
 except ImportError:
     _HAS_DUCKDB = False
@@ -46,14 +46,14 @@ def _duckdb_available() -> bool:
 def _ensure_duckdb() -> None:
     if not _HAS_DUCKDB:
         raise RuntimeError(
-            "DuckDB 未安装，无法使用 Analytics 引擎。\n"
-            "请运行: pip install duckdb 或 uv add duckdb"
+            "DuckDB 未安装，无法使用 Analytics 引擎。\n请运行: pip install duckdb 或 uv add duckdb"
         )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Parquet 文件路径构造
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class ParquetPaths:
     """管理 Parquet 数据文件的目录结构。"""
@@ -70,6 +70,7 @@ class ParquetPaths:
         """data/features/{year}/{month}/{ticker}_{date}.parquet"""
         safe = ticker.replace(".", "_")
         from datetime import datetime
+
         dt = datetime.strptime(date, "%Y-%m-%d")
         p = self.features_dir / str(dt.year) / f"{dt.month:02d}"
         p.mkdir(parents=True, exist_ok=True)
@@ -79,6 +80,7 @@ class ParquetPaths:
         """data/predictions/{year}/{month}/{ticker}_{date}_{predlen}.parquet"""
         safe = ticker.replace(".", "_")
         from datetime import datetime
+
         dt = datetime.strptime(date, "%Y-%m-%d")
         p = self.predictions_dir / str(dt.year) / f"{dt.month:02d}"
         p.mkdir(parents=True, exist_ok=True)
@@ -95,6 +97,7 @@ class ParquetPaths:
 #  Parquet 写入器
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class ParquetWriter:
     """将分析结果写入 Parquet 文件。"""
 
@@ -102,7 +105,9 @@ class ParquetWriter:
         self.paths = paths
 
     def write_feature(
-        self, ticker: str, date: str,
+        self,
+        ticker: str,
+        date: str,
         data: dict,
     ) -> Path:
         """写入单只股票的 TA 分析特征到 Parquet。"""
@@ -113,7 +118,10 @@ class ParquetWriter:
         return path
 
     def write_prediction(
-        self, ticker: str, date: str, pred_len: int,
+        self,
+        ticker: str,
+        date: str,
+        pred_len: int,
         data: dict,
     ) -> Path:
         """写入单只股票的 Kronos 预测到 Parquet。"""
@@ -124,7 +132,8 @@ class ParquetWriter:
         return path
 
     def write_backtest(
-        self, job_id: str,
+        self,
+        job_id: str,
         records: list[dict],
     ) -> Path:
         """写入回测结果到 Parquet（支持多记录）。"""
@@ -132,8 +141,18 @@ class ParquetWriter:
         if records:
             df = pd.DataFrame(records)
         else:
-            df = pd.DataFrame(columns=["ticker", "action", "entry_price", "exit_price",
-                                       "entry_date", "exit_date", "return_pct", "horizon"])
+            df = pd.DataFrame(
+                columns=[
+                    "ticker",
+                    "action",
+                    "entry_price",
+                    "exit_price",
+                    "entry_date",
+                    "exit_date",
+                    "return_pct",
+                    "horizon",
+                ]
+            )
         df.to_parquet(path, engine="pyarrow", index=False)
         logger.debug(f"📦 回测 Parquet 已写入: {path} ({len(records)} 条)")
         return path
@@ -142,6 +161,7 @@ class ParquetWriter:
 # ══════════════════════════════════════════════════════════════════════════════
 #  DuckDB Analytics Engine
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class ResearchAnalytics:
     """
@@ -182,10 +202,17 @@ class ResearchAnalytics:
         con = duckdb.connect(database=":memory:", read_only=False)
 
         # 注册 SQLite 研究数据库的所有表
-        for table in ("jobs", "ta_analysis", "kronos_forecast",
-                      "signals", "decisions", "raw_reports",
-                      "backtest_results", "strategy_runs",
-                      "evaluation_results"):
+        for table in (
+            "jobs",
+            "ta_analysis",
+            "kronos_forecast",
+            "signals",
+            "decisions",
+            "raw_reports",
+            "backtest_results",
+            "strategy_runs",
+            "evaluation_results",
+        ):
             try:
                 con.execute(
                     f"CREATE VIEW IF NOT EXISTS v_{table} AS "
@@ -276,8 +303,7 @@ class ResearchAnalytics:
     def get_decisions_by_job(self, job_id: str) -> pd.DataFrame:
         """获取某作业的投资决策。"""
         return self.query(
-            "SELECT ticker, decision_json, thesis, risks "
-            "FROM v_decisions WHERE job_id = ?",
+            "SELECT ticker, decision_json, thesis, risks FROM v_decisions WHERE job_id = ?",
             (job_id,),
         )
 
@@ -357,18 +383,6 @@ class ResearchAnalytics:
         score_col  : 预测分数列名
         return_col : 实际收益列名
         """
-        sql = f"""
-            SELECT CORR(
-                "{score_col}",
-                "{return_col}"
-            ) AS pearson_ic,
-            COUNT(*) AS n_stocks
-            FROM v_signals s
-            JOIN v_ta_analysis t ON s.job_id = t.job_id AND s.ticker = t.ticker
-            WHERE s.job_id = ?
-              AND s.{score_col} IS NOT NULL
-              AND t.{return_col} IS NOT NULL
-        """
         # 注意：DuckDB 的 CORR 是 Pearson，Spearman 需用 rank 包装
         sql_spearman = f"""
             SELECT CORR(
@@ -384,11 +398,15 @@ class ResearchAnalytics:
         """
         result = self.query(sql_spearman, (job_id,))
         if result.empty:
-            return pd.DataFrame([{
-                "spearman_ic": None,
-                "pearson_ic": None,
-                "n_stocks": 0,
-            }])
+            return pd.DataFrame(
+                [
+                    {
+                        "spearman_ic": None,
+                        "pearson_ic": None,
+                        "n_stocks": 0,
+                    }
+                ]
+            )
         return result
 
     def factor_rank_regression(

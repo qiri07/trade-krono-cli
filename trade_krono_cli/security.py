@@ -1,21 +1,20 @@
 """
 安全工具 — 密钥校验、输入校验、重试、限流。
 """
+
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import sys
 import time
-import hashlib
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
 
 from loguru import logger
-
-from trade_krono_cli.config import get_settings
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -47,9 +46,7 @@ def validate_ticker(ticker: str) -> str:
     ticker = ticker.strip().lower()
     m = _TICKER_RE.match(ticker)
     if not m:
-        raise ValueError(
-            f"无效股票代码: '{ticker}'，应为 6 位数字，如 600519 或 sh.600519"
-        )
+        raise ValueError(f"无效股票代码: '{ticker}'，应为 6 位数字，如 600519 或 sh.600519")
     code = m.group(1)
     # 判断市场
     if code.startswith(("6", "5", "9")):
@@ -71,12 +68,14 @@ def validate_date(date_str: str) -> str:
 # 重试装饰器
 # ═══════════════════════════════════════════════════════
 
+
 def retry(
     max_attempts: int = 3,
     base_delay: float = 2.0,
     exceptions: tuple[type[Exception], ...] = (Exception,),
 ) -> Callable[[F], F]:
     """指数退避重试装饰器。"""
+
     def decorator(fn: F) -> F:
         @wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -94,7 +93,9 @@ def retry(
                         )
                         time.sleep(delay)
             raise last_exc  # type: ignore[misc]
+
         return wrapper  # type: ignore[return-value]
+
     return decorator
 
 
@@ -145,6 +146,7 @@ class KeyVault:
 # 限流器
 # ═══════════════════════════════════════════════════════
 
+
 class TokenBucket:
     """令牌桶限流器。"""
 
@@ -176,6 +178,7 @@ class TokenBucket:
 # ═══════════════════════════════════════════════════════
 # 工具函数
 # ═══════════════════════════════════════════════════════
+
 
 def ticker_hash(ticker: str) -> str:
     """为 ticker 生成短哈希，用于缓存键。"""

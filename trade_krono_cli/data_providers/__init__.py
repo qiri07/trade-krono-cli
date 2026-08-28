@@ -11,6 +11,7 @@ data_providers — 多数据源抽象层。
       → 失败时 Factory 自动切换备用源
   缓存层（cache.py）— 对上层透明，key 格式不变
 """
+
 from __future__ import annotations
 
 from trade_krono_cli.data_providers.base import (

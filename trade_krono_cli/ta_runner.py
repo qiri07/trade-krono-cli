@@ -10,37 +10,35 @@ TradingAgents-Astock 封装层（业务逻辑层）。
 
 资源管理（LLM 密钥校验 / 适配器懒加载 / graph 初始化）由 TASession 负责。
 """
+
 from __future__ import annotations
 
 import json
-import sys
 import time
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Any, Callable, Optional
 
 from loguru import logger
 
-from trade_krono_cli.config import get_settings, Settings
-from trade_krono_cli.security import (
-    validate_ticker,
-    validate_date,
-    retry,
-    sanitize_for_log,
-)
+from trade_krono_cli.adapters import TradingAgentsAdapterImpl
+from trade_krono_cli.cache import get_cache
+from trade_krono_cli.config import Settings, get_settings
+from trade_krono_cli.errors import TradeKronoError
 from trade_krono_cli.retry_policy import (
-    smart_retry,
     RetryPolicy,
     classify_error,
     get_failure_store,
+    smart_retry,
 )
-from trade_krono_cli.cache import get_cache
+from trade_krono_cli.security import (
+    sanitize_for_log,
+    validate_date,
+    validate_ticker,
+)
+from trade_krono_cli.ta_decision import DecisionAdapter, InvestmentDecision, Signal
 from trade_krono_cli.version import compute_config_hash, get_ta_prompt_version
-from trade_krono_cli.ta_decision import InvestmentDecision, Signal, DecisionAdapter
-from trade_krono_cli.errors import ModelLoadError, TradeKronoError
-from trade_krono_cli.adapters import TradingAgentsAdapterImpl
-
 
 # 摘要截断长度
 SUMMARY_TRUNCATE_LEN = 500
@@ -57,6 +55,7 @@ def _ensure_tradingagents_import(settings) -> None:
     if _TRADINGAGENTS_IMPORTED:
         return
     from trade_krono_cli.security import ensure_import_path
+
     harness_root = settings.tradingagents_root / "agent-harness"
     ta_root = settings.tradingagents_root
     ensure_import_path(harness_root, ta_root)
@@ -93,6 +92,7 @@ _REPORT_ALIAS = {
 @dataclass
 class StockAnalysisResult:
     """单只股票的分析结果。"""
+
     ticker: str
     date: str
     signal: Optional[str] = None
@@ -134,7 +134,7 @@ class StockAnalysisResult:
     def is_buy(self, min_confidence: float = 55.0) -> bool:
         d = self.decision
         return (
-            d.signal in (Signal.BUY,)
+            d.signal in (Signal.BUY, Signal.OVERWEIGHT)
             and d.confidence >= min_confidence
             and self.error is None
         )
@@ -178,9 +178,7 @@ class TradingAgentsRunner:
         self.quick_think_llm = quick_think_llm or self._settings.quick_think_llm
         self.backend_url = backend_url or self._settings.backend_url
         self.max_debate_rounds = (
-            max_debate_rounds
-            if max_debate_rounds is not None
-            else self._settings.max_debate_rounds
+            max_debate_rounds if max_debate_rounds is not None else self._settings.max_debate_rounds
         )
         self.checkpoint_enabled = (
             checkpoint_enabled
@@ -202,8 +200,7 @@ class TradingAgentsRunner:
         )
 
         logger.info(
-            f"🤖 TradingAgentsRunner 就绪 | provider={self.llm_provider} "
-            f"deep={self.deep_think_llm}"
+            f"🤖 TradingAgentsRunner 就绪 | provider={self.llm_provider} deep={self.deep_think_llm}"
         )
 
     # ── 资源访问（委托给 session）────────────────────────────────────────────
@@ -227,6 +224,7 @@ class TradingAgentsRunner:
     def _validate_provider(self) -> None:
         """检查 LLM 密钥是否可用（仅在无 session 时调用）。"""
         from trade_krono_cli.security import KeyVault
+
         vault = KeyVault()
         available = vault.available_providers()
         if not available:
@@ -236,8 +234,7 @@ class TradingAgentsRunner:
             )
         if self.llm_provider not in available:
             logger.warning(
-                f"⚠️  选定 provider '{self.llm_provider}' 无可用密钥，"
-                f"回退到: {available[0]}"
+                f"⚠️  选定 provider '{self.llm_provider}' 无可用密钥，回退到: {available[0]}"
             )
             self.llm_provider = available[0]
 
@@ -335,14 +332,15 @@ class TradingAgentsRunner:
         ticker = validate_ticker(ticker)
         date = validate_date(date)
         result = StockAnalysisResult(ticker=ticker, date=date)
-        t0 = time.time()
 
         # 缓存检查
         if self._cache:
             _ch = compute_config_hash(self._settings)
             _pv = get_ta_prompt_version(
-                self.max_debate_rounds, self._settings.max_risk_discuss_rounds,
-                self.output_language, structured_output=True,
+                self.max_debate_rounds,
+                self._settings.max_risk_discuss_rounds,
+                self.output_language,
+                structured_output=True,
             )
             cached = self._cache.get_ta(ticker, date, config_hash=_ch, prompt_ver=_pv)
             if cached:
@@ -351,7 +349,9 @@ class TradingAgentsRunner:
                     setattr(result, k, v)
                 # 缓存中 investment_decision 是 dict，需还原为对象
                 if isinstance(result.investment_decision, dict):
-                    result.investment_decision = InvestmentDecision.from_dict(result.investment_decision)
+                    result.investment_decision = InvestmentDecision.from_dict(
+                        result.investment_decision
+                    )
                 result.elapsed_sec = 0.0
                 return result
 
@@ -389,22 +389,26 @@ class TradingAgentsRunner:
 
             logger.info(f"🔍 TA 分析 {ticker} @ {date}")
             analysis_result = adapter.run_analysis(
-                ticker, {
+                ticker,
+                {
                     **config,
                     "trade_date": date,
                     "extra_kwargs": {
                         "analysts": [
-                            "market", "social", "news",
-                            "fundamentals", "policy", "hot_money", "lockup",
+                            "market",
+                            "social",
+                            "news",
+                            "fundamentals",
+                            "policy",
+                            "hot_money",
+                            "lockup",
                         ],
                     },
-                }
+                },
             )
 
             if not analysis_result.get("success"):
-                raise RuntimeError(
-                    analysis_result.get("error", "Analysis failed")
-                )
+                raise RuntimeError(analysis_result.get("error", "Analysis failed"))
 
             final_state = analysis_result.get("final_state", {})
             result.final_state = final_state  # 保存原始状态供委员会使用
@@ -415,29 +419,24 @@ class TradingAgentsRunner:
             result.position_size = legacy["position_size"]
             result.reasoning = legacy["reasoning"]  # 完整 reasoning
             raw_reports, summary_reports = self._extract_reports(final_state)
-            result.reports = summary_reports      # 展示用：500字摘要
-            result.reports_raw = raw_reports      # 存储用：完整报告
-            result.risk_assessment = final_state.get(
-                "risk_debate_state", {}
-            )
+            result.reports = summary_reports  # 展示用：500字摘要
+            result.reports_raw = raw_reports  # 存储用：完整报告
+            result.risk_assessment = final_state.get("risk_debate_state", {})
             if isinstance(result.risk_assessment, (dict, list)):
-                result.risk_assessment = json.dumps(
-                    result.risk_assessment, ensure_ascii=False
-                )
+                result.risk_assessment = json.dumps(result.risk_assessment, ensure_ascii=False)
 
             result.decision_raw = legacy
             result.investment_decision = inv_decision
 
-            logger.info(
-                f"✅ {ticker}: signal={result.signal} "
-                f"({time.time()-t0:.0f}s)"
-            )
+            logger.info(f"✅ {ticker}: signal={result.signal} ({time.time() - t0:.0f}s)")
 
             # 写缓存
             if self._cache:
                 _ch = compute_config_hash(self._settings)
                 _pv = get_ta_prompt_version(
-                    self.max_debate_rounds, self._settings.max_risk_discuss_rounds, self.output_language
+                    self.max_debate_rounds,
+                    self._settings.max_risk_discuss_rounds,
+                    self.output_language,
                 )
                 self._cache.set_ta(ticker, date, result.to_dict(), config_hash=_ch, prompt_ver=_pv)
 
@@ -481,7 +480,7 @@ class TradingAgentsRunner:
         return results
 
     def save_results(self, results: list[StockAnalysisResult], path: str) -> str:
-        data = [r.to_dict() for r in results]
+        data = [{"project": "trade-krono-cli"}] + [r.to_dict() for r in results]
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -489,7 +488,9 @@ class TradingAgentsRunner:
         return path
 
     def save_raw_reports(
-        self, results: list[StockAnalysisResult], date: str,
+        self,
+        results: list[StockAnalysisResult],
+        date: str,
         results_dir: Optional[Path] = None,
     ) -> dict[str, str]:
         """
@@ -523,8 +524,7 @@ class TradingAgentsRunner:
                 "decision_text": r.reasoning or "",
                 "risk_assessment": r.risk_assessment or "",
                 "investment_decision": (
-                    r.investment_decision.to_dict()
-                    if r.investment_decision else None
+                    r.investment_decision.to_dict() if r.investment_decision else None
                 ),
             }
             path = raw_dir / f"{r.ticker}.json"
@@ -532,13 +532,16 @@ class TradingAgentsRunner:
                 json.dump(file_data, f, ensure_ascii=False, indent=2)
             written[r.ticker] = str(path)
 
-        logger.info(
-            f"💾 原始报告已写入: {raw_dir} ({len(written)} 只)"
-        )
+        logger.info(f"💾 原始报告已写入: {raw_dir} ({len(written)} 只)")
         return written
 
     @staticmethod
-    def load_raw_report(ticker: str, date: str, results_dir: Optional[Path] = None, settings: Optional[Settings] = None) -> Optional[dict]:
+    def load_raw_report(
+        ticker: str,
+        date: str,
+        results_dir: Optional[Path] = None,
+        settings: Optional[Settings] = None,
+    ) -> Optional[dict]:
         """从磁盘加载某只股票的原始报告。"""
         rd = results_dir or (settings or get_settings()).results_dir
         path = rd / "raw" / date / f"{ticker}.json"

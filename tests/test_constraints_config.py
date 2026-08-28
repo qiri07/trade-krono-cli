@@ -1,5 +1,7 @@
 """测试 ConstraintConfig 数据类。"""
+
 import pytest
+
 from trade_krono_cli.constraints_config import ConstraintConfig
 
 

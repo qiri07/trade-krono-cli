@@ -13,22 +13,11 @@ trade-krono-cli CLI 入口 — Typer 实现。
 
 命令实现详见 cli_commands.py。
 """
-from __future__ import annotations
 
-import sys
-from pathlib import Path
-from typing import Optional
+from __future__ import annotations
 
 import typer
 from rich.console import Console
-
-from trade_krono_cli.config import Settings
-from trade_krono_cli.logger import setup_logger
-from trade_krono_cli.cli_commands import (  # noqa: E402
-    _sanitize_path,
-    _load_env,
-    _load_tickers,
-)
 
 app = typer.Typer(
     name="trade-krono-cli",
@@ -56,9 +45,19 @@ app.add_typer(repo_app, name="repo")
 # 注册命令（显式装饰，避免模块级装饰器的循环导入问题）
 # ═══════════════════════════════════════════════════════
 from trade_krono_cli.cli_commands import (  # noqa: E402
-    repo_status, repo_doctor, repo_update, repo_pin,
-    run, ta, kronos, status, clear_cache, history, eval_prediction, warm_cache,
+    clear_cache,
+    eval_prediction,
+    history,
+    kronos,
+    repo_doctor,
+    repo_pin,
+    repo_status,
+    repo_update,
     retry_failed,
+    run,
+    status,
+    ta,
+    warm_cache,
 )
 
 repo_app.command()(repo_status)
@@ -80,6 +79,7 @@ app.command()(retry_failed)
 # ═══════════════════════════════════════════════════════
 # 入口
 # ═══════════════════════════════════════════════════════
+
 
 def main() -> None:
     app()

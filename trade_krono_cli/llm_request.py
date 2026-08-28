@@ -11,16 +11,17 @@ LLM Request 追踪模块。
     既保护隐私又允许跨次对比是否用了相同的 prompt 模板
   - provider / model / temperature / top_p：复现结果所需的全部生成参数
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-
 # ── 哈希工具 ──────────────────────────────────────────────────────────────────
+
 
 def sha256_hex(text: str) -> str:
     """计算字符串的 SHA-256 十六进制摘要。"""
@@ -59,6 +60,7 @@ def hash_user_prompt_structural(
 
 # ── 数据类 ────────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class LLMRequest:
     """
@@ -79,6 +81,7 @@ class LLMRequest:
       error              — 失败原因（success=False 时有值）
       fetched_at         — ISO 时间戳（UTC）
     """
+
     source: str = "external"
     provider: str = ""
     model: str = ""
@@ -109,6 +112,7 @@ class LLMRequest:
 
 
 # ── TA 专用构建器 ─────────────────────────────────────────────────────────────
+
 
 def build_ta_llm_request(
     ticker: str,
@@ -151,9 +155,7 @@ def build_ta_llm_request(
         temperature=temperature,
         top_p=top_p,
         system_prompt_hash=hash_system_prompt(system_prompt),
-        user_prompt_hash=hash_user_prompt_structural(
-            ticker=ticker, date=date, analysts=analysts
-        ),
+        user_prompt_hash=hash_user_prompt_structural(ticker=ticker, date=date, analysts=analysts),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         latency_sec=round(latency_sec, 2),

@@ -1,6 +1,7 @@
 """
 研究数据库 — Data Snapshots 表读写。
 """
+
 from __future__ import annotations
 
 import json
@@ -27,7 +28,9 @@ class SnapshotsMixin(ResearchDatabase):
                 "(snapshot_id, cut_date, effective_cut, sources, description, created_at) "
                 "VALUES (?,?,?,?,?,?)",
                 (
-                    snapshot_id, cut_date, effective_cut,
+                    snapshot_id,
+                    cut_date,
+                    effective_cut,
                     json.dumps(sources, ensure_ascii=False),
                     description,
                     time.time(),

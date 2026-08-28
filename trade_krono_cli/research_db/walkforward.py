@@ -1,6 +1,7 @@
 """
 研究数据库 — Walk-Forward Runs 表读写。
 """
+
 from __future__ import annotations
 
 import json
@@ -36,12 +37,19 @@ class WalkforwardMixin(ResearchDatabase):
                 " win_rate, avg_return, sharpe_annual, n_records, elapsed_sec, snapshot_id, created_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    run_id, experiment_id, ticker,
+                    run_id,
+                    experiment_id,
+                    ticker,
                     json.dumps(config, ensure_ascii=False),
-                    total_windows, valid_windows,
-                    win_rate, avg_return, sharpe_annual,
-                    n_records, elapsed_sec,
-                    snapshot_id, time.time(),
+                    total_windows,
+                    valid_windows,
+                    win_rate,
+                    avg_return,
+                    sharpe_annual,
+                    n_records,
+                    elapsed_sec,
+                    snapshot_id,
+                    time.time(),
                 ),
             )
             conn.commit()
@@ -71,11 +79,17 @@ class WalkforwardMixin(ResearchDatabase):
             ).fetchall()
         return [
             {
-                "run_id": r[0], "experiment_id": r[1], "ticker": r[2],
-                "total_windows": r[3], "valid_windows": r[4],
-                "win_rate": r[5], "avg_return": r[6],
-                "sharpe_annual": r[7], "n_records": r[8],
-                "elapsed_sec": r[9], "snapshot_id": r[10],
+                "run_id": r[0],
+                "experiment_id": r[1],
+                "ticker": r[2],
+                "total_windows": r[3],
+                "valid_windows": r[4],
+                "win_rate": r[5],
+                "avg_return": r[6],
+                "sharpe_annual": r[7],
+                "n_records": r[8],
+                "elapsed_sec": r[9],
+                "snapshot_id": r[10],
                 "created_at": r[11],
             }
             for r in rows

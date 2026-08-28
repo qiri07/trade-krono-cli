@@ -3,6 +3,7 @@
 
 负责统计 TA BUY + Kronos UP 组合信号，以及 composite_score ≥ 70 的高置信信号。
 """
+
 from __future__ import annotations
 
 from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics
@@ -19,10 +20,7 @@ def compute_combined_metrics(
     -------
     综合信号记录数
     """
-    combined = [
-        r for r in h_records
-        if r.ta_signal == "BUY" and r.pred_direction == "UP"
-    ]
+    combined = [r for r in h_records if r.ta_signal == "BUY" and r.pred_direction == "UP"]
     if not combined:
         return 0
     wins = sum(1 for r in combined if r.actual_return_pct > 0)
@@ -43,10 +41,7 @@ def compute_high_conf_metrics(
     -------
     高置信信号记录数
     """
-    high_conf = [
-        r for r in h_records
-        if r.composite_score is not None and r.composite_score >= 70
-    ]
+    high_conf = [r for r in h_records if r.composite_score is not None and r.composite_score >= 70]
     if not high_conf:
         return 0
     wins = sum(1 for r in high_conf if r.actual_return_pct > 0)

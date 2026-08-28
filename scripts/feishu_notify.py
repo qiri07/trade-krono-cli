@@ -63,7 +63,7 @@ def build_ci_card(
             "header": {
                 "title": {
                     "tag": "plain_text",
-                    "content": f"🔧 CI 流水线 · {_status_emoji(status)}",
+                    "content": f"🔧 trade-krono-cli CI 流水线 · {_status_emoji(status)}",
                 },
                 "template": _template(status),
             },
@@ -73,7 +73,7 @@ def build_ci_card(
                     "text": {
                         "tag": "lark_md",
                         "content": (
-                            f"**分支：** `{branch}`  **Commit：** `{commit[:8]}`\n"
+                            f"**项目：** trade-krono-cli &nbsp; **分支：** `{branch}`  **Commit：** `{commit[:8]}`\n"
                             f"**时间：** {_now_cn()}\n"
                             f"**结果：** {jobs}\n"
                             f"[📎 查看 Runs →]({run_url})"
@@ -102,7 +102,7 @@ def build_daily_card(
             "header": {
                 "title": {
                     "tag": "plain_text",
-                    "content": f"📊 每日投研分析 · {_status_emoji(status)}",
+                    "content": f"📊 trade-krono-cli 每日投研分析 · {_status_emoji(status)}",
                 },
                 "template": _template(status),
             },
@@ -161,15 +161,22 @@ def _read_top3_from_results() -> str:
         data = json.loads(results_path.read_text(encoding="utf-8"))
     except Exception:
         return "（解析结果文件失败）"
-    if isinstance(data, list):
-        parts = []
-        for item in data[:3]:
-            t = item.get("ticker", "?").replace("sh.", "").replace("sz.", "")
-            s = item.get("ta_signal", "?")
-            c = item.get("composite_score", "?")
-            parts.append(f"{t}:{s} {c}")
-        return "  /  ".join(parts)
-    return "（未知结果格式）"
+    # 兼容新旧格式：新项目以 dict {project, results} 形式输出
+    if isinstance(data, dict):
+        items = data.get("results", [])
+    elif isinstance(data, list):
+        items = data
+    else:
+        return "（未知结果格式）"
+    if not items:
+        return "（无推荐结果）"
+    parts = []
+    for item in items[:3]:
+        t = item.get("ticker", "?").replace("sh.", "").replace("sz.", "")
+        s = item.get("ta_signal", "?")
+        c = item.get("ranking_score") or item.get("composite_score", "?")
+        parts.append(f"{t}:{s} {c}")
+    return "  /  ".join(parts)
 
 
 def main() -> None:
@@ -201,9 +208,7 @@ def main() -> None:
         payload = build_ci_card(args.status, args.branch, args.commit, args.jobs, args.run_url)
     else:
         top3 = _read_top3_from_results()
-        payload = build_daily_card(
-            args.status, args.date, args.tickers, top3, args.run_url
-        )
+        payload = build_daily_card(args.status, args.date, args.tickers, top3, args.run_url)
 
     ok = send_feishu(args.url, payload)
     sys.exit(0 if ok else 1)

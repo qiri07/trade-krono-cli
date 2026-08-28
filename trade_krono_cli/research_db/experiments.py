@@ -1,6 +1,7 @@
 """
 研究数据库 — Experiments 表读写。
 """
+
 from __future__ import annotations
 
 import json
@@ -36,7 +37,9 @@ class ExperimentsMixin(ResearchDatabase):
                 " result_summary, passed, notes, created_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    experiment_id, full_id, experiment_type,
+                    experiment_id,
+                    full_id,
+                    experiment_type,
                     json.dumps(hypothesis, ensure_ascii=False),
                     description,
                     json.dumps(config or {}, ensure_ascii=False),
@@ -62,15 +65,18 @@ class ExperimentsMixin(ResearchDatabase):
         if not row:
             return None
         return {
-            "experiment_id": row[0], "full_id": row[1],
+            "experiment_id": row[0],
+            "full_id": row[1],
             "experiment_type": row[2],
             "hypothesis": json.loads(row[3]) if row[3] else {},
-            "description": row[4], "config": json.loads(row[5]) if row[5] else {},
+            "description": row[4],
+            "config": json.loads(row[5]) if row[5] else {},
             "data_snapshot_id": row[6],
             "run_ids": json.loads(row[7]) if row[7] else [],
             "result_summary": json.loads(row[8]) if row[8] else {},
             "passed": bool(row[9]) if row[9] is not None else None,
-            "notes": row[10], "created_at": row[11],
+            "notes": row[10],
+            "created_at": row[11],
         }
 
     def list_experiments(
@@ -97,10 +103,12 @@ class ExperimentsMixin(ResearchDatabase):
             ).fetchall()
         return [
             {
-                "experiment_id": r[0], "full_id": r[1],
+                "experiment_id": r[0],
+                "full_id": r[1],
                 "experiment_type": r[2],
                 "hypothesis": json.loads(r[3]) if r[3] else {},
-                "description": r[4], "data_snapshot_id": r[5],
+                "description": r[4],
+                "data_snapshot_id": r[5],
                 "run_ids": json.loads(r[6]) if r[6] else [],
                 "result_summary": json.loads(r[7]) if r[7] else {},
                 "passed": bool(r[8]) if r[8] is not None else None,

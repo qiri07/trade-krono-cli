@@ -1,6 +1,7 @@
 """
 研究数据库 — Strategy Runs 表读写。
 """
+
 from __future__ import annotations
 
 import json

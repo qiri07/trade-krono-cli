@@ -10,26 +10,25 @@
 
 没有这些，半年后重跑结果不同，无法判断是数据变了还是模型变了。
 """
+
 from __future__ import annotations
 
 import hashlib
 import platform
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
-from loguru import logger
-
 
 # ═══════════════════════════════════════════════════════
 # 项目版本
 # ═══════════════════════════════════════════════════════
 
+
 def get_project_version() -> str:
     """读取项目版本（与 pyproject.toml 和 __init__.py 保持一致）。"""
     try:
         from importlib import metadata
+
         return metadata.version("trade-krono-cli")
     except Exception:
         pass
@@ -38,7 +37,7 @@ def get_project_version() -> str:
     if init_path.exists():
         for line in init_path.read_text().splitlines():
             if line.startswith("__version__"):
-                return line.split("=")[1].strip().strip('"\'')
+                return line.split("=")[1].strip().strip("\"'")
     return "0.0.0-dev"
 
 
@@ -81,7 +80,9 @@ def generate_run_id(date: Optional[str] = None) -> str:
 
 # 从配置哈希中排除的敏感字段
 _HASH_EXCLUDE_KEYS = {
-    "llm_provider", "deep_think_llm", "quick_think_llm",
+    "llm_provider",
+    "deep_think_llm",
+    "quick_think_llm",
     "backend_url",
     # API keys 等通过 KeyVault 管理的字段不在此处，跳过
 }
@@ -97,7 +98,6 @@ def compute_config_hash(
     排除：API keys、敏感路径等。
     包含：模型选择、采样参数、过滤阈值等策略相关配置。
     """
-    import os
     h = hashlib.sha256()
 
     # 核心策略配置
@@ -141,6 +141,7 @@ def compute_config_hash(
 # Data Version
 # ═══════════════════════════════════════════════════════
 
+
 def get_data_version(ticker: str, query_date: str, source: str = "baostock") -> str:
     """
     生成数据版本字符串，用于标识本次分析使用的数据快照。
@@ -157,6 +158,7 @@ def get_data_version(ticker: str, query_date: str, source: str = "baostock") -> 
 # ═══════════════════════════════════════════════════════
 # Model Versions
 # ═══════════════════════════════════════════════════════
+
 
 def get_kronos_model_version(
     model_name: str,
@@ -186,9 +188,7 @@ def collect_model_versions(
 ) -> dict:
     """收集所有模型版本信息，返回结构化字典。"""
     return {
-        "kronos": get_kronos_model_version(
-            kronos_model, kronos_tokenizer, kronos_device
-        ),
+        "kronos": get_kronos_model_version(kronos_model, kronos_tokenizer, kronos_device),
         "llm": get_llm_version(llm_provider, deep_think_llm, quick_think_llm),
     }
 
@@ -199,6 +199,7 @@ def collect_model_versions(
 
 # TA 提示词版本由 TradingAgents-astock 管理，这里记录当前使用的参数组合
 # 作为 proxy prompt version
+
 
 def get_ta_prompt_version(
     max_debate_rounds: int,
@@ -223,6 +224,7 @@ def get_ta_prompt_version(
 # ═══════════════════════════════════════════════════════
 # 完整 Run Snapshot
 # ═══════════════════════════════════════════════════════
+
 
 def build_run_snapshot(
     date: str,
@@ -270,6 +272,7 @@ def build_run_snapshot(
 
     # 外部 repo 复现信息
     from trade_krono_cli.external import get_repro_info
+
     external_repos = get_repro_info()
 
     return {
@@ -289,6 +292,7 @@ def build_run_snapshot(
 # ═══════════════════════════════════════════════════════
 # 测试友好的重置
 # ═══════════════════════════════════════════════════════
+
 
 def reset_run_id_counter() -> None:
     """测试用：重置当日 run_id 计数器。"""

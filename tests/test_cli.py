@@ -1,4 +1,5 @@
 """测试 CLI 参数解析。"""
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -56,6 +57,7 @@ def test_run_missing_tickers(runner):
 
 def test_load_tickers_from_string():
     from trade_krono_cli.cli_commands.core import _load_tickers
+
     tickers = _load_tickers("600519,000858,600036", None)
     assert tickers == ["600519", "000858", "600036"]
 
@@ -65,6 +67,7 @@ def test_load_tickers_from_config():
     import tempfile
 
     from trade_krono_cli.cli_commands.core import _load_tickers
+
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("600519\n")
         f.write("# 注释行\n")
@@ -88,6 +91,7 @@ def test_load_tickers_from_config_not_found():
     from typer import Exit
 
     from trade_krono_cli.cli_commands.core import _load_tickers
+
     with pytest.raises(Exit):
         _load_tickers(None, "/nonexistent/path.txt")
 
@@ -95,6 +99,7 @@ def test_load_tickers_from_config_not_found():
 def test_sanitize_path_valid(tmp_path):
     """合法路径应在项目根目录内。"""
     from trade_krono_cli.cli_commands.core import _sanitize_path
+
     project_root = tmp_path
     p = tmp_path / "outputs" / "result.json"
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -109,6 +114,7 @@ def test_sanitize_path_traversal_rejected():
     from typer import Exit
 
     from trade_krono_cli.cli_commands.core import _sanitize_path
+
     with tempfile.TemporaryDirectory() as td:
         with pytest.raises(Exit):
             _sanitize_path("/etc/passwd", "Test", Path(td))
@@ -174,54 +180,92 @@ def test_history_command_help(runner):
 def test_run_command_with_tickers_patched(runner):
     """run 命令传入有效 tickers 应进入 pipeline 逻辑。"""
     from unittest.mock import patch
+
     mock_pipeline = MagicMock()
     mock_pipeline.run_parallel.return_value = []
-    with patch("trade_krono_cli.cli_commands.core._load_env"), \
-         patch("trade_krono_cli.pipeline.QuantPipeline", return_value=mock_pipeline):
-        result = runner.invoke(app, [
-            "run", "--tickers", "600519",
-            "--date", "2026-08-11",
-        ])
+    with (
+        patch("trade_krono_cli.cli_commands.core._load_env"),
+        patch("trade_krono_cli.pipeline.QuantPipeline", return_value=mock_pipeline),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--tickers",
+                "600519",
+                "--date",
+                "2026-08-11",
+            ],
+        )
         assert result.exit_code == 0
 
 
 def test_ta_command_with_tickers_patched(runner):
     """ta 命令传入有效 tickers 应进入 pipeline 逻辑。"""
     from unittest.mock import patch
+
     mock_pipeline = MagicMock()
     mock_pipeline.run_ta_only.return_value = []
-    with patch("trade_krono_cli.cli_commands.core._load_env"), \
-         patch("trade_krono_cli.pipeline.QuantPipeline", return_value=mock_pipeline):
-        result = runner.invoke(app, [
-            "ta", "--tickers", "600519",
-            "--date", "2026-08-11",
-        ])
+    with (
+        patch("trade_krono_cli.cli_commands.core._load_env"),
+        patch("trade_krono_cli.pipeline.QuantPipeline", return_value=mock_pipeline),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "ta",
+                "--tickers",
+                "600519",
+                "--date",
+                "2026-08-11",
+            ],
+        )
         assert result.exit_code == 0
 
 
 def test_kronos_command_with_tickers_patched(runner):
     """kronos 命令传入有效 tickers 应进入 pipeline 逻辑。"""
     from unittest.mock import patch
+
     mock_pipeline = MagicMock()
     mock_pipeline.run_kronos_only.return_value = []
-    with patch("trade_krono_cli.cli_commands.core._load_env"), \
-         patch("trade_krono_cli.pipeline.QuantPipeline", return_value=mock_pipeline):
-        result = runner.invoke(app, [
-            "kronos", "--tickers", "600519",
-            "--date", "2026-08-11",
-        ])
+    with (
+        patch("trade_krono_cli.cli_commands.core._load_env"),
+        patch("trade_krono_cli.pipeline.QuantPipeline", return_value=mock_pipeline),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "kronos",
+                "--tickers",
+                "600519",
+                "--date",
+                "2026-08-11",
+            ],
+        )
         assert result.exit_code == 0
 
 
 def test_eval_command_with_tickers_patched(runner):
     """eval 命令应调用 run_evaluation。"""
     from unittest.mock import patch
-    with patch("trade_krono_cli.cli_commands.core._load_env"), \
-         patch("trade_krono_cli.prediction_eval.run_evaluation") as mock_eval:
-        result = runner.invoke(app, [
-            "eval-prediction", "--from", "2026-01-01", "--to", "2026-08-11",
-            "--tickers", "600519,000858",
-        ])
+
+    with (
+        patch("trade_krono_cli.cli_commands.core._load_env"),
+        patch("trade_krono_cli.prediction_eval.run_evaluation") as mock_eval,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "eval-prediction",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-08-11",
+                "--tickers",
+                "600519,000858",
+            ],
+        )
         assert result.exit_code == 0
         mock_eval.assert_called_once()
         call_kwargs = mock_eval.call_args[1]
@@ -233,8 +277,11 @@ def test_eval_command_with_tickers_patched(runner):
 def test_eval_command_latest_flag(runner):
     """eval --latest 应传递 latest=True。"""
     from unittest.mock import patch
-    with patch("trade_krono_cli.cli_commands.core._load_env"), \
-         patch("trade_krono_cli.prediction_eval.run_evaluation") as mock_eval:
+
+    with (
+        patch("trade_krono_cli.cli_commands.core._load_env"),
+        patch("trade_krono_cli.prediction_eval.run_evaluation") as mock_eval,
+    ):
         result = runner.invoke(app, ["eval-prediction", "--latest"])
         assert result.exit_code == 0
         mock_eval.assert_called_once()

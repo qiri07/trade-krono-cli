@@ -1,15 +1,17 @@
 """测试预测评估模块 (prediction_eval.py)。"""
-import pytest
+
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from trade_krono_cli.prediction_eval import (
     EvalRecord,
     EvaluationSummary,
     PredictionEvaluator,
+    _apply_roundtrip_cost,
     _calc_return,
     _get_close_price,
     _is_price_at_limit,
-    _apply_roundtrip_cost,
-    HorizonMetrics,
     run_evaluation,
 )
 
@@ -55,8 +57,9 @@ def test_evaluation_summary_defaults():
 def test_prediction_evaluator_init(tmp_path):
     """PredictionEvaluator 可以正常初始化。"""
     from trade_krono_cli.research_db import ResearchDatabase
+
     db = tmp_path / "test_eval.db"
-    research = ResearchDatabase(db_path=db)
+    _research = ResearchDatabase(db_path=db)
     evaluator = PredictionEvaluator()
     # 默认使用全局单例，不传 db_path
     assert evaluator is not None
@@ -66,11 +69,13 @@ def test_prediction_evaluator_init(tmp_path):
 def test_predict_empty_evaluation(tmp_path):
     """没有历史数据时返回空 Summary。"""
     from trade_krono_cli.research_db import ResearchDatabase
+
     db = tmp_path / "empty_eval.db"
     research = ResearchDatabase(db_path=db)
 
     # 替换 evaluator 的 _research
     from trade_krono_cli.prediction_eval import PredictionEvaluator
+
     evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
     evaluator._research = research
     evaluator.HORIZONS = [5, 10, 20]
@@ -90,19 +95,21 @@ def test_compute_summary_with_mock_records():
     # 构造 mock 记录：5D BUY 信号，3 胜 2 负
     records = []
     for i in range(5):
-        records.append(EvalRecord(
-            ticker="sh.600519",
-            eval_date="2026-01-01",
-            horizon_days=5,
-            pred_direction="UP" if i < 3 else "DOWN",
-            pred_return_pct=None,
-            actual_return_pct=2.0 if i < 3 else -1.5,
-            actual_direction="UP" if i < 3 else "DOWN",
-            is_direction_correct=(i < 3),
-            error_pct=0.0,
-            ta_signal="BUY",
-            composite_score=80.0 if i < 3 else 60.0,
-        ))
+        records.append(
+            EvalRecord(
+                ticker="sh.600519",
+                eval_date="2026-01-01",
+                horizon_days=5,
+                pred_direction="UP" if i < 3 else "DOWN",
+                pred_return_pct=None,
+                actual_return_pct=2.0 if i < 3 else -1.5,
+                actual_direction="UP" if i < 3 else "DOWN",
+                is_direction_correct=(i < 3),
+                error_pct=0.0,
+                ta_signal="BUY",
+                composite_score=80.0 if i < 3 else 60.0,
+            )
+        )
 
     summary = evaluator._compute_summary(records)
 
@@ -115,16 +122,12 @@ def test_compute_summary_with_mock_records():
     assert summary.ta_buy_n == 5
 
     # 综合信号（TA BUY + Kronos UP）: 只有前3条
-    assert m5.combined_buy_up_win_rate == pytest.approx(
-        100.0, abs=0.1
-    )
+    assert m5.combined_buy_up_win_rate == pytest.approx(100.0, abs=0.1)
     assert m5.combined_buy_up_avg_return == pytest.approx(2.0, abs=0.1)
     assert summary.combined_buy_up_n == 3
 
     # 高置信（score >= 70）: 前3条 score=80
-    assert m5.high_conf_win_rate == pytest.approx(
-        100.0, abs=0.1
-    )
+    assert m5.high_conf_win_rate == pytest.approx(100.0, abs=0.1)
     assert summary.high_conf_n == 3
 
     # Kronos 方向准确率 5D: 3/5 = 60%
@@ -134,12 +137,13 @@ def test_compute_summary_with_mock_records():
 
 def test_store_summary_writes_to_db(tmp_path):
     """_store_summary 应能写入 evaluation_results 表而不崩溃。"""
+    import sqlite3
+
     from trade_krono_cli.prediction_eval import (
-        PredictionEvaluator,
         EvalRecord,
+        PredictionEvaluator,
     )
     from trade_krono_cli.research_db import ResearchDatabase
-    import sqlite3
 
     db = tmp_path / "store_test.db"
     evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
@@ -149,19 +153,21 @@ def test_store_summary_writes_to_db(tmp_path):
     # 构造有数据的 summary
     records = []
     for i in range(3):
-        records.append(EvalRecord(
-            ticker="sh.600519",
-            eval_date="2026-01-01",
-            horizon_days=5,
-            pred_direction="UP",
-            pred_return_pct=3.0,
-            actual_return_pct=2.5,
-            actual_direction="UP",
-            is_direction_correct=True,
-            error_pct=0.5,
-            ta_signal="BUY",
-            composite_score=80.0,
-        ))
+        records.append(
+            EvalRecord(
+                ticker="sh.600519",
+                eval_date="2026-01-01",
+                horizon_days=5,
+                pred_direction="UP",
+                pred_return_pct=3.0,
+                actual_return_pct=2.5,
+                actual_direction="UP",
+                is_direction_correct=True,
+                error_pct=0.5,
+                ta_signal="BUY",
+                composite_score=80.0,
+            )
+        )
     summary = evaluator._compute_summary(records)
 
     # 调用 _store_summary — 之前会因 AttributeError 崩溃
@@ -180,8 +186,8 @@ def test_store_summary_writes_to_db(tmp_path):
 
 def test_evaluate_store_true_paths_through_store_summary(tmp_path):
     """evaluate(store=True) 完整路径不应崩溃。"""
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
     from trade_krono_cli.research_db import ResearchDatabase
-    from trade_krono_cli.prediction_eval import PredictionEvaluator, EvalRecord
 
     db = tmp_path / "eval_store.db"
     research = ResearchDatabase(db_path=db)
@@ -190,14 +196,14 @@ def test_evaluate_store_true_paths_through_store_summary(tmp_path):
     job_id = research.create_job("2026-01-01", ["sh.600519"])
     # 直接插入一条信号记录（模拟 pipeline 已写入）
     import sqlite3
+
     with sqlite3.connect(db) as conn:
         conn.execute(
             "INSERT INTO signals (job_id, ticker, rank, composite_score, "
             " ta_signal, ta_confidence, ta_reasoning, kronos_direction, "
             " kronos_change, ta_error, kronos_error) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (job_id, "sh.600519", 1, 80.0, "BUY", 85.0, "test thesis",
-             "UP", 3.0, None, None),
+            (job_id, "sh.600519", 1, 80.0, "BUY", 85.0, "test thesis", "UP", 3.0, None, None),
         )
         conn.commit()
 
@@ -231,11 +237,14 @@ def test_get_close_price_returns_none_on_error():
 def test_get_close_price_fallback_to_nearest():
     """精确日期无数据时，应回退到最近交易日。"""
     import pandas as pd
+
     with patch("trade_krono_cli.eval_data.fetch_kline") as mock_fetch:
-        df = pd.DataFrame({
-            "timestamps": ["2026-08-08", "2026-08-12"],
-            "close": [100.0, 105.0],
-        })
+        df = pd.DataFrame(
+            {
+                "timestamps": ["2026-08-08", "2026-08-12"],
+                "close": [100.0, 105.0],
+            }
+        )
         mock_fetch.return_value = df
         result = _get_close_price("sh.600519", "2026-08-11")
     # 应回退到最近的收盘价 105.0
@@ -245,27 +254,44 @@ def test_get_close_price_fallback_to_nearest():
 def test_compute_summary_empty_horizon():
     """记录跨多个 horizon 时的正确分组。"""
     from trade_krono_cli.prediction_eval import PredictionEvaluator
+
     evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
     evaluator.HORIZONS = [5, 10, 20]
 
     records = []
     # 5D 记录
     for i in range(2):
-        records.append(EvalRecord(
-            ticker="sh.600519", eval_date="2026-01-01",
-            horizon_days=5, pred_direction="UP", pred_return_pct=None,
-            actual_return_pct=3.0, actual_direction="UP",
-            is_direction_correct=True, error_pct=0.0,
-            ta_signal="BUY", composite_score=75.0,
-        ))
+        records.append(
+            EvalRecord(
+                ticker="sh.600519",
+                eval_date="2026-01-01",
+                horizon_days=5,
+                pred_direction="UP",
+                pred_return_pct=None,
+                actual_return_pct=3.0,
+                actual_direction="UP",
+                is_direction_correct=True,
+                error_pct=0.0,
+                ta_signal="BUY",
+                composite_score=75.0,
+            )
+        )
     # 10D 记录
-    records.append(EvalRecord(
-        ticker="sh.600519", eval_date="2026-01-01",
-        horizon_days=10, pred_direction="DOWN", pred_return_pct=None,
-        actual_return_pct=-2.0, actual_direction="DOWN",
-        is_direction_correct=True, error_pct=0.0,
-        ta_signal=None, composite_score=None,
-    ))
+    records.append(
+        EvalRecord(
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=10,
+            pred_direction="DOWN",
+            pred_return_pct=None,
+            actual_return_pct=-2.0,
+            actual_direction="DOWN",
+            is_direction_correct=True,
+            error_pct=0.0,
+            ta_signal=None,
+            composite_score=None,
+        )
+    )
 
     summary = evaluator._compute_summary(records)
     assert 5 in summary.horizons
@@ -278,16 +304,25 @@ def test_compute_summary_empty_horizon():
 def test_compute_summary_no_pred_direction():
     """pred_direction 为 None 时，Kronos 方向准确率不计入。"""
     from trade_krono_cli.prediction_eval import PredictionEvaluator
+
     evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
     evaluator.HORIZONS = [5, 10, 20]
 
-    records = [EvalRecord(
-        ticker="sh.600519", eval_date="2026-01-01",
-        horizon_days=5, pred_direction=None, pred_return_pct=None,
-        actual_return_pct=3.0, actual_direction="UP",
-        is_direction_correct=False, error_pct=0.0,
-        ta_signal="BUY", composite_score=70.0,
-    )]
+    records = [
+        EvalRecord(
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=5,
+            pred_direction=None,
+            pred_return_pct=None,
+            actual_return_pct=3.0,
+            actual_direction="UP",
+            is_direction_correct=False,
+            error_pct=0.0,
+            ta_signal="BUY",
+            composite_score=70.0,
+        )
+    ]
 
     summary = evaluator._compute_summary(records)
     m5 = summary.horizons[5]
@@ -299,16 +334,25 @@ def test_compute_summary_no_pred_direction():
 def test_compute_summary_flat_direction():
     """FLAT 方向的 Kronos 预测仍计入 kronos_n，但方向不判定为正确。"""
     from trade_krono_cli.prediction_eval import PredictionEvaluator
+
     evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
     evaluator.HORIZONS = [5, 10, 20]
 
-    records = [EvalRecord(
-        ticker="sh.600519", eval_date="2026-01-01",
-        horizon_days=5, pred_direction="FLAT", pred_return_pct=None,
-        actual_return_pct=3.0, actual_direction="UP",
-        is_direction_correct=False, error_pct=0.0,
-        ta_signal=None, composite_score=None,
-    )]
+    records = [
+        EvalRecord(
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=5,
+            pred_direction="FLAT",
+            pred_return_pct=None,
+            actual_return_pct=3.0,
+            actual_direction="UP",
+            is_direction_correct=False,
+            error_pct=0.0,
+            ta_signal=None,
+            composite_score=None,
+        )
+    ]
 
     summary = evaluator._compute_summary(records)
     m5 = summary.horizons[5]
@@ -320,30 +364,49 @@ def test_compute_summary_flat_direction():
 def test_compute_summary_high_conf_threshold():
     """composite_score >= 70 才计入高置信。"""
     from trade_krono_cli.prediction_eval import PredictionEvaluator
+
     evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
     evaluator.HORIZONS = [5, 10, 20]
 
     records = [
         EvalRecord(
-            ticker="sh.600519", eval_date="2026-01-01",
-            horizon_days=5, pred_direction="UP", pred_return_pct=None,
-            actual_return_pct=2.0, actual_direction="UP",
-            is_direction_correct=True, error_pct=0.0,
-            ta_signal="BUY", composite_score=70.0,
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=5,
+            pred_direction="UP",
+            pred_return_pct=None,
+            actual_return_pct=2.0,
+            actual_direction="UP",
+            is_direction_correct=True,
+            error_pct=0.0,
+            ta_signal="BUY",
+            composite_score=70.0,
         ),
         EvalRecord(
-            ticker="sh.600519", eval_date="2026-01-01",
-            horizon_days=5, pred_direction="UP", pred_return_pct=None,
-            actual_return_pct=2.0, actual_direction="UP",
-            is_direction_correct=True, error_pct=0.0,
-            ta_signal="BUY", composite_score=69.0,
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=5,
+            pred_direction="UP",
+            pred_return_pct=None,
+            actual_return_pct=2.0,
+            actual_direction="UP",
+            is_direction_correct=True,
+            error_pct=0.0,
+            ta_signal="BUY",
+            composite_score=69.0,
         ),
         EvalRecord(
-            ticker="sh.600519", eval_date="2026-01-01",
-            horizon_days=5, pred_direction="UP", pred_return_pct=None,
-            actual_return_pct=2.0, actual_direction="UP",
-            is_direction_correct=True, error_pct=0.0,
-            ta_signal="BUY", composite_score=None,
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=5,
+            pred_direction="UP",
+            pred_return_pct=None,
+            actual_return_pct=2.0,
+            actual_direction="UP",
+            is_direction_correct=True,
+            error_pct=0.0,
+            ta_signal="BUY",
+            composite_score=None,
         ),
     ]
 
@@ -371,6 +434,7 @@ def test_get_latest_evaluation_no_table(tmp_path):
 def test_get_latest_evaluation_with_data(tmp_path):
     """数据库中有评估结果时，应返回正确数据。"""
     import sqlite3
+
     from trade_krono_cli.prediction_eval import PredictionEvaluator
     from trade_krono_cli.research_db import ResearchDatabase
 
@@ -417,17 +481,20 @@ def test_get_latest_evaluation_with_data(tmp_path):
 
 def test_print_report_empty_summary(caplog):
     """打印空 summary 的报告不应崩溃。"""
-    from trade_krono_cli.prediction_eval import PredictionEvaluator
     from loguru import logger
+
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
 
     evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
     evaluator.HORIZONS = [5, 10, 20]
     summary = EvaluationSummary()
 
     captured: list[str] = []
+
     def _capture(*args, **kwargs):
         if args:
             captured.append(str(args[0]))
+
     with patch.object(logger, "info", _capture):
         evaluator.print_report(summary)
     full = "\n".join(captured)
@@ -437,25 +504,36 @@ def test_print_report_empty_summary(caplog):
 
 def test_print_report_with_data(caplog):
     """打印有数据的报告应包含正确的指标。"""
-    from trade_krono_cli.prediction_eval import PredictionEvaluator
     from loguru import logger
+
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
 
     evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
     evaluator.HORIZONS = [5, 10, 20]
 
-    records = [EvalRecord(
-        ticker="sh.600519", eval_date="2026-01-01",
-        horizon_days=5, pred_direction="UP", pred_return_pct=3.0,
-        actual_return_pct=2.5, actual_direction="UP",
-        is_direction_correct=True, error_pct=0.5,
-        ta_signal="BUY", composite_score=80.0,
-    )]
+    records = [
+        EvalRecord(
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=5,
+            pred_direction="UP",
+            pred_return_pct=3.0,
+            actual_return_pct=2.5,
+            actual_direction="UP",
+            is_direction_correct=True,
+            error_pct=0.5,
+            ta_signal="BUY",
+            composite_score=80.0,
+        )
+    ]
     summary = evaluator._compute_summary(records)
 
     captured: list[str] = []
+
     def _capture(*args, **kwargs):
         if args:
             captured.append(str(args[0]))
+
     with patch.object(logger, "info", _capture):
         evaluator.print_report(summary)
     full = "\n".join(captured)
@@ -465,54 +543,67 @@ def test_print_report_with_data(caplog):
 
 def test_run_evaluation_no_results(caplog):
     """latest=True 且无评估结果时，应打印提示并返回。"""
-    from trade_krono_cli.prediction_eval import PredictionEvaluator
     from loguru import logger
 
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
+
     captured: list[str] = []
+
     def _capture(*args, **kwargs):
         if args:
             captured.append(str(args[0]))
 
-    with patch.object(PredictionEvaluator, 'get_latest_evaluation') as mock_get:
+    with patch.object(PredictionEvaluator, "get_latest_evaluation") as mock_get:
         mock_get.return_value = None
-        with patch.object(logger, "info", _capture), \
-             patch.object(logger, "warning", _capture):
+        with patch.object(logger, "info", _capture), patch.object(logger, "warning", _capture):
             run_evaluation(latest=True)
     assert "暂无评估结果" in "\n".join(captured)
 
 
 def test_run_evaluation_with_latest_result(caplog):
     """latest=True 且有评估结果时，应打印结果。"""
-    from trade_krono_cli.prediction_eval import PredictionEvaluator
     from loguru import logger
+
+    from trade_krono_cli.prediction_eval import PredictionEvaluator
 
     class FakeSummary:
         kronos_n = 3
         ta_buy_n = 1
         combined_buy_up_n = 0
         high_conf_n = 0
-        horizons = {5: MagicMock(kronos_dir_accuracy=60.0, ta_buy_win_rate=50.0,
-                                  ta_buy_avg_return=1.5, combined_buy_up_win_rate=0.0,
-                                  combined_buy_up_avg_return=0.0, high_conf_win_rate=0.0,
-                                  high_conf_avg_return=0.0)}
+        horizons = {
+            5: MagicMock(
+                kronos_dir_accuracy=60.0,
+                ta_buy_win_rate=50.0,
+                ta_buy_avg_return=1.5,
+                combined_buy_up_win_rate=0.0,
+                combined_buy_up_avg_return=0.0,
+                high_conf_win_rate=0.0,
+                high_conf_avg_return=0.0,
+            )
+        }
         records = []
 
         def get(self, key, default=None):
             return getattr(self, key, default)
 
     captured: list[str] = []
+
     def _capture(*args, **kwargs):
         if args:
             captured.append(str(args[0]))
 
-    with patch.object(PredictionEvaluator, 'get_latest_evaluation') as mock_get:
+    with patch.object(PredictionEvaluator, "get_latest_evaluation") as mock_get:
         fake = MagicMock()
-        fake.__getitem__ = lambda self, key: {"id": 1, "eval_at": 1700000000.0,
-            "eval_date_range": "2026-01-01", "n_records": 3,
-            "summary": FakeSummary()}[key]
+        fake.__getitem__ = lambda self, key: {
+            "id": 1,
+            "eval_at": 1700000000.0,
+            "eval_date_range": "2026-01-01",
+            "n_records": 3,
+            "summary": FakeSummary(),
+        }[key]
         mock_get.return_value = fake
-        with patch.object(logger, "info", _capture), \
-             patch.object(logger, "warning", _capture):
+        with patch.object(logger, "info", _capture), patch.object(logger, "warning", _capture):
             run_evaluation(latest=True)
     full = "\n".join(captured)
     assert "最新评估结果" in full
@@ -523,13 +614,14 @@ def test_run_evaluation_with_latest_result(caplog):
 # 交易约束感知评估测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestIsPriceAtLimit:
     """测试涨跌停价格检测。"""
 
     def test_limit_up_detection(self):
         """涨停价 = prev_close * 1.10，price >= 涨停价 × 0.999 则拦截。"""
         assert _is_price_at_limit("sh.600519", 110.0, 100.0, "up") is True
-        assert _is_price_at_limit("sh.600519", 109.99, 100.0, "up") is True   # 容差
+        assert _is_price_at_limit("sh.600519", 109.99, 100.0, "up") is True  # 容差
         assert _is_price_at_limit("sh.600519", 109.88, 100.0, "up") is False  # 低于容差
 
     def test_limit_down_detection(self):
@@ -551,8 +643,10 @@ class TestIsPriceAtLimit:
     def test_disabled_limit_check(self):
         """disable limit check 时不拦截。"""
         from trade_krono_cli.constraints_config import ConstraintConfig
+
         cfg = ConstraintConfig(enable_limit_check=False)
         from trade_krono_cli.trading_constraints import compute_limit_prices
+
         up, down = compute_limit_prices(100.0, "sh.600519", config=cfg)
         assert up is None  # 禁用时返回 None
 
@@ -577,11 +671,17 @@ class TestEvalRecordWithConstraints:
 
     def test_record_with_constraints(self):
         r = EvalRecord(
-            ticker="sh.600519", eval_date="2026-01-01", horizon_days=5,
-            pred_direction="UP", pred_return_pct=3.0,
-            actual_return_pct=2.5, actual_direction="UP",
-            is_direction_correct=True, error_pct=0.5,
-            ta_signal="BUY", composite_score=80.0,
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=5,
+            pred_direction="UP",
+            pred_return_pct=3.0,
+            actual_return_pct=2.5,
+            actual_direction="UP",
+            is_direction_correct=True,
+            error_pct=0.5,
+            ta_signal="BUY",
+            composite_score=80.0,
             entry_blocked_limit_up=False,
             exit_blocked_limit_down=False,
             cost_bps_applied=17.0,
@@ -604,22 +704,22 @@ class TestEvaluateConstraintAware:
 
     def test_limit_up_entry_skipped(self, tmp_path):
         """买入日涨停 → 该记录被跳过，不计入 eval_records。"""
-        from trade_krono_cli.research_db import ResearchDatabase
         from trade_krono_cli.prediction_eval import PredictionEvaluator
+        from trade_krono_cli.research_db import ResearchDatabase
 
         db = tmp_path / "constraint_eval.db"
         research = ResearchDatabase(db_path=db)
 
         job_id = research.create_job("2026-01-01", ["sh.600519"])
         import sqlite3
+
         with sqlite3.connect(db) as conn:
             conn.execute(
                 "INSERT INTO signals (job_id, ticker, rank, composite_score, "
                 " ta_signal, ta_confidence, ta_reasoning, kronos_direction, "
                 " kronos_change, ta_error, kronos_error) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (job_id, "sh.600519", 1, 80.0, "BUY", 85.0, "test",
-                 "UP", 3.0, None, None),
+                (job_id, "sh.600519", 1, 80.0, "BUY", 85.0, "test", "UP", 3.0, None, None),
             )
             conn.commit()
 
@@ -629,28 +729,34 @@ class TestEvaluateConstraintAware:
 
         def fake_fetch_kline(ticker, start, end, frequency="d", use_cache=True):
             import pandas as pd
+
             # 模拟：前一日(2025-12-31) close=100，eval_date(2026-01-01) close=110（涨停）
             # 不包含 horizon 退出日，避免 iloc[-2] 指向错误日期
-            return pd.DataFrame({
-                "timestamps": ["2025-12-31", "2026-01-01"],
-                "open": [100.0, 100.0],
-                "high": [100.0, 110.0],
-                "low": [99.0, 108.0],
-                "close": [100.0, 110.0],
-                "volume": [1000.0, 5000.0],
-                "amount": [100000.0, 550000.0],
-            })
+            return pd.DataFrame(
+                {
+                    "timestamps": ["2025-12-31", "2026-01-01"],
+                    "open": [100.0, 100.0],
+                    "high": [100.0, 110.0],
+                    "low": [99.0, 108.0],
+                    "close": [100.0, 110.0],
+                    "volume": [1000.0, 5000.0],
+                    "amount": [100000.0, 550000.0],
+                }
+            )
 
-        call_idx = [0]
+        _call_idx = [0]
+
         def fake_get_close(ticker, date_str):
             if "2026-01-01" in date_str:
-                return 110.0   # 涨停价
+                return 110.0  # 涨停价
             elif "2026-01-06" in date_str:
-                return 108.0   # 退出日正常
+                return 108.0  # 退出日正常
             return None
 
         with patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline):
-            with patch("trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close):
+            with patch(
+                "trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close
+            ):
                 summary = evaluator.evaluate(store=False)
 
         # 涨停买入被跳过，eval_records 为空
@@ -660,22 +766,22 @@ class TestEvaluateConstraintAware:
 
     def test_cost_deducted_in_return(self, tmp_path):
         """正常信号应扣减 17bps 交易成本。"""
-        from trade_krono_cli.research_db import ResearchDatabase
         from trade_krono_cli.prediction_eval import PredictionEvaluator
+        from trade_krono_cli.research_db import ResearchDatabase
 
         db = tmp_path / "cost_eval.db"
         research = ResearchDatabase(db_path=db)
 
         job_id = research.create_job("2026-01-01", ["sh.600519"])
         import sqlite3
+
         with sqlite3.connect(db) as conn:
             conn.execute(
                 "INSERT INTO signals (job_id, ticker, rank, composite_score, "
                 " ta_signal, ta_confidence, ta_reasoning, kronos_direction, "
                 " kronos_change, ta_error, kronos_error) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (job_id, "sh.600519", 1, 80.0, "BUY", 85.0, "test",
-                 "UP", 5.0, None, None),
+                (job_id, "sh.600519", 1, 80.0, "BUY", 85.0, "test", "UP", 5.0, None, None),
             )
             conn.commit()
 
@@ -698,18 +804,23 @@ class TestEvaluateConstraintAware:
         # 返回正常 K 线（非涨停）
         def fake_fetch_kline(ticker, start, end, frequency="d", use_cache=True):
             import pandas as pd
-            return pd.DataFrame({
-                "timestamps": ["2025-12-31", "2026-01-01", "2026-01-06"],
-                "open": [100.0, 100.0, 100.0],
-                "high": [101.0, 101.0, 106.0],
-                "low": [99.0, 99.0, 99.0],
-                "close": [100.0, 100.0, 105.0],
-                "volume": [1000.0, 1000.0, 1000.0],
-                "amount": [100000.0, 100000.0, 105000.0],
-            })
+
+            return pd.DataFrame(
+                {
+                    "timestamps": ["2025-12-31", "2026-01-01", "2026-01-06"],
+                    "open": [100.0, 100.0, 100.0],
+                    "high": [101.0, 101.0, 106.0],
+                    "low": [99.0, 99.0, 99.0],
+                    "close": [100.0, 100.0, 105.0],
+                    "volume": [1000.0, 1000.0, 1000.0],
+                    "amount": [100000.0, 100000.0, 105000.0],
+                }
+            )
 
         with patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline):
-            with patch("trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close):
+            with patch(
+                "trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close
+            ):
                 summary = evaluator.evaluate(store=False)
 
         assert len(summary.records) == 1

@@ -1,15 +1,15 @@
 """测试版本追踪模块 (version.py)。"""
-import pytest
+
 from trade_krono_cli.version import (
-    get_project_version,
-    generate_run_id,
+    build_run_snapshot,
+    collect_model_versions,
     compute_config_hash,
+    generate_run_id,
     get_data_version,
     get_kronos_model_version,
     get_llm_version,
+    get_project_version,
     get_ta_prompt_version,
-    collect_model_versions,
-    build_run_snapshot,
 )
 
 
@@ -28,12 +28,13 @@ def test_generate_run_id_format():
     parts = run_id.split("-")
     assert len(parts) == 3
     assert parts[0] == "20260811"  # date part
-    assert parts[2].isdigit()       # sequence part
+    assert parts[2].isdigit()  # sequence part
 
 
 def test_generate_run_id_sequential():
     """同一天多次调用，序列号递增。"""
     from trade_krono_cli.version import reset_run_id_counter
+
     reset_run_id_counter()
 
     id1 = generate_run_id("2026-08-11")
@@ -46,6 +47,7 @@ def test_generate_run_id_sequential():
 def test_generate_run_id_different_dates():
     """不同日期，序列号从 1 重新开始。"""
     from trade_krono_cli.version import reset_run_id_counter
+
     reset_run_id_counter()
 
     id1 = generate_run_id("2026-08-10")
@@ -67,9 +69,7 @@ def test_data_version_custom_source():
 
 
 def test_kronos_model_version():
-    v = get_kronos_model_version(
-        "kronos-base", "kronos-Tokenizer-base", "cpu"
-    )
+    v = get_kronos_model_version("kronos-base", "kronos-Tokenizer-base", "cpu")
     assert "kronos-kronos-base-kronos-Tokenizer-base-cpu" == v
 
 
@@ -79,10 +79,12 @@ def test_llm_version():
 
 
 def test_ta_prompt_version():
-    v = get_ta_prompt_version(max_debate_rounds=1,
-                               max_risk_discuss_rounds=1,
-                               output_language="Chinese",
-                               structured_output=True)
+    v = get_ta_prompt_version(
+        max_debate_rounds=1,
+        max_risk_discuss_rounds=1,
+        output_language="Chinese",
+        structured_output=True,
+    )
     assert v == "ta-v1r1-chinese-json"
 
 
@@ -103,6 +105,7 @@ def test_collect_model_versions():
 def test_build_run_snapshot():
     """build_run_snapshot 生成完整的版本快照。"""
     from trade_krono_cli.version import reset_run_id_counter
+
     reset_run_id_counter()
 
     # 用 mock settings
@@ -139,7 +142,6 @@ def test_build_run_snapshot():
 
 def test_compute_config_hash_excludes_keys():
     """配置哈希不应包含 API key。"""
-    from trade_krono_cli.version import compute_config_hash
 
     class MockSettings:
         max_debate_rounds = 1

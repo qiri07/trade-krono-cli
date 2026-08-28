@@ -13,53 +13,54 @@ Prediction Evaluation — 预测评估模块入口。
 向后兼容：所有旧名称（_get_close_price、fetch_kline 等）均在此重新导出，
           保证测试中 patch("trade_krono_cli.prediction_eval.*") 正常工作。
 """
+
 from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
-from typing import Optional, NamedTuple
+from typing import NamedTuple, Optional
 
 from loguru import logger
 
-from trade_krono_cli.eval_data import (
-    EvalRecord,
-    EvaluationSummary,
-    HorizonMetrics,
-    BacktestResult,
-    get_close_price,
-    get_kline_window,
-    calc_return,
-    is_price_at_limit,
-    apply_roundtrip_cost,
-)
-from trade_krono_cli.eval_kronos import compute_kronos_accuracy
-from trade_krono_cli.eval_ta import compute_ta_metrics
-from trade_krono_cli.eval_combined import compute_combined_metrics, compute_high_conf_metrics
-from trade_krono_cli.eval_ic import compute_ic_metrics
-from trade_krono_cli.eval_report import (
-    store_summary,
-    get_latest_evaluation,
-    print_report,
-)
-from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.backtest_engine import (
     BacktestEngine,
-    BacktestRecord,
     build_backtest_records,
     compute_benchmark_returns,
-    compute_excess_curve,
 )
+from trade_krono_cli.constraints_config import ConstraintConfig
 
 # ── 向后兼容别名（测试通过 patch("trade_krono_cli.prediction_eval.*") 使用）──
 # fetch_kline 是测试直接 patch 的模块级依赖，需在此重新绑定
 from trade_krono_cli.data import fetch_kline  # noqa: F401
+from trade_krono_cli.eval_combined import compute_combined_metrics, compute_high_conf_metrics
+from trade_krono_cli.eval_data import (
+    BacktestResult,
+    EvalRecord,
+    EvaluationSummary,
+    HorizonMetrics,
+    apply_roundtrip_cost,
+    calc_return,
+    get_close_price,
+    get_kline_window,
+    is_price_at_limit,
+)
+from trade_krono_cli.eval_ic import compute_ic_metrics
+from trade_krono_cli.eval_kronos import compute_kronos_accuracy
+from trade_krono_cli.eval_report import (
+    get_latest_evaluation,
+    print_report,
+    store_summary,
+)
+from trade_krono_cli.eval_ta import compute_ta_metrics
+
 
 def _get_close_price(ticker: str, date_str: str, **kwargs) -> Optional[float]:
     """Wrapper: forwards _fetch_kline injection for test compatibility."""
     return get_close_price(ticker, date_str, **kwargs)
 
+
 _get_kline_window = get_kline_window  # type: ignore[misc]
-_calc_return = calc_return            # type: ignore[misc]
+_calc_return = calc_return  # type: ignore[misc]
 _is_price_at_limit = is_price_at_limit  # type: ignore[misc]
 _apply_roundtrip_cost = apply_roundtrip_cost  # type: ignore[misc]
 
@@ -67,6 +68,7 @@ _apply_roundtrip_cost = apply_roundtrip_cost  # type: ignore[misc]
 # ── 待评估信号数据结构 ────────────────────────────────────────────────────────
 class _EvalSignal(NamedTuple):
     """单条待评估信号，字段含义明确，替代匿名 8 元组。"""
+
     job_id: str
     ticker: str
     eval_date: str
@@ -79,6 +81,7 @@ class _EvalSignal(NamedTuple):
 # ═══════════════════════════════════════════════════════
 # 评估器
 # ═══════════════════════════════════════════════════════
+
 
 class PredictionEvaluator:
     """
@@ -95,6 +98,7 @@ class PredictionEvaluator:
 
     def __init__(self, max_workers: int = 4):
         from trade_krono_cli.research_db import get_research
+
         self._research = get_research()
         self._max_workers = max_workers
 
@@ -155,15 +159,17 @@ class PredictionEvaluator:
                     continue
                 if tickers and sig["ticker"] not in tickers:
                     continue
-                records_to_eval.append(_EvalSignal(
-                    job_id=job["job_id"],
-                    ticker=sig["ticker"],
-                    eval_date=job["date"],
-                    ta_signal=sig.get("ta_signal"),
-                    kronos_direction=sig.get("kronos_direction"),
-                    composite_score=sig.get("composite_score"),
-                    kronos_change=sig.get("kronos_change"),
-                ))
+                records_to_eval.append(
+                    _EvalSignal(
+                        job_id=job["job_id"],
+                        ticker=sig["ticker"],
+                        eval_date=job["date"],
+                        ta_signal=sig.get("ta_signal"),
+                        kronos_direction=sig.get("kronos_direction"),
+                        composite_score=sig.get("composite_score"),
+                        kronos_change=sig.get("kronos_change"),
+                    )
+                )
 
         if not records_to_eval:
             logger.warning("⚠️  没有可评估的信号")
@@ -194,8 +200,7 @@ class PredictionEvaluator:
 
             for horizon in self.HORIZONS:
                 eval_date_h = (
-                    datetime.strptime(sig.eval_date, "%Y-%m-%d")
-                    + timedelta(days=horizon)
+                    datetime.strptime(sig.eval_date, "%Y-%m-%d") + timedelta(days=horizon)
                 ).strftime("%Y-%m-%d")
                 exit_price = _get_close_price(sig.ticker, eval_date_h)
 
@@ -241,26 +246,30 @@ class PredictionEvaluator:
 
                 is_dir_correct = False
                 if pred_dir and pred_dir != "FLAT":
-                    is_dir_correct = (pred_dir == actual_dir)
+                    is_dir_correct = pred_dir == actual_dir
 
                 error = (pred_ret - gross_return) if pred_ret is not None else 0.0
 
-                eval_records.append(EvalRecord(
-                    ticker=sig.ticker,
-                    eval_date=sig.eval_date,
-                    horizon_days=horizon,
-                    pred_direction=pred_dir,
-                    pred_return_pct=pred_ret,
-                    actual_return_pct=round(net_return, 4),
-                    actual_direction=actual_dir,
-                    is_direction_correct=is_dir_correct,
-                    error_pct=round(error, 4),
-                    ta_signal=sig.ta_signal,
-                    composite_score=float(sig.composite_score) if sig.composite_score is not None else None,
-                    entry_blocked_limit_up=False,
-                    exit_blocked_limit_down=False,
-                    cost_bps_applied=cost_bps,
-                ))
+                eval_records.append(
+                    EvalRecord(
+                        ticker=sig.ticker,
+                        eval_date=sig.eval_date,
+                        horizon_days=horizon,
+                        pred_direction=pred_dir,
+                        pred_return_pct=pred_ret,
+                        actual_return_pct=round(net_return, 4),
+                        actual_direction=actual_dir,
+                        is_direction_correct=is_dir_correct,
+                        error_pct=round(error, 4),
+                        ta_signal=sig.ta_signal,
+                        composite_score=float(sig.composite_score)
+                        if sig.composite_score is not None
+                        else None,
+                        entry_blocked_limit_up=False,
+                        exit_blocked_limit_down=False,
+                        cost_bps_applied=cost_bps,
+                    )
+                )
 
             if i % 20 == 0:
                 logger.info(f"  进度: {i}/{len(records_to_eval)}")
@@ -298,13 +307,17 @@ class PredictionEvaluator:
                 full_summary.excess_return_pct = round(
                     bt_result.total_return_pct - full_summary.benchmark_cum_return_pct, 2
                 )
-            full_summary.excess_curve = {
-                d: round(bt_val - bench_val, 4)
-                for d, (bt_val, bench_val) in zip(
-                    [d for d, _ in bt_result.equity_curve],
-                    [v for _, v in bt_result.equity_curve],
-                )
-            } if bt_result.equity_curve else {}
+            full_summary.excess_curve = (
+                {
+                    d: round(bt_val - bench_val, 4)
+                    for d, (bt_val, bench_val) in zip(
+                        [d for d, _ in bt_result.equity_curve],
+                        [v for _, v in bt_result.equity_curve],
+                    )
+                }
+                if bt_result.equity_curve
+                else {}
+            )
 
             # 将回测增强指标写入 horizon 汇总
             for horizon in self.HORIZONS:
@@ -395,8 +408,7 @@ class PredictionEvaluator:
             key = (r.ticker, r.eval_date)
             entry = _get_close_price(r.ticker, r.eval_date)
             eval_date_h = (
-                datetime.strptime(r.eval_date, "%Y-%m-%d")
-                + timedelta(days=r.horizon_days)
+                datetime.strptime(r.eval_date, "%Y-%m-%d") + timedelta(days=r.horizon_days)
             ).strftime("%Y-%m-%d")
             exit = _get_close_price(r.ticker, eval_date_h)
             if entry and exit:
@@ -412,7 +424,9 @@ class PredictionEvaluator:
         return engine.run(bt_records)
 
     def _store_summary(
-        self, summary: EvaluationSummary, eval_date_range: Optional[str],
+        self,
+        summary: EvaluationSummary,
+        eval_date_range: Optional[str],
     ) -> None:
         """将评估结果存储到 research database。"""
         db_path = self._research._db_path
@@ -432,6 +446,7 @@ class PredictionEvaluator:
 # ═══════════════════════════════════════════════════════
 # CLI 入口
 # ═══════════════════════════════════════════════════════
+
 
 def run_evaluation(
     from_date: Optional[str] = None,
@@ -453,7 +468,9 @@ def run_evaluation(
         logger.info("=" * 60)
         logger.info("  📊 最新评估结果")
         logger.info("=" * 60)
-        logger.info(f"  评估时间: {datetime.fromtimestamp(result['eval_at']).strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(
+            f"  评估时间: {datetime.fromtimestamp(result['eval_at']).strftime('%Y-%m-%d %H:%M:%S')}"
+        )
         logger.info(f"  评估日期范围: {result['eval_date_range'] or '全部'}")
         logger.info(f"  评估记录数: {result['n_records']}")
         logger.info("")
@@ -462,7 +479,7 @@ def run_evaluation(
         _print_latest_kronos(summary)
         _print_latest_ta(summary)
         _print_latest_combined(summary)
-        if backtest and hasattr(summary, 'backtest') and summary.backtest:
+        if backtest and hasattr(summary, "backtest") and summary.backtest:
             _print_latest_backtest(summary)
         return
 
@@ -499,8 +516,9 @@ def _print_latest_ta(summary: dict) -> None:
         wr = summary.get("ta_buy_win_rate", {}).get(str(h), 0)
         avg_ret = summary.get("ta_buy_avg_return", {}).get(str(h), 0)
         marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
-        logger.info(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
-              f"平均收益: {avg_ret:+.2f}%                    │")
+        logger.info(
+            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │"
+        )
     logger.info("└" + "─" * 58 + "┘")
     logger.info("")
 
@@ -508,21 +526,22 @@ def _print_latest_ta(summary: dict) -> None:
 def _print_latest_combined(summary: dict) -> None:
     logger.info("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
     combined_n = sum(
-        1 for r in summary.get("records", [])
-        if r.ta_signal == "BUY" and r.pred_direction == "UP"
+        1 for r in summary.get("records", []) if r.ta_signal == "BUY" and r.pred_direction == "UP"
     )
     logger.info(f"│  样本数: {combined_n}                          │")
     for h in [5, 10, 20]:
         wr = summary.get("combined_buy_up_win_rate", {}).get(str(h), 0)
         avg_ret = summary.get("combined_buy_up_avg_return", {}).get(str(h), 0)
         marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
-        logger.info(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
-              f"平均收益: {avg_ret:+.2f}%                    │")
+        logger.info(
+            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │"
+        )
     logger.info("└" + "─" * 58 + "┘")
     logger.info("")
 
 
 # ── 回测报告打印 ─────────────────────────────────────────────────────────────
+
 
 def _print_backtest_report(summary: EvaluationSummary) -> None:
     """打印回测绩效报告。"""

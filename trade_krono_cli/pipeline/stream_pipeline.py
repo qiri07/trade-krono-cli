@@ -10,19 +10,20 @@ stream_pipeline — 流式流水线调度器。
   - ta_future      批量 TA 分析（从预取数据读取，无重复网络 I/O）
   - kronos_future  批量 Kronos 预测（使用 pre-fetched 数据跳过 fetch_lookback）
 """
+
 from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
 import pandas as pd
 from loguru import logger
 
 from trade_krono_cli.kronos_runner import KronosForecastResult
-from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
+from trade_krono_cli.ta_runner import StockAnalysisResult
 
 
 class StreamPipeline:
@@ -63,10 +64,7 @@ class StreamPipeline:
         """
         t0 = time.time()
         n = len(tickers)
-        logger.info(
-            f"🚀 流式流水线启动 | {n} 只候选 | date={date}"
-            f" | fetch与compute重叠执行"
-        )
+        logger.info(f"🚀 流式流水线启动 | {n} 只候选 | date={date} | fetch与compute重叠执行")
 
         if self.progress_cb:
             self.progress_cb("启动", 0, n)
@@ -77,7 +75,8 @@ class StreamPipeline:
 
         def _fetch_all() -> dict:
             return prepare_kline_batch(
-                tickers, date,
+                tickers,
+                date,
                 lookback=lookback,
                 adjustflag=adjustflag,
                 use_cache=use_cache,
@@ -95,9 +94,7 @@ class StreamPipeline:
                     results.append(res)
                 except Exception as e:
                     logger.error(f"❌ TA 分析异常 {tk}: {e}")
-                    results.append(StockAnalysisResult(
-                        ticker=tk, date=date, error=str(e)
-                    ))
+                    results.append(StockAnalysisResult(ticker=tk, date=date, error=str(e)))
                 finally:
                     if self.progress_cb:
                         try:
@@ -114,9 +111,9 @@ class StreamPipeline:
                     results.append(res)
                 except Exception as e:
                     logger.error(f"❌ Kronos 预测异常 {tk}: {e}")
-                    results.append(KronosForecastResult(
-                        ticker=tk, eval_date=date, horizon=30, error=str(e)
-                    ))
+                    results.append(
+                        KronosForecastResult(ticker=tk, eval_date=date, horizon=30, error=str(e))
+                    )
                 finally:
                     if self.progress_cb:
                         try:
@@ -153,8 +150,7 @@ class StreamPipeline:
         n_ta_ok = sum(1 for r in ta_results if r.error is None)
         n_kr_ok = sum(1 for r in kr_results if r.error is None)
         logger.info(
-            f"📊 流式流水线完成: TA {n_ta_ok}/{n} | "
-            f"Kronos {n_kr_ok}/{n} | 耗时 {elapsed:.1f}s"
+            f"📊 流式流水线完成: TA {n_ta_ok}/{n} | Kronos {n_kr_ok}/{n} | 耗时 {elapsed:.1f}s"
         )
 
         if self.progress_cb:
@@ -178,7 +174,9 @@ class StreamPipeline:
         """单只股票 Kronos 预测，优先使用预取数据。"""
         if self.kronos_runner is None:
             return KronosForecastResult(
-                ticker=ticker, eval_date=date, horizon=30,
+                ticker=ticker,
+                eval_date=date,
+                horizon=30,
                 error="Kronos runner 未初始化",
             )
         return self.kronos_runner.predict_one(ticker, date)

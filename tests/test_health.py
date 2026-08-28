@@ -1,21 +1,20 @@
 """测试健康检查模块 (health.py)。"""
-import pytest
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from types import SimpleNamespace
 
 from trade_krono_cli.health import (
     HealthResult,
-    check_llm_api,
-    check_kronos_import,
     check_database,
     check_disk_space,
+    check_kronos_import,
+    check_llm_api,
     health_summary,
     print_health_report,
 )
 
-
 # ── check_llm_api ────────────────────────────────────────────────────────────
+
 
 def test_check_llm_api_structure():
     """返回 HealthResult，名称正确，detail 非空。"""
@@ -39,6 +38,7 @@ def test_check_llm_api_no_keys(monkeypatch):
 
 # ── check_kronos_import ──────────────────────────────────────────────────────
 
+
 def test_check_kronos_import_structure():
     """应返回正确的 HealthResult 名称，不崩溃。"""
     result = check_kronos_import()
@@ -58,6 +58,7 @@ def test_check_kronos_import_missing():
 
 # ── check_database ────────────────────────────────────────────────────────────
 
+
 def test_check_database_ok(tmp_path):
     """正常数据库应通过。"""
     db = tmp_path / "test.db"
@@ -74,6 +75,7 @@ def test_check_database_ok(tmp_path):
 
 # ── check_disk_space ──────────────────────────────────────────────────────────
 
+
 def test_check_disk_space_ok(tmp_path):
     """正常目录应通过（空间充足）。"""
     result = check_disk_space(tmp_path, min_gb=0.0001)  # 极低阈值
@@ -83,7 +85,7 @@ def test_check_disk_space_ok(tmp_path):
 
 def test_check_disk_space_low(monkeypatch):
     """磁盘空间不足时应返回失败。"""
-    orig_statvfs = __import__("os").statvfs
+    _orig_statvfs = __import__("os").statvfs
 
     def fake_statvfs(path):
         s = MagicMock()
@@ -99,9 +101,11 @@ def test_check_disk_space_low(monkeypatch):
 
 # ── health_summary ────────────────────────────────────────────────────────────
 
+
 def test_health_summary_returns_results():
     """health_summary 应返回至少 4 项检查。"""
     from trade_krono_cli.config import get_settings
+
     results = health_summary(get_settings())
     assert len(results) >= 4
     names = [r.name for r in results]
@@ -112,6 +116,7 @@ def test_health_summary_returns_results():
 
 
 # ── print_health_report ───────────────────────────────────────────────────────
+
 
 def test_print_health_report_all_ok(capsys):
     """全部通过时返回 True 并打印 OK。"""

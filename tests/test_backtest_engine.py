@@ -1,22 +1,23 @@
 """测试回测引擎（backtest_engine.py）。"""
-import pytest
-from unittest.mock import MagicMock, patch
-import pandas as pd
+
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from trade_krono_cli.backtest_engine import (
     BacktestEngine,
     BacktestRecord,
-    build_backtest_records,
-    compute_benchmark_returns,
+    _month_start,
     _next_trading_day,
     _week_start,
-    _month_start,
+    build_backtest_records,
+    compute_benchmark_returns,
 )
 from trade_krono_cli.eval_data import EvalRecord, EvaluationSummary
 
-
 # ── 辅助函数测试 ──────────────────────────────────────────────────────────────
+
 
 def test_next_trading_day():
     """_next_trading_day 应在 kline_dates 中找最近的未来交易日。"""
@@ -39,22 +40,35 @@ def test_month_start():
 
 # ── BacktestRecord / build_backtest_records ───────────────────────────────────
 
+
 def test_build_backtest_records_filters_horizon():
     """build_backtest_records 应按 horizon 筛选记录。"""
     records = [
         EvalRecord(
-            ticker="sh.600519", eval_date="2026-01-01", horizon_days=5,
-            pred_direction="UP", pred_return_pct=3.0,
-            actual_return_pct=2.5, actual_direction="UP",
-            is_direction_correct=True, error_pct=0.5,
-            ta_signal="BUY", composite_score=80.0,
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=5,
+            pred_direction="UP",
+            pred_return_pct=3.0,
+            actual_return_pct=2.5,
+            actual_direction="UP",
+            is_direction_correct=True,
+            error_pct=0.5,
+            ta_signal="BUY",
+            composite_score=80.0,
         ),
         EvalRecord(
-            ticker="sh.600519", eval_date="2026-01-01", horizon_days=10,
-            pred_direction="UP", pred_return_pct=5.0,
-            actual_return_pct=4.0, actual_direction="UP",
-            is_direction_correct=True, error_pct=1.0,
-            ta_signal="BUY", composite_score=75.0,
+            ticker="sh.600519",
+            eval_date="2026-01-01",
+            horizon_days=10,
+            pred_direction="UP",
+            pred_return_pct=5.0,
+            actual_return_pct=4.0,
+            actual_direction="UP",
+            is_direction_correct=True,
+            error_pct=1.0,
+            ta_signal="BUY",
+            composite_score=75.0,
         ),
     ]
     bt = build_backtest_records(records, horizon=5)
@@ -71,20 +85,28 @@ def test_build_backtest_records_empty():
 
 # ── BacktestEngine 基本运行 ───────────────────────────────────────────────────
 
+
 def _make_eval_records(n=5, horizon=5):
     """构造 n 条模拟评估记录（不同日期、不同股票）。"""
     records = []
     base_date = datetime(2026, 1, 5)
     for i in range(n):
         date = (base_date + timedelta(days=i * 5)).strftime("%Y-%m-%d")
-        records.append(EvalRecord(
-            ticker=f"sh.600{i:03d}", eval_date=date, horizon_days=horizon,
-            pred_direction="UP", pred_return_pct=3.0,
-            actual_return_pct=2.0 + i * 0.3, actual_direction="UP",
-            is_direction_correct=True, error_pct=1.0,
-            ta_signal="BUY" if i % 2 == 0 else "HOLD",
-            composite_score=70.0 + i * 2,
-        ))
+        records.append(
+            EvalRecord(
+                ticker=f"sh.600{i:03d}",
+                eval_date=date,
+                horizon_days=horizon,
+                pred_direction="UP",
+                pred_return_pct=3.0,
+                actual_return_pct=2.0 + i * 0.3,
+                actual_direction="UP",
+                is_direction_correct=True,
+                error_pct=1.0,
+                ta_signal="BUY" if i % 2 == 0 else "HOLD",
+                composite_score=70.0 + i * 2,
+            )
+        )
     return records
 
 
@@ -100,8 +122,8 @@ class TestBacktestEngineBasic:
 
     def test_run_with_mock_prices(self, tmp_path):
         """使用 mock 价格运行回测，验证基本流程不崩溃。"""
-        from trade_krono_cli.research_db import ResearchDatabase
         from trade_krono_cli.prediction_eval import PredictionEvaluator
+        from trade_krono_cli.research_db import ResearchDatabase
 
         db = tmp_path / "bt_test.db"
         research = ResearchDatabase(db_path=db)
@@ -109,14 +131,14 @@ class TestBacktestEngineBasic:
         # 创建 job + 信号
         job_id = research.create_job("2026-01-01", ["sh.600519"])
         import sqlite3
+
         with sqlite3.connect(db) as conn:
             conn.execute(
                 "INSERT INTO signals (job_id, ticker, rank, composite_score, "
                 " ta_signal, ta_confidence, ta_reasoning, kronos_direction, "
                 " kronos_change, ta_error, kronos_error) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (job_id, "sh.600519", 1, 80.0, "BUY", 85.0, "test",
-                 "UP", 3.0, None, None),
+                (job_id, "sh.600519", 1, 80.0, "BUY", 85.0, "test", "UP", 3.0, None, None),
             )
             conn.commit()
 
@@ -156,11 +178,18 @@ class TestBacktestEngineBasic:
             {"date": "2026-01-02", "action": "BUY", "ticker": "sh.600519"},
             {"date": "2026-01-06", "action": "SELL", "ticker": "sh.600519", "pnl": 30_301.0},
         ]
-        records = [BacktestRecord(
-            ticker="sh.600519", date="2026-01-01", signal="BUY",
-            entry_price=100.0, exit_price=105.0,
-            horizon_days=5, pred_direction="UP", actual_return_pct=5.0,
-        )]
+        records = [
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=100.0,
+                exit_price=105.0,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=5.0,
+            )
+        ]
 
         m = engine._compute_metrics(equity, trades, records)
         assert m["total_return_pct"] > 0
@@ -200,6 +229,7 @@ class TestBacktestEngineBasic:
 
 # ── 绩效指标数值测试 ──────────────────────────────────────────────────────────
 
+
 class TestMetricsComputation:
     """绩效指标计算的正确性验证。"""
 
@@ -208,7 +238,7 @@ class TestMetricsComputation:
         engine = BacktestEngine()
         # 5 天，有波动的正收益
         values = [1_000_000, 1_010_000, 1_005_000, 1_020_000, 1_015_000]
-        equity = [(f"2026-01-{i+1:02d}", v) for i, v in enumerate(values)]
+        equity = [(f"2026-01-{i + 1:02d}", v) for i, v in enumerate(values)]
         m = engine._compute_metrics(equity, [], [])
         assert m["sharpe_ratio"] > 0
 
@@ -216,7 +246,7 @@ class TestMetricsComputation:
         """负收益序列 → 负夏普比率。"""
         engine = BacktestEngine()
         values = [1_000_000, 990_000, 995_000, 980_000, 970_000]
-        equity = [(f"2026-01-{i+1:02d}", v) for i, v in enumerate(values)]
+        equity = [(f"2026-01-{i + 1:02d}", v) for i, v in enumerate(values)]
         m = engine._compute_metrics(equity, [], [])
         assert m["sharpe_ratio"] < 0
 
@@ -263,9 +293,11 @@ class TestMetricsComputation:
         """年化收益率不应出现荒谬数值。"""
         engine = BacktestEngine()
         # 500 天，总收益 ~10%
-        values = [1_000_000 * (1.0002 ** i) for i in range(500)]
-        equity = [(f"2026-01-{i+1:02d}" if i < 31 else f"2026-02-{i-30+1:02d}", v)
-                  for i, v in enumerate(values)]
+        values = [1_000_000 * (1.0002**i) for i in range(500)]
+        equity = [
+            (f"2026-01-{i + 1:02d}" if i < 31 else f"2026-02-{i - 30 + 1:02d}", v)
+            for i, v in enumerate(values)
+        ]
         m = engine._compute_metrics(equity, [], [])
         assert 5.0 < m["annualized_return_pct"] < 10.0  # ~10%/年复利
         assert m["total_return_pct"] == pytest.approx(10.0, abs=1.0)
@@ -274,10 +306,11 @@ class TestMetricsComputation:
         """收益分布统计（偏度、峰度、极值）应合理。"""
         engine = BacktestEngine()
         import numpy as np
+
         np.random.seed(42)
         daily_rets = np.random.normal(0.001, 0.02, 100)
         values = [1_000_000 * np.cumprod(1 + daily_rets)[i] for i in range(100)]
-        equity = [(f"2026-04-{i+1:02d}", v) for i, v in enumerate(values)]
+        equity = [(f"2026-04-{i + 1:02d}", v) for i, v in enumerate(values)]
         m = engine._compute_metrics(equity, [], [])
         assert "skewness" in m
         assert "kurtosis" in m
@@ -286,6 +319,7 @@ class TestMetricsComputation:
 
 
 # ── 基准计算 ──────────────────────────────────────────────────────────────────
+
 
 class TestBenchmarkReturns:
     """基准收益计算测试。"""
@@ -298,14 +332,24 @@ class TestBenchmarkReturns:
         """单只股票等权组合应产生基准曲线。"""
         records = [
             BacktestRecord(
-                ticker="sh.600519", date="2026-01-01", signal="BUY",
-                entry_price=100.0, exit_price=105.0,
-                horizon_days=5, pred_direction="UP", actual_return_pct=5.0,
+                ticker="sh.600519",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=100.0,
+                exit_price=105.0,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=5.0,
             ),
             BacktestRecord(
-                ticker="sh.600519", date="2026-01-06", signal="BUY",
-                entry_price=105.0, exit_price=103.0,
-                horizon_days=5, pred_direction="DOWN", actual_return_pct=-1.9,
+                ticker="sh.600519",
+                date="2026-01-06",
+                signal="BUY",
+                entry_price=105.0,
+                exit_price=103.0,
+                horizon_days=5,
+                pred_direction="DOWN",
+                actual_return_pct=-1.9,
             ),
         ]
         result = compute_benchmark_returns(records, {})
@@ -316,19 +360,21 @@ class TestBenchmarkReturns:
 
 # ── 端到端集成测试 ────────────────────────────────────────────────────────────
 
+
 class TestEndToEnd:
     """端到端回测集成测试。"""
 
     def test_evaluate_with_backtest_flag(self, tmp_path):
         """evaluate(backtest=True) 应返回带 backtest 结果的 summary。"""
-        from trade_krono_cli.research_db import ResearchDatabase
         from trade_krono_cli.prediction_eval import PredictionEvaluator
+        from trade_krono_cli.research_db import ResearchDatabase
 
         db = tmp_path / "bt_end2end.db"
         research = ResearchDatabase(db_path=db)
 
         job_id = research.create_job("2026-01-01", ["sh.600519", "sz.000858"])
         import sqlite3
+
         with sqlite3.connect(db) as conn:
             for i, tk in enumerate(["sh.600519", "sz.000858"]):
                 conn.execute(
@@ -336,8 +382,7 @@ class TestEndToEnd:
                     " ta_signal, ta_confidence, ta_reasoning, kronos_direction, "
                     " kronos_change, ta_error, kronos_error) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    (job_id, tk, i + 1, 75.0, "BUY", 80.0, "test",
-                     "UP", 3.0, None, None),
+                    (job_id, tk, i + 1, 75.0, "BUY", 80.0, "test", "UP", 3.0, None, None),
                 )
             conn.commit()
 
@@ -361,21 +406,21 @@ class TestEndToEnd:
 
     def test_evaluate_without_backtest_flag(self, tmp_path):
         """默认 backtest=False 时，summary.backtest 应为 None。"""
-        from trade_krono_cli.research_db import ResearchDatabase
         from trade_krono_cli.prediction_eval import PredictionEvaluator
+        from trade_krono_cli.research_db import ResearchDatabase
 
         db = tmp_path / "no_bt.db"
         research = ResearchDatabase(db_path=db)
         job_id = research.create_job("2026-01-01", ["sh.600519"])
         import sqlite3
+
         with sqlite3.connect(db) as conn:
             conn.execute(
                 "INSERT INTO signals (job_id, ticker, rank, composite_score, "
                 " ta_signal, ta_confidence, ta_reasoning, kronos_direction, "
                 " kronos_change, ta_error, kronos_error) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (job_id, "sh.600519", 1, 75.0, "BUY", 80.0, "test",
-                 "UP", 3.0, None, None),
+                (job_id, "sh.600519", 1, 75.0, "BUY", 80.0, "test", "UP", 3.0, None, None),
             )
             conn.commit()
 
@@ -388,21 +433,21 @@ class TestEndToEnd:
 
     def test_run_evaluation_with_backtest_cli(self, caplog):
         """run_evaluation(backtest=True) 应打印回测报告。"""
-        from trade_krono_cli.prediction_eval import run_evaluation
-        from trade_krono_cli.prediction_eval import PredictionEvaluator
         from loguru import logger
 
+        from trade_krono_cli.prediction_eval import PredictionEvaluator, run_evaluation
+
         captured_lines: list[str] = []
-        original_info = logger.info
 
         def capture_info(*args, **kwargs):
             if args:
                 captured_lines.append(str(args[0]))
 
-        with patch.object(PredictionEvaluator, '__init__', lambda self, **kw: None):
+        with patch.object(PredictionEvaluator, "__init__", lambda self, **kw: None):
             fake_eval = MagicMock()
             fake_summary = EvaluationSummary()
             from trade_krono_cli.eval_data import BacktestResult
+
             fake_summary.backtest = BacktestResult(
                 initial_capital=1_000_000.0,
                 final_value=1_125_000.0,
@@ -421,7 +466,9 @@ class TestEndToEnd:
             )
             fake_eval.evaluate.return_value = fake_summary
             fake_eval.print_report = MagicMock()
-            with patch("trade_krono_cli.prediction_eval.PredictionEvaluator", return_value=fake_eval):
+            with patch(
+                "trade_krono_cli.prediction_eval.PredictionEvaluator", return_value=fake_eval
+            ):
                 with patch.object(logger, "info", capture_info):
                     run_evaluation(backtest=True)
             full_output = "\n".join(captured_lines)

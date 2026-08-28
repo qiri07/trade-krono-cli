@@ -1,24 +1,25 @@
 """A 股交易约束引擎测试。"""
-import pytest
+
 from datetime import date
 
+import pytest
+
+from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.trading_constraints import (
-    TradingConstraintResult,
     T1Tracker,
-    compute_limit_prices,
-    check_limit_status,
-    enforce_t1,
     check_all_constraints,
-    filter_by_constraints,
+    check_limit_status,
+    compute_limit_prices,
     compute_transaction_cost,
     detect_exchange,
+    enforce_t1,
+    filter_by_constraints,
 )
-from trade_krono_cli.constraints_config import ConstraintConfig
-
 
 # ═══════════════════════════════════════════════════════
 # detect_exchange
 # ═══════════════════════════════════════════════════════
+
 
 class TestDetectExchange:
     def test_sse(self):
@@ -41,6 +42,7 @@ class TestDetectExchange:
 # ═══════════════════════════════════════════════════════
 # compute_limit_prices
 # ═══════════════════════════════════════════════════════
+
 
 class TestComputeLimitPrices:
     def test_sse_main_board(self):
@@ -81,6 +83,7 @@ class TestComputeLimitPrices:
 # check_limit_status
 # ═══════════════════════════════════════════════════════
 
+
 class TestCheckLimitStatus:
     def test_normal_price(self):
         """正常价格 → allowed=True。"""
@@ -118,6 +121,7 @@ class TestCheckLimitStatus:
 # ═══════════════════════════════════════════════════════
 # T1Tracker / enforce_t1
 # ═══════════════════════════════════════════════════════
+
 
 class TestT1Tracker:
     def test_can_sell_no_record(self):
@@ -181,6 +185,7 @@ class TestEnforceT1:
 # compute_transaction_cost
 # ═══════════════════════════════════════════════════════
 
+
 class TestComputeTransactionCost:
     def test_buy_side(self):
         """买入扣 8bps。"""
@@ -210,20 +215,25 @@ class TestComputeTransactionCost:
 # check_all_constraints
 # ═══════════════════════════════════════════════════════
 
+
 class TestCheckAllConstraints:
     def test_all_pass(self):
         """无约束问题时通过。"""
         r = check_all_constraints(
-            "sh.600519", "2026-08-12",
-            current_price=105.0, prev_close=100.0,
+            "sh.600519",
+            "2026-08-12",
+            current_price=105.0,
+            prev_close=100.0,
         )
         assert r.allowed is True
         assert r.reason is None
 
     def test_limit_up_blocks(self):
         r = check_all_constraints(
-            "sh.600519", "2026-08-12",
-            current_price=110.0, prev_close=100.0,
+            "sh.600519",
+            "2026-08-12",
+            current_price=110.0,
+            prev_close=100.0,
         )
         assert r.allowed is False
         assert r.reason == "LIMIT_UP"
@@ -232,8 +242,10 @@ class TestCheckAllConstraints:
         tracker = T1Tracker()
         tracker.record_buy("sh.600519", "2026-08-11")
         r = check_all_constraints(
-            "sh.600519", "2026-08-11",
-            current_price=105.0, prev_close=100.0,
+            "sh.600519",
+            "2026-08-11",
+            current_price=105.0,
+            prev_close=100.0,
             t1_tracker=tracker,
         )
         assert r.allowed is False
@@ -243,8 +255,10 @@ class TestCheckAllConstraints:
         """ST 过滤未启用时不过滤。"""
         cfg = ConstraintConfig(enable_st_filter=False)
         r = check_all_constraints(
-            "sh.600519", "2026-08-12",
-            current_price=105.0, prev_close=100.0,
+            "sh.600519",
+            "2026-08-12",
+            current_price=105.0,
+            prev_close=100.0,
             config=cfg,
         )
         assert r.allowed is True
@@ -252,7 +266,9 @@ class TestCheckAllConstraints:
     def test_check_st_status_no_baostock(self):
         """baostock 未安装时不应崩溃，返回 False。"""
         from unittest.mock import patch
+
         from trade_krono_cli.trading_constraints import check_st_status
+
         with patch.dict("sys.modules", {"baostock": None}):
             result = check_st_status("sh.600519")
         assert result is False
@@ -262,13 +278,22 @@ class TestCheckAllConstraints:
 # filter_by_constraints
 # ═══════════════════════════════════════════════════════
 
+
 class TestFilterByConstraints:
     def test_all_pass(self):
         items = [
-            {"ticker": "sh.600519", "date": "2026-08-12",
-             "kronos_last_close": 100.0, "kronos_pred_close": 105.0},
-            {"ticker": "sz.000858", "date": "2026-08-12",
-             "kronos_last_close": 25.0, "kronos_pred_close": 26.0},
+            {
+                "ticker": "sh.600519",
+                "date": "2026-08-12",
+                "kronos_last_close": 100.0,
+                "kronos_pred_close": 105.0,
+            },
+            {
+                "ticker": "sz.000858",
+                "date": "2026-08-12",
+                "kronos_last_close": 25.0,
+                "kronos_pred_close": 26.0,
+            },
         ]
         allowed, rejected = filter_by_constraints(items)
         assert len(allowed) == 2
@@ -276,8 +301,12 @@ class TestFilterByConstraints:
 
     def test_limit_up_filtered(self):
         items = [
-            {"ticker": "sh.600519", "date": "2026-08-12",
-             "kronos_last_close": 100.0, "kronos_pred_close": 110.0},
+            {
+                "ticker": "sh.600519",
+                "date": "2026-08-12",
+                "kronos_last_close": 100.0,
+                "kronos_pred_close": 110.0,
+            },
         ]
         allowed, rejected = filter_by_constraints(items)
         assert len(allowed) == 0
@@ -286,10 +315,18 @@ class TestFilterByConstraints:
 
     def test_mixed(self):
         items = [
-            {"ticker": "sh.600519", "date": "2026-08-12",
-             "kronos_last_close": 100.0, "kronos_pred_close": 105.0},
-            {"ticker": "sz.000858", "date": "2026-08-12",
-             "kronos_last_close": 25.0, "kronos_pred_close": 30.0},  # 20%涨停
+            {
+                "ticker": "sh.600519",
+                "date": "2026-08-12",
+                "kronos_last_close": 100.0,
+                "kronos_pred_close": 105.0,
+            },
+            {
+                "ticker": "sz.000858",
+                "date": "2026-08-12",
+                "kronos_last_close": 25.0,
+                "kronos_pred_close": 30.0,
+            },  # 20%涨停
         ]
         allowed, rejected = filter_by_constraints(items)
         assert len(allowed) == 1

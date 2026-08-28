@@ -7,19 +7,22 @@ LLM 输出（结构化 JSON 或自由文本）→ DecisionAdapter → 结构化 
   1. JSON 结构化输出（主动约束格式，准确率最高）
   2. Rating → 关键词 → fallback（自由文本，兼容旧版 prompt）
 """
+
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Optional
 
 
 class Signal(str, Enum):
     BUY = "BUY"
+    OVERWEIGHT = "OVERWEIGHT"
     HOLD = "HOLD"
     SELL = "SELL"
+
 
 # Truncation length for thesis/summary extraction
 THESIS_TRUNCATE_LEN = 300
@@ -27,26 +30,37 @@ THESIS_TRUNCATE_LEN = 300
 
 # ── Rating 字符串 → (Signal, base_confidence) ─────────────────────────────────
 _RATING_MAP: dict[str, tuple[Signal, float]] = {
-    "strong buy":       (Signal.BUY,  95.0),
-    "buy":              (Signal.BUY,  80.0),
-    "overweight":       (Signal.BUY,  70.0),
-    "neutral":          (Signal.HOLD, 50.0),
-    "hold":             (Signal.HOLD, 50.0),
-    "underweight":      (Signal.SELL, 40.0),
-    "sell":             (Signal.SELL, 30.0),
-    "strong sell":      (Signal.SELL, 15.0),
+    "strong buy": (Signal.BUY, 95.0),
+    "buy": (Signal.BUY, 80.0),
+    "overweight": (Signal.OVERWEIGHT, 70.0),
+    "neutral": (Signal.HOLD, 50.0),
+    "hold": (Signal.HOLD, 50.0),
+    "underweight": (Signal.SELL, 40.0),
+    "sell": (Signal.SELL, 30.0),
+    "strong sell": (Signal.SELL, 15.0),
 }
 
 # 否定词集合（出现在目标词前 N 个词内即视为否定）
-_NEG_WORDS = frozenset({
-    "NOT", "NO", "NEVER", "FAIL", "FAILS", "FAILED", "NEITHER",
-    "NON", "UNLIKELY", "NEGATIVE",
-})
+_NEG_WORDS = frozenset(
+    {
+        "NOT",
+        "NO",
+        "NEVER",
+        "FAIL",
+        "FAILS",
+        "FAILED",
+        "NEITHER",
+        "NON",
+        "UNLIKELY",
+        "NEGATIVE",
+    }
+)
 
 
 # ═══════════════════════════════════════════════════════
 # InvestmentDecision — 扩展结构
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass
 class InvestmentDecision:
@@ -87,6 +101,7 @@ class InvestmentDecision:
     ──────────────────────────────────────────────────────
     catalysts             潜在催化剂列表
     """
+
     # 基础字段
     signal: Signal
     confidence: float
@@ -130,6 +145,7 @@ class InvestmentDecision:
                 signal = Signal(signal_str)
             except ValueError:
                 from loguru import logger
+
                 logger.warning(f"未知 Signal 值 '{signal_str}'，回退到 HOLD")
                 signal = Signal.HOLD
             data = dict(data)
@@ -137,13 +153,16 @@ class InvestmentDecision:
         return cls(**data)
 
     @classmethod
-    def fallback(cls, signal: Signal = Signal.HOLD, confidence: float = 50.0) -> "InvestmentDecision":
+    def fallback(
+        cls, signal: Signal = Signal.HOLD, confidence: float = 50.0
+    ) -> "InvestmentDecision":
         return cls(signal=signal, confidence=confidence)
 
 
 # ═══════════════════════════════════════════════════════
 # DecisionAdapter
 # ═══════════════════════════════════════════════════════
+
 
 class DecisionAdapter:
     """
@@ -272,7 +291,9 @@ class DecisionAdapter:
         # ── 6. 新字段提取 ──────────────────────────────────────────────────
         invalidations = self._extract_invalidations(decision_text)
         entry_zone = self._extract_price_range(decision_text, self._RE_ENTRY_ZONE, "entry_zone")
-        target_price = self._extract_price_range(decision_text, self._RE_TARGET_PRICE, "target_price")
+        target_price = self._extract_price_range(
+            decision_text, self._RE_TARGET_PRICE, "target_price"
+        )
         stop_loss = self._extract_price_range(decision_text, self._RE_STOP_LOSS, "stop_loss")
         holding_period = self._extract_holding_period(decision_text)
         catalysts = self._extract_catalysts(decision_text)
@@ -444,17 +465,16 @@ class DecisionAdapter:
             return default
 
         kwargs = {
-            "valuation_score":        _parse_score("valuation_score"),
-            "fundamental_score":      _parse_score("fundamental_score"),
-            "technical_score":        _parse_score("technical_score"),
-            "sentiment_score":        _parse_score("sentiment_score"),
-            "capital_flow_score":     _parse_score("capital_flow_score"),
-            "macro_score":            _parse_score("macro_score"),
+            "valuation_score": _parse_score("valuation_score"),
+            "fundamental_score": _parse_score("fundamental_score"),
+            "technical_score": _parse_score("technical_score"),
+            "sentiment_score": _parse_score("sentiment_score"),
+            "capital_flow_score": _parse_score("capital_flow_score"),
+            "macro_score": _parse_score("macro_score"),
         }
 
         logger.info(
-            f"[TA决策解析] JSON 结构化解析成功 | signal={signal.value} "
-            f"confidence={confidence}"
+            f"[TA决策解析] JSON 结构化解析成功 | signal={signal.value} confidence={confidence}"
         )
         return InvestmentDecision(
             signal=signal,
@@ -488,7 +508,18 @@ class DecisionAdapter:
     def _extract_risks(self, text: str) -> list[str]:
         risks: list[str] = []
         risk_marker_pos = -1
-        for kw in ["风险", "风险点", "担忧", "压力", "隐患", "不利因素", "risks", "Risks", " Risks ", " risk "]:
+        for kw in [
+            "风险",
+            "风险点",
+            "担忧",
+            "压力",
+            "隐患",
+            "不利因素",
+            "risks",
+            "Risks",
+            " Risks ",
+            " risk ",
+        ]:
             pos = text.find(kw)
             if pos >= 0 and (risk_marker_pos < 0 or pos < risk_marker_pos):
                 risk_marker_pos = pos
@@ -506,10 +537,8 @@ class DecisionAdapter:
                         risks.append(stripped)
         return risks
 
-    def _extract_expected_return(
-        self, text: str, signal: Signal
-    ) -> Optional[float]:
-        _FIN_RATIO_RE = re.compile(r'\b(pe|peg|pb|eps|roe|roa)\b', re.IGNORECASE)
+    def _extract_expected_return(self, text: str, signal: Signal) -> Optional[float]:
+        _FIN_RATIO_RE = re.compile(r"\b(pe|peg|pb|eps|roe|roa)\b", re.IGNORECASE)
         _FIN_RATIO_CN = frozenset({"股息率", "毛利率"})
         for line in text.split("\n"):
             line_lower = line.lower()
@@ -626,20 +655,20 @@ class DecisionAdapter:
     def _extract_scores(self, text: str) -> dict[str, Optional[float]]:
         """提取多因子评分。"""
         score_map: dict[str, Optional[float]] = {
-            "valuation_score":    None,
-            "fundamental_score":  None,
-            "technical_score":    None,
-            "sentiment_score":    None,
+            "valuation_score": None,
+            "fundamental_score": None,
+            "technical_score": None,
+            "sentiment_score": None,
             "capital_flow_score": None,
-            "macro_score":        None,
+            "macro_score": None,
         }
         _PATTERNS = {
-            "valuation_score":    r"估值[:：]?\s*(\d+(?:\.\d+)?)",
-            "fundamental_score":  r"基本面[:：]?\s*(\d+(?:\.\d+)?)",
-            "technical_score":    r"技术面[:：]?\s*(\d+(?:\.\d+)?)",
-            "sentiment_score":    r"情绪[:：]?\s*(\d+(?:\.\d+)?)",
+            "valuation_score": r"估值[:：]?\s*(\d+(?:\.\d+)?)",
+            "fundamental_score": r"基本面[:：]?\s*(\d+(?:\.\d+)?)",
+            "technical_score": r"技术面[:：]?\s*(\d+(?:\.\d+)?)",
+            "sentiment_score": r"情绪[:：]?\s*(\d+(?:\.\d+)?)",
             "capital_flow_score": r"资金流向[:：]?\s*(\d+(?:\.\d+)?)",
-            "macro_score":        r"宏观[:：]?\s*(\d+(?:\.\d+)?)",
+            "macro_score": r"宏观[:：]?\s*(\d+(?:\.\d+)?)",
         }
         for key, pat in _PATTERNS.items():
             m = re.search(pat, text, re.IGNORECASE)
@@ -654,7 +683,9 @@ class DecisionAdapter:
 
     def _fallback_signal_from_rating(self, rating_str: str) -> tuple[Signal, float]:
         s = rating_str.lower()
-        if any(k in s for k in ("buy", "overweight", "strong")):
+        if "overweight" in s:
+            return Signal.OVERWEIGHT, 70.0
+        if any(k in s for k in ("buy", "strong")):
             return Signal.BUY, 70.0
         if any(k in s for k in ("sell", "underweight")):
             return Signal.SELL, 35.0

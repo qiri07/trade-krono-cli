@@ -4,30 +4,38 @@ Signal — 信号评估领域对象。
 SignalAssessment 是多源信号（TA + Kronos + Committee）的融合结果，
 并在此层计算 Expected Value（期望收益）。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
 
-from trade_krono_cli.domain.types import Direction, Signal as DomainSignal
-from trade_krono_cli.domain.prediction import TAAnalysis, KronosPrediction, PredictionDistribution
-
+from trade_krono_cli.domain.prediction import KronosPrediction, TAAnalysis
+from trade_krono_cli.domain.types import Direction
+from trade_krono_cli.domain.types import Signal as DomainSignal
 
 # ═══════════════════════════════════════════════════════
 #  SignalConflict
 # ═══════════════════════════════════════════════════════
 
+
 class SignalConflict:
     """多源信号冲突标记（常量类，非 Enum，避免 str 基类的属性丢失问题）。"""
-    NONE          = "none"
-    TA_vs_KRONOS  = "ta_vs_kronos"
+
+    NONE = "none"
+    TA_vs_KRONOS = "ta_vs_kronos"
     TA_vs_COMMITTEE = "ta_vs_committee"
     KRONOS_vs_COMMITTEE = "kronos_vs_committee"
-    ALL_CONFLICT  = "all_conflict"
+    ALL_CONFLICT = "all_conflict"
 
-    CONFLICT_VALUES: frozenset = frozenset({
-        TA_vs_KRONOS, TA_vs_COMMITTEE, KRONOS_vs_COMMITTEE, ALL_CONFLICT,
-    })
+    CONFLICT_VALUES: frozenset = frozenset(
+        {
+            TA_vs_KRONOS,
+            TA_vs_COMMITTEE,
+            KRONOS_vs_COMMITTEE,
+            ALL_CONFLICT,
+        }
+    )
 
     @staticmethod
     def is_conflict(value: str) -> bool:
@@ -37,6 +45,7 @@ class SignalConflict:
 # ═══════════════════════════════════════════════════════
 #  SignalAssessment
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass(frozen=True)
 class SignalAssessment:
@@ -79,6 +88,7 @@ class SignalAssessment:
     stop_loss            止损价
     horizon              投资周期
     """
+
     ticker: str
     eval_date: str
     ta: Optional[TAAnalysis] = None
@@ -209,6 +219,7 @@ class SignalAssessment:
 #  辅助函数
 # ═══════════════════════════════════════════════════════
 
+
 def _compute_ev(
     direction: Optional[Direction],
     expected_return: float,
@@ -260,8 +271,9 @@ def detect_conflict(
     if ta_signal:
         signals.append(("ta", ta_signal))
     if kronos_direction:
-        from trade_krono_cli.domain import Direction as D
-        k = {"UP": DomainSignal.BUY, "DOWN": DomainSignal.SELL, "FLAT": DomainSignal.HOLD}[kronos_direction.value]
+        k = {"UP": DomainSignal.BUY, "DOWN": DomainSignal.SELL, "FLAT": DomainSignal.HOLD}[
+            kronos_direction.value
+        ]
         signals.append(("kronos", k))
     if committee_rec:
         signals.append(("committee", committee_rec))

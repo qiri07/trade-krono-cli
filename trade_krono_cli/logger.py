@@ -1,36 +1,42 @@
 """日志配置 — 统一使用 loguru。"""
+
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
 from typing import Optional
+
 from loguru import logger
 
-from trade_krono_cli.config import get_settings, Settings
+from trade_krono_cli.config import Settings, get_settings
 
 
 def _make_json_handler(json_file: str):
     """返回 JSON 日志 handler，写入指定文件。"""
+
     def json_handler(record):
         r = record.record
         entry = {
-            "ts":       r["time"].strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
-            "level":    r["level"].name,
-            "module":   r["name"],
+            "ts": r["time"].strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            "level": r["level"].name,
+            "module": r["name"],
             "function": r["function"],
-            "line":     r["line"],
-            "message":  r["message"],
+            "line": r["line"],
+            "message": r["message"],
         }
         extra = {k: v for k, v in r["extra"].items() if k != "task_id"}
         if extra:
             entry["extra"] = extra
         with open(json_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
     return json_handler
 
 
-def setup_logger(level: str = "INFO", log_file: Optional[Path] = None, settings: Optional[Settings] = None) -> None:
+def setup_logger(
+    level: str = "INFO", log_file: Optional[Path] = None, settings: Optional[Settings] = None
+) -> None:
     """初始化 loguru 日志。
 
     注册三个 handler：

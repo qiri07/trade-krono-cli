@@ -4,6 +4,7 @@
 新代码请直接使用 trade_krono_cli.prediction_distribution.PredictionDistribution，
 它额外支持 p10/p25/p50/p75/p90 分位数字段。
 """
+
 from __future__ import annotations
 
 from trade_krono_cli.prediction_distribution import (  # noqa: F401

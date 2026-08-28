@@ -1,6 +1,7 @@
 """
 CLI repo 子命令 — 外部项目管理（TradingAgents-astock、Kronos 等下游依赖）。
 """
+
 from __future__ import annotations
 
 from rich.console import Console
@@ -12,6 +13,7 @@ console: Console = Console()
 def repo_status() -> None:
     """查看所有外部 repo 的状态（分支、commit、dirty、pinned、lock 漂移）。"""
     from trade_krono_cli.external import status
+
     entries = status()
     if not entries:
         console.print("[yellow]⚠️  未检测到外部 repo 配置[/yellow]")
@@ -48,6 +50,7 @@ def repo_status() -> None:
 def repo_doctor() -> None:
     """诊断外部 repo 问题，列出所有需要关注的项。"""
     from trade_krono_cli.external import doctor, load_lock, status
+
     issues = doctor()
     entries = status()
     lock = load_lock()
@@ -59,15 +62,12 @@ def repo_doctor() -> None:
                 console.print(f"  📌 [{e.name}] pinned → {e.commit[:12]}")
             elif e.is_locked and e.lock_commit:
                 console.print(
-                    f"  🔒 [{e.name}] locked  → {e.lock_commit}"
-                    "（未 pinned，跟踪 branch）"
+                    f"  🔒 [{e.name}] locked  → {e.lock_commit}（未 pinned，跟踪 branch）"
                 )
             elif e.branch:
                 console.print(f"  🌿 [{e.name}] tracking → {e.branch}")
         if lock.get("generated_at"):
-            console.print(
-                f"\n  [dim]repo.lock 最后更新: {lock['generated_at']}[/dim]"
-            )
+            console.print(f"\n  [dim]repo.lock 最后更新: {lock['generated_at']}[/dim]")
         return
 
     if not entries:
@@ -91,13 +91,11 @@ def repo_doctor() -> None:
 def repo_update() -> None:
     """拉取所有外部 repo 的最新代码（仅 unpinned repos），并刷新 repo.lock。"""
     from trade_krono_cli.external import get_repos, update
+
     repos = get_repos()
     pinned = [r.name for r in repos if r.commit]
     if pinned:
-        console.print(
-            f"[yellow]⚠️  以下 repo 已 pinned，跳过 update："
-            f"{', '.join(pinned)}[/yellow]"
-        )
+        console.print(f"[yellow]⚠️  以下 repo 已 pinned，跳过 update：{', '.join(pinned)}[/yellow]")
         console.print("  （pinned repo 需手动 git checkout 后再 update）")
 
     results = update()
@@ -116,6 +114,7 @@ def repo_pin(
       trade-krono-cli repo pin kronos def5678
     """
     from trade_krono_cli.external import pin
+
     if name is None or commit is None:
         console.print("[red]❌ --name 和 --commit 均为必填参数[/red]")
         raise SystemExit(1)

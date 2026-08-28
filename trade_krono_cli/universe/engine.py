@@ -12,13 +12,12 @@ Universe Engine — 多阶段 A 股市场范围发现与过滤。
       ↓
   list[str]                         → 送入 TA / Kronos
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import time
-from dataclasses import asdict
-from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -29,14 +28,12 @@ if TYPE_CHECKING:
 
 from trade_krono_cli.universe.provider import (
     UniverseProvider,
-    UniverseTicket,
     get_universe_provider,
 )
-from trade_krono_cli.universe.stages.static import StaticFilterStage
-from trade_krono_cli.universe.stages.fundamental import FundamentalFilterStage
 from trade_krono_cli.universe.stages.factor import FactorFilterStage
+from trade_krono_cli.universe.stages.fundamental import FundamentalFilterStage
 from trade_krono_cli.universe.stages.rules import FilterRulesStage
-
+from trade_krono_cli.universe.stages.static import StaticFilterStage
 
 # ── 缓存路径 ──────────────────────────────────────────────────────────────────
 
@@ -44,6 +41,7 @@ CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "outputs" / "cache" 
 
 
 # ── UniverseEngine ────────────────────────────────────────────────────────────
+
 
 class UniverseEngine:
     """
@@ -102,36 +100,43 @@ class UniverseEngine:
 
         # Stage 1: 静态过滤（ST / 停牌 / 次新）
         from trade_krono_cli.configs.abnormality import AbnormalityConfig
+
         abnormality = AbnormalityConfig()
         # 从 filter_config 推断异常配置（兼容旧字段）
-        stages.append(StaticFilterStage(
-            exclude_st=filter_config.exclude_st,
-            skip_suspended=True,
-            skip_new_stock=abnormality.skip_new_stock,
-            new_stock_min_days=abnormality.new_stock_min_days,
-            exclude_low_price=filter_config.exclude_low_price,
-            low_price_threshold=filter_config.low_price_threshold,
-        ))
+        stages.append(
+            StaticFilterStage(
+                exclude_st=filter_config.exclude_st,
+                skip_suspended=True,
+                skip_new_stock=abnormality.skip_new_stock,
+                new_stock_min_days=abnormality.new_stock_min_days,
+                exclude_low_price=filter_config.exclude_low_price,
+                low_price_threshold=filter_config.low_price_threshold,
+            )
+        )
 
         # Stage 2: 基本面过滤
-        stages.append(FundamentalFilterStage(
-            market_cap_range=filter_config.market_cap_range,
-            pe_range=filter_config.pe_range,
-            pb_range=filter_config.pb_range,
-            min_pb=filter_config.min_pb,
-            industry_whitelist=filter_config.industry_whitelist,
-            industry_blacklist=filter_config.industry_blacklist,
-        ))
+        stages.append(
+            FundamentalFilterStage(
+                market_cap_range=filter_config.market_cap_range,
+                pe_range=filter_config.pe_range,
+                pb_range=filter_config.pb_range,
+                min_pb=filter_config.min_pb,
+                industry_whitelist=filter_config.industry_whitelist,
+                industry_blacklist=filter_config.industry_blacklist,
+            )
+        )
 
         # Stage 2.5: 自定义规则过滤（filter_rules）
         if filter_config.filter_rules:
             stages.append(FilterRulesStage(rules=filter_config.filter_rules))
 
         # Stage 3: 因子过滤（流动性）
-        stages.append(FactorFilterStage(
-            min_volume_ratio=filter_config.min_volume_ratio,
-            min_turnover_rate=filter_config.min_turnover_rate,
-        ))
+        stages.append(
+            FactorFilterStage(
+                min_volume_ratio=filter_config.min_volume_ratio,
+                min_turnover_rate=filter_config.min_turnover_rate,
+            )
+        )
 
         return cls(
             provider=provider,
@@ -184,9 +189,7 @@ class UniverseEngine:
         # 写入缓存
         self._save_cache(cache_key, tickers, date_key)
 
-        logger.info(
-            f"✅ UniverseEngine 完成: {len(tickets)} 只股票进入候选池"
-        )
+        logger.info(f"✅ UniverseEngine 完成: {len(tickets)} 只股票进入候选池")
         return tickers
 
     # ── 缓存 ─────────────────────────────────────────────────────────────────
@@ -235,13 +238,11 @@ class UniverseEngine:
 
     def stage_summary(self) -> list[dict]:
         """返回各阶段的描述信息。"""
-        return [
-            {"name": s.name, "class": s.__class__.__name__}
-            for s in self._stages
-        ]
+        return [{"name": s.name, "class": s.__class__.__name__} for s in self._stages]
 
 
 # ── 便捷函数 ──────────────────────────────────────────────────────────────────
+
 
 def get_universe(
     filter_config: "FilterConfig",
@@ -259,4 +260,5 @@ def get_universe(
 
 def _today_str() -> str:
     from datetime import date
+
     return date.today().strftime("%Y-%m-%d")

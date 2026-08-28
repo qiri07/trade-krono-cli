@@ -4,10 +4,11 @@
 所有外部依赖（cli_anything / TradingAgents-astock / Kronos）均通过
 本层封装，内部业务代码只依赖本地接口，不感知外部项目的导入路径。
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 
 class TradingAgentsAdapter(ABC):

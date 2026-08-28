@@ -3,15 +3,13 @@ data_fetcher — K 线数据获取封装。
 
 从 baostock 拉取 K 线，支持缓存和复权因子配置。
 """
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 import pandas as pd
 from loguru import logger
 
 from trade_krono_cli.data import fetch_lookback, fetch_realtime_quote
-from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.errors import DataError
 
 
@@ -38,7 +36,8 @@ def fetch_stock_data(
     DataFrame with columns: timestamps, open, high, low, close, volume, amount
     """
     df = fetch_lookback(
-        ticker, eval_date,
+        ticker,
+        eval_date,
         lookback=lookback,
         frequency="d",
         adjustflag=adjustflag,
@@ -79,8 +78,11 @@ def prepare_kline_batch(
     for tk in tickers:
         try:
             result[tk] = fetch_stock_data(
-                tk, eval_date, lookback=lookback,
-                adjustflag=adjustflag, use_cache=use_cache,
+                tk,
+                eval_date,
+                lookback=lookback,
+                adjustflag=adjustflag,
+                use_cache=use_cache,
             )
         except DataError as e:
             logger.warning(f"⚠️  K 线获取失败 {tk}: {e}")

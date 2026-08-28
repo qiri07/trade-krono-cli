@@ -18,27 +18,28 @@ abnormal_stock — 异常股票检测与标记模块。
     boosted = apply_abnormality_risk_boost(base_risk=40.0, flags=["ST", "SUSPENDED"])
     # → 90.0
 """
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional
 
 from loguru import logger
 
-
 # ═══════════════════════════════════════════════════════
 # 枚举与数据结构
 # ═══════════════════════════════════════════════════════
 
+
 class StockAbnormality(str, Enum):
     """异常类型枚举。"""
-    SUSPENDED = "SUSPENDED"       # 停牌
-    ST = "ST"                     # ST/*ST 标的
-    DELISTED = "DELISTED"         # 已退市
-    NEW_STOCK = "NEW_STOCK"       # 次新股（上市不足阈值天数）
+
+    SUSPENDED = "SUSPENDED"  # 停牌
+    ST = "ST"  # ST/*ST 标的
+    DELISTED = "DELISTED"  # 已退市
+    NEW_STOCK = "NEW_STOCK"  # 次新股（上市不足阈值天数）
     DATA_INSUFFICIENT = "DATA_INSUFFICIENT"  # K 线数据不足
 
 
@@ -57,6 +58,7 @@ class AbnormalityFlag:
     reason : str
         人工可读的原因说明
     """
+
     ticker: str
     flags: list[StockAbnormality] = field(default_factory=list)
     severity: float = 0.0
@@ -72,10 +74,10 @@ class AbnormalityFlag:
 
 # 风险分上调幅度（绝对分值）
 _RISK_BOOST_MAP: dict[StockAbnormality, float] = {
-    StockAbnormality.SUSPENDED:    30.0,
-    StockAbnormality.ST:           20.0,
-    StockAbnormality.DELISTED:     50.0,   # 退市股高风险
-    StockAbnormality.NEW_STOCK:    10.0,
+    StockAbnormality.SUSPENDED: 30.0,
+    StockAbnormality.ST: 20.0,
+    StockAbnormality.DELISTED: 50.0,  # 退市股高风险
+    StockAbnormality.NEW_STOCK: 10.0,
     StockAbnormality.DATA_INSUFFICIENT: 15.0,
 }
 
@@ -83,6 +85,7 @@ _RISK_BOOST_MAP: dict[StockAbnormality, float] = {
 # ═══════════════════════════════════════════════════════
 # K 线完整性校验
 # ═══════════════════════════════════════════════════════
+
 
 def check_kline_completeness(
     df,
@@ -160,6 +163,7 @@ def check_kline_completeness(
 # 风险分上调
 # ═══════════════════════════════════════════════════════
 
+
 def apply_abnormality_risk_boost(
     base_risk_score: float,
     flags: list[str],
@@ -194,11 +198,12 @@ def apply_abnormality_risk_boost(
         return base_risk_score
 
     from trade_krono_cli.scoring import get_risk_boost_registry
+
     registry = get_risk_boost_registry()
     booster = registry.get(strategy) or registry.get("fixed_boost")
     result = booster.boost(base_risk_score, flags, params)
     boosted = result if isinstance(result, float) else result.boosted_risk
-    total_boost = result.total_boost if hasattr(result, 'total_boost') else 0.0
+    total_boost = result.total_boost if hasattr(result, "total_boost") else 0.0
 
     if total_boost > 0:
         logger.info(
@@ -230,6 +235,7 @@ def _check_st_status_cached(ticker: str) -> bool:
 
     try:
         from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
+
         provider = BaostockProvider()
         result = provider.check_st_status(ticker)
     except (ImportError, RuntimeError) as e:
@@ -286,6 +292,7 @@ def _check_delisted(ticker: str) -> bool:
     """
     try:
         from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
+
         provider = BaostockProvider()
         return provider.check_delisted(ticker)
     except (ImportError, RuntimeError):
@@ -307,6 +314,7 @@ def _check_new_stock(
     """
     try:
         from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
+
         provider = BaostockProvider()
         return provider.check_new_stock(ticker, eval_date, min_listing_days)
     except (ImportError, RuntimeError):
@@ -369,18 +377,14 @@ def precheck_stock_status(
 
         # 3. 停牌检测
         if skip_suspended:
-            is_sus, sus_reason = _check_suspended_via_kline(
-                ticker, eval_date, max_gap_trading_days
-            )
+            is_sus, sus_reason = _check_suspended_via_kline(ticker, eval_date, max_gap_trading_days)
             if is_sus:
                 flags.append(StockAbnormality.SUSPENDED)
                 reasons.append(sus_reason)
 
         # 4. 次新股检测
         if skip_new_stock:
-            is_new, new_reason = _check_new_stock(
-                ticker, eval_date, min_listing_days
-            )
+            is_new, new_reason = _check_new_stock(ticker, eval_date, min_listing_days)
             if is_new:
                 flags.append(StockAbnormality.NEW_STOCK)
                 reasons.append(new_reason)
@@ -400,10 +404,7 @@ def precheck_stock_status(
 
         results[ticker] = flag
 
-    logger.info(
-        f"🔍 异常预检完成: {len(tickers)} 只股票中 "
-        f"{flagged_count} 只有异常标记"
-    )
+    logger.info(f"🔍 异常预检完成: {len(tickers)} 只股票中 {flagged_count} 只有异常标记")
     return results
 
 

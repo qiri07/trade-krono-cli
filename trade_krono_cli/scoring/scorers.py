@@ -16,6 +16,7 @@ Risk Engine v2 集成：
   真正的金融决策指标在 SignalAssessment.expected_value / prob_win / risk_adjusted_ev。
   Pipeline 应以 EV 为主要排序依据，ranking_score 仅作辅助。
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -23,10 +24,10 @@ from typing import Optional
 from trade_krono_cli.configs.scoring import ScoringConfig
 from trade_krono_cli.scoring.base import CompositeScorer
 
-
 # ═══════════════════════════════════════════════════════
 # LinearScorer（默认）
 # ═══════════════════════════════════════════════════════
+
 
 class LinearScorer(CompositeScorer):
     """
@@ -63,9 +64,7 @@ class LinearScorer(CompositeScorer):
         if adj_ret is not None:
             chg = adj_ret
         else:
-            chg = merged.get("kronos_change_pct") or merged.get(
-                "kronos_change_pct_gross"
-            ) or 0
+            chg = merged.get("kronos_change_pct") or merged.get("kronos_change_pct_gross") or 0
         chg_score = max(0, min(100, chg + s.change_pct_offset)) * s.change_pct_weight
         raw_score += chg_score
         components["change_pct"] = chg_score
@@ -109,6 +108,7 @@ class LinearScorer(CompositeScorer):
 # ═══════════════════════════════════════════════════════
 # MultiplicativeScorer（风险敏感型）
 # ═══════════════════════════════════════════════════════
+
 
 class MultiplicativeScorer(CompositeScorer):
     """
@@ -167,6 +167,7 @@ class MultiplicativeScorer(CompositeScorer):
 # ═══════════════════════════════════════════════════════
 # RankBasedScorer（百分位排名）
 # ═══════════════════════════════════════════════════════
+
 
 class RankBasedScorer(CompositeScorer):
     """

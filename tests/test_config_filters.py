@@ -1,7 +1,6 @@
 """测试 FilterConfig 配置类。"""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from trade_krono_cli.configs.filters import FilterConfig
 from trade_krono_cli.stock_filter import MinValueRule, RangeRule

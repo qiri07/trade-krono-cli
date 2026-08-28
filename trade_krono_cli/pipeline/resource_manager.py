@@ -47,20 +47,19 @@ resource_manager — 统一资源管理器（ResourceManager）。
         response = await call_llm_api(prompt)
 
     # 查看资源状态
-    print(get_manager().stats())
+    从控制台输出资源使用统计。
 """
+
 from __future__ import annotations
 
-import asyncio
 import collections
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from loguru import logger
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  配置
@@ -149,9 +148,7 @@ class GpuQueue:
                     return
                 current = self._in_flight
             # 满负荷，短暂休眠后重试
-            logger.warning(
-                f"⚠️  GPU 推理已满负荷 ({current}/{self._max})，等待释放"
-            )
+            logger.warning(f"⚠️  GPU 推理已满负荷 ({current}/{self._max})，等待释放")
             time.sleep(0.05)
 
     def release(self) -> None:
@@ -273,9 +270,7 @@ class LlmSemaphore:
             "min_interval_sec": self._min_interval,
             "total_acquired": self._total_acquired,
             "total_throttled": self._total_throttled,
-            "active_requests": {
-                p: len(log) for p, log in self._request_log.items()
-            },
+            "active_requests": {p: len(log) for p, log in self._request_log.items()},
         }
 
 
@@ -304,9 +299,7 @@ class _ThreadPoolWrapper:
                         max_workers=self._workers,
                         thread_name_prefix=self._name,
                     )
-                    logger.debug(
-                        f"🧵 {self._name} 线程池已创建 ({self._workers} workers)"
-                    )
+                    logger.debug(f"🧵 {self._name} 线程池已创建 ({self._workers} workers)")
         return self._pool
 
     def submit(self, fn: Callable, *args, **kwargs) -> Future:
@@ -371,9 +364,7 @@ class ResourceManager:
             return self._cpu.submit(fn, *args, **kwargs)
         if category == "io":
             return self._io.submit(fn, *args, **kwargs)
-        raise ValueError(
-            f"未知资源类别: {category!r}（支持: cpu, io）"
-        )
+        raise ValueError(f"未知资源类别: {category!r}（支持: cpu, io）")
 
     def submit_cpu(self, fn: Callable, *args, **kwargs) -> Future:
         """提交 CPU-bound 任务（TA 分析、数据预处理）。"""

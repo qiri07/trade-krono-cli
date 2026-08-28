@@ -10,27 +10,28 @@
   · K 线：历史数据（>30天前）永久缓存，当日/近期数据 1h TTL
   · TA / Kronos：缓存 key 含 config_hash + 模型版本，配置变更自动失效
 """
+
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
 from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-import sqlite3
-
 from loguru import logger
-from trade_krono_cli.config import get_settings, Settings
+
+from trade_krono_cli.config import Settings, get_settings
 
 # Whitelist of allowed cache table names
 _CACHE_TABLES: frozenset[str] = frozenset({"kline_cache", "ta_cache", "kronos_cache"})
 
 # K 线 TTL 常量
-_KLINE_HISTORICAL_TTL = 0.0       # 0 = 永久（历史数据只追加不失效）
-_KLINE_RECENT_TTL = 3600.0        # 1 小时（当日/近期数据）
-_KLINE_HISTORY_WINDOW_DAYS = 30   # 超过此天数的数据视为"历史"
+_KLINE_HISTORICAL_TTL = 0.0  # 0 = 永久（历史数据只追加不失效）
+_KLINE_RECENT_TTL = 3600.0  # 1 小时（当日/近期数据）
+_KLINE_HISTORY_WINDOW_DAYS = 30  # 超过此天数的数据视为"历史"
 
 
 def _validate_table_name(table: str, allowed: frozenset[str]) -> str:
@@ -43,17 +44,13 @@ class Cache:
     """SQLite 缓存，支持 K 线、TA 结果、Kronos 预测三种类型。"""
 
     def __init__(self, db_path: Optional[Path] = None, settings: Optional[Settings] = None):
-        self._db_path = db_path or (
-            (settings or get_settings()).cache_dir / "pipeline_cache.db"
-        )
+        self._db_path = db_path or ((settings or get_settings()).cache_dir / "pipeline_cache.db")
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     @property
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(
-            self._db_path, check_same_thread=False, timeout=10.0
-        )
+        conn = sqlite3.connect(self._db_path, check_same_thread=False, timeout=10.0)
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
@@ -106,15 +103,13 @@ class Cache:
             ]:
                 try:
                     conn.execute(col_sql)
-                    logger.debug(f"📦 缓存表迁移: 新增列")
+                    logger.debug("📦 缓存表迁移: 新增列")
                 except sqlite3.OperationalError:
                     pass
 
     # ── K 线缓存 ──────────────────────────────────────
 
-    def get_kline(
-        self, ticker: str, start: str, end: str, freq: str
-    ) -> Optional[pd.DataFrame]:
+    def get_kline(self, ticker: str, start: str, end: str, freq: str) -> Optional[pd.DataFrame]:
         with self._conn as conn:
             row = conn.execute(
                 "SELECT data, created, ttl FROM kline_cache "
@@ -129,8 +124,13 @@ class Cache:
         return pd.read_pickle(BytesIO(data))
 
     def set_kline(
-        self, ticker: str, start: str, end: str, freq: str,
-        df: pd.DataFrame, ttl: float = 86400,
+        self,
+        ticker: str,
+        start: str,
+        end: str,
+        freq: str,
+        df: pd.DataFrame,
+        ttl: float = 86400,
     ) -> None:
         buf = BytesIO()
         df.to_pickle(buf)
@@ -144,12 +144,11 @@ class Cache:
             )
             conn.commit()
 
-    def warm_history(
-        self, ticker: str, end_date: str, lookback_days: int = 730
-    ) -> tuple[int, int]:
+    def warm_history(self, ticker: str, end_date: str, lookback_days: int = 730) -> tuple[int, int]:
         """预热 K 线缓存：拉取历史数据，历史段永久缓存，近期段 1h TTL。"""
-        from trade_krono_cli.data import fetch_kline
         from datetime import datetime, timedelta
+
+        from trade_krono_cli.data import fetch_kline
 
         end = datetime.strptime(end_date, "%Y-%m-%d")
         start = end - timedelta(days=lookback_days)
@@ -185,8 +184,12 @@ class Cache:
     # ── TA 缓存 ───────────────────────────────────────
 
     def get_ta(
-        self, ticker: str, date: str,
-        config_hash: str = "", prompt_ver: str = "", model_ver: str = "",
+        self,
+        ticker: str,
+        date: str,
+        config_hash: str = "",
+        prompt_ver: str = "",
+        model_ver: str = "",
     ) -> Optional[dict]:
         with self._conn as conn:
             row = conn.execute(
@@ -202,8 +205,13 @@ class Cache:
         return json.loads(data)
 
     def set_ta(
-        self, ticker: str, date: str, result: dict,
-        config_hash: str = "", prompt_ver: str = "", model_ver: str = "",
+        self,
+        ticker: str,
+        date: str,
+        result: dict,
+        config_hash: str = "",
+        prompt_ver: str = "",
+        model_ver: str = "",
         ttl: float = 86400,
     ) -> None:
         with self._conn as conn:
@@ -211,16 +219,29 @@ class Cache:
                 "INSERT OR REPLACE INTO ta_cache "
                 "(ticker, date, config_hash, prompt_ver, model_ver, ttl, data, created) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (ticker, date, config_hash, prompt_ver, model_ver, ttl,
-                 json.dumps(result, ensure_ascii=False).encode(), time.time()),
+                (
+                    ticker,
+                    date,
+                    config_hash,
+                    prompt_ver,
+                    model_ver,
+                    ttl,
+                    json.dumps(result, ensure_ascii=False).encode(),
+                    time.time(),
+                ),
             )
             conn.commit()
 
     # ── Kronos 缓存 ───────────────────────────────────
 
     def get_kronos(
-        self, ticker: str, date: str, pred_len: int,
-        sample_count: int = 1, config_hash: str = "", model_ver: str = "",
+        self,
+        ticker: str,
+        date: str,
+        pred_len: int,
+        sample_count: int = 1,
+        config_hash: str = "",
+        model_ver: str = "",
     ) -> Optional[dict]:
         with self._conn as conn:
             row = conn.execute(
@@ -237,25 +258,38 @@ class Cache:
         return json.loads(data)
 
     def set_kronos(
-        self, ticker: str, date: str, pred_len: int,
-        result: dict, ttl: float = 86400, sample_count: int = 1,
-        config_hash: str = "", model_ver: str = "",
+        self,
+        ticker: str,
+        date: str,
+        pred_len: int,
+        result: dict,
+        ttl: float = 86400,
+        sample_count: int = 1,
+        config_hash: str = "",
+        model_ver: str = "",
     ) -> None:
         with self._conn as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO kronos_cache "
                 "(ticker, date, pred_len, sample_cnt, config_hash, model_ver, ttl, data, created) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (ticker, date, pred_len, sample_count, config_hash, model_ver, ttl,
-                 json.dumps(result, ensure_ascii=False).encode(), time.time()),
+                (
+                    ticker,
+                    date,
+                    pred_len,
+                    sample_count,
+                    config_hash,
+                    model_ver,
+                    ttl,
+                    json.dumps(result, ensure_ascii=False).encode(),
+                    time.time(),
+                ),
             )
             conn.commit()
 
     # ── 工具方法 ──────────────────────────────────────
 
-    def get_cached_date_range(
-        self, ticker: str, freq: str = "d"
-    ) -> Optional[tuple[str, str]]:
+    def get_cached_date_range(self, ticker: str, freq: str = "d") -> Optional[tuple[str, str]]:
         """
         查询某只股票的已有 K 线缓存覆盖的日期范围。
 
@@ -268,8 +302,7 @@ class Cache:
         """
         with self._conn as conn:
             rows = conn.execute(
-                "SELECT start, end, created, ttl FROM kline_cache "
-                "WHERE ticker=? AND freq=?",
+                "SELECT start, end, created, ttl FROM kline_cache WHERE ticker=? AND freq=?",
                 (ticker, freq),
             ).fetchall()
 
@@ -297,7 +330,9 @@ class Cache:
         with self._conn as conn:
             count = 0
             for table in _CACHE_TABLES:
-                r = conn.execute(f"DELETE FROM {_validate_table_name(table, _CACHE_TABLES)}").rowcount
+                r = conn.execute(
+                    f"DELETE FROM {_validate_table_name(table, _CACHE_TABLES)}"
+                ).rowcount
                 count += r
             conn.commit()
         logger.info(f"🧹 清除缓存 {count} 条（research 数据不受影响）")

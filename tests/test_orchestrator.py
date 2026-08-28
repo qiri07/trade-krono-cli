@@ -1,10 +1,9 @@
 """测试 orchestrator 模块 — PipelineFactory / _collect_futures / QuantPipeline 分支。"""
+
 from __future__ import annotations
 
-import pytest
 from concurrent.futures import Future
-from unittest.mock import MagicMock, patch
-
+from unittest.mock import MagicMock
 
 # ── _collect_futures ──────────────────────────────────────────────────────────
 
@@ -12,6 +11,7 @@ from unittest.mock import MagicMock, patch
 def test_collect_futures_both_success():
     """两个 Future 都成功时返回各自的结果。"""
     from trade_krono_cli.pipeline.orchestrator import _collect_futures
+
     ta_fut = Future()
     kr_fut = Future()
     ta_fut.set_result([MagicMock()])
@@ -24,6 +24,7 @@ def test_collect_futures_both_success():
 def test_collect_futures_ta_exception():
     """TA Future 异常时降级为空列表，Kronos 正常返回。"""
     from trade_krono_cli.pipeline.orchestrator import _collect_futures
+
     ta_fut = Future()
     kr_fut = Future()
     ta_fut.set_exception(ValueError("network error"))
@@ -36,6 +37,7 @@ def test_collect_futures_ta_exception():
 def test_collect_futures_kronos_exception():
     """Kronos Future 异常时降级为空列表，TA 正常返回。"""
     from trade_krono_cli.pipeline.orchestrator import _collect_futures
+
     ta_fut = Future()
     kr_fut = Future()
     ta_fut.set_result([MagicMock()])
@@ -48,6 +50,7 @@ def test_collect_futures_kronos_exception():
 def test_collect_futures_kronos_none():
     """kronos_future=None 时只返回 TA 结果。"""
     from trade_krono_cli.pipeline.orchestrator import _collect_futures
+
     ta_fut = Future()
     ta_fut.set_result([MagicMock()])
     ta_results, kr_results = _collect_futures(ta_fut, None)
@@ -58,6 +61,7 @@ def test_collect_futures_kronos_none():
 def test_collect_futures_both_exception():
     """两个 Future 都异常时均降级为空列表。"""
     from trade_krono_cli.pipeline.orchestrator import _collect_futures
+
     ta_fut = Future()
     kr_fut = Future()
     ta_fut.set_exception(ValueError("timeout"))

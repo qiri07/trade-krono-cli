@@ -3,14 +3,14 @@ Static Filter Stage — ST / 停牌 / 次新股 静态过滤。
 
 利用 abnormal_stock.py 的预检能力，对全市场股票做一次性静态排除。
 """
+
 from __future__ import annotations
 
 from loguru import logger
 
-from trade_krono_cli.universe.stages import FilterStage
-from trade_krono_cli.universe.provider import UniverseTicket
 from trade_krono_cli.abnormal_stock import precheck_stock_status
-from trade_krono_cli.security import validate_ticker
+from trade_krono_cli.universe.provider import UniverseTicket
+from trade_krono_cli.universe.stages import FilterStage
 
 
 class StaticFilterStage(FilterStage):
@@ -56,16 +56,14 @@ class StaticFilterStage(FilterStage):
 
         # 分批预检（避免单次调用过多 ticker）
         for i in range(0, len(tickets), self.batch_size):
-            batch = tickets[i:i + self.batch_size]
+            batch = tickets[i : i + self.batch_size]
             batch_tickers = [t.ticker for t in batch]
 
             try:
                 flags_map = precheck_stock_status(
                     batch_tickers,
                     eval_date="",  # 使用当前日期
-                    min_listing_days=self.new_stock_min_days
-                    if self.skip_new_stock
-                    else 0,
+                    min_listing_days=self.new_stock_min_days if self.skip_new_stock else 0,
                     skip_suspended=self.skip_suspended,
                 )
             except Exception as e:
@@ -101,10 +99,7 @@ class StaticFilterStage(FilterStage):
         # 低价股过滤（独立于 precheck，确保始终生效）
         if self.exclude_low_price:
             pre_lp = len(kept)
-            kept = [
-                t for t in kept
-                if t.price is None or t.price >= self.low_price_threshold
-            ]
+            kept = [t for t in kept if t.price is None or t.price >= self.low_price_threshold]
             rejected_count += pre_lp - len(kept)
             logger.info(
                 f"📋 Static stage low-price: {pre_lp} → {len(kept)} "

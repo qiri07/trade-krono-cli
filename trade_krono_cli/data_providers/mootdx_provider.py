@@ -8,6 +8,7 @@ API 参考：
   - K 线: MdxApi.factory().get_security_bars()
   - 实时行情: MdxApi.factory().get_security_quotes()
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -15,7 +16,12 @@ from typing import Optional
 
 from loguru import logger
 
-from trade_krono_cli.data_providers.base import DataProvider, KlineData, RealtimeQuote, StockMetadata
+from trade_krono_cli.data_providers.base import (
+    DataProvider,
+    KlineData,
+    RealtimeQuote,
+    StockMetadata,
+)
 
 
 class MootDxProvider(DataProvider):
@@ -36,12 +42,10 @@ class MootDxProvider(DataProvider):
             return
         try:
             from mootdx.quotes import Quotes  # type: ignore
+
             cls._client = Quotes.factory(market="std")
         except ImportError:
-            raise RuntimeError(
-                "mootdx 未安装，无法使用 mootdx 数据源。"
-                "请运行: pip install mootdx"
-            )
+            raise RuntimeError("mootdx 未安装，无法使用 mootdx 数据源。请运行: pip install mootdx")
 
     # ── 内部转换工具 ──────────────────────────────────────────
 
@@ -133,17 +137,19 @@ class MootDxProvider(DataProvider):
 # 工具函数
 # ═══════════════════════════════════════════════════════
 
+
 def safe_float(value) -> Optional[float]:
     if value is None:
         return None
     try:
         f = float(value)
-        return f if not (f != f or f == float('inf') or f == float('-inf')) else None
+        return f if not (f != f or f == float("inf") or f == float("-inf")) else None
     except (ValueError, TypeError):
         return None
 
 
 def pd_to_datetime_safe(values: list) -> list[datetime]:
     import pandas as pd
+
     ts = pd.to_datetime(values)
     return ts.tolist()

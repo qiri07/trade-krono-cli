@@ -4,6 +4,7 @@ TradingAgents 适配器实现。
 封装 cli_anything.tradingagents 的全部导入和调用，
 业务代码只通过 TradingAgentsAdapter 与 TA 外部项目交互。
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -39,8 +40,8 @@ class TradingAgentsAdapterImpl(TradingAgentsAdapter):
 
         try:
             from cli_anything.tradingagents.core.analysis import (
-                run_analysis,
                 build_config,
+                run_analysis,
             )
         except ImportError as e:
             raise ModelLoadError(

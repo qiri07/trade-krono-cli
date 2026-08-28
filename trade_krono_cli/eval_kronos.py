@@ -3,9 +3,8 @@ Kronos 方向准确率评估。
 
 负责统计各 horizon 下 Kronos 预测方向（UP/DOWN/FLAT）与实际方向的一致性。
 """
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics
 

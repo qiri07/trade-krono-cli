@@ -1,6 +1,7 @@
 """
 配置管理 — 从 .env 和环境变量加载，提供默认值。
 """
+
 from __future__ import annotations
 
 import os
@@ -23,79 +24,49 @@ class Settings:
     tradingagents_root: Path = field(
         default_factory=lambda: _PROJECT_ROOT / "external" / "TradingAgents-astock"
     )
-    kronos_root: Path = field(
-        default_factory=lambda: _PROJECT_ROOT / "external" / "Kronos"
-    )
-    project_root: Path = field(
-        default_factory=lambda: _PROJECT_ROOT
-    )
-    results_dir: Path = field(
-        default_factory=lambda: _PROJECT_ROOT / "outputs" / "results"
-    )
-    cache_dir: Path = field(
-        default_factory=lambda: _PROJECT_ROOT / "outputs" / "cache"
-    )
+    kronos_root: Path = field(default_factory=lambda: _PROJECT_ROOT / "external" / "Kronos")
+    project_root: Path = field(default_factory=lambda: _PROJECT_ROOT)
+    results_dir: Path = field(default_factory=lambda: _PROJECT_ROOT / "outputs" / "results")
+    cache_dir: Path = field(default_factory=lambda: _PROJECT_ROOT / "outputs" / "cache")
     memory_log_path: Path = field(
         default_factory=lambda: _PROJECT_ROOT / "outputs" / "memory_log.jsonl"
     )
 
     # ── LLM 配置 ──────────────────────────────────────────
-    llm_provider: str = field(
-        default_factory=lambda: os.getenv("LLM_PROVIDER", "deepseek")
-    )
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "deepseek"))
     deep_think_llm: str = field(
         default_factory=lambda: os.getenv("DEEP_THINK_LLM", "deepseek-chat")
     )
     quick_think_llm: str = field(
         default_factory=lambda: os.getenv("QUICK_THINK_LLM", "deepseek-chat")
     )
-    backend_url: Optional[str] = field(
-        default_factory=lambda: os.getenv("BACKEND_URL", None)
-    )
-    max_debate_rounds: int = field(
-        default_factory=lambda: int(os.getenv("MAX_DEBATE_ROUNDS", "1"))
-    )
+    backend_url: Optional[str] = field(default_factory=lambda: os.getenv("BACKEND_URL", None))
+    max_debate_rounds: int = field(default_factory=lambda: int(os.getenv("MAX_DEBATE_ROUNDS", "1")))
     max_risk_discuss_rounds: int = field(
         default_factory=lambda: int(os.getenv("MAX_RISK_DISCUSS_ROUNDS", "1"))
     )
     checkpoint_enabled: bool = field(
         default_factory=lambda: os.getenv("CHECKPOINT_ENABLED", "true").lower() == "true"
     )
-    output_language: str = field(
-        default_factory=lambda: os.getenv("OUTPUT_LANGUAGE", "Chinese")
-    )
+    output_language: str = field(default_factory=lambda: os.getenv("OUTPUT_LANGUAGE", "Chinese"))
 
     # ── Kronos 配置 ───────────────────────────────────────
-    kronos_model: str = field(
-        default_factory=lambda: os.getenv("KRONOS_MODEL", "kronos-base")
-    )
+    kronos_model: str = field(default_factory=lambda: os.getenv("KRONOS_MODEL", "kronos-base"))
     kronos_tokenizer: str = field(
         default_factory=lambda: os.getenv("KRONOS_TOKENIZER", "kronos-Tokenizer-base")
     )
-    kronos_device: str = field(
-        default_factory=lambda: os.getenv("KRONOS_DEVICE", "cpu")
-    )
-    kronos_lookback: int = field(
-        default_factory=lambda: int(os.getenv("KRONOS_LOOKBACK", "400"))
-    )
-    kronos_pred_len: int = field(
-        default_factory=lambda: int(os.getenv("KRONOS_PRED_LEN", "30"))
-    )
+    kronos_device: str = field(default_factory=lambda: os.getenv("KRONOS_DEVICE", "cpu"))
+    kronos_lookback: int = field(default_factory=lambda: int(os.getenv("KRONOS_LOOKBACK", "400")))
+    kronos_pred_len: int = field(default_factory=lambda: int(os.getenv("KRONOS_PRED_LEN", "30")))
     kronos_sample_count: int = field(
         default_factory=lambda: int(os.getenv("KRONOS_SAMPLE_COUNT", "5"))
     )
-    kronos_T: float = field(
-        default_factory=lambda: float(os.getenv("KRONOS_T", "1.0"))
-    )
-    kronos_top_p: float = field(
-        default_factory=lambda: float(os.getenv("KRONOS_TOP_P", "0.9"))
-    )
+    kronos_T: float = field(default_factory=lambda: float(os.getenv("KRONOS_T", "1.0")))
+    kronos_top_p: float = field(default_factory=lambda: float(os.getenv("KRONOS_TOP_P", "0.9")))
     kronos_use_sample_confidence: bool = field(
         default_factory=lambda: os.getenv("KRONOS_USE_SAMPLE_CONFIDENCE", "false").lower() == "true"
     )
-    kronos_batch_size: int = field(
-        default_factory=lambda: int(os.getenv("KRONOS_BATCH_SIZE", "8"))
-    )
+    kronos_batch_size: int = field(default_factory=lambda: int(os.getenv("KRONOS_BATCH_SIZE", "8")))
 
     # ── 过滤配置 ──────────────────────────────────────────
     default_min_confidence: float = field(
@@ -121,13 +92,9 @@ class Settings:
         default_factory=lambda: os.getenv("FILTER_INDUSTRY_BLACKLIST", "")
     )
     """行业黑名单，逗号分隔，如 \"房地产,煤炭\"。"""
-    filter_pe_range: str = field(
-        default_factory=lambda: os.getenv("FILTER_PE_RANGE", "")
-    )
+    filter_pe_range: str = field(default_factory=lambda: os.getenv("FILTER_PE_RANGE", ""))
     """PE 区间，格式：\"5,30\"，为空则不过滤。"""
-    filter_pb_range: str = field(
-        default_factory=lambda: os.getenv("FILTER_PB_RANGE", "")
-    )
+    filter_pb_range: str = field(default_factory=lambda: os.getenv("FILTER_PB_RANGE", ""))
     """PB 区间，格式：\"0,3\"，为空则不过滤。"""
     filter_max_risk_score: str = field(
         default_factory=lambda: os.getenv("FILTER_MAX_RISK_SCORE", "")
@@ -149,9 +116,7 @@ class Settings:
         default_factory=lambda: os.getenv("FILTER_LOW_PRICE_THRESHOLD", "3.0")
     )
     """低价股阈值（元），低于此价被排除。"""
-    filter_min_pb: str = field(
-        default_factory=lambda: os.getenv("FILTER_MIN_PB", "")
-    )
+    filter_min_pb: str = field(default_factory=lambda: os.getenv("FILTER_MIN_PB", ""))
     """最低市净率，PB 低于此值视为高风险（空 = 不过滤）。"""
 
     # ── 异常股票处理配置 ──────────────────────────────────────
@@ -177,9 +142,7 @@ class Settings:
     """是否根据异常标记上调风险分。"""
 
     # ── 评分策略配置 ──────────────────────────────────────
-    scoring_strategy: str = field(
-        default_factory=lambda: os.getenv("SCORING_STRATEGY", "linear")
-    )
+    scoring_strategy: str = field(default_factory=lambda: os.getenv("SCORING_STRATEGY", "linear"))
     """综合打分策略：linear / multiplicative / rank_based"""
     risk_boost_strategy: str = field(
         default_factory=lambda: os.getenv("RISK_BOOST_STRATEGY", "fixed_boost")
@@ -217,9 +180,7 @@ class Settings:
     """限流自适应退避上限（秒）。"""
 
     # ── 降级策略配置 ────────────────────────────────────────
-    degrade_mode: str = field(
-        default_factory=lambda: os.getenv("DEGRADE_MODE", "strict")
-    )
+    degrade_mode: str = field(default_factory=lambda: os.getenv("DEGRADE_MODE", "strict"))
     """降级策略：strict | ta_only_on_kronos_fail | ta_cache_fallback"""
     ta_cache_fallback_enabled: bool = field(
         default_factory=lambda: os.getenv("TA_CACHE_FALLBACK_ENABLED", "false").lower() == "true"
@@ -231,9 +192,7 @@ class Settings:
     """TA 缓存结果最大有效期（天），超过则视为过期。"""
 
     # ── 数据源配置 ────────────────────────────────────────
-    data_provider: str = field(
-        default_factory=lambda: os.getenv("DATA_PROVIDER", "baostock")
-    )
+    data_provider: str = field(default_factory=lambda: os.getenv("DATA_PROVIDER", "baostock"))
     """主数据源：baostock / akshare / mootdx / tushare"""
     data_fallback: str = field(
         default_factory=lambda: os.getenv("DATA_FALLBACK", "akshare,mootdx,tushare")
@@ -263,7 +222,13 @@ class Settings:
     def available_providers(self) -> list[str]:
         """返回已配置 API key 的 LLM 供应商列表。"""
         available = []
-        for key in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "MINIMAX_API_KEY", "AGNES_API_KEY"):
+        for key in (
+            "DEEPSEEK_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "MINIMAX_API_KEY",
+            "AGNES_API_KEY",
+        ):
             if os.getenv(key):
                 available.append(key.replace("_API_KEY", "").lower())
         return available
@@ -271,6 +236,7 @@ class Settings:
     def available_data_sources(self) -> list[str]:
         """返回当前可用的数据源列表（按工厂链顺序过滤）。"""
         from trade_krono_cli.data_providers import get_data_factory
+
         factory = get_data_factory()
         return factory.available_providers()
 
@@ -286,6 +252,7 @@ class Settings:
           warnings — 非致命问题，记录但不阻塞运行
         """
         from trade_krono_cli.config_validator import validate_settings
+
         return validate_settings(self)
 
 

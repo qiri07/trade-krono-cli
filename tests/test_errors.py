@@ -1,5 +1,5 @@
 """测试错误隔离模块（Phase 3）。"""
-import pytest
+
 from trade_krono_cli.errors import (
     ModuleError,
     ModuleResult,

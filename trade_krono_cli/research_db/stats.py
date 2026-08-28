@@ -1,6 +1,7 @@
 """
 研究数据库 — Stats、query_history、get_latest_signal_for_ticker。
 """
+
 from __future__ import annotations
 
 import json
@@ -17,24 +18,34 @@ class StatsMixin(ResearchDatabase):
         """返回各 research 表统计。"""
         with self._conn as conn:
             result = {}
-            for table in ("jobs", "ta_analysis", "kronos_forecast",
-                          "signals", "decisions", "raw_reports",
-                          "backtest_results", "strategy_runs",
-                          "evaluation_results", "signal_history",
-                          "committee_deliberations",
-                          "data_snapshots", "walkforward_runs", "experiments"):
+            for table in (
+                "jobs",
+                "ta_analysis",
+                "kronos_forecast",
+                "signals",
+                "decisions",
+                "raw_reports",
+                "backtest_results",
+                "strategy_runs",
+                "evaluation_results",
+                "signal_history",
+                "committee_deliberations",
+                "data_snapshots",
+                "walkforward_runs",
+                "experiments",
+            ):
                 validated = validate_table_name(table, RESEARCH_TABLES)
                 try:
-                    count = conn.execute(
-                        f"SELECT COUNT(*) FROM {validated}"
-                    ).fetchone()[0]
+                    count = conn.execute(f"SELECT COUNT(*) FROM {validated}").fetchone()[0]
                     result[f"research_{table}"] = count
                 except sqlite3.OperationalError:
                     result[f"research_{table}"] = 0
             return result
 
     def query_history(
-        self, ticker: str, limit: int = 20,
+        self,
+        ticker: str,
+        limit: int = 20,
     ) -> list[dict]:
         """查询某只股票的历史分析记录（合并 signals + decisions + 版本信息）。"""
         with self._conn as conn:
@@ -56,11 +67,16 @@ class StatsMixin(ResearchDatabase):
             ).fetchall()
         return [
             {
-                "date": r[0], "run_id": r[1],
-                "data_version": r[2], "config_hash": r[3],
-                "rank": r[4], "composite_score": r[5],
-                "ta_signal": r[6], "ta_confidence": r[7],
-                "kronos_direction": r[8], "kronos_change": r[9],
+                "date": r[0],
+                "run_id": r[1],
+                "data_version": r[2],
+                "config_hash": r[3],
+                "rank": r[4],
+                "composite_score": r[5],
+                "ta_signal": r[6],
+                "ta_confidence": r[7],
+                "kronos_direction": r[8],
+                "kronos_change": r[9],
                 "decision": json.loads(r[10]) if r[10] else None,
             }
             for r in rows

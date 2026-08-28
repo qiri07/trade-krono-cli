@@ -1,6 +1,7 @@
 """
 研究数据库 — Committee Deliberations 表读写。
 """
+
 from __future__ import annotations
 
 import json
@@ -13,10 +14,16 @@ class CommitteeMixin(ResearchDatabase):
     """Committee Deliberations 表相关方法。"""
 
     def insert_committee_deliberation(
-        self, job_id: str, ticker: str, date: str,
-        bull_case: str, bear_case: str,
-        recommendation: str, recommendation_confidence: float,
-        reasoning: str, agent_consensus: dict,
+        self,
+        job_id: str,
+        ticker: str,
+        date: str,
+        bull_case: str,
+        bear_case: str,
+        recommendation: str,
+        recommendation_confidence: float,
+        reasoning: str,
+        agent_consensus: dict,
     ) -> None:
         """写入委员会审议记录。"""
         consensus_json = json.dumps(agent_consensus, ensure_ascii=False)
@@ -27,17 +34,24 @@ class CommitteeMixin(ResearchDatabase):
                 " recommendation, recommendation_confidence, reasoning, agent_consensus, created_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
-                    job_id, ticker, date,
-                    bull_case[:2000], bear_case[:2000],
-                    recommendation, recommendation_confidence,
-                    reasoning[:2000], consensus_json,
+                    job_id,
+                    ticker,
+                    date,
+                    bull_case[:2000],
+                    bear_case[:2000],
+                    recommendation,
+                    recommendation_confidence,
+                    reasoning[:2000],
+                    consensus_json,
                     time.time(),
                 ),
             )
             conn.commit()
 
     def get_committee_for_ticker(
-        self, ticker: str, limit: int = 5,
+        self,
+        ticker: str,
+        limit: int = 5,
     ) -> dict | None:
         """获取某只股票最近一次委员会审议结果。"""
         with self._conn as conn:

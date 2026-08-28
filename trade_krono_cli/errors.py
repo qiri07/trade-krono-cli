@@ -15,9 +15,10 @@
     ReportError         — 报告生成/落盘错误
     ModuleError         — 单个 pipeline 模块执行失败的封装异常
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional, TypeVar
 
 T = TypeVar("T")
@@ -26,6 +27,7 @@ T = TypeVar("T")
 # ═══════════════════════════════════════════════════════
 # 异常层次
 # ═══════════════════════════════════════════════════════
+
 
 class TradeKronoError(Exception):
     """项目根异常。所有业务异常均继承于此，便于统一捕获。"""
@@ -91,7 +93,8 @@ class ModuleError(TradeKronoError):
             "message": str(self),
             "original": (
                 f"{type(self.original_exception).__name__}: {self.original_exception}"
-                if self.original_exception else None
+                if self.original_exception
+                else None
             ),
             "context": self.context,
         }
@@ -156,6 +159,7 @@ def safe_run(
     ModuleResult
     """
     import time
+
     t0 = time.time()
     try:
         result = fn(*args, **kwargs)

@@ -6,16 +6,17 @@
   • 从 DB 读取最新评估结果
   • 打印格式化的控制台报告
 """
+
 from __future__ import annotations
 
 import json
 import sqlite3
 import time
-from datetime import datetime
 from typing import Optional
 
-from trade_krono_cli.eval_data import EvaluationSummary, HorizonMetrics
 from loguru import logger
+
+from trade_krono_cli.eval_data import EvaluationSummary, HorizonMetrics
 
 
 def store_summary(
@@ -46,37 +47,31 @@ def store_summary(
                 summary_json    TEXT NOT NULL
             )
         """)
-        summary_json = json.dumps({
-            "kronos_n": summary.kronos_n,
-            "kronos_dir_accuracy": {
-                str(h): m.kronos_dir_accuracy
-                for h, m in summary.horizons.items()
+        summary_json = json.dumps(
+            {
+                "kronos_n": summary.kronos_n,
+                "kronos_dir_accuracy": {
+                    str(h): m.kronos_dir_accuracy for h, m in summary.horizons.items()
+                },
+                "ta_buy_win_rate": {str(h): m.ta_buy_win_rate for h, m in summary.horizons.items()},
+                "ta_buy_avg_return": {
+                    str(h): m.ta_buy_avg_return for h, m in summary.horizons.items()
+                },
+                "combined_buy_up_win_rate": {
+                    str(h): m.combined_buy_up_win_rate for h, m in summary.horizons.items()
+                },
+                "combined_buy_up_avg_return": {
+                    str(h): m.combined_buy_up_avg_return for h, m in summary.horizons.items()
+                },
+                "high_conf_win_rate": {
+                    str(h): m.high_conf_win_rate for h, m in summary.horizons.items()
+                },
+                "high_conf_avg_return": {
+                    str(h): m.high_conf_avg_return for h, m in summary.horizons.items()
+                },
             },
-            "ta_buy_win_rate": {
-                str(h): m.ta_buy_win_rate
-                for h, m in summary.horizons.items()
-            },
-            "ta_buy_avg_return": {
-                str(h): m.ta_buy_avg_return
-                for h, m in summary.horizons.items()
-            },
-            "combined_buy_up_win_rate": {
-                str(h): m.combined_buy_up_win_rate
-                for h, m in summary.horizons.items()
-            },
-            "combined_buy_up_avg_return": {
-                str(h): m.combined_buy_up_avg_return
-                for h, m in summary.horizons.items()
-            },
-            "high_conf_win_rate": {
-                str(h): m.high_conf_win_rate
-                for h, m in summary.horizons.items()
-            },
-            "high_conf_avg_return": {
-                str(h): m.high_conf_avg_return
-                for h, m in summary.horizons.items()
-            },
-        }, ensure_ascii=False)
+            ensure_ascii=False,
+        )
 
         conn.execute(
             """INSERT INTO evaluation_results
@@ -87,7 +82,8 @@ def store_summary(
                 high_conf_wr_5d, high_conf_wr_10d, summary_json)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                time.time(), eval_date_range,
+                time.time(),
+                eval_date_range,
                 len(summary.records),
                 summary.horizons.get(5, HorizonMetrics()).kronos_dir_accuracy,
                 summary.horizons.get(10, HorizonMetrics()).kronos_dir_accuracy,
@@ -168,8 +164,9 @@ def _print_ta_section(summary: EvaluationSummary, horizons: list[int]) -> None:
         wr = m.ta_buy_win_rate if m else 0.0
         avg_ret = m.ta_buy_avg_return if m else 0.0
         marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
-        logger.info(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
-              f"平均收益: {avg_ret:+.2f}%                    │")
+        logger.info(
+            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │"
+        )
     logger.info("└" + "─" * 58 + "┘")
     logger.info("")
 
@@ -182,8 +179,9 @@ def _print_combined_section(summary: EvaluationSummary, horizons: list[int]) -> 
         wr = m.combined_buy_up_win_rate if m else 0.0
         avg_ret = m.combined_buy_up_avg_return if m else 0.0
         marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
-        logger.info(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
-              f"平均收益: {avg_ret:+.2f}%                    │")
+        logger.info(
+            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │"
+        )
     logger.info("└" + "─" * 58 + "┘")
     logger.info("")
 
@@ -196,8 +194,9 @@ def _print_high_conf_section(summary: EvaluationSummary, horizons: list[int]) ->
         wr = m.high_conf_win_rate if m else 0.0
         avg_ret = m.high_conf_avg_return if m else 0.0
         marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
-        logger.info(f"│  {marker} {h}D 胜率: {wr:5.1f}%  "
-              f"平均收益: {avg_ret:+.2f}%                    │")
+        logger.info(
+            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │"
+        )
     logger.info("└" + "─" * 58 + "┘")
     logger.info("")
 
@@ -207,9 +206,13 @@ def _print_constraints_section(summary: EvaluationSummary) -> None:
         logger.info("┌─ 交易约束统计 ──────────────────────────────────────┐")
         logger.info(f"│  交易成本已扣减: {summary.cost_applied_n} 条记录                 │")
         if summary.entry_limit_up_blocked:
-            logger.info(f"│  🚫 买入日涨停拦截: {summary.entry_limit_up_blocked} 条                  │")
+            logger.info(
+                f"│  🚫 买入日涨停拦截: {summary.entry_limit_up_blocked} 条                  │"
+            )
         if summary.exit_limit_down_blocked:
-            logger.info(f"│  🚫 退出日跌停拦截: {summary.exit_limit_down_blocked} 条                  │")
+            logger.info(
+                f"│  🚫 退出日跌停拦截: {summary.exit_limit_down_blocked} 条                  │"
+            )
         logger.info("└" + "─" * 58 + "┘")
         logger.info("")
 

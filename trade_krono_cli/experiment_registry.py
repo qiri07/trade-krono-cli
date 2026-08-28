@@ -17,26 +17,26 @@ ExperimentRegistry — 实验追踪与比较引擎。
   · 假设可被 falsified（证伪）—— 记录"什么条件下假设不成立"
   · 结果可复现：experiment_id → 完整配置 → 完整结果
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from loguru import logger
 
 from trade_krono_cli.data_snapshot import DataSnapshot
-from trade_krono_cli.domain.types import ExperimentType
 from trade_krono_cli.domain.experiment import Hypothesis
-
+from trade_krono_cli.domain.types import ExperimentType
 
 # ═══════════════════════════════════════════════════════
 #  实验记录
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass
 class ExperimentRecord:
@@ -57,6 +57,7 @@ class ExperimentRecord:
     notes             自由备注
     created_at        创建时间戳
     """
+
     experiment_id: str
     experiment_type: ExperimentType
     hypothesis: Hypothesis
@@ -72,12 +73,15 @@ class ExperimentRecord:
     @property
     def full_id(self) -> str:
         """SHA-256 全 ID（用于数据库主键）。"""
-        raw = json.dumps({
-            "id": self.experiment_id,
-            "type": self.experiment_type.value,
-            "created_at": self.created_at,
-            "hypothesis": self.hypothesis.statement,
-        }, sort_keys=True)
+        raw = json.dumps(
+            {
+                "id": self.experiment_id,
+                "type": self.experiment_type.value,
+                "created_at": self.created_at,
+                "hypothesis": self.hypothesis.statement,
+            },
+            sort_keys=True,
+        )
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
     def evaluate(self) -> tuple[bool, str]:
@@ -114,8 +118,10 @@ class ExperimentRecord:
     @classmethod
     def from_dict(cls, data: dict) -> "ExperimentRecord":
         hyp_data = data.pop("hypothesis", {})
-        hyp = Hypothesis(**hyp_data) if hyp_data else Hypothesis(
-            statement="", prediction="", falsification=""
+        hyp = (
+            Hypothesis(**hyp_data)
+            if hyp_data
+            else Hypothesis(statement="", prediction="", falsification="")
         )
         exp_type = ExperimentType(data.pop("experiment_type", "alpha"))
         return cls(
@@ -136,6 +142,7 @@ class ExperimentRecord:
 # ═══════════════════════════════════════════════════════
 #  ExperimentRegistry
 # ═══════════════════════════════════════════════════════
+
 
 class ExperimentRegistry:
     """
@@ -173,7 +180,9 @@ class ExperimentRegistry:
             data_snapshot_id=data_snapshot.snapshot_id if data_snapshot else None,
         )
         self._experiments[experiment_id] = record
-        logger.info(f"📝 实验已注册: {experiment_id} [{exp_type.value}] — {hypothesis.statement[:60]}")
+        logger.info(
+            f"📝 实验已注册: {experiment_id} [{exp_type.value}] — {hypothesis.statement[:60]}"
+        )
         return record
 
     def add_run(self, experiment_id: str, run_id: str) -> None:
@@ -256,9 +265,7 @@ class ExperimentRegistry:
     def save(self, path: Path) -> None:
         """持久化到 JSON 文件。"""
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            eid: rec.to_dict() for eid, rec in self._experiments.items()
-        }
+        data = {eid: rec.to_dict() for eid, rec in self._experiments.items()}
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
         logger.info(f"💾 实验注册表已保存: {path}")
 
@@ -275,6 +282,7 @@ class ExperimentRegistry:
 # ═══════════════════════════════════════════════════════
 #  便捷函数
 # ═══════════════════════════════════════════════════════
+
 
 def register_alpha_experiment(
     registry: ExperimentRegistry,

@@ -16,6 +16,7 @@ Universe Engine — A 股市场范围发现与分层过滤。
     tickers = engine.run(eval_date="2026-08-13")
     # → ["sh.600519", "sz.000858", ...]
 """
+
 from __future__ import annotations
 
 from trade_krono_cli.universe.engine import UniverseEngine

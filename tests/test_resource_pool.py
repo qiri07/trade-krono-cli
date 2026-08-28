@@ -1,9 +1,12 @@
 """测试 ResourcePool — 统一并发资源管理器。"""
+
 import asyncio
-import pytest
-from concurrent.futures import Future
+
 from trade_krono_cli.pipeline.resource_pool import (
-    ResourcePool, PoolConfig, get_pool, clear_pool_singleton,
+    PoolConfig,
+    ResourcePool,
+    clear_pool_singleton,
+    get_pool,
 )
 
 
@@ -33,11 +36,13 @@ class TestResourcePool:
     def test_run_parallel(self):
         """run_parallel 应并行执行多个 callable。"""
         pool = ResourcePool()
-        results = pool.run_parallel([
-            lambda: 1,
-            lambda: 2,
-            lambda: 3,
-        ])
+        results = pool.run_parallel(
+            [
+                lambda: 1,
+                lambda: 2,
+                lambda: 3,
+            ]
+        )
         assert sorted(results) == [1, 2, 3]
         pool.close()
 
@@ -177,6 +182,7 @@ class TestDeprecatedBatchRunner:
     def test_batch_runner_still_importable(self):
         """BatchRunner 仍可导入（向后兼容）。"""
         from trade_krono_cli.batch.batch_runner import BatchRunner
+
         runner = BatchRunner()
         result = runner.run_sync([], lambda x: x)
         assert result == []

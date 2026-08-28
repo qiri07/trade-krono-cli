@@ -21,12 +21,13 @@
     Total Risk      45.2
     Return Adj      -0.062  (预期收益降低 6.2%)
 """
+
 from __future__ import annotations
 
 from trade_krono_cli.risk.risk_engine import (
     RiskEngine,
-    RiskScore,
     RiskMetrics,
+    RiskScore,
     assess_risk,
 )
 

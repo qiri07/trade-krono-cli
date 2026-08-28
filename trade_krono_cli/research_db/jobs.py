@@ -1,6 +1,7 @@
 """
 研究数据库 — Jobs 表 CRUD。
 """
+
 from __future__ import annotations
 
 import json
@@ -18,7 +19,9 @@ class JobMixin(ResearchDatabase):
     """Jobs 表相关方法。"""
 
     def create_job(
-        self, date: str, tickers: list[str],
+        self,
+        date: str,
+        tickers: list[str],
         settings: Settings | None = None,
         notes: str | None = None,
     ) -> str:
@@ -50,17 +53,18 @@ class JobMixin(ResearchDatabase):
                 (
                     job_id,
                     snapshot.get("run_id"),
-                    run_at, date,
+                    run_at,
+                    date,
                     json.dumps(tickers, ensure_ascii=False),
-                    len(tickers), 0, 0.0,
+                    len(tickers),
+                    0,
+                    0.0,
                     snapshot.get("data_version"),
-                    json.dumps(snapshot.get("model_versions", {}),
-                               ensure_ascii=False),
+                    json.dumps(snapshot.get("model_versions", {}), ensure_ascii=False),
                     snapshot.get("prompt_version"),
                     snapshot.get("strategy_version"),
                     snapshot.get("config_hash"),
-                    json.dumps(snapshot.get("external_repos", {}),
-                               ensure_ascii=False),
+                    json.dumps(snapshot.get("external_repos", {}), ensure_ascii=False),
                     notes,
                 ),
             )
@@ -73,7 +77,10 @@ class JobMixin(ResearchDatabase):
         return job_id
 
     def complete_job(
-        self, job_id: str, n_success: int, elapsed: float,
+        self,
+        job_id: str,
+        n_success: int,
+        elapsed: float,
     ) -> None:
         """标记作业完成，更新成功数和耗时。"""
         with self._conn as conn:
@@ -125,9 +132,14 @@ class JobMixin(ResearchDatabase):
             ).fetchall()
         return [
             {
-                "job_id": r[0], "run_id": r[1], "date": r[2],
-                "n_tickers": r[3], "n_success": r[4], "elapsed": r[5],
-                "data_version": r[6], "strategy_version": r[7],
+                "job_id": r[0],
+                "run_id": r[1],
+                "date": r[2],
+                "n_tickers": r[3],
+                "n_success": r[4],
+                "elapsed": r[5],
+                "data_version": r[6],
+                "strategy_version": r[7],
                 "config_hash": r[8],
             }
             for r in rows

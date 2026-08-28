@@ -7,6 +7,7 @@
   • 收益计算与交易成本扣减
   • EvalRecord / HorizonMetrics / EvaluationSummary 数据类
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -16,12 +17,11 @@ from typing import Optional
 import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.constraints_config import ConstraintConfig
-from trade_krono_cli.security import validate_ticker, validate_date
-from trade_krono_cli.trading_constraints import compute_limit_prices
-
 # 向后兼容：测试通过 patch("trade_krono_cli.eval_data.fetch_kline") 注入
 from trade_krono_cli.data import fetch_kline as _fetch_kline_ref
+from trade_krono_cli.security import validate_date, validate_ticker
+from trade_krono_cli.trading_constraints import compute_limit_prices
+
 fetch_kline = _fetch_kline_ref
 
 
@@ -31,6 +31,7 @@ def _resolve_fetch_kline(custom=None):
         return custom
     # 检查模块级是否有被 patch 的覆盖
     import sys
+
     mod = sys.modules.get("trade_krono_cli.eval_data")
     if mod is not None and hasattr(mod, "fetch_kline") and mod.fetch_kline is not _fetch_kline_ref:
         return mod.fetch_kline
@@ -40,6 +41,7 @@ def _resolve_fetch_kline(custom=None):
 # ═══════════════════════════════════════════════════════
 # 核心：获取实际价格
 # ═══════════════════════════════════════════════════════
+
 
 def get_close_price(ticker: str, date_str: str, _fetch_kline=None) -> Optional[float]:
     """获取指定日期的收盘价（支持精确日期和最近交易日）。"""
@@ -64,7 +66,9 @@ def get_close_price(ticker: str, date_str: str, _fetch_kline=None) -> Optional[f
 
 
 def get_kline_window(
-    ticker: str, start_date: str, end_date: str,
+    ticker: str,
+    start_date: str,
+    end_date: str,
     _fetch_kline=None,
 ) -> Optional[pd.DataFrame]:
     """拉取指定区间的 K 线，失败时返回 None。
@@ -90,7 +94,10 @@ def calc_return(entry_price: float, exit_price: float) -> float:
 
 
 def is_price_at_limit(
-    ticker: str, price: float, prev_close: float, direction: str,
+    ticker: str,
+    price: float,
+    prev_close: float,
+    direction: str,
 ) -> bool:
     """判断价格是否触及涨跌停。
 
@@ -125,18 +132,20 @@ def apply_roundtrip_cost(gross_return_pct: float, cost_bps: float = 17.0) -> flo
 # 预测评估结果数据类
 # ═══════════════════════════════════════════════════════
 
+
 @dataclass
 class EvalRecord:
     """单次预测的评估记录。"""
+
     ticker: str
     eval_date: str
     horizon_days: int
-    pred_direction: Optional[str]   # UP / DOWN / FLAT
+    pred_direction: Optional[str]  # UP / DOWN / FLAT
     pred_return_pct: Optional[float]
     actual_return_pct: float
-    actual_direction: str           # UP / DOWN / FLAT
-    is_direction_correct: bool      # 方向是否预测正确
-    error_pct: float                # 预测误差 = 预测 - 实际
+    actual_direction: str  # UP / DOWN / FLAT
+    is_direction_correct: bool  # 方向是否预测正确
+    error_pct: float  # 预测误差 = 预测 - 实际
     # ── 分布分位数（来自 PredictionDistribution，可选）──────────────────
     p10: Optional[float] = None
     p25: Optional[float] = None
@@ -147,14 +156,15 @@ class EvalRecord:
     ta_signal: Optional[str] = None
     composite_score: Optional[float] = None
     # ── 交易约束标记（由约束感知评估写入）──────────────────────
-    entry_blocked_limit_up: bool = False   # 买入日涨停，实际无法建仓
+    entry_blocked_limit_up: bool = False  # 买入日涨停，实际无法建仓
     exit_blocked_limit_down: bool = False  # 退出日跌停，实际无法平仓
-    cost_bps_applied: float = 0.0          # 本次扣减的交易成本（bps）
+    cost_bps_applied: float = 0.0  # 本次扣减的交易成本（bps）
 
 
 @dataclass
 class HorizonMetrics:
     """指标汇总按单一 horizon（天）分组。"""
+
     kronos_dir_accuracy: float = 0.0
     ta_buy_win_rate: float = 0.0
     ta_buy_avg_return: float = 0.0
@@ -164,11 +174,11 @@ class HorizonMetrics:
     high_conf_win_rate: float = 0.0
     high_conf_avg_return: float = 0.0
     # ── 增强指标（回测引擎补充）─────────────────────────────────────────────
-    win_rate_pct: float = 0.0           # 综合胜率
-    avg_return_pct: float = 0.0         # 平均收益
-    profit_factor: float = 0.0          # 盈亏比
-    max_drawdown_pct: float = 0.0       # 最大回撤（%）
-    sharpe_ratio: float = 0.0           # 夏普比率
+    win_rate_pct: float = 0.0  # 综合胜率
+    avg_return_pct: float = 0.0  # 平均收益
+    profit_factor: float = 0.0  # 盈亏比
+    max_drawdown_pct: float = 0.0  # 最大回撤（%）
+    sharpe_ratio: float = 0.0  # 夏普比率
     # ── IC 评估指标（eval_ic 动态写入，默认 0.0）──────────────────────────
     ic_composite_mean: float = 0.0
     ic_composite_std: float = 0.0
@@ -200,6 +210,7 @@ class HorizonMetrics:
 @dataclass
 class BacktestResult:
     """单次完整回测的结果。"""
+
     initial_capital: float = 1_000_000.0
     final_value: float = 0.0
     total_return_pct: float = 0.0
@@ -217,6 +228,7 @@ class BacktestResult:
 @dataclass
 class EvaluationSummary:
     """评估汇总统计。"""
+
     # 聚合计数
     kronos_n: int = 0
     ta_buy_n: int = 0

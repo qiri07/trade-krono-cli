@@ -1,24 +1,25 @@
 """测试风险模型模块（VaR/CVaR/Beta/Gap/Event/Valuation）。"""
-import pytest
+
 import numpy as np
 import pandas as pd
+
 from trade_krono_cli.risk.models import (
-    historical_var,
-    conditional_var,
-    var_annualized,
-    cvar_annualized,
-    beta,
-    correlation,
-    sharpe_ratio,
-    expected_return_adjustment,
     adjust_expected_return,
-    gap_risk_score,
+    beta,
+    conditional_var,
+    correlation,
+    cvar_annualized,
     event_risk_score,
+    expected_return_adjustment,
+    gap_risk_score,
+    historical_var,
+    sharpe_ratio,
     valuation_risk_score,
+    var_annualized,
 )
 
-
 # ── 辅助函数 ──────────────────────────────────────────────────────────────────
+
 
 def _make_returns(values: list[float]) -> np.ndarray:
     return np.array(values, dtype=float)
@@ -31,6 +32,7 @@ def _make_close(values: list[float]) -> pd.Series:
 # ═══════════════════════════════════════════════════════
 # VaR / CVaR 测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestHistoricalVar:
     def test_normal_distribution(self):
@@ -92,6 +94,7 @@ class TestAnnualizedVar:
 # Beta & Sharpe 测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestBeta:
     def test_perfect_correlation(self):
         """完全相关 → Beta = 1。"""
@@ -152,15 +155,22 @@ class TestSharpeRatio:
 # Expected Return Adjustment 测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestExpectedReturnAdjustment:
     def test_low_risk_positive_adj(self):
         """低风险 → 调整因子接近 0（轻微加成）。"""
         metrics = {
-            "var_95": -0.5, "cvar_95": -0.7, "beta": 0.6,
-            "annualized_vol": 10.0, "max_drawdown": -5.0,
-            "liquidity_score": 10.0, "gap_risk": 10.0,
-            "event_risk": 10.0, "valuation_risk": 10.0,
-            "concentration": 5.0, "market_regime": 15.0,
+            "var_95": -0.5,
+            "cvar_95": -0.7,
+            "beta": 0.6,
+            "annualized_vol": 10.0,
+            "max_drawdown": -5.0,
+            "liquidity_score": 10.0,
+            "gap_risk": 10.0,
+            "event_risk": 10.0,
+            "valuation_risk": 10.0,
+            "concentration": 5.0,
+            "market_regime": 15.0,
         }
         adj = expected_return_adjustment(metrics)
         # 低风险 → adj 应接近 0（小幅惩罚，不为正）
@@ -169,11 +179,17 @@ class TestExpectedReturnAdjustment:
     def test_high_risk_negative_adj(self):
         """高风险 → 调整因子显著为负。"""
         metrics = {
-            "var_95": -5.0, "cvar_95": -7.0, "beta": 2.0,
-            "annualized_vol": 60.0, "max_drawdown": -40.0,
-            "liquidity_score": 90.0, "gap_risk": 80.0,
-            "event_risk": 90.0, "valuation_risk": 85.0,
-            "concentration": 80.0, "market_regime": 80.0,
+            "var_95": -5.0,
+            "cvar_95": -7.0,
+            "beta": 2.0,
+            "annualized_vol": 60.0,
+            "max_drawdown": -40.0,
+            "liquidity_score": 90.0,
+            "gap_risk": 80.0,
+            "event_risk": 90.0,
+            "valuation_risk": 85.0,
+            "concentration": 80.0,
+            "market_regime": 80.0,
         }
         adj = expected_return_adjustment(metrics)
         assert adj < -0.1
@@ -187,8 +203,11 @@ class TestExpectedReturnAdjustment:
     def test_adjust_expected_return(self):
         """adjust_expected_return 返回调整后的收益率。"""
         metrics = {
-            "var_95": -1.0, "cvar_95": -1.5, "beta": 1.0,
-            "annualized_vol": 20.0, "max_drawdown": -10.0,
+            "var_95": -1.0,
+            "cvar_95": -1.5,
+            "beta": 1.0,
+            "annualized_vol": 20.0,
+            "max_drawdown": -10.0,
             "liquidity_score": 30.0,
         }
         raw = 15.0  # 预期收益 15%
@@ -199,6 +218,7 @@ class TestExpectedReturnAdjustment:
 # ═══════════════════════════════════════════════════════
 # Gap Risk 测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestGapRisk:
     def test_stable_prices_low_gap_risk(self):
@@ -230,6 +250,7 @@ class TestGapRisk:
 # Event Risk 测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestEventRisk:
     def test_stable_event_risk(self):
         """稳定波动 → 中等事件风险。"""
@@ -256,6 +277,7 @@ class TestEventRisk:
 # ═══════════════════════════════════════════════════════
 # Valuation Risk 测试
 # ═══════════════════════════════════════════════════════
+
 
 class TestValuationRisk:
     def test_reasonable_valuation_low_risk(self):

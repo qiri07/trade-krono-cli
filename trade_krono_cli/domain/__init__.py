@@ -37,6 +37,7 @@ Domain Model — A 股量化投研系统的核心领域对象。
         build_eval_record,
     )
 """
+
 from __future__ import annotations  # fmt: skip
 
 # ── 枚举（必须在其他模块之前导入，避免循环依赖）──────────────────────────
@@ -92,7 +93,9 @@ from trade_krono_cli.domain.stock import Stock
 # ── 统一导出 ───────────────────────────────────────────────────────────────
 __all__ = [
     # 枚举
-    "Signal", "Direction", "ExperimentType",
+    "Signal",
+    "Direction",
+    "ExperimentType",
     # 实体
     "Stock",
     # 市场

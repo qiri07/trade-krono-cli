@@ -1,8 +1,11 @@
 """测试报告输出。"""
+
 import json
-import pytest
 from pathlib import Path
-from trade_krono_cli.pipeline.reporter import save_json, save_html, print_table, print_summary
+
+import pytest
+
+from trade_krono_cli.pipeline.reporter import print_summary, print_table, save_html, save_json
 
 
 @pytest.fixture
@@ -61,8 +64,12 @@ def test_save_json(sample_merged, tmp_path):
     assert Path(path).exists()
     with open(path) as f:
         data = json.load(f)
-    assert len(data) == 2
-    assert data[0]["ticker"] == "sh.600519"
+    # 新项目格式：顶层含 project / generated_at / count / results
+    assert data.get("project") == "trade-krono-cli"
+    assert data.get("count") == 2
+    results = data["results"]
+    assert len(results) == 2
+    assert results[0]["ticker"] == "sh.600519"
 
 
 def test_save_html(sample_merged, tmp_path):
@@ -80,11 +87,12 @@ def test_print_table(sample_merged, capsys):
     captured = capsys.readouterr()
     # rich table truncates ticker; check for score and confidence which are full-width
     assert "82.1" in captured.out
-    assert "72.0" in captured.out   # Kronos confidence
+    assert "72.0" in captured.out  # Kronos confidence
 
 
 def test_print_summary(sample_merged, capsys):
     print_summary(sample_merged, "2026-08-11")
     captured = capsys.readouterr()
     assert "600519" in captured.out
+    assert "trade-krono-cli" in captured.out
     assert "最佳推荐" in captured.out

@@ -9,6 +9,7 @@ Filter Rules Stage — 自定义规则链过滤。
   pe_ttm             → pe           (PE 动态 ≈ PE TTM)
   is_st              → 由 StaticStage 处理，此处不重复
 """
+
 from __future__ import annotations
 
 from loguru import logger
@@ -97,6 +98,7 @@ def _apply_rule(value: object, op: FilterOp, rule_value: object) -> bool:
             return str(rule_value) in str(value)
         if op == FilterOp.MATCH:
             import re
+
             return bool(re.search(str(rule_value), str(value)))
     except (TypeError, ValueError):
         return False

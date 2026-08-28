@@ -3,6 +3,7 @@
 
 计算基于趋势动量的市场环境风险分，映射为 0-100 风险分。
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -53,24 +54,25 @@ def calc_market_regime_risk(
         risk_score = th.bear_score
     elif avg_momentum <= th.neutral_low:
         risk_score = th.neutral_mid_score + (
-            (th.neutral_low - avg_momentum) / (th.neutral_low - th.bear_threshold)
+            (th.neutral_low - avg_momentum)
+            / (th.neutral_low - th.bear_threshold)
             * (th.bear_score - th.neutral_mid_score)
         )
     elif avg_momentum <= th.neutral_high:
         risk_score = max(
             0.0,
-            th.neutral_mid_score - (
-                (avg_momentum - th.neutral_low) / (th.neutral_high - th.neutral_low)
+            th.neutral_mid_score
+            - (
+                (avg_momentum - th.neutral_low)
+                / (th.neutral_high - th.neutral_low)
                 * th.neutral_mid_score
             ),
         )
     else:
         risk_score = max(
             0.0,
-            th.bull_base_score - (
-                (avg_momentum - th.neutral_high) / th.neutral_high
-                * (th.bull_base_score)
-            ),
+            th.bull_base_score
+            - ((avg_momentum - th.neutral_high) / th.neutral_high * (th.bull_base_score)),
         )
 
     return round(max(0.0, min(100.0, risk_score)), 1)

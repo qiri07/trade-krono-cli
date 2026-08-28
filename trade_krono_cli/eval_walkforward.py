@@ -20,24 +20,25 @@ WalkForwardEngine — 滚动时间窗口的回测评估引擎。
   · 支持多 horizon（同时评估 5/10/20/30 天）
   · 结果可复现：每次 walk-forward 都有唯一 run_id + 配置 hash
 """
+
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Callable, Optional, Iterable
+from typing import Callable, Iterable, Optional
 
 import numpy as np
 import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics, EvaluationSummary
 from trade_krono_cli.data_snapshot import DataSnapshot
-
+from trade_krono_cli.eval_data import EvalRecord, EvaluationSummary, HorizonMetrics
 
 # ═══════════════════════════════════════════════════════
 #  WalkForwardConfig
 # ═══════════════════════════════════════════════════════
+
 
 @dataclass
 class WalkForwardConfig:
@@ -53,8 +54,9 @@ class WalkForwardConfig:
     test_start_date     测试区间起始日期（ISO）
     test_end_date       测试区间截止日期（ISO）
     """
-    lookback_days: int = 252          # 1 年交易日
-    step_days: int = 20               # 每月一步
+
+    lookback_days: int = 252  # 1 年交易日
+    step_days: int = 20  # 每月一步
     horizons: tuple[int, ...] = (5, 10, 20, 30)
     min_train_samples: int = 60
     test_start_date: str = ""
@@ -65,13 +67,15 @@ class WalkForwardConfig:
 #  WalkForwardResult
 # ═══════════════════════════════════════════════════════
 
+
 @dataclass
 class WalkForwardResult:
     """单次 WalkForward 评估的完整结果。"""
+
     run_id: str
     config: WalkForwardConfig
     total_windows: int = 0
-    valid_windows: int = 0          # 满足 min_train_samples 的窗口数
+    valid_windows: int = 0  # 满足 min_train_samples 的窗口数
     records: list[EvalRecord] = field(default_factory=list)
     summary: Optional[EvaluationSummary] = None
     elapsed_sec: float = 0.0
@@ -105,6 +109,7 @@ class WalkForwardResult:
 #  WalkForwardEngine
 # ═══════════════════════════════════════════════════════
 
+
 class WalkForwardEngine:
     """
     滚动时间窗口评估引擎。
@@ -130,6 +135,7 @@ class WalkForwardEngine:
     ) -> list[str]:
         """生成分割点（每个 step_days 一个测试点）。"""
         from datetime import datetime
+
         start = datetime.strptime(train_end, "%Y-%m-%d")
         end = datetime.strptime(test_end, "%Y-%m-%d")
         dates = []
@@ -170,7 +176,9 @@ class WalkForwardEngine:
         cfg = self.config
 
         # 确定测试区间
-        test_start = cfg.test_start_date or data_snapshot.effective_cut_date() if data_snapshot else ""
+        test_start = (
+            cfg.test_start_date or data_snapshot.effective_cut_date() if data_snapshot else ""
+        )
         if not test_start or not cfg.test_end_date:
             raise ValueError("需要提供 test_start_date 和 test_end_date（或从 data_snapshot 推断）")
 
@@ -194,10 +202,14 @@ class WalkForwardEngine:
 
             # 训练数据完整性检查
             if train_data_fn:
-                train_end = (datetime.strptime(eval_date, "%Y-%m-%d") - timedelta(days=cfg.lookback_days)).strftime("%Y-%m-%d")
+                train_end = (
+                    datetime.strptime(eval_date, "%Y-%m-%d") - timedelta(days=cfg.lookback_days)
+                ).strftime("%Y-%m-%d")
                 train_df = train_data_fn(ticker, train_end)
                 if train_df is None or len(train_df) < cfg.min_train_samples:
-                    logger.debug(f"跳过 {ticker} @ {eval_date}：训练数据不足 ({len(train_df) if train_df is not None else 0} < {cfg.min_train_samples})")
+                    logger.debug(
+                        f"跳过 {ticker} @ {eval_date}：训练数据不足 ({len(train_df) if train_df is not None else 0} < {cfg.min_train_samples})"
+                    )
                     continue
 
             valid_windows += 1
@@ -222,7 +234,9 @@ class WalkForwardEngine:
 
                 # 计算实际方向
                 actual_direction = "UP" if actual > 1.0 else ("DOWN" if actual < -1.0 else "FLAT")
-                is_correct = (direction == actual_direction) if direction and actual_direction else False
+                is_correct = (
+                    (direction == actual_direction) if direction and actual_direction else False
+                )
 
                 record = EvalRecord(
                     ticker=ticker,
@@ -235,7 +249,11 @@ class WalkForwardEngine:
                     is_direction_correct=is_correct,
                     error_pct=round((pred_return or 0) - actual, 4),
                     # 分位数信息（用于后续 EV 分析）
-                    p10=p10, p25=p25, p50=p50, p75=p75, p90=p90,
+                    p10=p10,
+                    p25=p25,
+                    p50=p50,
+                    p75=p75,
+                    p90=p90,
                 )
                 records.append(record)
 
@@ -298,6 +316,7 @@ class WalkForwardEngine:
 #  便捷工厂
 # ═══════════════════════════════════════════════════════
 
+
 def run_walk_forward_quick(
     ticker: str,
     eval_dates: Iterable[str],
@@ -323,6 +342,7 @@ def run_walk_forward_quick(
     WalkForwardResult
     """
     from uuid import uuid4
+
     cfg = WalkForwardConfig(
         lookback_days=lookback_days,
         horizons=horizons,
@@ -345,19 +365,24 @@ def run_walk_forward_quick(
             if actual is None:
                 continue
             actual_dir = "UP" if actual > 1.0 else ("DOWN" if actual < -1.0 else "FLAT")
-            records.append(EvalRecord(
-                ticker=ticker,
-                eval_date=eval_date,
-                horizon_days=horizon,
-                pred_direction=direction,
-                pred_return_pct=pred_return,
-                actual_return_pct=actual,
-                actual_direction=actual_dir,
-                is_direction_correct=(direction == actual_dir) if direction else False,
-                error_pct=round((pred_return or 0) - actual, 4),
-                p10=pred.get("p10"), p25=pred.get("p25"),
-                p50=pred.get("p50"), p75=pred.get("p75"), p90=pred.get("p90"),
-            ))
+            records.append(
+                EvalRecord(
+                    ticker=ticker,
+                    eval_date=eval_date,
+                    horizon_days=horizon,
+                    pred_direction=direction,
+                    pred_return_pct=pred_return,
+                    actual_return_pct=actual,
+                    actual_direction=actual_dir,
+                    is_direction_correct=(direction == actual_dir) if direction else False,
+                    error_pct=round((pred_return or 0) - actual, 4),
+                    p10=pred.get("p10"),
+                    p25=pred.get("p25"),
+                    p50=pred.get("p50"),
+                    p75=pred.get("p75"),
+                    p90=pred.get("p90"),
+                )
+            )
 
     summary = engine._build_summary(records, horizons)
     return WalkForwardResult(
