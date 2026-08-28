@@ -121,7 +121,12 @@ class Cache:
         data, created, ttl = row
         if ttl < 0 or (ttl > 0 and time.time() - created > ttl):
             return None
-        return pd.read_pickle(BytesIO(data))
+        try:
+            return pd.read_pickle(BytesIO(data))
+        except ModuleNotFoundError:
+            # pyarrow 未安装时，旧版 pandas pickle 兼容回退
+            import pickle
+            return pickle.loads(data)
 
     def set_kline(
         self,
