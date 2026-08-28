@@ -77,6 +77,9 @@ class TestPipelineOrchestrator:
         from trade_krono_cli.kronos_runner import KronosForecastResult
         from trade_krono_cli.pipeline import QuantPipeline
 
+        mock_ta = MagicMock()
+        mock_ta.analyze_batch.return_value = []
+
         mock_kr = MagicMock()
         mock_kr.predict_batch.return_value = [
             KronosForecastResult(
@@ -88,7 +91,7 @@ class TestPipelineOrchestrator:
             ),
         ]
 
-        pipeline = QuantPipeline(kronos_runner=mock_kr, skip_kronos=False, no_cache=True)
+        pipeline = QuantPipeline(ta_runner=mock_ta, kronos_runner=mock_kr, no_cache=True)
         results = pipeline.run_kronos_only(tickers=["600519"], date="2026-08-12")
         assert len(results) == 1
         assert results[0].direction == "UP"
