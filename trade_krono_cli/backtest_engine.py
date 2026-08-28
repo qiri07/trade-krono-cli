@@ -167,9 +167,9 @@ class BacktestEngine:
                     continue  # 无退出价，跳过
                 pnl = self._close_position(pos, exit_price, day, ticker, prev_close_map)
                 cash += pnl.net_proceeds
-                trades.append(pnl.trade_log)
+                trades.append(pnl.trade_log)  # type: ignore[arg-type]
                 if pnl.blocked:
-                    blocked_reason = pnl.trade_log.get("blocked_reason", "")
+                    blocked_reason = pnl.trade_log.get("blocked_reason", "")  # type: ignore[union-attr]
                     if "LIMIT_UP" in blocked_reason:
                         pass  # 涨停无法卖出，保留持仓到下一天
                     elif "LIMIT_DOWN" in blocked_reason:
@@ -180,7 +180,7 @@ class BacktestEngine:
             if not today_signals:
                 # 估算当日持仓市值，记录权益曲线
                 equity = cash + sum(
-                    pos.shares * self._get_exit_price(pos.ticker, day, prev_close_map) or 0
+                    pos.shares * (self._get_exit_price(pos.ticker, day, prev_close_map) or 0)
                     for pos in positions.values()
                 )
                 daily_equity.append((day, equity))
@@ -478,7 +478,7 @@ def compute_benchmark_returns(
     ticker_prices: dict[str, dict[str, float]] = {}
     for r in records:
         ticker_prices.setdefault(r.ticker, {})
-        ticker_prices[r.ticker][r.date] = r.exit_price or r.entry_price
+        ticker_prices[r.ticker][r.date] = float(r.exit_price or r.entry_price or 0.0)
 
     # 等权组合每日收益
     cum_ret: list[float] = [0.0]
@@ -498,7 +498,7 @@ def compute_benchmark_returns(
         else:
             cum_ret.append(cum_ret[-1])
 
-    return {d: round(r * 100, 4) for d, r in zip(all_dates, cum_ret)}
+    return {d: round(float(r) * 100, 4) for d, r in zip(all_dates, cum_ret)}  # type: ignore[arg-type]
 
 
 def compute_excess_curve(

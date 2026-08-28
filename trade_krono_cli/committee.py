@@ -415,7 +415,7 @@ class InvestmentCommittee:
             )
         elif input_data.kronos_direction == "DOWN":
             bear_points.append(
-                f"【Kronos】量化模型预测下跌 {abs(input_data.kronos_change_pct):.1f}% "
+                f"【Kronos】量化模型预测下跌 {abs(float(input_data.kronos_change_pct or 0)):.1f}% "
                 f"(conf={input_data.kronos_confidence:.0f})"
             )
 

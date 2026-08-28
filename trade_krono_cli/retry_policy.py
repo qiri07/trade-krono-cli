@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import random
 import re
 import threading
 import time
@@ -334,7 +335,7 @@ def _exp_backoff(attempt: int, base_delay: float, jitter: bool) -> float:
     """指数退避 + 可选抖动。"""
     delay = base_delay * (2 ** (attempt - 1))
     if jitter:
-        delay = delay * (0.5 + 0.5 * time.random())  # [0.5, 1.0] 随机因子
+        delay = delay * (0.5 + 0.5 * random.random())  # [0.5, 1.0] 随机因子
     return delay
 
 

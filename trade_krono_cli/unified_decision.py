@@ -240,7 +240,7 @@ class UnifiedInvestmentDecision:
         sig_counts: dict[Signal, int] = {}
         for sig, _, _ in votes:
             sig_counts[sig] = sig_counts.get(sig, 0) + 1
-        final = max(sig_counts, key=sig_counts.get)
+        final = max(sig_counts, key=sig_counts.get)  # type: ignore[arg-type]
         majority_count = sig_counts[final]
 
         # confidence = 加权平均， dissent 扣分

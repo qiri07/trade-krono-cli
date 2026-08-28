@@ -404,8 +404,8 @@ class KronosRunner:
                 return res
 
         try:
-            inner_result = self._predict_one_retriable(ticker, eval_date)
-            return inner_result
+            inner_result = self._predict_one_retriable(ticker, eval_date)  # type: ignore[call-arg,misc]
+            return inner_result  # type: ignore[return-value,misc]
         except Exception as e:
             res.error = f"{type(e).__name__}: {e}"
             category, desc = classify_error(e)
@@ -658,7 +658,6 @@ class KronosRunner:
                 x_df, x_ts, y_ts, last_close = self._prepare(tk, eval_date)
                 prepared.append((tk, x_df, x_ts, y_ts, last_close))
                 results.append(res)
-                all_results.append(res)
             except DataError as e:
                 res.error = f"{type(e).__name__}: {e}"
                 logger.error(f"❌ 数据准备失败 {tk}: {sanitize_for_log(str(e))}")
@@ -680,7 +679,6 @@ class KronosRunner:
 
         # ── 分批推理 ────────────────────────────────────────────────────────
         batches = self._split_batches(valid_items, self.batch_size)
-        all_results: list[KronosForecastResult] = []
 
         for batch_idx, batch in enumerate(batches):
             df_list = [p[1] for p, _ in batch]

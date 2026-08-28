@@ -8,7 +8,7 @@ SignalAssessment 是多源信号（TA + Kronos + Committee）的融合结果，
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from trade_krono_cli.domain.prediction import KronosPrediction, TAAnalysis
 from trade_krono_cli.domain.types import Direction
@@ -127,7 +127,7 @@ class SignalAssessment:
     # ── 序列化 ──────────────────────────────────────────────────────────
 
     def to_dict(self) -> dict:
-        d = {
+        d: dict[str, Any] = {
             "ticker": self.ticker,
             "eval_date": self.eval_date,
             "final_signal": self.final_signal.value,

@@ -188,5 +188,7 @@ def apply_abnormality_risk_boost(
 
     registry = get_risk_boost_registry()
     booster = registry.get(strategy) or registry.get("fixed_boost")
+    if booster is None:
+        return base_risk_score
     result = booster.boost(base_risk_score, flags, params)
     return result if isinstance(result, float) else result.boosted_risk

@@ -22,6 +22,7 @@ from trade_krono_cli.domain.signal import (
     _compute_ev,
     detect_conflict,
 )
+from trade_krono_cli.domain.types import Direction
 
 # ═══════════════════════════════════════════════════════
 #  build_signal_assessment
@@ -51,7 +52,7 @@ def build_signal_assessment(
     # ── 融合信号 ──────────────────────────────────────────────────────
     votes: list[tuple[Signal, float, str]] = []
     if ta:
-        votes.append((ta.signal, ta.confidence, "ta"))
+        votes.append((Signal(ta.signal), ta.confidence, "ta"))
     if kronos:
         k_sig = {"UP": Signal.BUY, "DOWN": Signal.SELL, "FLAT": Signal.HOLD}[kronos.direction.value]
         ks = kronos.distribution.direction_score or 0.5
@@ -62,14 +63,14 @@ def build_signal_assessment(
     final_signal, final_confidence = _majority_vote(votes)
 
     # ── 冲突检测 ──────────────────────────────────────────────────────
-    ta_sig = ta.signal if ta else None
-    kr_dir = kronos.direction if kronos else None
+    ta_sig = Signal(ta.signal) if ta else None
+    kr_dir = Direction(kronos.direction) if kronos and kronos.direction else None
     conflict = detect_conflict(ta_sig, kr_dir, committee_rec)
 
     # ── EV 计算 ───────────────────────────────────────────────────────
     ev_result = _compute_ev(
         direction=kronos.direction if kronos else None,
-        expected_return=kronos.expected_return if kronos else None,
+        expected_return=kronos.expected_return if kronos else 0.0,
         p10=kronos.p10 if kronos else None,
         p90=kronos.p90 if kronos else None,
         cost_bps=cost_bps,
@@ -240,7 +241,7 @@ def _majority_vote(
     sig_counts: dict[Signal, int] = {}
     for sig, _, _ in votes:
         sig_counts[sig] = sig_counts.get(sig, 0) + 1
-    final = max(sig_counts, key=sig_counts.get)
+    final = max(sig_counts, key=sig_counts.get)  # type: ignore[arg-type]
     majority_count = sig_counts[final]
 
     total_weight = sum(w for _, w, _ in votes)

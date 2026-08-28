@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, cast
 
 from loguru import logger
 
@@ -154,20 +154,20 @@ class PredictionEvaluator:
 
         for job in jobs:
             signals = self._research.get_signals_by_job(job["job_id"])
-            for sig in signals:
-                if sig.get("ta_error") and sig.get("kronos_error"):
+            for _sig in signals:
+                if _sig.get("ta_error") and _sig.get("kronos_error"):
                     continue
-                if tickers and sig["ticker"] not in tickers:
+                if tickers and _sig["ticker"] not in tickers:
                     continue
                 records_to_eval.append(
                     _EvalSignal(
                         job_id=job["job_id"],
-                        ticker=sig["ticker"],
+                        ticker=_sig["ticker"],
                         eval_date=job["date"],
-                        ta_signal=sig.get("ta_signal"),
-                        kronos_direction=sig.get("kronos_direction"),
-                        composite_score=sig.get("composite_score"),
-                        kronos_change=sig.get("kronos_change"),
+                        ta_signal=_sig.get("ta_signal"),
+                        kronos_direction=_sig.get("kronos_direction"),
+                        composite_score=_sig.get("composite_score"),
+                        kronos_change=_sig.get("kronos_change"),
                     )
                 )
 
@@ -299,25 +299,22 @@ class PredictionEvaluator:
 
             # 基准对比
             bench_ret = compute_benchmark_returns(bt_result.records, {})
-            full_summary.benchmark_curve = bench_ret
+            full_summary.benchmark_curve = bench_ret  # type: ignore[assignment]
             full_summary.benchmark_cum_return_pct = round(
-                list(bench_ret.values())[-1] if bench_ret else 0.0, 2
+                float(list(bench_ret.values())[-1][-1] if bench_ret else 0.0), 2
             )
             if bt_result.total_return_pct != 0.0:
                 full_summary.excess_return_pct = round(
                     bt_result.total_return_pct - full_summary.benchmark_cum_return_pct, 2
                 )
-            full_summary.excess_curve = (
-                {
-                    d: round(bt_val - bench_val, 4)
-                    for d, (bt_val, bench_val) in zip(
-                        [d for d, _ in bt_result.equity_curve],
-                        [v for _, v in bt_result.equity_curve],
-                    )
-                }
-                if bt_result.equity_curve
-                else {}
-            )
+            equity_curve = cast(list[tuple[str, float]], bt_result.equity_curve)
+            full_summary.excess_curve = {  # type: ignore[assignment,misc]
+                d: round(float(bt_val - bench_val), 4)  # type: ignore[has-type]
+                for d, (bt_val, bench_val) in zip(
+                    [d for d, _ in equity_curve],
+                    [v for _, v in equity_curve],
+                )
+            } if equity_curve else {}
 
             # 将回测增强指标写入 horizon 汇总
             for horizon in self.HORIZONS:
@@ -430,13 +427,13 @@ class PredictionEvaluator:
     ) -> None:
         """将评估结果存储到 research database。"""
         db_path = self._research._db_path
-        store_summary(summary, db_path, eval_date_range)
+        store_summary(summary, str(db_path), eval_date_range)
         logger.info("💾 评估结果已存储到研究数据库")
 
     def get_latest_evaluation(self) -> Optional[dict]:
         """获取最新的评估结果。"""
         db_path = self._research._db_path
-        return get_latest_evaluation(db_path)
+        return get_latest_evaluation(str(db_path))
 
     def print_report(self, summary: EvaluationSummary) -> None:
         """打印评估报告到控制台。"""

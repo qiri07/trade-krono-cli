@@ -357,8 +357,8 @@ class TradingAgentsRunner:
 
         # 使用智能重试执行分析
         try:
-            inner_result = self._analyze_one_retriable(ticker, date)
-            return inner_result
+            inner_result = self._analyze_one_retriable(ticker, date)  # type: ignore[call-arg,misc]
+            return inner_result  # type: ignore[return-value,misc]
         except Exception as e:
             # 重试耗尽，记录失败
             result.error = f"{type(e).__name__}: {e}"

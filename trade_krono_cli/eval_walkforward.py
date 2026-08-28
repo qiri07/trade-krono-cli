@@ -388,8 +388,8 @@ def run_walk_forward_quick(
     return WalkForwardResult(
         run_id=run_id,
         config=cfg,
-        total_windows=len(eval_dates),
-        valid_windows=len(eval_dates),
+        total_windows=len(list(eval_dates)),
+        valid_windows=len(list(eval_dates)),
         records=records,
         summary=summary,
     )

@@ -13,7 +13,7 @@ InvestmentDecision 是 pipeline 的终点：融合 SignalAssessment + RiskAssess
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from trade_krono_cli.domain.risk import RiskAssessment
 from trade_krono_cli.domain.signal import SignalAssessment
@@ -97,7 +97,7 @@ class InvestmentDecision:
     # ── 序列化 ──────────────────────────────────────────────────────────
 
     def to_dict(self) -> dict:
-        d = {
+        d: dict[str, Any] = {
             "ticker": self.ticker,
             "eval_date": self.eval_date,
             "signal": self.signal.value,
@@ -180,7 +180,7 @@ class InvestmentDecision:
 
     def to_legacy_dict(self) -> dict:
         """转换为旧版 pipeline dict（向后兼容）。"""
-        d = {
+        d: dict[str, Any] = {
             "ticker": self.ticker,
             "signal": self.signal.value,
             "confidence": self.confidence,
@@ -193,7 +193,7 @@ class InvestmentDecision:
         }
         if self.signal_assessment:
             d["ta_signal"] = (
-                self.signal_assessment.ta.signal.value if self.signal_assessment.ta else None
+                self.signal_assessment.ta.signal if self.signal_assessment.ta else None
             )
             d["ta_confidence"] = (
                 self.signal_assessment.ta.confidence if self.signal_assessment.ta else None

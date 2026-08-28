@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from loguru import logger
 
@@ -38,7 +38,7 @@ class AkShareProvider(DataProvider):
 
     # ── 懒加载 ────────────────────────────────────────────────
 
-    _ak = None
+    _ak: Any = None
 
     @classmethod
     def _ensure_import(cls) -> None:

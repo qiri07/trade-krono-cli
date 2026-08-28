@@ -242,13 +242,14 @@ class StockFilter:
         val = rule.value
 
         if op == FilterOp.MIN:
-            return float(actual) >= float(val)  # type: ignore[operator]
+            return float(actual) >= float(val)  # type: ignore[operator,arg-type]
         elif op == FilterOp.MAX:
-            return float(actual) <= float(val)  # type: ignore[operator]
+            return float(actual) <= float(val)  # type: ignore[operator,arg-type]
         elif op == FilterOp.RANGE:
-            low, high = val  # type: ignore[misc]
+            low = val[0]  # type: ignore[index]
+            high = val[1]  # type: ignore[index]
             fv = float(actual)
-            return float(low) <= fv <= float(high)  # type: ignore[operator]
+            return float(low) <= fv <= float(high)  # type: ignore[operator,arg-type]
         elif op == FilterOp.IN:
             return str(actual) in val  # type: ignore[operator]
         elif op == FilterOp.NOT_IN:
@@ -256,7 +257,7 @@ class StockFilter:
         elif op == FilterOp.CONTAINS:
             return val in str(actual)  # type: ignore[operator]
         elif op == FilterOp.MATCH:
-            return bool(val.search(str(actual)))  # type: ignore[union-attr]
+            return bool(val.search(str(actual)))  # type: ignore[attr-defined]
         else:
             return True  # 未知操作符：不拦截
 

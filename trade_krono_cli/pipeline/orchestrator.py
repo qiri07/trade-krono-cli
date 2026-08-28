@@ -173,7 +173,7 @@ class PipelineFactory:
         if source in ("manual", ""):
             return None
         try:
-            return UniverseEngine.from_config(config.filters, universe_source=source)
+            return UniverseEngine.from_config(config.filters, universe_source=str(source))
         except Exception as e:
             logger.warning(f"UniverseEngine 初始化失败: {e}，使用手动 tickers 模式")
             return None
@@ -478,10 +478,10 @@ class QuantPipeline:
         # 再用常规 StockFilter 过滤（置信度 / 信号等）
         passed_ta, rejected_ta_extra = filter_engine.apply_batch(filtered_ta_list)
         rejected_ta.extend(rejected_ta_extra)
-        filtered_ta = passed_ta
+        filtered_ta_final: list[Any] = passed_ta
 
         logger.info(
-            f"📋 元数据过滤完成: 保留 {len(filtered_ta)} 只 "
+            f"📋 元数据过滤完成: 保留 {len(filtered_ta_final)} 只 "
             f"（原始池 {len(filtered_ta)} + 已过滤 {len(rejected_ta)}）"
         )
 

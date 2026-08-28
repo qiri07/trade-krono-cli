@@ -140,7 +140,7 @@ class TAAnalysis:
         return {
             "ticker": self.ticker,
             "eval_date": self.eval_date,
-            "signal": self.signal.value,
+            "signal": self.signal,
             "confidence": self.confidence,
             "thesis": self.thesis,
             "reasoning": self.reasoning,

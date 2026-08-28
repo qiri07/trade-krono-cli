@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from loguru import logger
 
@@ -37,7 +37,7 @@ class TushareProvider(DataProvider):
 
     # ── 懒加载 ────────────────────────────────────────────────
 
-    _ts = None
+    _ts: Any = None
     _token: str = ""
 
     @classmethod

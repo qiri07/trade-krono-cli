@@ -12,7 +12,7 @@ API 参考：
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from loguru import logger
 
@@ -34,7 +34,7 @@ class MootDxProvider(DataProvider):
 
     # ── 懒加载 ────────────────────────────────────────────────
 
-    _client = None
+    _client: Any = None
 
     @classmethod
     def _ensure_client(cls):

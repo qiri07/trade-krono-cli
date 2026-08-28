@@ -620,7 +620,7 @@ class PipelineConfig:
                 sub_data[k] = v
             else:
                 flat_data[k] = v
-        return cls(**flat_data, **sub_data)
+        return cls(**dict(flat_data), **dict(sub_data))  # type: ignore[arg-type]
 
     @classmethod
     def load(cls, path: str | Path) -> "PipelineConfig":

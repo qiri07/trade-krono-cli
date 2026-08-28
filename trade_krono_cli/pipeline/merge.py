@@ -81,8 +81,8 @@ def _compute_ev_for_merged(
     dist = getattr(kronos, "prediction_distribution", None)
     if dist is not None and type(dist).__name__ == "MagicMock":
         dist = None
-    p10 = float(getattr(dist, "p10", None)) if dist is not None else None
-    p90 = float(getattr(dist, "p90", None)) if dist is not None else None
+    p10 = float(getattr(dist, "p10", None)) if dist is not None else None  # type: ignore[arg-type]
+    p90 = float(getattr(dist, "p90", None)) if dist is not None else None  # type: ignore[arg-type]
 
     prob_win, prob_loss, _, _, ev, raev = _domain_compute_ev(
         direction=None,

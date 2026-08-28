@@ -121,7 +121,7 @@ def _compute_percentiles(
 def compute_single_sample(
     closes: np.ndarray,
     last_close: float,
-) -> tuple[float, str, float, float, Optional[float], float, tuple]:
+) -> tuple[float, str, float, float | None, float, float, tuple]:
     """
     对单条预测路径计算分布指标。
 
@@ -305,7 +305,7 @@ def build_result_dict(
             direction_score,
             confidence_score,
             percentiles,
-        ) = compute_single_sample(closes_f, last_close)
+        ) = compute_single_sample(closes_f, last_close)  # type: ignore[assignment]
 
     distribution = PredictionDistribution(
         expected_return=change_pct,
