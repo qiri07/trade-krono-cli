@@ -1,5 +1,8 @@
 """测试 CLI 参数解析。"""
 
+from __future__ import annotations
+
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +10,11 @@ import pytest
 from typer.testing import CliRunner
 
 from trade_krono_cli.cli import app
+
+
+def _strip_ansi(text: str) -> str:
+    """移除 ANSI 转义码，用于 CI 环境下 Rich 着色输出后的字符串检查。"""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 @pytest.fixture
@@ -17,14 +25,15 @@ def runner():
 def test_cli_help(runner):
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "trade-krono-cli" in result.output
+    assert "trade-krono-cli" in _strip_ansi(result.output)
 
 
 def test_run_command_help(runner):
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "--tickers" in result.output
-    assert "--date" in result.output
+    output = _strip_ansi(result.output)
+    assert "--tickers" in output
+    assert "--date" in output
 
 
 def test_ta_command_help(runner):
@@ -52,7 +61,7 @@ def test_run_missing_tickers(runner):
     with patch("trade_krono_cli.cli_commands.core._load_env"):
         result = runner.invoke(app, ["run", "--date", "2026-08-11"])
         assert result.exit_code != 0
-        assert "股票列表为空" in result.output
+        assert "股票列表为空" in _strip_ansi(result.output)
 
 
 def test_load_tickers_from_string():
@@ -151,17 +160,18 @@ def test_repo_commands_help(runner):
     """repo 子命令应显示帮助信息。"""
     result = runner.invoke(app, ["repo", "--help"])
     assert result.exit_code == 0
-    assert "status" in result.output
-    assert "doctor" in result.output
-    assert "update" in result.output
-    assert "pin" in result.output
+    assert "status" in _strip_ansi(result.output)
+    assert "doctor" in _strip_ansi(result.output)
+    assert "update" in _strip_ansi(result.output)
+    assert "pin" in _strip_ansi(result.output)
 
 
 def test_repo_status_command(runner):
     """repo-status 应正常运行（不崩溃）。"""
     result = runner.invoke(app, ["repo-status"])
     # 可能因缺少外部 repo 配置而退出非 0，但不应是 help 错误
-    assert "repo-status" in result.output or result.exit_code == 0
+    output = _strip_ansi(result.output)
+    assert "repo-status" in output or result.exit_code == 0
 
 
 def test_eval_prediction_command_help(runner):
@@ -174,7 +184,7 @@ def test_history_command_help(runner):
     """history 命令应显示帮助。"""
     result = runner.invoke(app, ["history", "--help"])
     assert result.exit_code == 0
-    assert "--ticker" in result.output
+    assert "--ticker" in _strip_ansi(result.output)
 
 
 def test_run_command_with_tickers_patched(runner):
