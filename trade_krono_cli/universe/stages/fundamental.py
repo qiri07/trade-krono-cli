@@ -77,10 +77,13 @@ class FundamentalFilterStage(FilterStage):
                 if t.pb < self.min_pb:
                     continue
 
-            # ── 行业过滤（当前 tickets 暂无 industry 字段，
-            #    留作后续扩展：可从 baostock 补充）────────────────
-            # TODO: 接入 baostock query_stock_industry 填充 industry
-            #       目前 industry_whitelist/blacklist 暂不生效
+            # ── 行业过滤 ──────────────────────────────────────────────
+            if self.industry_whitelist and t.industry is not None:
+                if t.industry not in self.industry_whitelist:
+                    continue
+            if self.industry_blacklist and t.industry is not None:
+                if t.industry in self.industry_blacklist:
+                    continue
 
             kept.append(t)
 

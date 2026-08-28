@@ -282,6 +282,59 @@ class TestFundamentalFilterStage:
         result = stage.filter(tickets)
         assert len(result) == 2
 
+    def test_industry_whitelist(self):
+        """industry_whitelist 精确匹配过滤。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", industry="银行"),
+            UniverseTicket(ticker="sh.600002", industry="房地产"),
+            UniverseTicket(ticker="sh.600003", industry="银行"),
+        ]
+        stage = FundamentalFilterStage(industry_whitelist=["银行"])
+        result = stage.filter(tickets)
+        assert len(result) == 2
+        assert all(t.industry == "银行" for t in result)
+
+    def test_industry_blacklist(self):
+        """industry_blacklist 排除指定行业。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", industry="银行"),
+            UniverseTicket(ticker="sh.600002", industry="房地产"),
+            UniverseTicket(ticker="sh.600003", industry="煤炭"),
+        ]
+        stage = FundamentalFilterStage(industry_blacklist=["房地产", "煤炭"])
+        result = stage.filter(tickets)
+        assert len(result) == 1
+        assert result[0].ticker == "sh.600001"
+
+    def test_industry_none_skips_filter(self):
+        """industry=None 时，whitelist/blacklist 不过滤（宽松策略）。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", industry="银行"),
+            UniverseTicket(ticker="sh.600002", industry=None),
+            UniverseTicket(ticker="sh.600003", industry="房地产"),
+        ]
+        stage = FundamentalFilterStage(industry_whitelist=["银行"])
+        result = stage.filter(tickets)
+        # industry=None 不匹配 whitelist，但也不强制排除（宽松）
+        assert len(result) == 2
+        assert result[0].ticker == "sh.600001"
+        assert result[1].ticker == "sh.600002"
+
+    def test_industry_combined_with_pe_filter(self):
+        """industry 过滤与 PE 过滤联合生效。"""
+        tickets = [
+            UniverseTicket(ticker="sh.600001", industry="银行", pe=8.0),
+            UniverseTicket(ticker="sh.600002", industry="房地产", pe=15.0),
+            UniverseTicket(ticker="sh.600003", industry="银行", pe=60.0),
+        ]
+        stage = FundamentalFilterStage(
+            industry_whitelist=["银行"],
+            pe_range=(5.0, 50.0),
+        )
+        result = stage.filter(tickets)
+        assert len(result) == 1
+        assert result[0].ticker == "sh.600001"
+
 
 class TestFactorFilterStage:
     def test_empty_input(self):

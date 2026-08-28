@@ -50,9 +50,37 @@ def _make_fake_bs(login_ok=True, codes=None):
     def fake_query():
         return FakeRecordSet(rows)
 
+    # Industry lookup: maps ticker → (industry_code, industry_name)
+    _industry_data: dict[str, list[list]] = {
+        "sh.600519": [["B61", "银行"]],
+        "sz.000858": [["C21", "食品饮料"]],
+        "sh.601318": [["B61", "银行"]],
+    }
+
+    class FakeIndustryRecordSet:
+        def __init__(self, rows):
+            self._rows = rows
+            self._idx = 0
+            self.error_code = "0"
+
+        def next(self):
+            return self._idx < len(self._rows)
+
+        def get_row_data(self):
+            if self._idx < len(self._rows):
+                row = list(self._rows[self._idx])
+                self._idx += 1
+                return row
+            return []
+
+    def fake_query_industry(code=""):
+        rows = _industry_data.get(str(code), [])
+        return FakeIndustryRecordSet(rows)
+
     fake_bs.login = fake_login
     fake_bs.logout = fake_logout
     fake_bs.query_stock_basic = fake_query
+    fake_bs.query_stock_industry = fake_query_industry
     return fake_bs
 
 
@@ -412,3 +440,90 @@ class TestMootDxNoCodes:
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
             assert result == []
+
+
+class TestFillIndustry:
+    """Tests for MootDxUniverseProvider._fill_industry."""
+
+    def test_fill_industry_populates_known_tickers(self):
+        """Known tickers get their industry from baostock."""
+        from trade_krono_cli.universe.provider import UniverseTicket
+
+        tickets = [
+            UniverseTicket(ticker="sh.600519", price=1800.0),
+            UniverseTicket(ticker="sz.000858", price=150.0),
+            UniverseTicket(ticker="sh.999999", price=50.0),  # unknown
+        ]
+        fake_bs = _make_fake_bs()
+
+        with patch.dict("sys.modules", {"baostock": fake_bs}):
+            provider = MootDxUniverseProvider()
+            provider._fill_industry(tickets)
+
+        assert tickets[0].industry == "银行"
+        assert tickets[1].industry == "食品饮料"
+        assert tickets[2].industry is None  # not in lookup
+
+    def test_fill_industry_baostock_import_error(self):
+        """ImportError is silently ignored."""
+        from trade_krono_cli.universe.provider import UniverseTicket
+
+        tickets = [UniverseTicket(ticker="sh.600519")]
+        fake_bs_no_import = ModuleType("baostock")
+
+        with patch.dict("sys.modules", {"baostock": fake_bs_no_import}):
+            provider = MootDxUniverseProvider()
+            provider._fill_industry(tickets)
+
+        assert tickets[0].industry is None
+
+    def test_fill_industry_login_failure(self):
+        """baostock login failure is silently ignored."""
+        from trade_krono_cli.universe.provider import UniverseTicket
+
+        tickets = [UniverseTicket(ticker="sh.600519")]
+        fake_bs = _make_fake_bs(login_ok=False)
+
+        with patch.dict("sys.modules", {"baostock": fake_bs}):
+            provider = MootDxUniverseProvider()
+            provider._fill_industry(tickets)
+
+        assert tickets[0].industry is None
+
+
+class TestMootDxIndustryInGetUniverse:
+    """Test that get_universe populates industry for mootdx provider."""
+
+    def test_industry_populated_from_baostock(self):
+        """Tickets returned by get_universe should have industry filled."""
+        fake_bs = _make_fake_bs()
+
+        class FakeDF:
+            empty = False
+            _data = [{"code": "600519", "market": 1, "price": 1800.0}]
+            def iterrows(self):
+                for row in self._data:
+                    yield None, row
+            def __len__(self):
+                return len(self._data)
+
+        class FakeQuotes:
+            def quotes(self, symbol):
+                return FakeDF()
+
+        class QuotesClass:
+            @staticmethod
+            def factory(market):
+                return FakeQuotes()
+
+        fake_quotes_mod = ModuleType("mootdx.quotes")
+        fake_quotes_mod.Quotes = QuotesClass
+        fake_mootdx = ModuleType("mootdx")
+        fake_mootdx.quotes = fake_quotes_mod
+
+        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod}):
+            provider = MootDxUniverseProvider()
+            result = provider.get_universe()
+            assert len(result) == 1
+            assert result[0].ticker == "sh.600519"
+            assert result[0].industry == "银行"

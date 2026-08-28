@@ -31,6 +31,7 @@ class UniverseTicket:
     market_cap: Optional[float] = None  # 总市值（亿元， akshare 返回单位）
     volume_ratio: Optional[float] = None  # 量比
     turnover_rate: Optional[float] = None  # 换手率（%）
+    industry: Optional[str] = None  # 行业名称（如 "银行"、"食品饮料"）
     source: str = ""  # 数据来源标识
 
 
@@ -112,6 +113,7 @@ class AkshareUniverseProvider(UniverseProvider):
                         market_cap=self._safe_float(row.get("总市值")),
                         volume_ratio=self._safe_float(row.get("量比")),
                         turnover_rate=self._safe_float(row.get("换手率")),
+                        industry=str(row.get("行业", "")) or None,
                         source=self.name,
                     )
                 )
@@ -231,8 +233,47 @@ class MootDxUniverseProvider(UniverseProvider):
             # 批次间隔，避免被服务端限流
             _time.sleep(0.3)
 
+        # ── 补充行业数据（通过 baostock query_stock_industry）─────────────────
+        self._fill_industry(tickets)
+
         logger.info(f"📡 MootDx 全市场获取: {len(tickets)} 只 A 股")
         return tickets
+
+    def _fill_industry(self, tickets: list[UniverseTicket]) -> None:
+        """
+        通过 baostock query_stock_industry 补充 industry 字段。
+
+        逐个 ticker 查询，失败时静默跳过，不影响其他股票。
+        """
+        try:
+            import baostock as bs  # type: ignore
+
+            lg = bs.login()
+            if lg.error_code != "0":
+                logger.debug(f"baostock login failed in _fill_industry: {lg.error_msg}")
+                return
+            try:
+                for ticket in tickets:
+                    try:
+                        rs = bs.query_stock_industry(code=ticket.ticker)  # type: ignore
+                        if rs.error_code != "0":
+                            continue
+                        rows: list[list] = []
+                        while rs.next():
+                            rows.append(rs.get_row_data())
+                        if rows:
+                            # baostock 返回: [industry_code, industry_name, ...]
+                            row = rows[0]
+                            if len(row) > 1 and row[1]:
+                                ticket.industry = str(row[1]) or None
+                    except Exception:
+                        continue
+            finally:
+                bs.logout()  # type: ignore
+        except ImportError:
+            logger.debug("baostock 未安装，跳过行业数据补充")
+        except Exception as e:
+            logger.debug(f"_fill_industry 异常: {e}")
 
 
 # ── 工厂函数 ──────────────────────────────────────────────────────────────────
