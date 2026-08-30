@@ -181,6 +181,12 @@ def run(
     pb_range: str | None = typer.Option(None, "--pb-range", help='PB 区间，如 "0,3"'),
     max_risk_score: float | None = typer.Option(None, "--max-risk-score", help="风险分上限（0-1）"),
     min_volume_ratio: float | None = typer.Option(None, "--min-volume-ratio", help="最小量比"),
+    min_volume: float | None = typer.Option(
+        None, "--min-volume", help="最小成交量（股），低于此值排除（如 10000000 表示 1000 万股）"
+    ),
+    market_cap_min: float | None = typer.Option(
+        None, "--market-cap-min", help="市值最小值（亿元），低于此值排除"
+    ),
     exclude_st: bool = typer.Option(
         True, "--exclude-st/--include-st", help="是否排除 ST 股票（默认排除）"
     ),
@@ -305,6 +311,11 @@ def run(
         fc_overrides: dict = {}
         if mc_range:
             fc_overrides["market_cap_range"] = mc_range
+        if market_cap_min is not None:
+            fc_overrides["market_cap_min"] = market_cap_min
+        if min_volume is not None:
+            # CLI 接受"股"，内部转换为"手"（1手=100股）
+            fc_overrides["min_volume"] = min_volume / 100
         if ind_whitelist:
             fc_overrides["industry_whitelist"] = ind_whitelist
         if ind_blacklist:
@@ -317,7 +328,9 @@ def run(
         console.print(
             f"   数据源: {universe_source} | "
             f"过滤: exclude_st={fc.exclude_st}, "
-            f"低价阈值={fc.low_price_threshold}元"
+            f"低价阈值={fc.low_price_threshold}元, "
+            f"市值≥{fc.market_cap_min or '不限'}亿, "
+            f"成交量≥{int(fc.min_volume * 100 if fc.min_volume else 0):,}股"
         )
         tk_list = engine.run(eval_date=date)
         if not tk_list:
@@ -341,6 +354,11 @@ def run(
     filter_overrides: dict = {}
     if mc_range:
         filter_overrides["market_cap_range"] = mc_range
+    if market_cap_min is not None:
+        filter_overrides["market_cap_min"] = market_cap_min
+    if min_volume is not None:
+        # CLI 接受"股"，内部转换为"手"（1手=100股）
+        filter_overrides["min_volume"] = min_volume / 100
     if ind_whitelist:
         filter_overrides["industry_whitelist"] = ind_whitelist
     if ind_blacklist:

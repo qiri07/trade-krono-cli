@@ -90,7 +90,10 @@ class UniverseEngine:
         cache_ttl_hours : int
             缓存有效期（小时）
         """
-        provider = get_universe_provider(universe_source)
+        provider = get_universe_provider(
+            universe_source,
+            populate_market_cap=universe_source in ("mootdx", "tonghuashun"),
+        )
         if provider is None:
             provider = get_universe_provider("akshare")
         if provider is None:
@@ -118,6 +121,7 @@ class UniverseEngine:
         stages.append(
             FundamentalFilterStage(
                 market_cap_range=filter_config.market_cap_range,
+                market_cap_min=filter_config.market_cap_min,
                 pe_range=filter_config.pe_range,
                 pb_range=filter_config.pb_range,
                 min_pb=filter_config.min_pb,
@@ -135,6 +139,7 @@ class UniverseEngine:
             FactorFilterStage(
                 min_volume_ratio=filter_config.min_volume_ratio,
                 min_turnover_rate=filter_config.min_turnover_rate,
+                min_volume=filter_config.min_volume,
             )
         )
 
@@ -165,10 +170,13 @@ class UniverseEngine:
         date_key = eval_date or _today_str()
         cache_key = self._cache_key(date_key)
 
-        # 尝试缓存
-        cached = self._load_cache(cache_key, date_key)
-        if cached is not None:
-            return cached
+        # 当过滤条件需要 market_cap / volume 数据时，跳过缓存以确保数据最新
+        if self._cache_requires_refresh():
+            logger.info("⚠️  当前过滤条件需要实时市值/成交量数据，跳过缓存重新拉取")
+        else:
+            cached = self._load_cache(cache_key, date_key)
+            if cached is not None:
+                return cached
 
         # 执行管道
         tickets = self._provider.get_universe()
@@ -191,6 +199,25 @@ class UniverseEngine:
 
         logger.info(f"✅ UniverseEngine 完成: {len(tickets)} 只股票进入候选池")
         return tickers
+
+    def _cache_requires_refresh(self) -> bool:
+        """判断当前过滤配置是否需要跳过缓存（依赖 market_cap / volume 数据时）。"""
+        for stage in self._stages:
+            if hasattr(stage, "market_cap_min") and stage.market_cap_min is not None:
+                return True
+            if hasattr(stage, "pe_range") and stage.pe_range is not None:
+                return True
+            if hasattr(stage, "pb_range") and stage.pb_range is not None:
+                return True
+            if hasattr(stage, "min_pb") and stage.min_pb is not None:
+                return True
+            if hasattr(stage, "min_volume") and stage.min_volume is not None:
+                return True
+            if hasattr(stage, "min_volume_ratio") and stage.min_volume_ratio is not None:
+                return True
+            if hasattr(stage, "min_turnover_rate") and stage.min_turnover_rate is not None:
+                return True
+        return False
 
     # ── 缓存 ─────────────────────────────────────────────────────────────────
 
@@ -217,8 +244,9 @@ class UniverseEngine:
                 logger.debug(f"Universe cache expired ({age_hours:.1f}h)")
                 return None
             data = json.loads(path.read_text(encoding="utf-8"))
-            logger.info(f"📦 Universe cache hit: {len(data)} tickers (age={age_hours:.1f}h)")
-            return data
+            tickers = data.get("tickers", [])
+            logger.info(f"📦 Universe cache hit: {len(tickers)} tickers (age={age_hours:.1f}h)")
+            return tickers
         except Exception as e:
             logger.debug(f"Universe cache load failed: {e}")
             return None

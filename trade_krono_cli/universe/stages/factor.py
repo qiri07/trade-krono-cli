@@ -21,6 +21,7 @@ class FactorFilterStage(FilterStage):
     过滤条件（全部可选，None 表示不限制）：
       - min_volume_ratio: 最小量比
       - min_turnover_rate: 最小换手率（%）
+      - min_volume: 最小成交量（手），低于此值排除
     """
 
     name = "factor"
@@ -29,9 +30,11 @@ class FactorFilterStage(FilterStage):
         self,
         min_volume_ratio: Optional[float] = None,
         min_turnover_rate: Optional[float] = None,
+        min_volume: Optional[float] = None,
     ):
         self.min_volume_ratio = min_volume_ratio
         self.min_turnover_rate = min_turnover_rate
+        self.min_volume = min_volume
 
     def filter(self, tickets: list[UniverseTicket]) -> list[UniverseTicket]:
         if not tickets:
@@ -46,6 +49,10 @@ class FactorFilterStage(FilterStage):
 
             if self.min_turnover_rate is not None and t.turnover_rate is not None:
                 if t.turnover_rate < self.min_turnover_rate:
+                    continue
+
+            if self.min_volume is not None and t.volume is not None:
+                if t.volume < self.min_volume:
                     continue
 
             kept.append(t)

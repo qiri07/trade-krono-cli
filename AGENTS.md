@@ -42,7 +42,7 @@ trade_krono_cli/
 ├── security.py           # 敏感信息脱敏（sanitize_for_log）
 ├── domain/               # 领域层（无外部依赖）：types / decision / signal / risk / prediction
 ├── data_providers/       # 多数据源抽象层（DataProvider ABC + KlineData/RealtimeQuote/StockMetadata）
-│   ├── base.py / factory.py / baostock_provider.py / akshare_provider.py / mootdx_provider.py / tushare_provider.py
+│   ├── base.py / factory.py / baostock_provider.py / akshare_provider.py / mootdx_provider.py / tushare_provider.py / tonghuashun_provider.py
 ├── pipeline/             # 流水线编排：orchestrator（QuantPipeline + PipelineFactory）/ merge / reporter / stream_pipeline
 ├── models/               # Session 封装：ta_session.py / kronos_session.py
 ├── adapters/             # 外部项目适配器：kronos.py / tradingagents.py
@@ -65,7 +65,7 @@ trade_krono_cli/
 │   └── experiments.py    # Experiments 表读写
 
 ├── universe/             # 前置股票池过滤引擎
-│   ├── provider.py       # UniverseProvider ABC + AkshareUniverseProvider
+│   ├── provider.py       # UniverseProvider ABC + AkshareUniverseProvider / MootDxUniverseProvider / TongHuaShunUniverseProvider
 │   ├── engine.py         # UniverseEngine（多阶段管道编排）
 │   └── stages/           # 过滤阶段
 │       ├── __init__.py   # FilterStage ABC
@@ -87,7 +87,7 @@ outputs/                     # 运行时产物（gitignore）
        ├─ FundamentalFilterStage → 排除 PE/PB/市值异常（含 min_pb 资不抵债过滤）
        ├─ FilterRulesStage      → 应用自定义规则链（filter_rules）
        └─ FactorFilterStage     → 排除低流动性
-  → [DataProviders]（baostock/akshare/mootdx/tushare 主备降级）
+  → [DataProviders]（baostock/akshare/mootdx/tushare/tonghuashun 主备降级）
   → [并行执行] ThreadPoolExecutor(max_workers=2)：TA 分析 + Kronos 预测
   → [StockFilter]（后验：置信度/信号/风险分过滤）
   → [merge_results]（TA + Kronos 融合打分，含 T+1 约束）

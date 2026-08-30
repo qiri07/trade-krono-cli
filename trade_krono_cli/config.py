@@ -84,6 +84,10 @@ class Settings:
         default_factory=lambda: os.getenv("FILTER_MARKET_CAP_RANGE", "")
     )
     """市值范围（亿元），格式：\"50,5000\"，为空则不过滤。"""
+    filter_market_cap_min: str = field(
+        default_factory=lambda: os.getenv("FILTER_MARKET_CAP_MIN", "")
+    )
+    """市值最小值（亿元），低于此值排除。为空则不过滤。"""
     filter_industry_whitelist: str = field(
         default_factory=lambda: os.getenv("FILTER_INDUSTRY_WHITELIST", "")
     )
@@ -104,6 +108,10 @@ class Settings:
         default_factory=lambda: os.getenv("FILTER_MIN_VOLUME_RATIO", "")
     )
     """最小量比，为空则不过滤。"""
+    filter_min_volume: str = field(
+        default_factory=lambda: os.getenv("FILTER_MIN_VOLUME", "")
+    )
+    """最小成交量（手），为空则不过滤。"""
     filter_exclude_st: bool = field(
         default_factory=lambda: os.getenv("FILTER_EXCLUDE_ST", "true").lower() == "true"
     )
@@ -206,6 +214,10 @@ class Settings:
         default_factory=lambda: os.getenv("MOOTDX_ENABLED", "true").lower() == "true"
     )
     """是否启用 mootdx 数据源"""
+    tonghuashun_enabled: bool = field(
+        default_factory=lambda: os.getenv("TONGHUASHUN_ENABLED", "true").lower() == "true"
+    )
+    """是否启用同花顺（fuyao）数据源（需配置 HITHINK_FINANCE_API_KEY）"""
 
     # ── 数据获取配置 ──────────────────────────────────────
     baostock_sleep_sec: float = field(

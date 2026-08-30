@@ -1,10 +1,14 @@
 """
-CLI 维护命令 — status / clear-cache / warm-cache / history / eval-prediction / retry-failed。
+CLI 维护命令 — status / clear-cache / warm-cache / sync-universe / history / eval-prediction / retry-failed。
 """
 
 from __future__ import annotations
 
+import time
+from datetime import datetime, timedelta
+
 import typer
+from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
@@ -136,6 +140,122 @@ def warm_cache(
     console.print(
         f"[bold green]✅ 预热完成[/bold green] 共 {total_rows} 行 / {total_segments} 个缓存段"
     )
+
+
+# ═══════════════════════════════════════════════════════
+# sync-universe — 全量 A 股 K 线缓存同步
+# ═══════════════════════════════════════════════════════
+
+
+def sync_universe(
+    source: str = typer.Option(
+        "tonghuashun",
+        "--source",
+        "-s",
+        help="股票池来源：tonghuashun / mootdx / akshare（默认 tonghuashun）",
+    ),
+    date: str = typer.Option(
+        datetime.now().strftime("%Y-%m-%d"),
+        "--date",
+        "-d",
+        help="基准日期 YYYY-MM-DD（默认今天）",
+    ),
+    lookback: int = typer.Option(730, "--lookback", "-l", help="回溯天数，默认 730（约 2 年）"),
+    delay: float = typer.Option(
+        0.05, "--delay", help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）"
+    ),
+    show_progress: bool = typer.Option(
+        True, "--no-progress", "-p", help="不显示进度条（静默模式）"
+    ),
+) -> None:
+    """
+    全量 A 股 K 线缓存同步。
+
+    从指定 UniverseProvider 获取全市场 A 股列表，逐只拉取历史 K 线并写入缓存。
+    首次运行拉取全量历史（>30 天永久缓存，≤30 天 1h TTL）；
+    后续运行自动增量更新，仅拉取新增交易日数据。
+
+    示例：
+      trade-krono-cli sync-universe                  # 用同花顺同步全部 A 股
+      trade-krono-cli sync-universe --source mootdx  # 用 mootdx 同步
+      trade-krono-cli sync-universe --lookback 1095  # 同步 3 年历史
+    """
+    _load_env()
+
+    from trade_krono_cli.data import fetch_kline_incremental
+
+    end_date = datetime.strptime(date, "%Y-%m-%d")
+    start_date = (end_date - timedelta(days=lookback * 2)).strftime("%Y-%m-%d")
+
+    # ── 获取 A 股列表 ──────────────────────────────────────────────────────────
+    if source == "tonghuashun":
+        from trade_krono_cli.universe.provider import TongHuaShunUniverseProvider
+
+        provider = TongHuaShunUniverseProvider()
+        tickets = provider.get_universe()
+        tickers = [t.ticker for t in tickets if t.ticker]
+        logger.info(f"📋 同花顺 A 股列表: {len(tickers)} 只")
+    else:
+        from trade_krono_cli.universe.provider import get_universe_provider
+
+        provider_other = get_universe_provider(source)
+        if provider_other is None:
+            console.print(f"[red]❌ 数据源 '{source}' 不可用，请检查配置[/red]")
+            raise typer.Exit(1)
+        tickets = provider_other.get_universe()
+        tickers = [t.ticker for t in tickets if t.ticker]
+        logger.info(f"📋 {source} A 股列表: {len(tickers)} 只")
+
+    if not tickers:
+        console.print("[red]❌ 无法获取 A 股列表，请检查数据源配置[/red]")
+        raise typer.Exit(1)
+
+    total = len(tickers)
+    success_count = 0
+    fail_tickers: list[str] = []
+
+    console.print(
+        f"[bold green]🔥 全量 K 线缓存同步[/bold green] "
+        f"来源={source} 股票数={total} 日期={start_date}~{date}"
+    )
+
+    for i, ticker in enumerate(tickers, 1):
+        if show_progress:
+            console.print(f"  [{i}/{total}] {ticker} ...", end="\r")
+
+        try:
+            df = fetch_kline_incremental(
+                ticker=ticker,
+                start_date=start_date,
+                end_date=date,
+                frequency="d",
+                adjustflag="1",
+                use_cache=True,
+            )
+            n_rows = len(df) if df is not None else 0
+            success_count += 1
+            if show_progress:
+                console.print(f"  [{i}/{total}] {ticker} ✅ {n_rows}行", end="\r")
+        except Exception as e:
+            fail_tickers.append(ticker)
+            logger.debug(f"⚠️  {ticker} K 线拉取失败: {e}")
+            if show_progress:
+                console.print(f"  [{i}/{total}] {ticker} ❌ {str(e)[:40]}", end="\r")
+
+        if delay > 0 and i < total:
+            time.sleep(delay)
+
+    if show_progress:
+        console.print()  # 换行，清除进度行
+
+    console.print(
+        f"[bold green]✅ 同步完成[/bold green] "
+        f"成功={success_count}/{total}  失败={len(fail_tickers)}"
+    )
+    if fail_tickers:
+        console.print(f"[yellow]⚠️  失败股票（可稍后重试）: {', '.join(fail_tickers[:20])}[/yellow]")
+        if len(fail_tickers) > 20:
+            console.print(f"[dim]   … 还有 {len(fail_tickers) - 20} 只[/dim]")
 
 
 # ═══════════════════════════════════════════════════════

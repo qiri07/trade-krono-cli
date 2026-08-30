@@ -68,8 +68,8 @@ class DataProviderFactory:
 
     @staticmethod
     def _default_fallbacks() -> list[str]:
-        """默认降级顺序：baostock → akshare → mootdx → tushare"""
-        return ["akshare", "mootdx", "tushare"]
+        """默认降级顺序：baostock → akshare → mootdx → tushare → tonghuashun"""
+        return ["akshare", "mootdx", "tushare", "tonghuashun"]
 
     @property
     def provider_chain(self) -> list[str]:
@@ -321,6 +321,10 @@ class DataProviderFactory:
                 from trade_krono_cli.data_providers.tushare_provider import TushareProvider
 
                 registry[name] = TushareProvider
+            elif name == "tonghuashun":
+                from trade_krono_cli.data_providers.tonghuashun_provider import TongHuaShunProvider
+
+                registry[name] = TongHuaShunProvider
             else:
                 logger.warning(f"未知的 Provider 名称: {name}")
                 return None

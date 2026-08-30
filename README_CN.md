@@ -266,6 +266,7 @@ FILTER_MIN_TURNOVER_RATE=            # 最小换手率（%）
 | `akshare` | akshare | 需 `uv add akshare`，部分接口需要代理 |
 | `mootdx` | mootdx + baostock | 免费，无需 API Key（推荐） |
 | `baostock` | baostock | 仅获取股票列表，无行情数据 |
+| `tonghuashun` | 同花顺（fuyao） | 需配置 `HITHINK_FINANCE_API_KEY`，数据覆盖完整 |
 
 #### 降级策略
 
@@ -540,6 +541,33 @@ trade-krono-cli clear-cache
 ```
 
 清除 K 线数据、TA 分析和 Kronos 预测的所有缓存。
+
+### `sync-universe` — 全量 A 股 K 线缓存同步
+
+首次运行前需在 `.env` 中配置数据源：
+
+```bash
+# 同花顺（推荐，数据覆盖最全）
+HITHINK_FINANCE_API_KEY=sk-xxx   # 在 https://fuyao.aicubes.cn/admin 获取
+TONGHUASHUN_ENABLED=true
+```
+
+```bash
+# 首次全量同步（~5500 只 A 股，2 年历史，约 2~3 小时）
+trade-krono-cli sync-universe
+
+# 指定 3 年历史
+trade-krono-cli sync-universe --lookback 1095
+
+# 使用其他数据源
+trade-krono-cli sync-universe --source mootdx
+trade-krono-cli sync-universe --source akshare
+
+# 静默模式（不显示进度条，适合脚本）
+trade-krono-cli sync-universe --no-progress
+```
+
+**增量更新**：后续运行自动跳过已有缓存，仅拉取新增交易日数据（秒级完成）。
 
 ## 输出说明
 

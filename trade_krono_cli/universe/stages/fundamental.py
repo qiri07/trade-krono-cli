@@ -21,6 +21,7 @@ class FundamentalFilterStage(FilterStage):
 
     过滤条件（全部可选，None 表示不限制）：
       - market_cap_range: 总市值 [low, high] 亿元
+      - market_cap_min: 总市值最小值（亿元），低于此值排除
       - pe_range: PE(TTM) [low, high]
       - pb_range: PB [low, high]
       - min_pb: 最低市净率（PB < min_pb 视为资不抵债风险）
@@ -33,6 +34,7 @@ class FundamentalFilterStage(FilterStage):
     def __init__(
         self,
         market_cap_range: Optional[tuple[float, float]] = None,
+        market_cap_min: Optional[float] = None,
         pe_range: Optional[tuple[float, float]] = None,
         pb_range: Optional[tuple[float, float]] = None,
         min_pb: Optional[float] = None,
@@ -40,6 +42,7 @@ class FundamentalFilterStage(FilterStage):
         industry_blacklist: list[str] | None = None,
     ):
         self.market_cap_range = market_cap_range
+        self.market_cap_min = market_cap_min
         self.pe_range = pe_range
         self.pb_range = pb_range
         self.min_pb = min_pb
@@ -57,6 +60,11 @@ class FundamentalFilterStage(FilterStage):
             if self.market_cap_range and t.market_cap is not None:
                 low, high = self.market_cap_range
                 if not (low <= t.market_cap <= high):
+                    continue
+
+            # ── 市值最小值 ────────────────────────────────────────
+            if self.market_cap_min is not None and t.market_cap is not None:
+                if t.market_cap < self.market_cap_min:
                     continue
 
             # ── PE 范围 ───────────────────────────────────────────

@@ -27,6 +27,9 @@ class FilterConfig:
 
     # ── 基本面过滤 ────────────────────────────────────────
     market_cap_range: Optional[tuple[float, float]] = None
+    """市值范围（亿元），格式：(min, max)，为 None 时不过滤。"""
+    market_cap_min: Optional[float] = None
+    """市值最小值（亿元），低于此值排除。"""
     industry_whitelist: list[str] = field(default_factory=list)
     industry_blacklist: list[str] = field(default_factory=list)
     pe_range: Optional[tuple[float, float]] = None
@@ -34,6 +37,8 @@ class FilterConfig:
     max_risk_score: Optional[float] = None
     min_volume_ratio: Optional[float] = None
     min_turnover_rate: Optional[float] = None
+    min_volume: Optional[float] = None
+    """最小成交量（手），低于此值排除。"""
 
     # ── 自定义规则（应用于 Universe 和 StockFilter）────────
     filter_rules: list[FilterRule] = field(default_factory=list)

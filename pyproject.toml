@@ -24,6 +24,8 @@ dependencies = [
     "baostock>=0.8.8",
     # cli-anything-tradingagents 已移至外部项目管理（external/repos.yaml + repo.lock）
     # 不再作为 PyPI 依赖引入，避免与 TradingAgents-astock 产生包级耦合
+    "akshare>=1.18.88",
+    "mootdx>=0.11.7",
 ]
 
 [project.optional-dependencies]

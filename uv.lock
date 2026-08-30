@@ -1587,8 +1587,11 @@ name = "trade-krono-cli"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "akshare", version = "1.18.88", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "akshare", version = "1.18.94", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "baostock" },
     { name = "loguru" },
+    { name = "mootdx" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -1643,11 +1646,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "akshare", specifier = ">=1.18.88" },
     { name = "akshare", marker = "extra == 'akshare'", specifier = ">=1.10.0" },
     { name = "akshare", marker = "extra == 'data'", specifier = ">=1.10.0" },
     { name = "akshare", marker = "extra == 'full'", specifier = ">=1.10.0" },
     { name = "baostock", specifier = ">=0.8.8" },
     { name = "loguru", specifier = ">=0.7.0" },
+    { name = "mootdx", specifier = ">=0.11.7" },
     { name = "mootdx", marker = "extra == 'data'", specifier = ">=0.11.0" },
     { name = "mootdx", marker = "extra == 'full'", specifier = ">=0.11.0" },
     { name = "mootdx", marker = "extra == 'mootdx'", specifier = ">=0.11.0" },
