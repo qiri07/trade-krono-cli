@@ -77,6 +77,21 @@ class DataProviderFactory:
         chain = [self.primary] + [f for f in self.fallbacks if f != self.primary]
         return chain
 
+    @staticmethod
+    def _provider_chain_for_ticker(ticker: str) -> list[str]:
+        """根据 ticker 前缀返回最优 Provider 链。
+
+        北交所（bj.）股票 baostock/mootdx 均不支持，将 tonghuashun 置顶。
+        """
+        s = get_data_factory()
+        chain = [s.primary] + [f for f in s.fallbacks if f != s.primary]
+        if ticker.startswith("bj."):
+            # 北交所：tonghuashun 排第一，其余保持原序
+            if "tonghuashun" in chain:
+                chain.remove("tonghuashun")
+            chain.insert(0, "tonghuashun")
+        return chain
+
     # ── Provider 实例管理 ───────────────────────────────────────────────
 
     def get_provider(self, name: str) -> Optional[DataProvider]:
@@ -141,11 +156,14 @@ class DataProviderFactory:
         """
         拉取 K 线数据，按优先级尝试各 Provider，失败自动降级。
 
+        北交所（bj.）股票由 baostock/mootdx 不支持，强制优先使用 tonghuashun。
+
         Returns
         -------
         KlineData | None
         """
-        for name in self.provider_chain:
+        chain = self._provider_chain_for_ticker(ticker)
+        for name in chain:
             provider = self.get_provider(name)
             if provider is None:
                 continue
@@ -175,7 +193,8 @@ class DataProviderFactory:
         adjustflag: str,
     ) -> bool:
         """尝试从各 Provider 拉取 K 线，返回是否成功。"""
-        for name in self.provider_chain:
+        chain = self._provider_chain_for_ticker(ticker)
+        for name in chain:
             provider = self.get_provider(name)
             if provider is None:
                 continue
@@ -204,7 +223,8 @@ class DataProviderFactory:
         -------
         RealtimeQuote | None
         """
-        for name in self.provider_chain:
+        chain = self._provider_chain_for_ticker(ticker)
+        for name in chain:
             provider = self.get_provider(name)
             if provider is None:
                 continue
@@ -230,7 +250,8 @@ class DataProviderFactory:
         -------
         StockMetadata | None
         """
-        for name in self.provider_chain:
+        chain = self._provider_chain_for_ticker(ticker)
+        for name in chain:
             provider = self.get_provider(name)
             if provider is None:
                 continue

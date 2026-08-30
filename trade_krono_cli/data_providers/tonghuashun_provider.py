@@ -308,7 +308,7 @@ class TongHuaShunProvider(DataProvider):
 
     @staticmethod
     def _ticker_to_thscode(ticker: str) -> Optional[str]:
-        """sh.600519 → 600519.SH / sz.000858 → 000858.SZ"""
+        """sh.600519 → 600519.SH / sz.000858 → 000858.SZ / bj.920002 → 920002.BJ"""
         parts = ticker.split(".")
         if len(parts) != 2:
             return None
