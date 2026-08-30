@@ -716,8 +716,8 @@ class TestDataProviderFactory:
     def test_default_chain(self):
         factory = DataProviderFactory()
         assert factory.primary == "baostock"
-        assert factory.fallbacks == ["akshare", "mootdx", "tushare"]
-        assert factory.provider_chain == ["baostock", "akshare", "mootdx", "tushare"]
+        assert factory.fallbacks == ["akshare", "mootdx", "tushare", "tonghuashun"]
+        assert factory.provider_chain == ["baostock", "akshare", "mootdx", "tushare", "tonghuashun"]
 
     def test_custom_chain(self):
         factory = DataProviderFactory(primary="akshare", fallbacks=["baostock", "mootdx"])

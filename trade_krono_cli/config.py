@@ -108,9 +108,7 @@ class Settings:
         default_factory=lambda: os.getenv("FILTER_MIN_VOLUME_RATIO", "")
     )
     """最小量比，为空则不过滤。"""
-    filter_min_volume: str = field(
-        default_factory=lambda: os.getenv("FILTER_MIN_VOLUME", "")
-    )
+    filter_min_volume: str = field(default_factory=lambda: os.getenv("FILTER_MIN_VOLUME", ""))
     """最小成交量（手），为空则不过滤。"""
     filter_exclude_st: bool = field(
         default_factory=lambda: os.getenv("FILTER_EXCLUDE_ST", "true").lower() == "true"

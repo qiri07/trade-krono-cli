@@ -43,7 +43,9 @@ def api_key(monkeypatch: pytest.MonkeyPatch) -> str:
 # ═══════════════════════════════════════════════════════
 
 
-def test_init_raises_without_api_key(provider: TongHuaShunProvider, monkeypatch: pytest.MonkeyPatch):
+def test_init_raises_without_api_key(
+    provider: TongHuaShunProvider, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.delenv("HITHINK_FINANCE_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="HITHINK_FINANCE_API_KEY"):
         provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-29")

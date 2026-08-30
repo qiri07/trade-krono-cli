@@ -296,18 +296,15 @@ class MootDxUniverseProvider(UniverseProvider):
                 # 每 50 只打印进度
                 if (i + 1) % 50 == 0:
                     logger.debug(
-                        f"  市值数据进度: {i + 1}/{len(tickets)} "
-                        f"(已更新={updated}, 失败={failed})"
+                        f"  市值数据进度: {i + 1}/{len(tickets)} (已更新={updated}, 失败={failed})"
                     )
-            logger.info(
-                f"📊 市值数据补充完成: {updated}/{len(tickets)} 只成功, "
-                f"{failed} 只失败"
-            )
+            logger.info(f"📊 市值数据补充完成: {updated}/{len(tickets)} 只成功, {failed} 只失败")
 
         return tickets
 
 
 # ── 同花顺 Universe Provider ───────────────────────────────────────────────────
+
 
 class TongHuaShunUniverseProvider(UniverseProvider):
     """
@@ -333,7 +330,9 @@ class TongHuaShunUniverseProvider(UniverseProvider):
             or os.getenv("FUYAO_API_KEY", "").strip()
         )
         if not api_key:
-            logger.warning("HITHINK_FINANCE_API_KEY / FUYAO_API_KEY 未配置，无法使用同花顺 UniverseProvider")
+            logger.warning(
+                "HITHINK_FINANCE_API_KEY / FUYAO_API_KEY 未配置，无法使用同花顺 UniverseProvider"
+            )
             return []
 
         try:
@@ -357,7 +356,9 @@ class TongHuaShunUniverseProvider(UniverseProvider):
                 resp.raise_for_status()
                 body = resp.json()
                 if body.get("code") != 0:
-                    logger.warning(f"同花顺 ticker list code={body.get('code')} msg={body.get('message')}")
+                    logger.warning(
+                        f"同花顺 ticker list code={body.get('code')} msg={body.get('message')}"
+                    )
                     break
                 items = body.get("data", {}).get("item", [])
                 if not items:

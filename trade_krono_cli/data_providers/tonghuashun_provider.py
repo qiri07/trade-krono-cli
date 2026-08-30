@@ -60,9 +60,7 @@ class TongHuaShunProvider(DataProvider):
             or os.getenv("FUYAO_API_KEY", "").strip()
         )
         if not key:
-            raise RuntimeError(
-                "HITHINK_FINANCE_API_KEY 未配置，请在 .env 中设置同花顺 API Key。"
-            )
+            raise RuntimeError("HITHINK_FINANCE_API_KEY 未配置，请在 .env 中设置同花顺 API Key。")
         cls._api_key = key
         cls._initialized = True
 
@@ -78,7 +76,10 @@ class TongHuaShunProvider(DataProvider):
         try:
             url = f"{_BASE_URL}{path}"
             resp = requests.get(
-                url, params=params if params is not None else {}, headers=TongHuaShunProvider._headers(), timeout=15
+                url,
+                params=params if params is not None else {},
+                headers=TongHuaShunProvider._headers(),
+                timeout=15,
             )
             resp.raise_for_status()
             body = resp.json()

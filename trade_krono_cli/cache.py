@@ -7,7 +7,7 @@
   kronos_cache — Kronos 预测结果（JSON dict）
 
 缓存语义：
-  · K 线：历史数据（>30天前）永久缓存，当日/近期数据 1h TTL
+  · K 线：全量永久缓存，当日数据不设置 TTL
   · TA / Kronos：缓存 key 含 config_hash + 模型版本，配置变更自动失效
 """
 
@@ -29,9 +29,9 @@ from trade_krono_cli.config import Settings, get_settings
 _CACHE_TABLES: frozenset[str] = frozenset({"kline_cache", "ta_cache", "kronos_cache"})
 
 # K 线 TTL 常量
-_KLINE_HISTORICAL_TTL = 0.0  # 0 = 永久（历史数据只追加不失效）
-_KLINE_RECENT_TTL = 3600.0  # 1 小时（当日/近期数据）
-_KLINE_HISTORY_WINDOW_DAYS = 30  # 超过此天数的数据视为"历史"
+_KLINE_HISTORICAL_TTL = 0.0  # 永久（所有历史数据只追加不失效）
+_KLINE_RECENT_TTL = _KLINE_HISTORICAL_TTL  # 已统一为永久，保留符号以便旧代码引用
+_KLINE_HISTORY_WINDOW_DAYS = 1  # 保留，实际已不用于 TTL 判定
 
 
 def _validate_table_name(table: str, allowed: frozenset[str]) -> str:
@@ -151,7 +151,7 @@ class Cache:
             conn.commit()
 
     def warm_history(self, ticker: str, end_date: str, lookback_days: int = 730) -> tuple[int, int]:
-        """预热 K 线缓存：拉取历史数据，历史段永久缓存，近期段 1h TTL。"""
+        """预热 K 线缓存：拉取历史数据，全部以永久缓存写入。"""
         from datetime import datetime, timedelta
 
         from trade_krono_cli.data import fetch_kline
@@ -159,33 +159,20 @@ class Cache:
         end = datetime.strptime(end_date, "%Y-%m-%d")
         start = end - timedelta(days=lookback_days)
         start_s = start.strftime("%Y-%m-%d")
-        recent_cutoff = (end - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime("%Y-%m-%d")
 
-        logger.info(
-            f"🔥 预热 K 线缓存: {ticker} {start_s}~{end_date} "
-            f"(历史={_KLINE_HISTORY_WINDOW_DAYS}d 永久，近期 1h)"
-        )
+        logger.info(f"🔥 预热 K 线缓存: {ticker} {start_s}~{end_date}（全部永久缓存）")
         df = fetch_kline(ticker, start_s, end_date, frequency="d", adjustflag="1", use_cache=True)
         if df is None or len(df) == 0:
             return 0, 0
 
         fetched = len(df)
-        cached = 0
-        # 历史段：[start_s, recent_cutoff) → 永久缓存；近期段：[recent_cutoff, end] → 1h TTL
-        hist_mask = pd.to_datetime(df["timestamps"]) < pd.Timestamp(recent_cutoff)
-        recent_mask = ~hist_mask
-        for mask, ttl in [(hist_mask, _KLINE_HISTORICAL_TTL), (recent_mask, _KLINE_RECENT_TTL)]:
-            seg = df[mask]
-            if len(seg) == 0:
-                continue
-            seg_start = seg["timestamps"].iloc[0].strftime("%Y-%m-%d")
-            seg_end = seg["timestamps"].iloc[-1].strftime("%Y-%m-%d")
-            self.set_kline(ticker, seg_start, seg_end, "d", seg, ttl=ttl)
-            cached += 1
-            logger.debug(f"  📦 {'永久' if ttl == 0 else '1h'}: {ticker} {seg_start}~{seg_end}")
+        seg_start = df["timestamps"].iloc[0].strftime("%Y-%m-%d")
+        seg_end = df["timestamps"].iloc[-1].strftime("%Y-%m-%d")
+        self.set_kline(ticker, seg_start, seg_end, "d", df, ttl=_KLINE_HISTORICAL_TTL)
+        logger.debug(f"  📦 永久缓存: {ticker} {seg_start}~{seg_end}")
 
-        logger.info(f"✅ K 线缓存预热完成: {ticker} {fetched}行 → {cached}段")
-        return fetched, cached
+        logger.info(f"✅ K 线缓存预热完成: {ticker} {fetched}行 → 1段（永久）")
+        return fetched, 1
 
     # ── TA 缓存 ───────────────────────────────────────
 

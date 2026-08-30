@@ -186,8 +186,8 @@ class TestWarmHistory:
     """Cache.warm_history 测试。"""
 
     def test_warm_history_splits_history_and_recent(self):
-        """历史段永久，近期段 1h TTL。"""
-        from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL, _KLINE_RECENT_TTL, Cache
+        """预热时全部写入永久缓存，不区分历史/近期段。"""
+        from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL, Cache
 
         cache = Cache()
         cache.clear_all()
@@ -223,16 +223,16 @@ class TestWarmHistory:
             fetched, cached = cache.warm_history(ticker, end_date, lookback_days=lookback_days)
 
         assert fetched == len(df)
-        assert cached == 2  # 历史 + 近期各一段
+        assert cached == 1  # 全部永久缓存，单一段
 
-        # 历史段应为永久（ttl=0），近期段为 1h
+        # 全部段应为永久（ttl=0）
         with cache._conn as conn:
             rows_hist = conn.execute(
                 "SELECT ttl FROM kline_cache WHERE ticker=?", (ticker,)
             ).fetchall()
             ttls = [r[0] for r in rows_hist]
             assert _KLINE_HISTORICAL_TTL in ttls
-            assert _KLINE_RECENT_TTL in ttls
+            assert all(t == _KLINE_HISTORICAL_TTL for t in ttls)  # 无 1h TTL 段
 
     def test_warm_history_empty_returns_zero(self):
         """无数据时应返回 (0, 0)。"""

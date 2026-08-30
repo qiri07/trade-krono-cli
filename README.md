@@ -727,11 +727,11 @@ The system uses the same SQLite file but is conceptually split into two layers:
 
 | Table | Purpose | TTL |
 |----|------|-----|
-| `kline_cache` | K-line data (Pickle serialized) | 1h (intraday) / 24h (daily) |
-| `ta_cache` | TA analysis results (JSON) | 24h |
-| `kronos_cache` | Kronos prediction results (JSON) | 24h |
+| `kline_cache` | K-line data (Pickle serialized) | Permanent (ttl=0, never expires) |
+| `ta_cache` | TA analysis results (JSON) | Configurable (config_hash + model_ver) |
+| `kronos_cache` | Kronos prediction results (JSON) | Configurable (config_hash + model_ver) |
 
-These tables are used to **accelerate repeat queries** — re-analyzing the same stock on the same date returns cached data directly. Data can be discarded after TTL expires.
+K-line cache uses **permanent storage** (ttl=0) — data is never automatically expired. This ensures historical data is always available for backtesting and analysis without re-downloading.
 
 **ResearchDatabase (Persistent Storage, No TTL)**
 
@@ -1190,7 +1190,7 @@ Test Results: **1106 passed** · **87%+ overall coverage** · **mypy clean**
 | File | Coverage |
 |------|----------|
 | `test_cli.py` | CLI entry, parameter parsing, stock list loading, repo command, eval-prediction command |
-| `test_data.py` | K-line data fetching, cache read/write, TTL expiry |
+| `test_data.py` | K-line data fetching, cache read/write, permanent cache (ttl=0), warm_history |
 | `test_merge.py` | Result merge logic, scoring formula, filter pool |
 | `test_pipeline.py` | Pipeline orchestration, error isolation |
 | `test_report.py` | JSON/HTML/console report generation |
@@ -1356,7 +1356,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | Failure Retry | Exponential backoff retry (TA 3x / Kronos 2x, network/connection errors only) | `security.py::retry` |
 | API Rate Limiting | Token bucket algorithm controls baostock request frequency (default 1/sec) | `security.py::TokenBucket` |
 | Path Isolation | External projects injected via `sys.path`; output paths restricted to project root | `kronos_runner.py`, `ta_runner.py`, `cli.py::_sanitize_path` |
-| Cache Safety | SQLite local storage, no data upload; cache TTL auto-expiry; safe deserialization of `investment_decision` / `prediction_uncertainty` | `cache.py`, `ta_runner.py`, `kronos_runner.py` |
+| Cache Safety | SQLite local storage, no data upload; K-line cache is permanent (ttl=0), TA/Kronos cache uses config-based expiry; safe deserialization of `investment_decision` / `prediction_uncertainty` | `cache.py`, `ta_runner.py`, `kronos_runner.py` |
 | baostock Login | Global singleton + thread lock to avoid concurrent conflicts | `data.py::_ensure_bs_login` |
 | Log Sanitization | Exception logs auto-sanitize API keys (regex replace sk-xxx / Bearer xxx) | `security.py::sanitize_for_log` |
 

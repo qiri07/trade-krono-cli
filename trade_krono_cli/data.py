@@ -131,20 +131,10 @@ def fetch_kline(
         kline_data = factory.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
         if kline_data is not None and not kline_data.is_empty:
             out = kline_data.to_dataframe()
-            # 写缓存
-            from datetime import timedelta
+            # 写缓存（永久）
+            from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL
 
-            from trade_krono_cli.cache import (
-                _KLINE_HISTORY_WINDOW_DAYS,
-                _KLINE_RECENT_TTL,
-            )
-
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            recent_cutoff = (end_dt - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime(
-                "%Y-%m-%d"
-            )
-            ttl = _KLINE_RECENT_TTL if start_date >= recent_cutoff else 0.0
-            cache.set_kline(ticker, start_date, end_date, frequency, out, ttl=ttl)
+            cache.set_kline(ticker, start_date, end_date, frequency, out, ttl=_KLINE_HISTORICAL_TTL)
             logger.debug(
                 f"✅ K 线就绪（via {kline_data.source if hasattr(kline_data, 'source') else 'factory'}）: {ticker} 共 {len(out)} 行"
             )
@@ -207,16 +197,10 @@ def fetch_kline(
         }
     ).reset_index(drop=True)
 
-    # 写缓存：历史数据（>30天前）永久缓存，近期数据 1h TTL
-    from trade_krono_cli.cache import (
-        _KLINE_HISTORY_WINDOW_DAYS,
-        _KLINE_RECENT_TTL,
-    )
+    # 写缓存：永久缓存
+    from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL
 
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    recent_cutoff = (end_dt - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime("%Y-%m-%d")
-    ttl = _KLINE_RECENT_TTL if start_date >= recent_cutoff else 0.0
-    cache.set_kline(ticker, start_date, end_date, frequency, out, ttl=ttl)
+    cache.set_kline(ticker, start_date, end_date, frequency, out, ttl=_KLINE_HISTORICAL_TTL)
     logger.debug(f"✅ K 线就绪: {ticker} 共 {len(out)} 行")
 
     return out
@@ -366,7 +350,7 @@ def fetch_kline_incremental(
             f"+ 新 {len(new_df)} 行 → 合并后 {len(merged)} 行"
         )
 
-        # 写回缓存：用完整范围覆盖旧条目，保持历史段永久缓存、近期段 1h TTL
+        # 写回缓存（永久）
         _write_merged_cache(cache, ticker, merged, start_date, end_date, frequency)
         return merged
 
@@ -391,31 +375,14 @@ def _write_merged_cache(
     frequency: str,
 ) -> None:
     """
-    将合并后的 K 线数据写回缓存，按历史/近期分段设置 TTL。
-    历史段（>30天）永久缓存，近期段（≤30天）1h TTL。
+    将合并后的 K 线数据写回缓存，全部以永久缓存写入。
     """
-    from datetime import timedelta
+    from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL
 
-    from trade_krono_cli.cache import (
-        _KLINE_HISTORICAL_TTL,
-        _KLINE_HISTORY_WINDOW_DAYS,
-        _KLINE_RECENT_TTL,
-    )
-
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    recent_cutoff = (end_dt - timedelta(days=_KLINE_HISTORY_WINDOW_DAYS)).strftime("%Y-%m-%d")
-
-    hist_mask = pd.to_datetime(df["timestamps"]) < pd.Timestamp(recent_cutoff)
-    recent_mask = ~hist_mask
-
-    for mask, ttl in [(hist_mask, _KLINE_HISTORICAL_TTL), (recent_mask, _KLINE_RECENT_TTL)]:
-        seg = df[mask]
-        if len(seg) == 0:
-            continue
-        seg_start = seg["timestamps"].iloc[0].strftime("%Y-%m-%d")
-        seg_end = seg["timestamps"].iloc[-1].strftime("%Y-%m-%d")
-        cache.set_kline(ticker, seg_start, seg_end, frequency, seg, ttl=ttl)
-        logger.debug(f"📦 {'永久' if ttl == 0 else '1h'} 缓存: {ticker} {seg_start}~{seg_end}")
+    seg_start = df["timestamps"].iloc[0].strftime("%Y-%m-%d")
+    seg_end = df["timestamps"].iloc[-1].strftime("%Y-%m-%d")
+    cache.set_kline(ticker, seg_start, seg_end, frequency, df, ttl=_KLINE_HISTORICAL_TTL)
+    logger.debug(f"📦 永久缓存: {ticker} {seg_start}~{seg_end}")
 
 
 def _merge_kline_dfs(old_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
