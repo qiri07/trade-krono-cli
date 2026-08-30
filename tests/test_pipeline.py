@@ -1,7 +1,14 @@
 """端到端集成测试（mock TA 和 Kronos）。"""
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+
+def _make_abnormality_flag(ticker: str):
+    """返回一个无异常的 AbnormalityFlag。"""
+    from trade_krono_cli.abnormal_stock import AbnormalityFlag
+
+    return AbnormalityFlag(ticker=ticker, flags=[], severity=0.0, reason="")
 
 
 def test_pipeline_run_parallel():
@@ -57,11 +64,16 @@ def test_pipeline_run_parallel():
         skip_kronos=False,
     )
 
-    merged = pipeline.run_parallel(
-        tickers=["600519", "000858"],
-        date="2026-08-11",
-        output_json="/tmp/test_merged.json",
-    )
+    with patch("trade_krono_cli.pipeline.orchestrator.precheck_stock_status") as mock_precheck:
+        mock_precheck.return_value = {
+            "sh.600519": _make_abnormality_flag("sh.600519"),
+            "sz.000858": _make_abnormality_flag("sz.000858"),
+        }
+        merged = pipeline.run_parallel(
+            tickers=["600519", "000858"],
+            date="2026-08-11",
+            output_json="/tmp/test_merged.json",
+        )
 
     assert len(merged) == 2
     assert merged[0]["rank"] == 1
@@ -154,10 +166,15 @@ def test_pipeline_with_errors():
 
     pipeline = QuantPipeline(ta_runner=mock_ta, kronos_runner=mock_kr)
 
-    merged = pipeline.run_parallel(
-        tickers=["600519", "000858"],
-        date="2026-08-11",
-    )
+    with patch("trade_krono_cli.pipeline.orchestrator.precheck_stock_status") as mock_precheck:
+        mock_precheck.return_value = {
+            "sh.600519": _make_abnormality_flag("sh.600519"),
+            "sz.000858": _make_abnormality_flag("sz.000858"),
+        }
+        merged = pipeline.run_parallel(
+            tickers=["600519", "000858"],
+            date="2026-08-11",
+        )
 
     assert len(merged) == 1
     assert merged[0]["ticker"] == "sh.600519"
