@@ -34,23 +34,28 @@ _KEY_REDACT_RE = re.compile(
 # 输入校验
 # ═══════════════════════════════════════════════════════
 
-_TICKER_RE = re.compile(r"^(?:sh\.|sz\.)?([0-9]{6})$")
+_TICKER_RE = re.compile(r"^(?:sh\.|sz\.|bj\.)?([0-9]{6})$")
 
 
 def validate_ticker(ticker: str) -> str:
     """
     校验并归一化 A 股代码。
-    接受: '600519', 'sh.600519', 'SZ.000858'
-    返回: 'sh.600519' 或 'sz.000858'
+    接受: '600519', 'sh.600519', 'SZ.000858', 'bj.920002'
+    返回: 'sh.600519', 'sz.000858' 或 'bj.920002'
     """
     ticker = ticker.strip().lower()
     m = _TICKER_RE.match(ticker)
     if not m:
-        raise ValueError(f"无效股票代码: '{ticker}'，应为 6 位数字，如 600519 或 sh.600519")
+        raise ValueError(
+            f"无效股票代码: '{ticker}'，应为 6 位数字，"
+            f"如 600519 / sh.600519 / bj.920002"
+        )
     code = m.group(1)
-    # 判断市场
-    if code.startswith(("6", "5", "9")):
+    # 判断市场：以 9 开头（含 920xxx 北交所）归入 bj，6/5 开头归入 sh，其余归入 sz
+    if code.startswith(("6", "5")):
         return f"sh.{code}"
+    elif code.startswith("9"):
+        return f"bj.{code}"
     else:
         return f"sz.{code}"
 

@@ -143,6 +143,8 @@ def detect_exchange(ticker: str) -> str:
         return "sse"
     elif ticker.startswith("sz."):
         return "szse"
+    elif ticker.startswith("bj."):
+        return "bse"
     return "unknown"
 
 

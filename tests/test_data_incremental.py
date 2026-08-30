@@ -56,7 +56,7 @@ class TestGetCachedDateRange:
         assert result == ("2026-01-01", "2026-01-10")
 
     def test_with_multiple_segments(self, tmp_path):
-        """多个不连续缓存条目应合并为 [min_start, max_end]。"""
+        """永久缓存只删除完全被新段覆盖的旧段，非重叠段保留用于合并查询。"""
         from trade_krono_cli.cache import Cache
 
         c = Cache(db_path=tmp_path / "cache.db")
@@ -65,6 +65,7 @@ class TestGetCachedDateRange:
         c.set_kline("sh.600519", "2025-06-01", "2025-06-20", "d", df1, ttl=0)
         c.set_kline("sh.600519", "2026-01-01", "2026-01-10", "d", df2, ttl=0)
         result = c.get_cached_date_range("sh.600519", freq="d")
+        # 两段不重叠，get_cached_date_range 合并为 [min_start, max_end]
         assert result == ("2025-06-01", "2026-01-10")
 
     def test_expired_ttl_returns_none(self, tmp_path):

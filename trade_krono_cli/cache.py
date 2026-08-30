@@ -142,12 +142,25 @@ class Cache:
         df.to_pickle(buf)
         buf.seek(0)
         with self._conn as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO kline_cache "
-                "(ticker, start, end, freq, ttl, data, created) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (ticker, start, end, freq, ttl, buf.read(), time.time()),
-            )
+            if ttl == _KLINE_HISTORICAL_TTL:
+                # 永久缓存：先删除被新段完全覆盖的旧段，再插入新段
+                conn.execute(
+                    "DELETE FROM kline_cache WHERE ticker=? AND freq=? AND end <= ? AND start >= ?",
+                    (ticker, freq, end, start),
+                )
+                conn.execute(
+                    "INSERT INTO kline_cache "
+                    "(ticker, start, end, freq, ttl, data, created) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (ticker, start, end, freq, ttl, buf.read(), time.time()),
+                )
+            else:
+                conn.execute(
+                    "INSERT OR REPLACE INTO kline_cache "
+                    "(ticker, start, end, freq, ttl, data, created) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (ticker, start, end, freq, ttl, buf.read(), time.time()),
+                )
             conn.commit()
 
     def warm_history(self, ticker: str, end_date: str, lookback_days: int = 730) -> tuple[int, int]:

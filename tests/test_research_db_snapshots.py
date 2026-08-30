@@ -88,4 +88,5 @@ class TestSnapshotsMixin:
             description="这是一段中文描述测试",
         )
         result = db.get_data_snapshot("snap_cn")
+        assert result is not None
         assert result["description"] == "这是一段中文描述测试"
