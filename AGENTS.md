@@ -18,6 +18,8 @@ uv add --dev <pkg>               # 添加开发依赖
 uv run trade-krono-cli run --tickers "600519,000858" --date 2026-08-11  # 一键运行（TA + Kronos 并行）
 uv run trade-krono-cli ta --tickers "600519"                           # 仅 TA 分析
 uv run trade-krono-cli kronos --tickers "600519"                       # 仅 Kronos 预测
+uv run trade-krono-cli sync-whitelist                  # 仅同步白名单股票
+uv run python tests/buffett_screen_parallel.py         # 巴菲特六闸门全量筛选（并行版）
 uv run ruff check .                  # Lint 检查
 uv run ruff check --fix .            # Lint + 自动修复
 uv run mypy .                        # 类型检查
@@ -75,8 +77,14 @@ trade_krono_cli/
 │       └── rules.py      # 自定义规则链过滤（FilterRulesStage）
 
 external/TradingAgents-astock | external/Kronos  # 符号链接，gitignore
+tests/buffett_screen.py            # 巴菲特六闸门筛选器（串行版，原始脚本）
+tests/buffett_screen_parallel.py   # 巴菲特六闸门筛选器（并行版，20 并发）
+tests/check_cache_integrity.py     # 缓存完整性检查工具
+tests/check_cache_quality.py       # 缓存质量分析工具
+tests/test_sync_whitelist.py       # sync-whitelist 单元测试
 tests/conftest.py            # 共享 fixture（make_mock_settings）+ pytest_configure/env var 路由 + pytest_sessionstart 隔离校验 + clear_all_globals hook
 outputs/                     # 运行时产物（gitignore）
+outputs/results/             # 报告输出目录（gitignore 中 *.db/*.log，结果文件可提交）
 ```
 
 ### 核心数据流
@@ -110,6 +118,34 @@ outputs/                     # 运行时产物（gitignore）
 11. **测试隔离**：`conftest.py` 的 `pytest_configure` hook 自动设置 `TRADING_KRONO_CACHE_DIR` / `TRADING_KRONO_RESULTS_DIR` 指向临时目录；`pytest_sessionstart` hook 启动时校验隔离状态；`Cache` / `ResearchDatabase` 初始化时调用 `_validate_test_isolation()` 守卫函数，拒绝写入生产路径；`pytest_runtest_setup/call` hook 自动调用 `clear_all_globals()` 清除全局单例；禁止直接引用 `config._settings`
 12. **公共函数/类必须有 Google 风格 docstring**
 13. 外部网络调用（LLM API、数据源 API）必须 mock；集成测试用 `unittest.mock`
+
+## 巴菲特六闸门筛选（Buffett Six-Gate Screening）
+位置：`tests/buffett_screen_parallel.py`（并行版）或 `tests/buffett_screen.py`（串行版）
+前置条件：`.env` 中配置 `HITHINK_FINANCE_API_KEY`（同花顺 Fuyao API）
+
+### 闸门规则
+| 闸门 | 指标 | 阈值 | 逻辑 |
+|------|------|------|------|
+| ① 便宜 | PE_TTM、PB | PE < 16 且 PB < 3 | 为盈利和净资产付的价格 |
+| ② 好生意 | ROE、扣非ROE | ROE > 15% 且 扣非ROE > 12% | 护城河量化，扣非剔除一次性利润 |
+| ③ 财务稳健 | 资产负债率 | < 50% | 厌恶高杠杆 |
+| ④ 利润是真 | 经营现金流净额 | > 0 | 识别纸面利润 |
+| ⑤ 能持续 | 3年净利CAGR | > 0 | 排除周期顶部一次性高盈利 |
+| ⑥ 安全边际 | PE 10年历史分位 | < 30% | ⚠️ 个股无此接口，标注为未知 |
+
+### 运行
+```bash
+# 并行版（推荐，~29分钟完成4966只）
+uv run python tests/buffett_screen_parallel.py
+
+# 串行版（约5+小时，不推荐）
+uv run python tests/buffett_screen.py
+```
+
+### 历史记录
+- 2026-08-31：全量筛选，38 只通过五闸门（①~⑤），详见 `outputs/results/buffett_screen_20260831.txt`
+- 失败主因：① PE/PB 阈值（91.4%）、② ROE 不达标（7.0%）
+- 闸门⑥ 因同花顺 API 不支持个股历史分位，无法验证
 
 ## 代码风格（Code Style）
 - Linter：ruff（行宽 100，豁免 RUF001/RUF002/RUF003、G004）
