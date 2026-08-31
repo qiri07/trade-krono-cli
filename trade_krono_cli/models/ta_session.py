@@ -17,9 +17,6 @@ from loguru import logger
 
 from trade_krono_cli.ta_runner import TradingAgentsRunner
 
-# ── 进程级单例缓存（同进程内相同配置的 session 复用，避免重复初始化 adapter）──
-_SESSION_CACHE: dict[tuple, "TASession"] = {}
-
 
 class TASession:
     """

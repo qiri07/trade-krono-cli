@@ -45,6 +45,8 @@ class Cache:
 
     def __init__(self, db_path: Optional[Path] = None, settings: Optional[Settings] = None):
         self._db_path = db_path or ((settings or get_settings()).cache_dir / "pipeline_cache.db")
+        from trade_krono_cli.config import _validate_test_isolation
+        _validate_test_isolation(self._db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 

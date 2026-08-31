@@ -17,9 +17,6 @@ from loguru import logger
 
 from trade_krono_cli.kronos_runner import KronosRunner
 
-# ── 进程级单例缓存（同进程内相同配置的 session 复用，避免重复加载模型）────────
-_SESSION_CACHE: dict[tuple, "KronosSession"] = {}
-
 
 class KronosSession:
     """
@@ -39,7 +36,7 @@ class KronosSession:
     """
 
     # 类级别缓存，key = (device, model_name, sample_count, T, top_p, lookback)
-    _cache: dict[tuple, "KronosSession"] = _SESSION_CACHE
+    _cache: dict[tuple, "KronosSession"] = {}
 
     def __new__(cls, *args, **kwargs):
         # 跳过显式传入 runner 的测试场景（不命中缓存）

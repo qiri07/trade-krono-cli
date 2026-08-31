@@ -26,6 +26,7 @@ from trade_krono_cli.cli_commands.maintenance import (
     retry_failed,
     status,
     sync_universe,
+    sync_whitelist,
     warm_cache,
 )
 
@@ -54,6 +55,7 @@ __all__ = [
     "run",
     "status",
     "sync_universe",
+    "sync_whitelist",
     "ta",
     "warm_cache",
 ]

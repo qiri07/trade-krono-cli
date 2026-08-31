@@ -518,7 +518,6 @@ def ta(
 
 def kronos(
     tickers: str | None = typer.Option(None, "--tickers", "-t"),
-    config: str | None = typer.Option(None, "--config", "-c"),
     date: str = typer.Option(..., "--date", "-d"),
     pred_len: int = typer.Option(30, "--pred-len"),
     lookback: int = typer.Option(400, "--lookback"),
@@ -565,7 +564,7 @@ def kronos(
 
     from trade_krono_cli.pipeline import QuantPipeline
 
-    tk_list = _load_tickers(tickers, config)
+    tk_list = _load_tickers(tickers, config_file)
     if not tk_list:
         console.print("[red]❌ 股票列表为空[/red]")
         raise typer.Exit(1)

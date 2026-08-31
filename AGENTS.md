@@ -75,7 +75,7 @@ trade_krono_cli/
 │       └── rules.py      # 自定义规则链过滤（FilterRulesStage）
 
 external/TradingAgents-astock | external/Kronos  # 符号链接，gitignore
-tests/conftest.py            # 共享 fixture（make_mock_settings）+ clear_all_globals hook
+tests/conftest.py            # 共享 fixture（make_mock_settings）+ pytest_configure/env var 路由 + pytest_sessionstart 隔离校验 + clear_all_globals hook
 outputs/                     # 运行时产物（gitignore）
 ```
 
@@ -107,7 +107,7 @@ outputs/                     # 运行时产物（gitignore）
 8. 错误处理：捕获具体异常，禁止 `except Exception: pass`
 9. **日志规范**：关键节点 `info`，异常 `error` 并附带上下文（ticker、日期、错误码）；禁止输出 API Key/Token；统一使用 `logger.py.setup_logger()` 初始化
 10. **密钥安全**：LLM API Key 从 `.env` 读取，禁止硬编码；测试中通过 `make_mock_settings` 注入
-11. **测试隔离**：`conftest.py` 的 `pytest_runtest_setup/call` hook 自动调用 `clear_all_globals()` 清除全局单例；禁止直接引用 `config._settings`
+11. **测试隔离**：`conftest.py` 的 `pytest_configure` hook 自动设置 `TRADING_KRONO_CACHE_DIR` / `TRADING_KRONO_RESULTS_DIR` 指向临时目录；`pytest_sessionstart` hook 启动时校验隔离状态；`Cache` / `ResearchDatabase` 初始化时调用 `_validate_test_isolation()` 守卫函数，拒绝写入生产路径；`pytest_runtest_setup/call` hook 自动调用 `clear_all_globals()` 清除全局单例；禁止直接引用 `config._settings`
 12. **公共函数/类必须有 Google 风格 docstring**
 13. 外部网络调用（LLM API、数据源 API）必须 mock；集成测试用 `unittest.mock`
 

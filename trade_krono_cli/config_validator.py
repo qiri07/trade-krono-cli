@@ -198,8 +198,7 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
             f"TA 缓存回退仅在 degrade_mode=ta_cache_fallback 时生效"
         )
 
-    all_messages = [f"❌ {e}" for e in errors] + [f"⚠️  {w}" for w in warnings]
-    del all_messages  # 保留构建逻辑，实际由调用方格式化输出
+    # 由调用方格式化输出，此处仅作校验入口
     return errors, warnings
 
 

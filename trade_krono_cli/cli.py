@@ -56,6 +56,7 @@ from trade_krono_cli.cli_commands import (  # noqa: E402
     run,
     status,
     sync_universe,
+    sync_whitelist,
     ta,
     warm_cache,
 )
@@ -72,6 +73,7 @@ app.command()(status)
 app.command()(clear_cache)
 app.command()(warm_cache)
 app.command()(sync_universe)
+app.command()(sync_whitelist)
 app.command()(history)
 app.command()(eval_prediction)
 app.command()(retry_failed)

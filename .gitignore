@@ -20,3 +20,5 @@ htmlcov/
 external/Kronos
 external/TradingAgents-astock
 coverage.xml
+pipeline.json
+Tests/*.json

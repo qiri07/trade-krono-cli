@@ -26,8 +26,16 @@ class Settings:
     )
     kronos_root: Path = field(default_factory=lambda: _PROJECT_ROOT / "external" / "Kronos")
     project_root: Path = field(default_factory=lambda: _PROJECT_ROOT)
-    results_dir: Path = field(default_factory=lambda: _PROJECT_ROOT / "outputs" / "results")
-    cache_dir: Path = field(default_factory=lambda: _PROJECT_ROOT / "outputs" / "cache")
+    results_dir: Path = field(
+        default_factory=lambda: Path(os.getenv("TRADING_KRONO_RESULTS_DIR", ""))
+        or (_PROJECT_ROOT / "outputs" / "results")
+    )
+    """结果目录，可通过环境变量 TRADING_KRONO_RESULTS_DIR 覆盖（测试隔离用）。"""
+    cache_dir: Path = field(
+        default_factory=lambda: Path(os.getenv("TRADING_KRONO_CACHE_DIR", ""))
+        or (_PROJECT_ROOT / "outputs" / "cache")
+    )
+    """缓存目录，可通过环境变量 TRADING_KRONO_CACHE_DIR 覆盖（测试隔离用）。"""
     memory_log_path: Path = field(
         default_factory=lambda: _PROJECT_ROOT / "outputs" / "memory_log.jsonl"
     )
@@ -222,6 +230,12 @@ class Settings:
         default_factory=lambda: float(os.getenv("BAOSTOCK_SLEEP_SEC", "1.0"))
     )
 
+    # ── 同步白名单配置 ──────────────────────────────────────
+    sync_whitelist: str = field(
+        default_factory=lambda: os.getenv("SYNC_WHITELIST", "")
+    )
+    """同步白名单，逗号分隔的6位股票代码（不含sh./sz./bj.前缀），如 \"600519,000858\"。"""
+
     # ── 运行时路径 ────────────────────────────────────────
     def __post_init__(self):
         """确保目录存在。"""
@@ -288,6 +302,31 @@ def clear_settings() -> None:
     """清除全局单例，使下一次 get_settings() 重新初始化。用于测试隔离。"""
     global _settings
     _settings = None
+
+
+def _validate_test_isolation(db_path: Path) -> None:
+    """测试隔离守卫：当 TRADING_KRONO_CACHE_DIR 已设置时，拒绝访问生产目录。
+
+    此函数必须在 Cache / ResearchDatabase 初始化时调用，防止测试意外写入正式数据库。
+    如果环境变量未设置（生产环境），则不进行检查直接返回。
+    仅阻止指向生产 cache_dir 的路径，允许测试使用任意其他路径（如 pytest tmp_path）。
+    """
+    test_cache_dir = os.getenv("TRADING_KRONO_CACHE_DIR")
+    if not test_cache_dir:
+        return  # 生产环境，不做检查
+    prod_cache_dir = _PROJECT_ROOT / "outputs" / "cache"
+    resolved = db_path.resolve()
+    prod_resolved = prod_cache_dir.resolve()
+    try:
+        resolved.relative_to(prod_resolved)
+    except ValueError:
+        return  # 不在生产目录下，安全
+    raise RuntimeError(
+        f"⛔ 测试隔离违规！尝试访问生产数据库路径：\n"
+        f"  生产缓存目录：{prod_resolved}\n"
+        f"  目标数据库路径：{resolved}\n"
+        f"  请检查是否绕过了 get_settings() 或直接硬编码了生产路径。"
+    )
 
 
 def run_validation() -> tuple[list[str], list[str]]:
