@@ -10,7 +10,7 @@ class TestFilterConfig:
     def test_default_values(self):
         cfg = FilterConfig()
         assert cfg.min_confidence == 55.0
-        assert cfg.allowed_signals == ("BUY", "HOLD")
+        assert cfg.allowed_signals == ("BUY", "OVERWEIGHT", "HOLD")
         assert cfg.exclude_st is True
         assert cfg.exclude_low_price is True
         assert cfg.low_price_threshold == 3.0
@@ -46,7 +46,7 @@ class TestFilterConfig:
         cfg = FilterConfig(min_confidence=55.0)
         merged = cfg.merge(min_confidence=65.0)
         assert merged.min_confidence == 65.0
-        assert merged.allowed_signals == ("BUY", "HOLD")  # 未覆盖保持默认
+        assert merged.allowed_signals == ("BUY", "OVERWEIGHT", "HOLD")  # 未覆盖保持默认
 
     def test_merge_overrides_all(self):
         cfg = FilterConfig(min_confidence=55.0)
