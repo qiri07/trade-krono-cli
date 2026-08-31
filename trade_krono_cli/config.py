@@ -86,7 +86,7 @@ class Settings:
     default_allowed_signals: list[str] = field(
         default_factory=lambda: [
             s.strip().upper()
-            for s in os.getenv("ALLOWED_SIGNALS", "BUY,HOLD").split(",")
+            for s in os.getenv("ALLOWED_SIGNALS", "BUY,OVERWEIGHT,HOLD").split(",")
             if s.strip()
         ]
     )

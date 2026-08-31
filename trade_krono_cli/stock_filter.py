@@ -267,7 +267,7 @@ class StockFilter:
     def from_config(
         cls,
         min_confidence: float = 55.0,
-        allowed_signals: tuple[str, ...] = ("BUY", "HOLD"),
+        allowed_signals: tuple[str, ...] = ("BUY", "OVERWEIGHT", "HOLD"),
         market_cap_range: tuple[float, float] | None = None,
         industry_whitelist: list[str] | None = None,
         industry_blacklist: list[str] | None = None,

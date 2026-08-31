@@ -372,7 +372,7 @@ def merge_results(
 def filter_pool(
     ta_results: list[StockAnalysisResult],
     min_confidence: float = 55.0,
-    allowed_signals: tuple[str, ...] = ("BUY", "HOLD"),
+    allowed_signals: tuple[str, ...] = ("BUY", "OVERWEIGHT", "HOLD"),
 ) -> list[StockAnalysisResult]:
     """按信号 + 置信度过滤出可行股票池。"""
     pool: list[StockAnalysisResult] = []

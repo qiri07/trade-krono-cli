@@ -197,7 +197,7 @@ class StrategyArtifact:
     scoring_strategy: str = "linear"
     risk_boost_strategy: str = "fixed_boost"
     min_confidence: float = 55.0
-    allowed_signals: tuple = ("BUY", "HOLD")
+    allowed_signals: tuple = ("BUY", "OVERWEIGHT", "HOLD")
     config_hash: str = ""
     """compute_config_hash() 的结果，用于区分不同策略配置。"""
 
