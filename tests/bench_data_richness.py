@@ -9,6 +9,7 @@
 
 用法：uv run python tests/bench_data_richness.py
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -23,9 +24,9 @@ END = "2026-08-30"
 
 
 def _section(title: str) -> None:
-    logger.info(f"\n{'='*70}")
+    logger.info(f"\n{'=' * 70}")
     logger.info(f"  {title}")
-    logger.info(f"{'='*70}")
+    logger.info(f"{'=' * 70}")
 
 
 def _safe_float(v: Any) -> float | None:
@@ -61,7 +62,9 @@ async def main():
         logger.info("\n📋 stock_basic 字段:")
         bs_meta_fields: dict[str, str] = {}
         if rows:
-            for i, fname in enumerate(["code", "code_name", "ipoDate", "outDate", "type", "status"]):
+            for i, fname in enumerate(
+                ["code", "code_name", "ipoDate", "outDate", "type", "status"]
+            ):
                 val = rows[0][i] if i < len(rows[0]) else None
                 bs_meta_fields[fname] = str(val)
                 logger.info(f"   {fname}: {val}")
@@ -73,7 +76,10 @@ async def main():
                 ticker,
                 "date,open,high,low,close,volume,amount,peTTM,pbMRQ,psTTM,"
                 "dividendsPerShare,totalShare,circShare,ma5,ma10,ma20,ma60",
-                start_date=START, end_date=END, frequency="d", adjustflag="1",
+                start_date=START,
+                end_date=END,
+                frequency="d",
+                adjustflag="1",
             )
             if rs_ext and rs_ext.error_code == "0":
                 ext_rows = []
@@ -86,7 +92,9 @@ async def main():
                         if sv:
                             logger.info(f"     {fn}: {sv}")
                     logger.info(f"   有效行数: {len(ext_rows)}")
-                    has_ext = any(fn in rs_ext.fields for fn in ["peTTM", "pbMRQ", "ma5", "ma10", "ma20"])
+                    has_ext = any(
+                        fn in rs_ext.fields for fn in ["peTTM", "pbMRQ", "ma5", "ma10", "ma20"]
+                    )
                     logger.info(f"   ✅ 支持 K线扩展字段: {has_ext}")
         except Exception as e:
             logger.info(f"   ❌ K线扩展字段拉取失败: {e}")
@@ -162,11 +170,16 @@ async def main():
                     logger.info(f"   {k}: {v}")
 
         # historical 完整字段
-        hist = ths._get("/api/a-share/prices/historical", {
-            "thscode": thscode, "interval": "1d",
-            "start": ths._date_to_ms(START), "end": ths._date_to_ms(END),
-            "adjust": "forward",
-        })
+        hist = ths._get(
+            "/api/a-share/prices/historical",
+            {
+                "thscode": thscode,
+                "interval": "1d",
+                "start": ths._date_to_ms(START),
+                "end": ths._date_to_ms(END),
+                "adjust": "forward",
+            },
+        )
         if hist:
             items_h = hist.get("item", [])
             if items_h:
@@ -202,7 +215,9 @@ async def main():
         try:
             ak._ensure_import()
             code = ak._ticker_to_ak(ticker)
-            df_hist = ak._ak.stock_zh_a_hist(symbol=code, start_date="20260101", end_date="20260830", adjust="1")
+            df_hist = ak._ak.stock_zh_a_hist(
+                symbol=code, start_date="20260101", end_date="20260830", adjust="1"
+            )
             if df_hist is not None and not df_hist.empty:
                 logger.info("\n📈 stock_zh_a_hist 返回列:")
                 for col in df_hist.columns:
@@ -251,18 +266,26 @@ async def main():
     else:
         # 从源码读取支持的接口
         logger.info("\n📈 pro_bar() 字段:")
-        logger.info("   trade_date, open, high, low, close, volume, amount, pre_close, change, pct_change")
+        logger.info(
+            "   trade_date, open, high, low, close, volume, amount, pre_close, change, pct_change"
+        )
         logger.info("\n📊 daily_basic() 字段（每日指标）:")
-        logger.info("   ts_code, trade_date, close, high, low, open, volume, amount, "
-                     "pct_chg, turnover_rate, pe, pe_ttm, pb, ps, dv_ratio, dv_ttm, "
-                     "total_mv, circ_mv")
+        logger.info(
+            "   ts_code, trade_date, close, high, low, open, volume, amount, "
+            "pct_chg, turnover_rate, pe, pe_ttm, pb, ps, dv_ratio, dv_ttm, "
+            "total_mv, circ_mv"
+        )
         logger.info("\n📊 realtime_quote() 字段:")
-        logger.info("   ts_code, symbol, name, area, industry, last_close, price, volume, amount, "
-                     "high, low, open, bid1, ask1, bid1_vol, ask1_vol, pe, pb, total_mv, circ_mv")
+        logger.info(
+            "   ts_code, symbol, name, area, industry, last_close, price, volume, amount, "
+            "high, low, open, bid1, ask1, bid1_vol, ask1_vol, pe, pb, total_mv, circ_mv"
+        )
         logger.info("\n🏷️  stock_basic() 字段:")
         logger.info("   ts_code, symbol, name, area, industry, market, list_date, delist_date")
         logger.info("\n💡 独家扩展能力（当前代码未封装，需额外调用）:")
-        logger.info("   ⭐⭐⭐ finance_indicator()  — 财务指标全套（EPS/净利润/ROE/营收/资产负债率/现金流）")
+        logger.info(
+            "   ⭐⭐⭐ finance_indicator()  — 财务指标全套（EPS/净利润/ROE/营收/资产负债率/现金流）"
+        )
         logger.info("   ⭐⭐    daily_basic()      — 每日PE/PB/市值/换手率（历史序列）")
         logger.info("   ⭐⭐    moneyflow()        — 资金流向（主力/散户净流入）")
         logger.info("   ⭐      trade_cal()        — 交易日历")
@@ -275,32 +298,70 @@ async def main():
     _section("📊 综合对比总结")
 
     summary = [
-        ("Provider", "K线原始列", "K线扩展列", "实时行情", "实时行情列数",
-         "基本面元数据", "独有技术能力"),
-        ("────────", "──────────", "──────────", "────────", "──────────", "────────────", "─────────────────────────────"),
-        ("baostock", "OHLCV+amount",
-         "peTTM/pbMRQ/psTTM/MA5/10/20/60/vol5/10/20/股息",
-         "❌ 不支持", "—",
-         "✅ 名称/IPO/退市/ST状态",
-         "财务三表/杜邦/盈利/营运/成长能力"),
-        ("mootdx", "OHLCV+amount", "无",
-         "✅ 最新价", "1（仅price）",
-         "❌ 不支持",
-         "Level2逐笔/五档盘口/分钟线（⭐局限500行）"),
-        ("tonghuashun", "OHLCV+amount", "无",
-         "✅ last_price/price_change/price_change_ratio_pct/"
-         "open/high/low/prev_price/volume/turnover", "11",
-         "⚠️ 仅name/exchange",
-         "API稳定，但封装层未充分利用snapshot字段"),
-        ("akshare", "OHLCV+振幅+涨跌幅+涨跌额+换手率", "内含涨跌幅/振幅/换手率",
-         "✅ 20+字段（spot_em）", "20+",
-         "❌ 不支持",
-         "全市场批量快照/行业板块/北向资金"),
-        ("tushare", "OHLCV+amount+pre_close+change+pct_change",
-         "（需额外调用finance_indicator/daily_basic）",
-         "✅ PE/PB/市值/行业/昨收", "15+",
-         "✅ 行业/IPO/退市/市场",
-         "⭐财务三表/⭐每日指标/⭐资金流向/交易日历"),
+        (
+            "Provider",
+            "K线原始列",
+            "K线扩展列",
+            "实时行情",
+            "实时行情列数",
+            "基本面元数据",
+            "独有技术能力",
+        ),
+        (
+            "────────",
+            "──────────",
+            "──────────",
+            "────────",
+            "──────────",
+            "────────────",
+            "─────────────────────────────",
+        ),
+        (
+            "baostock",
+            "OHLCV+amount",
+            "peTTM/pbMRQ/psTTM/MA5/10/20/60/vol5/10/20/股息",
+            "❌ 不支持",
+            "—",
+            "✅ 名称/IPO/退市/ST状态",
+            "财务三表/杜邦/盈利/营运/成长能力",
+        ),
+        (
+            "mootdx",
+            "OHLCV+amount",
+            "无",
+            "✅ 最新价",
+            "1（仅price）",
+            "❌ 不支持",
+            "Level2逐笔/五档盘口/分钟线（⭐局限500行）",
+        ),
+        (
+            "tonghuashun",
+            "OHLCV+amount",
+            "无",
+            "✅ last_price/price_change/price_change_ratio_pct/"
+            "open/high/low/prev_price/volume/turnover",
+            "11",
+            "⚠️ 仅name/exchange",
+            "API稳定，但封装层未充分利用snapshot字段",
+        ),
+        (
+            "akshare",
+            "OHLCV+振幅+涨跌幅+涨跌额+换手率",
+            "内含涨跌幅/振幅/换手率",
+            "✅ 20+字段（spot_em）",
+            "20+",
+            "❌ 不支持",
+            "全市场批量快照/行业板块/北向资金",
+        ),
+        (
+            "tushare",
+            "OHLCV+amount+pre_close+change+pct_change",
+            "（需额外调用finance_indicator/daily_basic）",
+            "✅ PE/PB/市值/行业/昨收",
+            "15+",
+            "✅ 行业/IPO/退市/市场",
+            "⭐财务三表/⭐每日指标/⭐资金流向/交易日历",
+        ),
     ]
     col_widths = [14, 22, 38, 24, 12, 20, 42]
 
@@ -313,7 +374,9 @@ async def main():
     logger.info("")
     logger.info("🏆  信息丰富度排名（除OHLCV外的附加价值）:")
     logger.info("  🥇 tushare Pro  — 维度最广（财务+每日指标+资金流向），但需Token + 额度限制")
-    logger.info("  🥈 akshare       — 免费，实时行情字段最多（20+），含换手率/涨跌幅/振幅，无需Token")
+    logger.info(
+        "  🥈 akshare       — 免费，实时行情字段最多（20+），含换手率/涨跌幅/振幅，无需Token"
+    )
     logger.info("  🥉 baostock      — K线支持追加PE/PB/均线/成交量均线，有ST/退市判断能力")
     logger.info("  4. tonghuashun   — 速度快稳定，snapshot含11字段，但封装层利用率低")
     logger.info("  5. mootdx        — 最快（72ms），数据最窄（OHLCV+量），无扩展字段")
@@ -321,4 +384,5 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

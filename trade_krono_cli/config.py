@@ -27,13 +27,16 @@ class Settings:
     kronos_root: Path = field(default_factory=lambda: _PROJECT_ROOT / "external" / "Kronos")
     project_root: Path = field(default_factory=lambda: _PROJECT_ROOT)
     results_dir: Path = field(
-        default_factory=lambda: Path(os.getenv("TRADING_KRONO_RESULTS_DIR", ""))
-        or (_PROJECT_ROOT / "outputs" / "results")
+        default_factory=lambda: (
+            Path(os.getenv("TRADING_KRONO_RESULTS_DIR", ""))
+            or (_PROJECT_ROOT / "outputs" / "results")
+        )
     )
     """结果目录，可通过环境变量 TRADING_KRONO_RESULTS_DIR 覆盖（测试隔离用）。"""
     cache_dir: Path = field(
-        default_factory=lambda: Path(os.getenv("TRADING_KRONO_CACHE_DIR", ""))
-        or (_PROJECT_ROOT / "outputs" / "cache")
+        default_factory=lambda: (
+            Path(os.getenv("TRADING_KRONO_CACHE_DIR", "")) or (_PROJECT_ROOT / "outputs" / "cache")
+        )
     )
     """缓存目录，可通过环境变量 TRADING_KRONO_CACHE_DIR 覆盖（测试隔离用）。"""
     memory_log_path: Path = field(
@@ -231,9 +234,7 @@ class Settings:
     )
 
     # ── 同步白名单配置 ──────────────────────────────────────
-    sync_whitelist: str = field(
-        default_factory=lambda: os.getenv("SYNC_WHITELIST", "")
-    )
+    sync_whitelist: str = field(default_factory=lambda: os.getenv("SYNC_WHITELIST", ""))
     """同步白名单，逗号分隔的6位股票代码（不含sh./sz./bj.前缀），如 \"600519,000858\"。"""
 
     # ── 运行时路径 ────────────────────────────────────────

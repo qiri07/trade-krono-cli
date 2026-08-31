@@ -46,7 +46,9 @@ def _timing(fn, label: str) -> tuple[float, Optional[Exception], Any]:
         return dt, e, None
 
 
-async def bench_provider(factory: DataProviderFactory, name: str, ticker: str, start: str, end: str, n_runs: int) -> BenchResult:
+async def bench_provider(
+    factory: DataProviderFactory, name: str, ticker: str, start: str, end: str, n_runs: int
+) -> BenchResult:
     result = BenchResult(provider=name, cold_time=None, warm_times=[], errors=[])
 
     # 直接获取指定 provider 实例
@@ -75,6 +77,7 @@ async def bench_provider(factory: DataProviderFactory, name: str, ticker: str, s
 
     # 2. 热调用
     for i in range(n_runs):
+
         def do_hot():
             df = provider.fetch_kline(ticker, start, end)
             return df
@@ -112,7 +115,9 @@ async def main():
     logger.info("=" * 60)
     logger.info("基准测试结果汇总")
     logger.info("=" * 60)
-    logger.info(f"{'Provider':<14} {'冷启动(s)':<12} {'热调用均值(s)':<14} {'热调用最快(s)':<14} {'热调用最慢(s)':<14} {'错误数':<6} {'行数'}")
+    logger.info(
+        f"{'Provider':<14} {'冷启动(s)':<12} {'热调用均值(s)':<14} {'热调用最快(s)':<14} {'热调用最慢(s)':<14} {'错误数':<6} {'行数'}"
+    )
     logger.info("-" * 90)
     for r in results:
         if r.warm_times:

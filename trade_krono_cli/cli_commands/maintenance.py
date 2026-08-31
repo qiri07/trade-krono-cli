@@ -54,7 +54,6 @@ def _resolve_tickers(raw: str) -> list[str]:
     return result
 
 
-
 # ═══════════════════════════════════════════════════════
 # status — 查看系统状态
 # ═══════════════════════════════════════════════════════
@@ -347,9 +346,7 @@ def sync_whitelist(
     settings = get_settings()
     whitelist_raw = settings.sync_whitelist.strip()
     if not whitelist_raw:
-        console.print(
-            "[red]❌ 未配置 SYNC_WHITELIST，请在 .env 中设置白名单股票代码[/red]"
-        )
+        console.print("[red]❌ 未配置 SYNC_WHITELIST，请在 .env 中设置白名单股票代码[/red]")
         raise typer.Exit(1)
 
     whitelist_tickers = _resolve_tickers(whitelist_raw)
@@ -365,8 +362,7 @@ def sync_whitelist(
     fail_tickers: list[str] = []
 
     console.print(
-        f"[bold green]🔥 白名单 K 线缓存同步[/bold green] "
-        f"股票数={total} 日期={start_date}~{date}"
+        f"[bold green]🔥 白名单 K 线缓存同步[/bold green] 股票数={total} 日期={start_date}~{date}"
     )
 
     for i, ticker in enumerate(whitelist_tickers, 1):

@@ -20,6 +20,7 @@ def runner():
 # _resolve_tickers 单元测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestResolveTickers:
     """测试 _resolve_tickers() 前缀补全逻辑。"""
 
@@ -76,6 +77,7 @@ class TestResolveTickers:
 # sync-whitelist 命令测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestSyncWhitelist:
     """测试 sync-whitelist 命令。"""
 
@@ -117,7 +119,9 @@ class TestSyncWhitelist:
         with (
             patch("trade_krono_cli.cli_commands.maintenance._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
-            patch("trade_krono_cli.data.fetch_kline_incremental", return_value=mock_df) as mock_fetch,
+            patch(
+                "trade_krono_cli.data.fetch_kline_incremental", return_value=mock_df
+            ) as mock_fetch,
         ):
             mock_settings.return_value.sync_whitelist = "600519,000858"
             result = runner.invoke(
@@ -164,6 +168,7 @@ class TestSyncWhitelist:
 # sync-universe 白名单优先测试
 # ═══════════════════════════════════════════════════════
 
+
 class TestSyncUniverseWhitelist:
     """测试 sync-universe 中白名单优先行为。"""
 
@@ -201,7 +206,9 @@ class TestSyncUniverseWhitelist:
             assert result.exit_code == 0
             # 白名单应先于非白名单
             wl_idx = [i for i, t in enumerate(call_order) if t in ("sh.600519", "sz.000858")]
-            non_wl_idx = [i for i, t in enumerate(call_order) if t not in ("sh.600519", "sz.000858")]
+            non_wl_idx = [
+                i for i, t in enumerate(call_order) if t not in ("sh.600519", "sz.000858")
+            ]
             assert max(wl_idx) < min(non_wl_idx), f"白名单未优先: order={call_order}"
             # 白名单不应重复
             assert call_order.count("sh.600519") == 1

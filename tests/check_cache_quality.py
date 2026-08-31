@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """K线缓存质量深度检查"""
+
 from __future__ import annotations
 
 import pickle
@@ -29,7 +30,9 @@ for t, data in sampled:
         if diff_days > 3:
             gap_count += 1
             if gap_count <= 5:
-                print(f"  {t}: gap {diff_days}d between {str(timestamps.iloc[i-1])[:10]} and {str(timestamps.iloc[i])[:10]}")
+                print(
+                    f"  {t}: gap {diff_days}d between {str(timestamps.iloc[i - 1])[:10]} and {str(timestamps.iloc[i])[:10]}"
+                )
 print(f"  日期跳变总数: {gap_count}")
 
 # 2. 价格合理性
@@ -80,7 +83,9 @@ for r in bad_order:
         days_covered = days_covered.days
     else:
         days_covered = abs(int(days_covered)) // 86400
-    print(f"  {r[0]} [{r[1]}]: DB={r[2]}~{r[3]}, actual={actual_s}~{actual_e}, rows={len(df)}, span={days_covered}d")
+    print(
+        f"  {r[0]} [{r[1]}]: DB={r[2]}~{r[3]}, actual={actual_s}~{actual_e}, rows={len(df)}, span={days_covered}d"
+    )
     if days_covered > 1000:
         print("    -> 数据实际完整，仅元数据日期记录有误")
 

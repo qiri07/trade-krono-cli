@@ -47,8 +47,7 @@ def validate_ticker(ticker: str) -> str:
     m = _TICKER_RE.match(ticker)
     if not m:
         raise ValueError(
-            f"无效股票代码: '{ticker}'，应为 6 位数字，"
-            f"如 600519 / sh.600519 / bj.920002"
+            f"无效股票代码: '{ticker}'，应为 6 位数字，如 600519 / sh.600519 / bj.920002"
         )
     code = m.group(1)
     # 判断市场：以 9 开头（含 920xxx 北交所）归入 bj，6/5 开头归入 sh，其余归入 sz

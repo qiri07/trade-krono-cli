@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """K线缓存完整性检查"""
+
 from __future__ import annotations
 
 import os
@@ -17,14 +18,22 @@ print("=" * 55)
 # [1] 基础统计
 total_rows = conn.execute("SELECT COUNT(*) FROM kline_cache").fetchone()[0]
 unique_tickers = conn.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache").fetchone()[0]
-unique_tf = conn.execute("SELECT COUNT(*) FROM (SELECT DISTINCT ticker, freq FROM kline_cache)").fetchone()[0]
+unique_tf = conn.execute(
+    "SELECT COUNT(*) FROM (SELECT DISTINCT ticker, freq FROM kline_cache)"
+).fetchone()[0]
 dupes = conn.execute(
     "SELECT ticker, freq, start, end, COUNT(*) as cnt FROM kline_cache "
     "GROUP BY ticker, freq, start, end HAVING cnt > 1"
 ).fetchall()
-sh = conn.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE ticker LIKE 'sh.%'").fetchone()[0]
-sz = conn.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE ticker LIKE 'sz.%'").fetchone()[0]
-bj = conn.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE ticker LIKE 'bj.%'").fetchone()[0]
+sh = conn.execute(
+    "SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE ticker LIKE 'sh.%'"
+).fetchone()[0]
+sz = conn.execute(
+    "SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE ticker LIKE 'sz.%'"
+).fetchone()[0]
+bj = conn.execute(
+    "SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE ticker LIKE 'bj.%'"
+).fetchone()[0]
 
 print("\n[1] 基础统计")
 print(f"  总行数:          {total_rows:,}")
@@ -62,15 +71,19 @@ for o in overlap[:5]:
 
 # [4] start > end
 print("\n[4] 日期顺序异常 (start > end)")
-bad_order = conn.execute("SELECT ticker, freq, start, end FROM kline_cache WHERE start > end").fetchall()
+bad_order = conn.execute(
+    "SELECT ticker, freq, start, end FROM kline_cache WHERE start > end"
+).fetchall()
 print(f"  异常段数: {len(bad_order)}")
 for r in bad_order:
-    data = conn.execute("SELECT data FROM kline_cache WHERE ticker=? AND freq=? AND start=? AND end=?", r[:4]).fetchone()[0]
+    data = conn.execute(
+        "SELECT data FROM kline_cache WHERE ticker=? AND freq=? AND start=? AND end=?", r[:4]
+    ).fetchone()[0]
     df = pickle.loads(data)
     ts = df["timestamps"]
     actual_s = str(ts.iloc[0])[:10]
     actual_e = str(ts.iloc[-1])[:10]
-    days_covered = (ts.iloc[-1] - ts.iloc[0])
+    days_covered = ts.iloc[-1] - ts.iloc[0]
     if hasattr(days_covered, "days"):
         days_covered = days_covered.days
     else:
@@ -83,6 +96,7 @@ for r in bad_order:
 print("\n[5] 遗漏检查 (同花顺股票池 vs 缓存)")
 try:
     from trade_krono_cli.universe.provider import TongHuaShunUniverseProvider
+
     p = TongHuaShunUniverseProvider()
     tickets = p.get_universe()
     universe_codes = {t.ticker.split(".")[1] for t in tickets}
@@ -106,7 +120,9 @@ for ttl, cnt in conn.execute("SELECT ttl, COUNT(*) FROM kline_cache GROUP BY ttl
 
 # [7] K线行数分布
 print("\n[7] K线行数分布 (抽样200只)")
-samples = conn.execute("SELECT ticker, data FROM kline_cache WHERE freq='d' ORDER BY RANDOM() LIMIT 200").fetchall()
+samples = conn.execute(
+    "SELECT ticker, data FROM kline_cache WHERE freq='d' ORDER BY RANDOM() LIMIT 200"
+).fetchall()
 buckets: dict[str, int] = Counter()
 for t, data in samples:
     df = pickle.loads(data)
@@ -132,14 +148,21 @@ multi = conn.execute(
 ).fetchall()
 print(f"  多段股票数: {len(multi)}")
 for t, c in multi:
-    rows = conn.execute("SELECT start, end FROM kline_cache WHERE ticker=? AND freq='d' ORDER BY start", (t,)).fetchall()
-    total_k = sum(len(pickle.loads(r[0])) for r in conn.execute("SELECT data FROM kline_cache WHERE ticker=? AND freq='d'", (t,)))
+    rows = conn.execute(
+        "SELECT start, end FROM kline_cache WHERE ticker=? AND freq='d' ORDER BY start", (t,)
+    ).fetchall()
+    total_k = sum(
+        len(pickle.loads(r[0]))
+        for r in conn.execute("SELECT data FROM kline_cache WHERE ticker=? AND freq='d'", (t,))
+    )
     print(f"  {t}: {c}段, total_K_lines={total_k}")
 
 # [9] NaN 检查
 print("\n[9] NaN 检查 (抽样50只)")
 nan_total = 0
-sampled9 = conn.execute("SELECT ticker, data FROM kline_cache WHERE freq='d' ORDER BY RANDOM() LIMIT 50").fetchall()
+sampled9 = conn.execute(
+    "SELECT ticker, data FROM kline_cache WHERE freq='d' ORDER BY RANDOM() LIMIT 50"
+).fetchall()
 for t, data in sampled9:
     df = pickle.loads(data)
     nans = int(df.isna().sum().sum())

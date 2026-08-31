@@ -38,15 +38,14 @@ def pytest_sessionstart(session: object) -> None:  # type: ignore[no-redef]
             "请检查 tests/conftest.py 的 pytest_configure 是否正确执行。"
         )
     import trade_krono_cli.config as _cfg
+
     settings = _cfg.get_settings()
     actual = str(settings.cache_dir.resolve())
     expected = Path(cache_dir).resolve()
     if not actual.startswith(str(expected)):
         _session.config.exitstatus = 1  # type: ignore[attr-defined]
         raise RuntimeError(
-            f"⛔ 测试环境隔离失败：cache_dir 不匹配！\n"
-            f"  期望前缀：{expected}\n"
-            f"  实际路径：{actual}"
+            f"⛔ 测试环境隔离失败：cache_dir 不匹配！\n  期望前缀：{expected}\n  实际路径：{actual}"
         )
 
 
@@ -58,8 +57,10 @@ def make_mock_settings(
     """创建一个模拟 Settings 对象，用于测试依赖注入。"""
     defaults = SimpleNamespace(
         project_root=Path("/tmp/test-project"),
-        cache_dir=cache_dir or Path(os.getenv("TRADING_KRONO_CACHE_DIR", "/tmp/test-project/outputs/cache")),
-        results_dir=results_dir or Path(os.getenv("TRADING_KRONO_RESULTS_DIR", "/tmp/test-project/outputs/results")),
+        cache_dir=cache_dir
+        or Path(os.getenv("TRADING_KRONO_CACHE_DIR", "/tmp/test-project/outputs/cache")),
+        results_dir=results_dir
+        or Path(os.getenv("TRADING_KRONO_RESULTS_DIR", "/tmp/test-project/outputs/results")),
         tradingagents_root=Path("/tmp/test-project/external/TradingAgents-astock"),
         kronos_root=Path("/tmp/test-project/external/Kronos"),
         llm_provider="deepseek",
