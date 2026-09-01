@@ -85,8 +85,8 @@ def _git_sha(repo_path: Path) -> tuple[Optional[str], Optional[str]]:
         )
         if rc == 0:
             return full, (short if rc2 == 0 else full[:12])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"git commit hash 检测失败: {e}")
     return None, None
 
 

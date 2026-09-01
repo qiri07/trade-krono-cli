@@ -301,8 +301,8 @@ class WalkForwardEngine:
             compute_high_conf_metrics(h_recs, metrics)
             try:
                 compute_ta_metrics(h_recs, metrics)
-            except Exception:
-                pass  # TA metrics optional
+            except Exception as e:
+                logger.debug(f"TA 指标计算跳过（可选）: {e}")
             summary.horizons[h] = metrics
 
         # 全局计数

@@ -19,6 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from loguru import logger
+
 # ═══════════════════════════════════════════════════════
 # 项目版本
 # ═══════════════════════════════════════════════════════
@@ -30,8 +32,8 @@ def get_project_version() -> str:
         from importlib import metadata
 
         return metadata.version("trade-krono-cli")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"importlib.metadata 获取版本失败: {e}")
     # fallback: 直接读取 __init__.py
     init_path = Path(__file__).parent / "__init__.py"
     if init_path.exists():

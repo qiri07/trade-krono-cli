@@ -47,8 +47,8 @@ def _cleanup_bs_on_exit() -> None:
     if _bs_logged_in and _bs is not None:
         try:
             _bs.logout()  # type: ignore
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"baostock logout 失败: {e}")
         _bs_logged_in = False
         _HAS_BS = False
         _bs = None

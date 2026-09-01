@@ -323,21 +323,22 @@ class TestTradingAgentsRunnerValidateProvider:
         from trade_krono_cli.ta_runner import TradingAgentsRunner
 
         settings = make_mock_settings(llm_provider="deepseek")
-        runner = TradingAgentsRunner(safe_mode=True, settings=settings)
+        # patch 必须在 runner 构造前生效，否则 safe_mode=True 触发 __init__ 时
+        # _validate_provider() 会读取真实 KeyVault 并因无密钥而抛出
         with patch("trade_krono_cli.security.KeyVault") as mock_vault:
             mock_vault.return_value.available_providers.return_value = []
             with pytest.raises(RuntimeError, match="未检测到任何 LLM API 密钥"):
-                runner._validate_provider()
+                TradingAgentsRunner(safe_mode=True, settings=settings)
 
     def test_provider_not_available_falls_back(self):
         from tests.conftest import make_mock_settings
         from trade_krono_cli.ta_runner import TradingAgentsRunner
 
         settings = make_mock_settings(llm_provider="nonexistent")
-        runner = TradingAgentsRunner(safe_mode=True, settings=settings)
+        # 模拟配置提供商无密钥，但有其他可用提供商时自动回退
         with patch("trade_krono_cli.security.KeyVault") as mock_vault:
             mock_vault.return_value.available_providers.return_value = ["openai"]
-            runner._validate_provider()
+            runner = TradingAgentsRunner(safe_mode=True, settings=settings)
             assert runner.llm_provider == "openai"
 
 

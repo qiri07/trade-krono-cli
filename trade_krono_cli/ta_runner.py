@@ -473,8 +473,8 @@ class TradingAgentsRunner:
             if progress_cb:
                 try:
                     progress_cb(idx, total, res)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"progress_cb 异常: {e}")
         success = sum(1 for r in results if r.error is None)
         logger.info(f"📊 TA 批量分析完成: 成功 {success}/{total}")
         return results
