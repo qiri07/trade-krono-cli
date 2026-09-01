@@ -41,30 +41,13 @@ class StreamPipeline:
         kronos_runner: Any = None,
         no_cache: bool = False,
         progress_cb: Optional[Callable[[str, int, int], None]] = None,
+        pred_len: int = 30,
     ) -> None:
         self.ta_runner = ta_runner
         self.kronos_runner = kronos_runner
         self.no_cache = no_cache
         self.progress_cb = progress_cb
-        # 从 runner 的 settings 对象获取 pred_len，默认 30
-        self._pred_len = StreamPipeline._resolve_pred_len(self.kronos_runner)
-
-    @staticmethod
-    def _resolve_pred_len(kronos_runner: Any) -> int:
-        """从 kronos_runner 的 settings 对象获取预测长度，未配置则返回默认值 30。"""
-        if kronos_runner is None:
-            return 30
-        try:
-            for attr_name in ("_settings_obj", "settings", "_settings"):
-                if hasattr(kronos_runner, attr_name):
-                    s = getattr(kronos_runner, attr_name)
-                    if hasattr(s, "kronos_pred_len"):
-                        return int(s.kronos_pred_len)
-                    if hasattr(s, "pred_len"):
-                        return int(s.pred_len)
-        except Exception:
-            pass
-        return 30
+        self._pred_len = pred_len
 
     def run(
         self,

@@ -375,6 +375,7 @@ class QuantPipeline:
                 kronos_runner=self.kronos,
                 no_cache=self.no_cache,
                 progress_cb=progress_cb,
+                pred_len=self._config.kronos.pred_len,
             )
             ta_results, kronos_results, stream_kline_data = stream.run(
                 tickers=tickers,
@@ -462,9 +463,10 @@ class QuantPipeline:
             exclude_st=cfg.exclude_st,
         )
 
-        # 提前收集实时行情数据，供 StockMeta 填充 PE/PB（用于元数据过滤）
+        # 提前收集实时行情数据，供 StockMeta 填充 PE/PB（仅对有效结果请求，避免浪费 timeout）
+        live_ta = [r for r in filtered_ta if r.error is None]
         quote_data: dict[str, dict] = {
-            tk: fetch_realtime_quote(tk) for tk in [r.ticker for r in filtered_ta]
+            tk: fetch_realtime_quote(tk) for tk in [r.ticker for r in live_ta]
         }
 
         # 构建 StockMeta 并注入异常标记，用于过滤
