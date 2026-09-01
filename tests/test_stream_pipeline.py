@@ -58,14 +58,14 @@ class TestStreamPipeline:
         return StreamPipeline(ta_runner=mock_ta, kronos_runner=mock_kr)
 
     def test_run_returns_ta_and_kronos_results(self):
-        """run() 应返回 (ta_results, kronos_results)。"""
+        """run() 应返回 (ta_results, kronos_results, kline_data)。"""
         pipeline = self._make_pipeline()
         with patch("trade_krono_cli.pipeline.stream_pipeline.prepare_kline_batch") as mock_fetch:
             mock_fetch.return_value = {
                 "sh.600519": _make_df(400),
                 "sz.000858": _make_df(400),
             }
-            ta_r, kr_r = pipeline.run(
+            ta_r, kr_r, kline_data = pipeline.run(
                 tickers=["sh.600519", "sz.000858"],
                 date="2026-08-12",
             )
@@ -73,6 +73,8 @@ class TestStreamPipeline:
         assert len(kr_r) == 2
         assert ta_r[0].signal == "BUY"
         assert kr_r[0].direction == "UP"
+        assert "sh.600519" in kline_data
+        assert "sz.000858" in kline_data
 
     def test_run_injects_prefetched_kline_into_kronos(self):
         """预取的 K 线数据应注入到 KronosRunner._pre_fetched。"""
@@ -122,7 +124,7 @@ class TestStreamPipeline:
         pipeline = self._make_pipeline()
         with patch("trade_krono_cli.pipeline.stream_pipeline.prepare_kline_batch") as mock_fetch:
             mock_fetch.return_value = {}  # 无数据
-            ta_r, kr_r = pipeline.run(
+            ta_r, kr_r, kline_data = pipeline.run(
                 tickers=["sh.600519"],
                 date="2026-08-12",
             )
@@ -130,6 +132,7 @@ class TestStreamPipeline:
         assert len(kr_r) == 1
         assert ta_r[0].error is None
         assert kr_r[0].error is None
+        assert kline_data == {}
 
     def test_run_ta_exception_does_not_crash(self):
         """TA 分析异常时不应中断 Kronos 预测。"""
@@ -143,7 +146,7 @@ class TestStreamPipeline:
         pipeline = StreamPipeline(ta_runner=mock_ta, kronos_runner=mock_kr)
         with patch("trade_krono_cli.pipeline.stream_pipeline.prepare_kline_batch") as mock_fetch:
             mock_fetch.return_value = {"sh.600519": _make_df(400)}
-            ta_r, kr_r = pipeline.run(tickers=["sh.600519"], date="2026-08-12")
+            ta_r, kr_r, kline_data = pipeline.run(tickers=["sh.600519"], date="2026-08-12")
 
         assert len(ta_r) == 1
         assert ta_r[0].error is not None
@@ -161,7 +164,7 @@ class TestStreamPipeline:
         pipeline = StreamPipeline(ta_runner=mock_ta, kronos_runner=mock_kr)
         with patch("trade_krono_cli.pipeline.stream_pipeline.prepare_kline_batch") as mock_fetch:
             mock_fetch.return_value = {"sh.600519": _make_df(400)}
-            ta_r, kr_r = pipeline.run(tickers=["sh.600519"], date="2026-08-12")
+            ta_r, kr_r, kline_data = pipeline.run(tickers=["sh.600519"], date="2026-08-12")
 
         assert ta_r[0].error is None
         assert len(kr_r) == 1
@@ -336,6 +339,7 @@ class TestQuantPipelineStreaming:
             mock_stream_instance.run.return_value = (
                 [_mock_ta_result()],
                 [_mock_kr_result()],
+                {},
             )
             MockStream.return_value = mock_stream_instance
 

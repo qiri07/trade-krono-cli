@@ -46,6 +46,25 @@ class StreamPipeline:
         self.kronos_runner = kronos_runner
         self.no_cache = no_cache
         self.progress_cb = progress_cb
+        # 从 runner 的 settings 对象获取 pred_len，默认 30
+        self._pred_len = StreamPipeline._resolve_pred_len(self.kronos_runner)
+
+    @staticmethod
+    def _resolve_pred_len(kronos_runner: Any) -> int:
+        """从 kronos_runner 的 settings 对象获取预测长度，未配置则返回默认值 30。"""
+        if kronos_runner is None:
+            return 30
+        try:
+            for attr_name in ("_settings_obj", "settings", "_settings"):
+                if hasattr(kronos_runner, attr_name):
+                    s = getattr(kronos_runner, attr_name)
+                    if hasattr(s, "kronos_pred_len"):
+                        return int(s.kronos_pred_len)
+                    if hasattr(s, "pred_len"):
+                        return int(s.pred_len)
+        except Exception:
+            pass
+        return 30
 
     def run(
         self,
@@ -54,13 +73,14 @@ class StreamPipeline:
         lookback: int = 400,
         adjustflag: str = "1",
         use_cache: bool = True,
-    ) -> tuple[list[StockAnalysisResult], list[KronosForecastResult]]:
+    ) -> tuple[list[StockAnalysisResult], list[KronosForecastResult], dict[str, Any]]:
         """
         流式运行 TA + Kronos，数据拉取与计算重叠执行。
 
         Returns
         -------
-        (ta_results, kronos_results)
+        (ta_results, kronos_results, kline_data)
+            kline_data 供下游 merge_results 进行风险评分使用
         """
         t0 = time.time()
         n = len(tickers)
@@ -112,7 +132,7 @@ class StreamPipeline:
                 except Exception as e:
                     logger.error(f"❌ Kronos 预测异常 {tk}: {e}")
                     results.append(
-                        KronosForecastResult(ticker=tk, eval_date=date, horizon=30, error=str(e))
+                        KronosForecastResult(ticker=tk, eval_date=date, horizon=self._pred_len, error=str(e))
                     )
                 finally:
                     if self.progress_cb:
@@ -156,7 +176,7 @@ class StreamPipeline:
         if self.progress_cb:
             self.progress_cb("完成", n, n)
 
-        return ta_results, kr_results
+        return ta_results, kr_results, kline_data
 
     def _ta_analyze_one(
         self, ticker: str, date: str, df: Optional[pd.DataFrame]
@@ -176,7 +196,7 @@ class StreamPipeline:
             return KronosForecastResult(
                 ticker=ticker,
                 eval_date=date,
-                horizon=30,
+                horizon=self._pred_len,
                 error="Kronos runner 未初始化",
             )
         return self.kronos_runner.predict_one(ticker, date)

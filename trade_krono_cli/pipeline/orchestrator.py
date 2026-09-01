@@ -31,6 +31,7 @@ from trade_krono_cli.committee import (
 )
 from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.constraints_config import ConstraintConfig
+from trade_krono_cli.data import fetch_realtime_quote
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.models.kronos_session import KronosSession
 from trade_krono_cli.models.ta_session import TASession
@@ -375,13 +376,15 @@ class QuantPipeline:
                 no_cache=self.no_cache,
                 progress_cb=progress_cb,
             )
-            ta_results, kronos_results = stream.run(
+            ta_results, kronos_results, stream_kline_data = stream.run(
                 tickers=tickers,
                 date=date,
                 lookback=self._config.lookback,
                 adjustflag=self.constraints_config.adjustflag,
                 use_cache=self._config.use_cache,
             )
+            # 流式模式下 kline_data 由 StreamPipeline 内部预取
+            kline_data = stream_kline_data
         else:
             # ── 批量准备 K 线数据（共享给风险引擎）─────────────────
             kline_data = prepare_kline_batch(
@@ -459,6 +462,11 @@ class QuantPipeline:
             exclude_st=cfg.exclude_st,
         )
 
+        # 提前收集实时行情数据，供 StockMeta 填充 PE/PB（用于元数据过滤）
+        quote_data: dict[str, dict] = {
+            tk: fetch_realtime_quote(tk) for tk in [r.ticker for r in filtered_ta]
+        }
+
         # 构建 StockMeta 并注入异常标记，用于过滤
         filtered_ta_list: list = []
         rejected_ta: list = []
@@ -474,6 +482,8 @@ class QuantPipeline:
                 ticker=r.ticker,
                 abnormal_flags=flag_names,
                 abnormality_score=severity,
+                pe_ttm=quote_data.get(r.ticker, {}).get("pe"),
+                pb=quote_data.get(r.ticker, {}).get("pb"),
             )
             # ST / 停牌 / 退市股票直接过滤
             blocker_flags = {"ST", "SUSPENDED", "DELISTED"}
@@ -494,10 +504,12 @@ class QuantPipeline:
 
         # ── 合并 + 打分（含交易约束）────────────────────────────
         t1_tracker = T1Tracker()
+
         merged = merge_results(
             filtered_ta,
             kronos_results,
             kline_data=kline_data,
+            quote_data=quote_data,
             constraints_config=self.constraints_config,
             t1_tracker=t1_tracker,
             scoring_config=self._config.scoring,

@@ -103,6 +103,7 @@ class Cache:
                 "ALTER TABLE ta_cache ADD COLUMN model_ver    TEXT NOT NULL DEFAULT ''",
                 "ALTER TABLE kronos_cache ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''",
                 "ALTER TABLE kronos_cache ADD COLUMN model_ver   TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE kline_cache ADD COLUMN adjustflag  TEXT NOT NULL DEFAULT '1'",
             ]:
                 try:
                     conn.execute(col_sql)
@@ -112,12 +113,12 @@ class Cache:
 
     # ── K 线缓存 ──────────────────────────────────────
 
-    def get_kline(self, ticker: str, start: str, end: str, freq: str) -> Optional[pd.DataFrame]:
+    def get_kline(self, ticker: str, start: str, end: str, freq: str, adjustflag: str = "1") -> Optional[pd.DataFrame]:
         with self._conn as conn:
             row = conn.execute(
                 "SELECT data, created, ttl FROM kline_cache "
-                "WHERE ticker=? AND start=? AND end=? AND freq=?",
-                (ticker, start, end, freq),
+                "WHERE ticker=? AND start=? AND end=? AND freq=? AND adjustflag=?",
+                (ticker, start, end, freq, adjustflag),
             ).fetchone()
         if row is None:
             return None
@@ -140,6 +141,7 @@ class Cache:
         freq: str,
         df: pd.DataFrame,
         ttl: float = 86400,
+        adjustflag: str = "1",
     ) -> None:
         buf = BytesIO()
         df.to_pickle(buf)
@@ -148,21 +150,21 @@ class Cache:
             if ttl == _KLINE_HISTORICAL_TTL:
                 # 永久缓存：先删除被新段完全覆盖的旧段，再插入新段
                 conn.execute(
-                    "DELETE FROM kline_cache WHERE ticker=? AND freq=? AND end <= ? AND start >= ?",
-                    (ticker, freq, end, start),
+                    "DELETE FROM kline_cache WHERE ticker=? AND freq=? AND adjustflag=? AND end <= ? AND start >= ?",
+                    (ticker, freq, adjustflag, end, start),
                 )
                 conn.execute(
                     "INSERT INTO kline_cache "
-                    "(ticker, start, end, freq, ttl, data, created) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (ticker, start, end, freq, ttl, buf.read(), time.time()),
+                    "(ticker, start, end, freq, adjustflag, ttl, data, created) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
                 )
             else:
                 conn.execute(
                     "INSERT OR REPLACE INTO kline_cache "
-                    "(ticker, start, end, freq, ttl, data, created) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (ticker, start, end, freq, ttl, buf.read(), time.time()),
+                    "(ticker, start, end, freq, adjustflag, ttl, data, created) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
                 )
             conn.commit()
 

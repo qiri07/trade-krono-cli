@@ -324,7 +324,7 @@ def merge_results(
                 raw_ret = item.get("kronos_change_pct") or item.get("kronos_change_pct_gross")
                 if raw_ret is not None and risk_metrics.get("return_adjustment") is not None:
                     item["adjusted_expected_return"] = adjust_expected_return(raw_ret, risk_metrics)
-            except (ValueError, TypeError, KeyError, IndexError) as e:
+            except Exception as e:
                 logger.warning(f"⚠️  风险评估异常 {tk}: {str(e)[:200]}")
                 item["risk_score_total"] = 50.0
                 item["risk_scores"] = {}
