@@ -322,11 +322,11 @@ def fetch_kline_incremental(
             logger.info(
                 f"🔄 {ticker} 增量拉取: 缓存过期/过期前，重新拉取 {fetch_start} ~ {end_date}"
             )
-        elif cached_end > end_date:
-            # 缓存已超出请求范围，无需补拉（但需通过 fetch_kline 限制返回区间）
+        elif cached_end >= end_date:
+            # 缓存已超出或刚好到达请求范围，无需补拉（但需通过 fetch_kline 限制返回区间）
             fetch_start = start_date
             logger.info(
-                f"🔄 {ticker} 增量拉取: 缓存已超出请求范围，仅返回 {fetch_start} ~ {end_date}"
+                f"🔄 {ticker} 增量拉取: 缓存已覆盖至 {cached_end}，仅返回 {fetch_start} ~ {end_date}"
             )
         else:
             # 缓存与请求范围有重叠，从 cached_end 下一天开始补拉
