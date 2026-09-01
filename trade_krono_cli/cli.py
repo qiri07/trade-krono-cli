@@ -48,6 +48,7 @@ from trade_krono_cli.cli_commands import (  # noqa: E402
     eval_prediction,
     history,
     kronos,
+    rank_providers,
     repo_doctor,
     repo_pin,
     repo_status,
@@ -77,6 +78,7 @@ app.command()(sync_whitelist)
 app.command()(history)
 app.command()(eval_prediction)
 app.command()(retry_failed)
+app.command()(rank_providers)
 
 
 # ═══════════════════════════════════════════════════════

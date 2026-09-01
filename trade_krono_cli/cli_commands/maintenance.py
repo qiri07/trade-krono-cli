@@ -20,6 +20,7 @@ from trade_krono_cli.cli_commands.maintenance_retry import retry_failed
 from trade_krono_cli.cli_commands.maintenance_status import status
 from trade_krono_cli.cli_commands.maintenance_sync import (
     _resolve_tickers,
+    rank_providers,
     sync_universe,
     sync_whitelist,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "clear_cache",
     "eval_prediction",
     "history",
+    "rank_providers",
     "retry_failed",
     "status",
     "sync_universe",

@@ -19,6 +19,9 @@ data_providers.factory — 数据源工厂 + 自动降级路由。
 from __future__ import annotations
 
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import Optional
 
 from loguru import logger
@@ -34,6 +37,15 @@ from trade_krono_cli.data_providers.base import (
 # ═══════════════════════════════════════════════════════
 # 工厂实现
 # ═══════════════════════════════════════════════════════
+
+
+@dataclass(frozen=True)
+class _BenchResult:
+    """单次 Provider benchmark 结果。"""
+
+    name: str
+    latency_ms: float
+    success: bool
 
 
 class DataProviderFactory:
@@ -53,6 +65,17 @@ class DataProviderFactory:
     # 进程级缓存（线程安全）
     _instance_cache: dict[str, DataProvider] = {}
     _cache_lock = threading.Lock()
+
+    # 自适应优先级缓存：ticker_type → (ranked_chain, timestamp)
+    _rank_cache: dict[str, tuple[list[str], float]] = {}
+    _rank_lock = threading.Lock()
+
+    # 缓存 TTL：10 分钟
+    _RANK_CACHE_TTL_SEC = 600
+    # 基准测试采样日期（最近 1 个交易日）
+    _BENCH_DATE = "2026-09-01"
+    # 基准测试并发数
+    _BENCH_WORKERS = 3
 
     def __init__(self, primary: str = "baostock", fallbacks: Optional[list[str]] = None):
         """
@@ -81,16 +104,29 @@ class DataProviderFactory:
     def _provider_chain_for_ticker(ticker: str) -> list[str]:
         """根据 ticker 前缀返回最优 Provider 链。
 
-        北交所（bj.）股票 baostock/mootdx 均不支持，将 tonghuashun 置顶。
+        优先使用自适应 benchmark 缓存结果（TTL 10 分钟）；
+        未缓存或过期时回退到固定顺序。
+        北交所（bj.）股票 baostock/mootdx 均不支持，强制优先使用 tonghuashun。
         """
         s = get_data_factory()
-        chain = [s.primary] + [f for f in s.fallbacks if f != s.primary]
+        base_chain = [s.primary] + [f for f in s.fallbacks if f != s.primary]
+
+        # 北交所特殊处理：tonghuashun 置顶
         if ticker.startswith("bj."):
-            # 北交所：tonghuashun 排第一，其余保持原序
-            if "tonghuashun" in chain:
-                chain.remove("tonghuashun")
-            chain.insert(0, "tonghuashun")
-        return chain
+            if "tonghuashun" in base_chain:
+                base_chain.remove("tonghuashun")
+            base_chain.insert(0, "tonghuashun")
+
+        # 尝试使用 cached benchmark 结果
+        ticker_type = ticker.split(".")[0] if "." in ticker else ticker
+        cached = s._get_cached_ranked_chain(ticker_type)
+        if cached is not None:
+            ranked_chain = cached[0]
+            filtered = [p for p in ranked_chain if p in base_chain]
+            extra = [p for p in base_chain if p not in filtered]
+            return filtered + extra
+
+        return base_chain
 
     # ── Provider 实例管理 ───────────────────────────────────────────────
 
@@ -316,6 +352,105 @@ class DataProviderFactory:
                     result[name] = False
         return result
 
+    # ── 自适应优先级：Benchmark ───────────────────────────────────────
+
+    def _benchmark_provider(self, name: str, ticker: str) -> _BenchResult:
+        """Benchmark 单个 Provider：用一个小查询测量延迟。"""
+        provider = self.get_provider(name)
+        if provider is None or not provider.supports_kline:
+            return _BenchResult(name=name, latency_ms=float("inf"), success=False)
+        try:
+            t0 = time.perf_counter()
+            data = provider.fetch_kline(ticker, self._BENCH_DATE, self._BENCH_DATE, "d", "1")
+            latency_ms = (time.perf_counter() - t0) * 1000
+            success = data is not None and not data.is_empty
+            return _BenchResult(name=name, latency_ms=latency_ms, success=success)
+        except Exception as e:
+            logger.debug(f"benchmark {name} 失败: {e}")
+            return _BenchResult(name=name, latency_ms=float("inf"), success=False)
+
+    def _get_cached_ranked_chain(self, ticker_type: str) -> tuple[list[str], float] | None:
+        """读取缓存中指定 ticker_type 的已排序 Provider 链（不含 bj. 特殊处理）。
+
+        Returns
+        -------
+        (ranked_chain, timestamp) | None
+        """
+        with self._rank_lock:
+            cached = self._rank_cache.get(ticker_type)
+        if cached is None:
+            return None
+        ranked_chain, ts = cached
+        if time.time() - ts >= self._RANK_CACHE_TTL_SEC:
+            return None
+        return ranked_chain, ts
+
+    def _write_ranked_chain(self, ticker_type: str, ranked_chain: list[str]) -> None:
+        """将排序结果写入缓存，带当前时间戳。"""
+        with self._rank_lock:
+            self._rank_cache[ticker_type] = (ranked_chain, time.time())
+
+    def bench_all(
+        self,
+        ticker: str = "sh.600519",
+        workers: int | None = None,
+    ) -> list[_BenchResult]:
+        """
+        对所有可用 Provider 进行延迟 benchmark，按速度排序。
+
+        Parameters
+        ----------
+        ticker : str
+            用于测试的代表性 ticker（默认沪深主板大盘股）
+        workers : int | None
+            并发 benchmark 线程数，默认 _BENCH_WORKERS
+
+        Returns
+        -------
+        list[_BenchResult]
+            按 latency_ms 升序排列（越快越靠前），失败的排在末尾
+        """
+        workers = workers or self._BENCH_WORKERS
+        names = self.available_providers()
+        if not names:
+            logger.warning("没有可用的 Provider 进行 benchmark")
+            return []
+
+        logger.info(f"🔬 开始 Benchmark：{len(names)} 个 Provider，ticker={ticker}")
+        results: list[_BenchResult] = []
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(self._benchmark_provider, n, ticker): n for n in names}
+            for future in as_completed(futures):
+                result = future.result()
+                results.append(result)
+                status = f"{result.latency_ms:.0f}ms" if result.success else "FAIL"
+                logger.info(f"  {result.name:12s}  {status}")
+
+        results.sort(key=lambda r: (r.latency_ms, r.name))
+        return results
+
+    def get_ranked_chain_for_ticker(self, ticker: str) -> list[str]:
+        """
+        获取并缓存按速度排序的 Provider 链（ticker 类型级缓存，TTL 10 分钟）。
+
+        同一 ticker 类型（sh/sz/bj）共享缓存。
+        北交所（bj.）股票 tonghuashun 始终置顶，不受 benchmark 结果影响。
+        """
+        ticker_type = ticker.split(".")[0] if "." in ticker else ticker
+        cached = self._get_cached_ranked_chain(ticker_type)
+        if cached is not None:
+            return cached[0]
+
+        results = self.bench_all(ticker=ticker)
+        ranked_chain = [r.name for r in results if r.success]
+        failed = [r.name for r in results if not r.success]
+        ranked_chain.extend(failed)
+
+        self._write_ranked_chain(ticker_type, ranked_chain)
+        logger.info(f"📊 {ticker} Provider 排序: {' → '.join(ranked_chain)}")
+        return ranked_chain
+
     # ── 内部工具 ────────────────────────────────────────────────────────
 
     @classmethod
@@ -399,3 +534,4 @@ def reset_data_factory() -> None:
         _factory_instance = None
     DataProviderFactory._instance_cache.clear()
     DataProviderFactory._PROVIDER_REGISTRY.clear()
+    DataProviderFactory._rank_cache.clear()
