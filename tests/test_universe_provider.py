@@ -446,7 +446,7 @@ class TestMootDxBaostockLoginFailure:
 
 class TestMootDxMootdxInitFailure:
     def test_mootdx_init_raises(self):
-        """mootdx Quotes.factory raises → returns [] after baostock logout."""
+        """mootdx Quotes.factory raises → falls back to baostock-only tickets (no price)."""
         fake_bs = _make_fake_bs()
 
         class BadQuotes:
@@ -465,7 +465,10 @@ class TestMootDxMootdxInitFailure:
         ):
             provider = MootDxUniverseProvider()
             result = provider.get_universe()
-            assert result == []
+            # 降级：返回 baostock 原始代码列表，无行情数据
+            assert len(result) == 3
+            assert all(t.price is None for t in result)
+            assert all(t.source == "mootdx" for t in result)
 
 
 class TestMootDxNoCodes:
