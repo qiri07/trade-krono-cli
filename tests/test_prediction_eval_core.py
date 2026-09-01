@@ -330,5 +330,3 @@ def test_compute_summary_high_conf_threshold():
     # 只有 score=70 的那条计入高置信
     assert summary.high_conf_n == 1
     assert m5.high_conf_win_rate == pytest.approx(100.0, abs=0.1)
-
-

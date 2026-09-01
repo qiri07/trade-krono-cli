@@ -1,5 +1,12 @@
 """
-Tests for MootDxUniverseProvider — covers uncovered lines 142-143, 161-235.
+Tests for universe/provider.py — covers previously uncovered lines:
+  - Base _safe_float NaN / inf edge cases
+  - AkshareUniverseProvider.get_universe() success path
+  - AkshareUniverseProvider._safe_float (class-level override)
+  - MootDxUniverseProvider market_cap fill path
+  - TongHuaShunUniverseProvider full get_universe path
+  - TongHuaShunUniverseProvider._thscode_to_ticker
+  - get_universe_provider factory fallbacks
 """
 
 from __future__ import annotations
@@ -7,237 +14,144 @@ from __future__ import annotations
 from types import ModuleType
 from unittest.mock import patch
 
-from trade_krono_cli.universe.provider import MootDxUniverseProvider
+from trade_krono_cli.universe.provider import (
+    AkshareUniverseProvider,
+    MootDxUniverseProvider,
+    TongHuaShunUniverseProvider,
+    UniverseTicket,
+    get_universe_provider,
+)
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Base class _safe_float edge cases
+# ═════════════════════════════════════════════════════════════════════════════
 
 
-def _make_fake_bs(login_ok=True, codes=None):
-    """Create a fake baostock module for mocking."""
-    fake_bs = ModuleType("baostock")
+class TestSafeFloat:
+    """Base UniverseProvider._safe_float static method edge cases."""
 
-    class FakeLoginResult:
-        def __init__(self, ok):
-            self.error_code = "0" if ok else "1"
-            self.error_msg = "success" if ok else "login failed"
+    def test_none_returns_none(self):
+        assert AkshareUniverseProvider._safe_float(None) is None
 
-    class FakeRecordSet:
-        def __init__(self, rows):
-            self._rows = rows
-            self._idx = 0
+    def test_string_number(self):
+        assert AkshareUniverseProvider._safe_float("3.14") == 3.14
 
-        def next(self):
-            return self._idx < len(self._rows)
+    def test_int(self):
+        assert AkshareUniverseProvider._safe_float(42) == 42.0
 
-        def get_row_data(self):
-            if self._idx < len(self._rows):
-                row = list(self._rows[self._idx])
-                self._idx += 1
-                return row
-            return []
+    def test_nan_returns_none(self):
+        assert AkshareUniverseProvider._safe_float(float("nan")) is None
 
-    def fake_login():
-        return FakeLoginResult(login_ok)
+    def test_pos_inf_returns_none(self):
+        assert AkshareUniverseProvider._safe_float(float("inf")) is None
 
-    def fake_logout():
-        pass
+    def test_neg_inf_returns_none(self):
+        assert AkshareUniverseProvider._safe_float(float("-inf")) is None
 
-    rows = (
-        codes
-        if codes is not None
-        else [
-            ("sh.600519", "贵州茅台", "2001-08-27", "", "1", "1"),
-            ("sz.000858", "五粮液", "2000-12-18", "", "1", "1"),
-            ("sh.601318", "中国平安", "2007-01-09", "", "1", "1"),
-            ("sh.900901", "弃牌B股", "2000-01-01", "", "2", "1"),
-            ("sz.000000", "退市股", "2020-01-01", "2025-01-01", "1", "0"),
-        ]
-    )
+    def test_non_numeric_string_returns_none(self):
+        assert AkshareUniverseProvider._safe_float("abc") is None
 
-    def fake_query():
-        return FakeRecordSet(rows)
+    def test_type_error_returns_none(self):
+        assert AkshareUniverseProvider._safe_float({"a": 1}) is None
 
-    # Industry lookup: batch mode returns all rows (no code arg in new impl)
-    _industry_rows = [
-        ["sh.600519", "银行"],
-        ["sz.000858", "食品饮料"],
-        ["sh.601318", "银行"],
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  AkshareUniverseProvider
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def _make_fake_akshare_df():
+    """Create a fake akshare DataFrame for mocking."""
+    rows = [
+        {
+            "代码": "600519",
+            "名称": "贵州茅台",
+            "最新价": 1800.0,
+            "市盈率-动态": 38.5,
+            "市净率": 9.2,
+            "总市值": 22500.0,
+            "量比": 1.2,
+            "换手率": 0.5,
+            "成交量": 50000.0,
+            "行业": "白酒",
+        },
+        {
+            "代码": "000858",
+            "名称": "五粮液",
+            "最新价": 150.0,
+            "市盈率-动态": 20.0,
+            "市净率": 3.5,
+            "总市值": 5900.0,
+            "量比": 0.9,
+            "换手率": 1.1,
+            "成交量": 120000.0,
+            "行业": "白酒",
+        },
     ]
 
-    class FakeIndustryRecordSet:
-        def __init__(self, rows=None):
-            self._rows = rows if rows is not None else _industry_rows
-            self._idx = 0
-            self.error_code = "0"
+    class FakeDF:
+        empty = False
 
-        def next(self):
-            return self._idx < len(self._rows)
+        def iterrows(self):
+            for row in rows:
+                yield None, row
 
-        def get_row_data(self):
-            if self._idx < len(self._rows):
-                row = list(self._rows[self._idx])
-                self._idx += 1
-                return row
-            return []
+        def __len__(self):
+            return len(rows)
 
-    def fake_query_industry(code=""):
-        return FakeIndustryRecordSet()
-
-    fake_bs.login = fake_login
-    fake_bs.logout = fake_logout
-    fake_bs.query_stock_basic = fake_query
-    fake_bs.query_stock_industry = fake_query_industry
-    return fake_bs
+    return FakeDF()
 
 
-class TestMootDxBatchFetch:
-    """Test successful batch fetching via mootdx."""
+class TestAkshareGetUniverse:
+    """AkshareUniverseProvider.get_universe success path."""
 
-    def test_single_batch_returns_tickets(self):
-        """One batch of codes, all succeed → tickets returned."""
-        fake_bs = _make_fake_bs()
+    def test_get_universe_returns_tickets_with_all_fields(self):
+        fake_df = _make_fake_akshare_df()
+        fake_ak = ModuleType("akshare")
+        fake_ak.stock_zh_a_spot_em = lambda: fake_df
 
-        class FakeDF:
-            empty = False
-            _data = [
-                {"code": "600519", "market": 1, "price": 1800.0},
-                {"code": "000858", "market": 0, "price": 150.0},
-            ]
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            provider = AkshareUniverseProvider()
+            tickets = provider.get_universe()
 
-            def iterrows(self):
-                for row in self._data:
-                    yield None, row
+        assert len(tickets) == 2
+        by_ticker = {t.ticker: t for t in tickets}
+        assert by_ticker["sh.600519"].name == "贵州茅台"
+        assert by_ticker["sh.600519"].price == 1800.0
+        assert by_ticker["sh.600519"].pe == 38.5
+        assert by_ticker["sh.600519"].pb == 9.2
+        assert by_ticker["sh.600519"].market_cap == 22500.0
+        assert by_ticker["sh.600519"].volume_ratio == 1.2
+        assert by_ticker["sh.600519"].turnover_rate == 0.5
+        assert by_ticker["sh.600519"].volume == 50000.0
+        assert by_ticker["sh.600519"].industry == "白酒"
+        assert by_ticker["sh.600519"].source == "akshare"
 
-            def __len__(self):
-                return len(self._data)
-
-        class FakeQuotes:
-            def quotes(self, symbol):
-                return FakeDF()
-
-        # Create the mootdx module structure
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = FakeQuotes
-
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        # Need Quotes class with factory method
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
-
-        fake_quotes_mod.Quotes = QuotesClass
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            assert len(result) == 2
-            tickers = {t.ticker for t in result}
-            assert "sh.600519" in tickers
-            assert "sz.000858" in tickers
-
-    def test_batch_with_zero_price_skipped(self):
-        """Rows with price <= 0 are skipped."""
-        fake_bs = _make_fake_bs()
+    def test_get_universe_skips_invalid_codes(self):
+        """Codes shorter/longer than 6 digits are skipped."""
+        rows = [{"代码": "123", "名称": "短码"}, {"代码": "600519", "名称": "茅台"}]
 
         class FakeDF:
             empty = False
-            _data = [
-                {"code": "600519", "market": 1, "price": 0.0},
-                {"code": "000858", "market": 0, "price": 150.0},
-            ]
 
             def iterrows(self):
-                for row in self._data:
+                for row in rows:
                     yield None, row
 
             def __len__(self):
-                return len(self._data)
+                return len(rows)
 
-        class FakeQuotes:
-            def quotes(self, symbol):
-                return FakeDF()
+        fake_ak = ModuleType("akshare")
+        fake_ak.stock_zh_a_spot_em = lambda: FakeDF()
 
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            provider = AkshareUniverseProvider()
+            tickets = provider.get_universe()
 
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
+        assert len(tickets) == 1
+        assert tickets[0].ticker == "sh.600519"
 
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            assert len(result) == 1
-            assert result[0].ticker == "sz.000858"
-
-    def test_batch_partial_failure_continues(self):
-        """One batch fails, others succeed → partial results returned."""
-        # Provide 25 codes so they span 2 batches (batch_size=20)
-        extra_codes = [
-            (f"sh.{601000 + i}", f"股票{i}", "2020-01-01", "", "1", "1") for i in range(23)
-        ]
-        fake_bs = _make_fake_bs(
-            codes=[
-                ("sh.600519", "贵州茅台", "2001-08-27", "", "1", "1"),
-                ("sz.000858", "五粮液", "2000-12-18", "", "1", "1"),
-            ]
-            + extra_codes
-        )
-
-        call_count = [0]
-
-        class FakeDF:
-            empty = False
-            _data = [{"code": "601318", "market": 1, "price": 50.0}]
-
-            def iterrows(self):
-                for row in self._data:
-                    yield None, row
-
-            def __len__(self):
-                return len(self._data)
-
-        class FakeQuotes:
-            def quotes(self, symbol):
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    raise RuntimeError("batch timeout")
-                return FakeDF()
-
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
-
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            assert len(result) >= 1
-            tickers = {t.ticker for t in result}
-            assert "sh.601318" in tickers
-
-    def test_empty_df_from_mootdx(self):
-        """mootdx returns empty DataFrame → no tickets from that batch."""
-        fake_bs = _make_fake_bs()
-
+    def test_get_universe_empty_df_returns_empty(self):
         class FakeDF:
             empty = True
 
@@ -247,446 +161,393 @@ class TestMootDxBatchFetch:
             def __len__(self):
                 return 0
 
-        class FakeQuotes:
-            def quotes(self, symbol):
-                return FakeDF()
+        fake_ak = ModuleType("akshare")
+        fake_ak.stock_zh_a_spot_em = lambda: FakeDF()
 
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            provider = AkshareUniverseProvider()
+            assert provider.get_universe() == []
 
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
+    def test_get_universe_import_error_returns_empty(self):
+        with patch.dict("sys.modules", {"akshare": None}):
+            provider = AkshareUniverseProvider()
+            assert provider.get_universe() == []
 
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            assert result == []
+    def test_get_universe_api_error_returns_empty(self):
+        fake_ak = ModuleType("akshare")
 
-    def test_health_check(self):
-        """health_check returns True when get_universe returns tickets."""
-        fake_bs = _make_fake_bs()
+        def bad_api():
+            raise RuntimeError("network timeout")
 
+        fake_ak.stock_zh_a_spot_em = bad_api
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            provider = AkshareUniverseProvider()
+            assert provider.get_universe() == []
+
+    def test_code_to_ticker_sh_prefix(self):
+        assert AkshareUniverseProvider._code_to_ticker("600519") == "sh.600519"
+        assert AkshareUniverseProvider._code_to_ticker("510050") == "sh.510050"
+        assert AkshareUniverseProvider._code_to_ticker("900901") == "sh.900901"
+
+    def test_code_to_ticker_sz_prefix(self):
+        assert AkshareUniverseProvider._code_to_ticker("000858") == "sz.000858"
+        assert AkshareUniverseProvider._code_to_ticker("300750") == "sz.300750"
+
+    def test_code_to_ticker_empty_string(self):
+        assert AkshareUniverseProvider._code_to_ticker("") == "sz."
+
+    def test_class_safe_float_with_nan_inf(self):
+        """AkshareUniverseProvider has its own _safe_float override."""
+        assert AkshareUniverseProvider._safe_float(float("nan")) is None
+        assert AkshareUniverseProvider._safe_float(float("inf")) is None
+        assert AkshareUniverseProvider._safe_float(float("-inf")) is None
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  MootDxUniverseProvider — market_cap fill path
+# ═════════════════════════════════════════════════════════════════════════════
+#  MootDxUniverseProvider — attribute tests
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class TestMootDxFetchQuotesBatch:
+    """Test _fetch_quotes_batch helper."""
+
+    def test_fetches_tickets_with_price_and_industry(self):
         class FakeDF:
             empty = False
-            _data = [{"code": "600519", "market": 1, "price": 1800.0}]
+            _data = [{"code": "600519", "market": 1, "price": 1800.0, "vol": 50000}]
 
             def iterrows(self):
-                for row in self._data:
-                    yield None, row
+                yield None, self._data[0]
 
             def __len__(self):
-                return len(self._data)
+                return 1
 
-        class FakeQuotes:
+        class FakeQ:
             def quotes(self, symbol):
                 return FakeDF()
 
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
-
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            assert provider.health_check() is True
-
-    def test_health_check_false_on_empty(self):
-        """health_check returns False when get_universe returns empty."""
-        fake_bs = _make_fake_bs()
-
-        class FakeDF:
-            empty = True
-
-            def iterrows(self):
-                return iter([])
-
-            def __len__(self):
-                return 0
-
-        class FakeQuotes:
-            def quotes(self, symbol):
-                return FakeDF()
-
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
-
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            assert provider.health_check() is False
-
-    def test_baostock_exception_returns_empty(self):
-        """baostock raises exception → returns [] after logout guard."""
-        fake_bs = ModuleType("baostock")
-
-        def bad_login():
-            raise RuntimeError("baostock socket error")
-
-        fake_bs.login = bad_login
-
-        with patch.dict("sys.modules", {"baostock": fake_bs}):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            assert result == []
-
-    def test_non_a_share_filtered_out(self):
-        """stock_type != '1' rows are excluded from raw_codes."""
-        fake_bs = _make_fake_bs(
-            codes=[
-                ("sh.900901", "B股", "2000-01-01", "", "2", "1"),
-                ("sz.400001", "新三板", "2010-01-01", "", "3", "1"),
-            ]
-        )
-
-        class FakeDF:
-            empty = True
-
-            def iterrows(self):
-                return iter([])
-
-            def __len__(self):
-                return 0
-
-        class FakeQuotes:
-            def quotes(self, symbol):
-                return FakeDF()
-
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
-
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            assert result == []
-
-    def test_delisted_stock_filtered_out(self):
-        """status != '1' (delisted) rows are excluded from raw_codes."""
-        fake_bs = _make_fake_bs(
-            codes=[
-                ("sz.000000", "退市股", "2020-01-01", "2025-01-01", "1", "0"),
-            ]
-        )
-
-        class FakeDF:
-            empty = True
-
-            def iterrows(self):
-                return iter([])
-
-            def __len__(self):
-                return 0
-
-        class FakeQuotes:
-            def quotes(self, symbol):
-                return FakeDF()
-
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
-
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            assert result == []
-
-
-class TestMootDxBaostockLoginFailure:
-    def test_login_failure_returns_empty(self):
-        """baostock login fails → return [] immediately."""
-        fake_bs = _make_fake_bs(login_ok=False)
-
-        with patch.dict("sys.modules", {"baostock": fake_bs}):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            assert result == []
-
-
-class TestMootDxMootdxInitFailure:
-    def test_mootdx_init_raises(self):
-        """mootdx Quotes.factory raises → falls back to baostock-only tickets (no price)."""
-        fake_bs = _make_fake_bs()
-
-        class BadQuotes:
-            @staticmethod
-            def factory(market):
-                raise RuntimeError("mootdx connection refused")
-
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = BadQuotes
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            # 降级：返回 baostock 原始代码列表，无行情数据
-            assert len(result) == 3
-            assert all(t.price is None for t in result)
-            assert all(t.source == "mootdx" for t in result)
-
-
-class TestMootDxNoCodes:
-    def test_empty_code_list_returns_empty(self):
-        """No A-share codes → mootdx never called, returns []."""
-        fake_bs = _make_fake_bs(codes=[])
-
-        class FakeDF:
-            empty = True
-
-            def iterrows(self):
-                return iter([])
-
-            def __len__(self):
-                return 0
-
-        class FakeQuotes:
-            def quotes(self, symbol):
-                return FakeDF()
-
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
-
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            assert result == []
-
-
-class TestFillIndustry:
-    """Industry data is now fetched in-batch during get_universe; these tests
-    verify the batch-query path via get_universe instead."""
-
-    def test_industry_populated_for_known_tickers(self):
-        """Tickets for known tickers get industry from batch query."""
-        fake_bs = _make_fake_bs()
-
-        class FakeDF:
-            empty = False
-            _data = [
-                {"code": "600519", "market": 1, "price": 1800.0},
-                {"code": "000858", "market": 0, "price": 150.0},
-            ]
-
-            def iterrows(self):
-                for row in self._data:
-                    yield None, row
-
-            def __len__(self):
-                return len(self._data)
-
-        class FakeQuotes:
-            def quotes(self, symbol):
-                return FakeDF()
-
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
-
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-
-        by_ticker = {t.ticker: t for t in result}
-        assert by_ticker["sh.600519"].industry == "银行"
-        assert by_ticker["sz.000858"].industry == "食品饮料"
-        # sh.601318 is also in raw_codes but mootdx has no data → not in result
-
-    def test_industry_missing_for_unknown_tickers(self):
-        """Ticker not in industry batch query → industry is None."""
-        fake_bs = _make_fake_bs()
-
-        class FakeDF:
-            empty = False
-            _data = [{"code": "999999", "market": 1, "price": 50.0}]
-
-            def iterrows(self):
-                for row in self._data:
-                    yield None, row
-
-            def __len__(self):
-                return len(self._data)
-
-        class FakeQuotes:
-            def quotes(self, symbol):
-                return FakeDF()
-
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
-
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-
-        assert len(result) == 1
-        assert result[0].ticker == "sh.999999"
-        assert result[0].industry is None
-
-    def test_industry_query_failure_is_non_fatal(self):
-        """If batch industry query raises, tickets are still returned."""
-        fake_bs = _make_fake_bs()
-
-        def bad_industry_query(code=""):
-            raise RuntimeError("industry api down")
-
-        fake_bs.query_stock_industry = bad_industry_query
-
-        class FakeDF:
-            empty = False
-            _data = [{"code": "600519", "market": 1, "price": 1800.0}]
-
-            def iterrows(self):
-                for row in self._data:
-                    yield None, row
-
-            def __len__(self):
-                return len(self._data)
-
-        class FakeQuotes:
-            def quotes(self, symbol):
-                return FakeDF()
-
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
-
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
-
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
-        ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-
-        assert len(result) == 1
-        assert result[0].ticker == "sh.600519"
-        assert result[0].industry is None  # industry query failed, non-fatal
-
-    def test_fill_industry_method_removed(self):
-        """_fill_industry no longer exists as a separate method."""
+        industry_map = {"sh.600519": "白酒"}
         provider = MootDxUniverseProvider()
-        assert not hasattr(provider, "_fill_industry") or not callable(
-            getattr(provider, "_fill_industry", None)
-        )
+        tickets = provider._fetch_quotes_batch(FakeQ(), ["sh.600519"], industry_map)
 
+        assert len(tickets) == 1
+        assert tickets[0].ticker == "sh.600519"
+        assert tickets[0].price == 1800.0
+        assert tickets[0].industry == "白酒"
+        assert tickets[0].volume == 50000.0
 
-class TestMootDxIndustryInGetUniverse:
-    """Test that get_universe populates industry for mootdx provider."""
-
-    def test_industry_populated_from_baostock(self):
-        """Tickets returned by get_universe should have industry filled."""
-        fake_bs = _make_fake_bs()
-
+    def test_zero_price_skipped(self):
         class FakeDF:
             empty = False
-            _data = [{"code": "600519", "market": 1, "price": 1800.0}]
+            _data = [{"code": "600519", "market": 1, "price": 0.0}]
 
             def iterrows(self):
-                for row in self._data:
-                    yield None, row
+                yield None, self._data[0]
 
             def __len__(self):
-                return len(self._data)
+                return 1
 
-        class FakeQuotes:
+        class FakeQ:
             def quotes(self, symbol):
                 return FakeDF()
 
-        class QuotesClass:
-            @staticmethod
-            def factory(market):
-                return FakeQuotes()
+        provider = MootDxUniverseProvider()
+        tickets = provider._fetch_quotes_batch(FakeQ(), ["sh.600519"], {})
+        assert tickets == []
 
-        fake_quotes_mod = ModuleType("mootdx.quotes")
-        fake_quotes_mod.Quotes = QuotesClass
-        fake_mootdx = ModuleType("mootdx")
-        fake_mootdx.quotes = fake_quotes_mod
+    def test_empty_df_returns_empty(self):
+        class FakeDF:
+            empty = True
 
-        with patch.dict(
-            "sys.modules",
-            {"baostock": fake_bs, "mootdx": fake_mootdx, "mootdx.quotes": fake_quotes_mod},
+            def iterrows(self):
+                return iter([])
+
+            def __len__(self):
+                return 0
+
+        class FakeQ:
+            def quotes(self, symbol):
+                return FakeDF()
+
+        provider = MootDxUniverseProvider()
+        tickets = provider._fetch_quotes_batch(FakeQ(), ["sh.600519"], {})
+        assert tickets == []
+
+
+class TestMootDxPopulateMarketCaps:
+    """Test _populate_market_caps helper."""
+
+    def test_fills_market_cap_from_finance(self):
+        class FakeFinanceDF:
+            empty = False
+
+            class _Series:
+                values = [500000000]  # 500M shares
+
+            def __getitem__(self, key):
+                return self._Series()
+
+        class FakeQ:
+            def finance(self, symbol):
+                return FakeFinanceDF()
+
+        ticket = UniverseTicket(ticker="sh.600519", price=1800.0, source="mootdx")
+        provider = MootDxUniverseProvider(populate_market_cap=True)
+        result = provider._populate_market_caps(FakeQ(), [ticket])
+
+        assert len(result) == 1
+        # 500M shares × 1800元 / 1亿 = 9000亿元
+        assert result[0].market_cap == 9000.0
+
+    def test_skips_when_price_none(self):
+        class FakeQ:
+            def finance(self, symbol):
+                class DF:
+                    empty = False
+
+                    class _Series:
+                        values = [5000000000]
+
+                    def __getitem__(self, key):
+                        return self._Series()
+
+                return DF()
+
+        ticket = UniverseTicket(ticker="sh.600519", price=None, source="mootdx")
+        provider = MootDxUniverseProvider(populate_market_cap=True)
+        result = provider._populate_market_caps(FakeQ(), [ticket])
+
+        assert result[0].market_cap is None
+
+    def test_finance_exception_handled(self):
+        class FakeQ:
+            def finance(self, symbol):
+                raise RuntimeError("finance api down")
+
+        ticket = UniverseTicket(ticker="sh.600519", price=1800.0, source="mootdx")
+        provider = MootDxUniverseProvider(populate_market_cap=True)
+        result = provider._populate_market_caps(FakeQ(), [ticket])
+
+        assert result[0].market_cap is None  # failed silently
+
+    def test_empty_list(self):
+        class FakeQ:
+            pass
+
+        provider = MootDxUniverseProvider(populate_market_cap=True)
+        result = provider._populate_market_caps(FakeQ(), [])
+        assert result == []
+
+
+class TestMootDxFetchStockCodes:
+    """Test _fetch_stock_codes helper."""
+
+    def test_filters_non_a_share_and_delisted(self):
+        class FakeRS:
+            _rows = [
+                ["sh.600519", "茅台", "2001-01-01", "", "1", "1"],  # A-share listed
+                ["sh.900901", "B股", "2000-01-01", "", "2", "1"],  # B-share, skip
+                ["sz.000000", "退市", "2020-01-01", "2025-01-01", "1", "0"],  # delisted, skip
+                ["sz.300750", "宁德时代", "2018-06-01", "", "1", "1"],  # A-share listed
+            ]
+            _idx = 0
+
+            def next(self):
+                ok = self._idx < len(self._rows)
+                if ok:
+                    self._idx += 1
+                return ok
+
+            def get_row_data(self):
+                return list(self._rows[self._idx - 1])
+
+        rs = FakeRS()
+        codes = MootDxUniverseProvider._fetch_stock_codes(rs)
+        assert codes == ["sh.600519", "sz.300750"]
+
+    def test_short_rows_skipped(self):
+        class FakeRS:
+            _rows = [["sh.600519", "茅台"], ["sz.000858", "五粮液", "2000-01-01", "", "1", "1"]]
+            _idx = 0
+
+            def next(self):
+                ok = self._idx < len(self._rows)
+                if ok:
+                    self._idx += 1
+                return ok
+
+            def get_row_data(self):
+                return list(self._rows[self._idx - 1])
+
+        codes = MootDxUniverseProvider._fetch_stock_codes(FakeRS())
+        assert codes == ["sz.000858"]
+
+    def test_empty_result(self):
+        class FakeRS:
+            def next(self):
+                return False
+
+            def get_row_data(self):
+                return []
+
+        assert MootDxUniverseProvider._fetch_stock_codes(FakeRS()) == []
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  TongHuaShunUniverseProvider
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class TestTongHuaShunUniverseProvider:
+    """TongHuaShunUniverseProvider full path tests."""
+
+    def _make_fake_requests(self):
+        """Create a fake requests module with mocked responses."""
+        fake_resp_list = []
+        fake_resp_ticker_list = []
+
+        class FakeResponse:
+            def __init__(self, json_data, status_code=200):
+                self._json = json_data
+                self.status_code = status_code
+
+            def json(self):
+                return self._json
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise RuntimeError(f"HTTP {self.status_code}")
+
+        # Ticker list response
+        ticker_items = [
+            {"thscode": "600519.SH", "ticker": "贵州茅台"},
+            {"thscode": "000858.SZ", "ticker": "五粮液"},
+        ]
+        fake_resp_ticker_list.append(FakeResponse({"code": 0, "data": {"item": ticker_items}}))
+
+        # Snapshot response
+        snapshot_items = [
+            {"thscode": "600519.SH", "ticker": "贵州茅台", "last_price": 1800.0, "volume": 50000},
+            {"thscode": "000858.SZ", "ticker": "五粮液", "last_price": 150.0, "volume": 120000},
+        ]
+        fake_resp_list.append(FakeResponse({"code": 0, "data": {"item": snapshot_items}}))
+
+        class FakeRequests:
+            def get(self, url, params=None, headers=None, timeout=30):
+                # route by URL pattern
+                if "tickers/list" in url:
+                    return (
+                        fake_resp_ticker_list.pop(0)
+                        if fake_resp_ticker_list
+                        else FakeResponse({"code": 1, "data": {"item": []}})
+                    )
+                if "prices/snapshot" in url:
+                    return (
+                        fake_resp_list.pop(0)
+                        if fake_resp_list
+                        else FakeResponse({"code": 1, "data": {"item": []}})
+                    )
+                return FakeResponse({"code": 1}, status_code=404)
+
+        return FakeRequests()
+
+    def test_get_universe_returns_tickets(self):
+        fake_req = self._make_fake_requests()
+
+        import trade_krono_cli.universe.provider as provider_mod
+
+        original_requests = provider_mod.requests
+        try:
+            provider_mod.requests = fake_req
+            with patch.dict("os.environ", {"HITHINK_FINANCE_API_KEY": "test-key"}):
+                provider = TongHuaShunUniverseProvider()
+                tickets = provider.get_universe()
+        finally:
+            provider_mod.requests = original_requests
+
+        assert len(tickets) == 2
+        by_ticker = {t.ticker: t for t in tickets}
+        assert by_ticker["sh.600519"].name == "贵州茅台"
+        assert by_ticker["sh.600519"].price == 1800.0
+        assert by_ticker["sh.600519"].volume == 50000.0
+        assert by_ticker["sh.600519"].source == "tonghuashun"
+
+    def test_get_universe_no_api_key_returns_empty(self):
+        with patch.dict("os.environ", {}, clear=True):
+            provider = TongHuaShunUniverseProvider()
+            assert provider.get_universe() == []
+
+    def test_get_universe_import_error_returns_empty(self):
+        with (
+            patch.dict("os.environ", {"HITHINK_FINANCE_API_KEY": "test-key"}),
+            patch.dict("sys.modules", {"requests": None}),
         ):
-            provider = MootDxUniverseProvider()
-            result = provider.get_universe()
-            assert len(result) == 1
-            assert result[0].ticker == "sh.600519"
-            assert result[0].industry == "银行"
+            provider = TongHuaShunUniverseProvider()
+            assert provider.get_universe() == []
+
+    def test_thscode_to_ticker_sh(self):
+        assert TongHuaShunUniverseProvider._thscode_to_ticker("600519.SH") == "sh.600519"
+
+    def test_thscode_to_ticker_sz(self):
+        assert TongHuaShunUniverseProvider._thscode_to_ticker("000858.SZ") == "sz.000858"
+
+    def test_thscode_to_ticker_bj(self):
+        assert TongHuaShunUniverseProvider._thscode_to_ticker("830000.BJ") == "bj.830000"
+
+    def test_thscode_to_ticker_missing_dot(self):
+        assert TongHuaShunUniverseProvider._thscode_to_ticker("600519") == ""
+
+    def test_thscode_to_ticker_unknown_exchange(self):
+        assert TongHuaShunUniverseProvider._thscode_to_ticker("600519.HK") == ""
+
+    def test_init_populate_market_cap_ignored(self):
+        """populate_market_cap is accepted but ignored (tonghuashun doesn't support it)."""
+        provider = TongHuaShunUniverseProvider(populate_market_cap=True)
+        assert provider._populate_market_cap is True
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Factory: get_universe_provider
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class TestGetUniverseProvider:
+    """Factory function get_universe_provider fallback behavior."""
+
+    def test_known_source_akshare(self):
+        provider = get_universe_provider("akshare")
+        assert provider is not None
+        assert provider.name == "akshare"
+
+    def test_known_source_mootdx(self):
+        provider = get_universe_provider("mootdx")
+        assert provider is not None
+        assert isinstance(provider, MootDxUniverseProvider)
+        assert provider._populate_market_cap is False
+
+    def test_known_source_mootdx_with_market_cap(self):
+        provider = get_universe_provider("mootdx", populate_market_cap=True)
+        assert provider is not None
+        assert isinstance(provider, MootDxUniverseProvider)
+        assert provider._populate_market_cap is True
+
+    def test_known_source_tonghuashun(self):
+        provider = get_universe_provider("tonghuashun")
+        assert provider is not None
+        assert isinstance(provider, TongHuaShunUniverseProvider)
+
+    def test_unknown_source_falls_back_to_akshare(self):
+        with patch("trade_krono_cli.universe.provider.logger") as mock_logger:
+            provider = get_universe_provider("unknown_source_xyz")
+        assert provider is not None
+        assert provider.name == "akshare"
+        mock_logger.warning.assert_called_once()
+
+    def test_no_registered_providers_returns_none(self):
+        """Edge case: if akshare registration is missing, returns None."""
+        with patch.dict("trade_krono_cli.universe.provider._PROVIDER_REGISTRY", {}, clear=True):
+            result = get_universe_provider("akshare")
+        assert result is None

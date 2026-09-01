@@ -1,6 +1,5 @@
 """测试 DecisionAdapter — LLM 输出解析与 rating/keyword 回退。"""
 
-
 import pytest
 
 from trade_krono_cli.ta_decision import DecisionAdapter, InvestmentDecision, Signal

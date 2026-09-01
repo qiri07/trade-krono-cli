@@ -90,7 +90,6 @@ class TestKronosRunnerResolveDevice:
         )
         runner = KronosRunner(no_cache=True, settings=settings)
 
-
         mock_df = pd.DataFrame(
             {
                 "timestamps": pd.to_datetime(

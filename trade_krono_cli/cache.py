@@ -355,6 +355,7 @@ class Cache:
         return (start_s, end_s)
 
     def clear_all(self) -> int:
+        """清空所有缓存表（kline_cache / ta_cache / kronos_cache），返回删除的行数。"""
         with self._conn as conn:
             count = 0
             for table in _CACHE_TABLES:
@@ -367,6 +368,7 @@ class Cache:
         return count
 
     def stats(self) -> dict:
+        """返回各缓存表的记录数，格式为 {"cache_kline_cache": N, ...}。"""
         with self._conn as conn:
             return {
                 f"cache_{t}": conn.execute(
@@ -380,6 +382,7 @@ _cache: Optional[Cache] = None
 
 
 def get_cache() -> Cache:
+    """获取全局 Cache 单例，首次调用时自动初始化。"""
     global _cache
     if _cache is None:
         _cache = Cache()
@@ -387,5 +390,6 @@ def get_cache() -> Cache:
 
 
 def clear_cache_singleton() -> None:
+    """清除 Cache 全局单例（测试隔离用）。"""
     global _cache
     _cache = None

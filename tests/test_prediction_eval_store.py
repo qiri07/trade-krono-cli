@@ -1,6 +1,5 @@
 """测试 prediction_eval.py 持久化：store_summary、get_latest_evaluation。"""
 
-
 import pytest
 
 from trade_krono_cli.prediction_eval import (
@@ -144,5 +143,3 @@ def test_get_latest_evaluation_with_data(tmp_path):
     assert result is not None
     assert result["n_records"] == 5
     assert result["summary"]["kronos_n"] == 5
-
-

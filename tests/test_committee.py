@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -399,17 +400,60 @@ def test_deliberate_confidence_capped(research_db):
     assert result.recommendation_confidence >= 90.0
 
 
-def test_deliberate_llm_path_raises(research_db):
-    """LLM 路径未实现，调用应抛出 NotImplementedError。"""
+def test_deliberate_llm_path_fallback_to_heuristic(research_db):
+    """LLM 路径失败时降级到启发式路径，不抛出异常。"""
     inp = StockCommitteeInput(
         ticker="sh.600519",
         date="2026-08-14",
         agent_reports=[],
     )
     committee = InvestmentCommittee()
+    # MagicMock 作为 llm_client 会触发 fallback 到 heuristic
     mock_client = MagicMock()
-    with pytest.raises(NotImplementedError, match="LLM 委员会审议路径尚未实现"):
-        committee.deliberate(inp, llm_client=mock_client)
+    result = committee.deliberate(inp, llm_client=mock_client)
+    assert result.recommendation == "HOLD"
+    assert result.recommendation_confidence == 50.0
+
+
+def test_deliberate_llm_path_success(research_db):
+    """LLM 返回有效 JSON 时使用 LLM 结果。"""
+    inp = StockCommitteeInput(
+        ticker="sh.600519",
+        date="2026-08-14",
+        agent_reports=[
+            AgentReport(
+                agent_type=AgentType.FUNDAMENTAL,
+                ticker="sh.600519",
+                content="ROE强",
+                signal="BUY",
+                confidence=80.0,
+                key_finding="ROE 28%",
+            ),
+        ],
+        ta_signal="BUY",
+        ta_confidence=75.0,
+        composite_score=80.0,
+    )
+    committee = InvestmentCommittee()
+    llm_output = json.dumps(
+        {
+            "bull_case": "LLM看多",
+            "bear_case": "LLM看空",
+            "recommendation": "BUY",
+            "confidence": 88.5,
+            "reasoning": "LLM推理过程",
+        },
+        ensure_ascii=False,
+    )
+
+    mock_client = MagicMock()
+    mock_client.generate.return_value = llm_output
+
+    result = committee.deliberate(inp, llm_client=mock_client)
+    assert result.recommendation == "BUY"
+    assert result.recommendation_confidence == 88.5
+    assert "LLM看多" in result.bull_case
+    assert "LLM推理" in result.reasoning
 
 
 def test_get_consensus(research_db):

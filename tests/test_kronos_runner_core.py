@@ -196,5 +196,3 @@ class TestKronosRunnerApplyUncertainty:
         assert res.direction == "UP"
         assert res.prediction_uncertainty is not None
         assert res.prediction_uncertainty.confidence_score == 80.0
-
-

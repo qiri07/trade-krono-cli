@@ -486,14 +486,81 @@ class InvestmentCommittee:
         consensus: dict[str, int],
     ) -> tuple[str, str, str, float, str]:
         """
-        LLM 增强审议路径（预留接口）。
+        LLM 增强审议路径。
 
         将结构化报告 + 共识分布发送给 LLM，生成更精细的 Bull/Bear Case 和最终推荐。
-
-        TODO: 实现 LLM 审议路径。参考 DecisionAdapter 模式：
-              构建 prompt → 调用 LLM → 解析 JSON 输出。
+        构建 prompt → 调用 LLM → 解析 JSON 输出。失败时降级到启发式路径。
         """
-        raise NotImplementedError("LLM 委员会审议路径尚未实现，请使用 heuristic 模式")
+        try:
+            prompt = self._build_llm_prompt(input_data, consensus)
+            response_text = self._call_llm(llm_client, prompt)
+            result = self._parse_llm_response(response_text, input_data, consensus)
+            return (
+                result["bull_case"],
+                result["bear_case"],
+                result["recommendation"],
+                result["confidence"],
+                result["reasoning"],
+            )
+        except Exception as e:
+            logger.warning(f"⚠️  LLM 审议失败，降级到启发式路径: {e}")
+            return self._heuristic_deliberate(input_data, consensus)
+
+    @staticmethod
+    def _build_llm_prompt(input_data: StockCommitteeInput, consensus: dict[str, int]) -> str:
+        """构建委员会审议的 LLM prompt。"""
+        agents = "\n".join(
+            f"- {r.agent_type.value}: {r.signal or 'N/A'} | {r.key_finding}"
+            for r in input_data.agent_reports
+        )
+        return (
+            "你是一个专业的投资顾问。请基于以下信息进行分析，输出 JSON。\n\n"
+            f"股票: {input_data.ticker}\n"
+            f"日期: {input_data.date}\n"
+            f"Agent 共识: {json.dumps(consensus, ensure_ascii=False)}\n"
+            f"TA 信号: {input_data.ta_signal} (置信度={input_data.ta_confidence})\n"
+            f"Kronos: {input_data.kronos_direction} ({input_data.kronos_change_pct}%, 置信度={input_data.kronos_confidence})\n"
+            f"综合评分: {input_data.composite_score}\n\n"
+            "Agent 报告:\n"
+            f"{agents}\n\n"
+            "请以 JSON 格式输出，包含以下字段：\n"
+            '{"bull_case": "看多论点", "bear_case": "看空论点", '
+            '"recommendation": "BUY/HOLD/SELL/OVERWEIGHT", '
+            '"confidence": 75.0, "reasoning": "完整推理"}'
+        )
+
+    @staticmethod
+    def _call_llm(llm_client: Any, prompt: str) -> str:
+        """调用 LLM 并返回文本响应。支持多种客户端接口。"""
+        # 优先使用显式传入的 llm_client
+        if hasattr(llm_client, "generate"):
+            return llm_client.generate(prompt)
+        if hasattr(llm_client, "chat"):
+            return llm_client.chat(prompt)
+        if callable(llm_client):
+            return llm_client(prompt)
+        raise ValueError(f"不支持的 llm_client 类型: {type(llm_client).__name__}")
+
+    @staticmethod
+    def _parse_llm_response(
+        text: str,
+        input_data: StockCommitteeInput,
+        consensus: dict[str, int],
+    ) -> dict:
+        """解析 LLM 返回的 JSON，失败时降级到启发式结果。"""
+        text = text.strip()
+        # 尝试提取 JSON 块
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1:
+            raise ValueError("LLM 响应不包含 JSON 对象")
+        json_str = text[start : end + 1]
+        result = json.loads(json_str)
+        # 验证必需字段
+        for key in ("bull_case", "bear_case", "recommendation", "confidence", "reasoning"):
+            if key not in result:
+                raise ValueError(f"LLM 响应缺少字段: {key}")
+        return result
 
 
 # ═══════════════════════════════════════════════════════

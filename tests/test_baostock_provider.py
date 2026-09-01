@@ -235,5 +235,3 @@ class TestBaostockProvider:
 # ═══════════════════════════════════════════════════════
 
 akshare_available = pytest.importorskip("akshare", reason="akshare not installed")
-
-

@@ -1,7 +1,6 @@
 """测试 PredictionUncertainty / KronosForecastResult 数据类。"""
 
 
-
 class TestPredictionUncertainty:
     """PredictionUncertainty 序列化/反序列化测试。"""
 
@@ -122,5 +121,3 @@ class TestKronosForecastResult:
         )
         d = r.to_dict()
         assert d["prediction_uncertainty"] is None
-
-

@@ -64,7 +64,7 @@ def test_pipeline_run_parallel():
         skip_kronos=False,
     )
 
-    with patch("trade_krono_cli.pipeline.orchestrator.precheck_stock_status") as mock_precheck:
+    with patch("trade_krono_cli.pipeline.pipeline_core.precheck_stock_status") as mock_precheck:
         mock_precheck.return_value = {
             "sh.600519": _make_abnormality_flag("sh.600519"),
             "sz.000858": _make_abnormality_flag("sz.000858"),
@@ -166,7 +166,7 @@ def test_pipeline_with_errors():
 
     pipeline = QuantPipeline(ta_runner=mock_ta, kronos_runner=mock_kr)
 
-    with patch("trade_krono_cli.pipeline.orchestrator.precheck_stock_status") as mock_precheck:
+    with patch("trade_krono_cli.pipeline.pipeline_core.precheck_stock_status") as mock_precheck:
         mock_precheck.return_value = {
             "sh.600519": _make_abnormality_flag("sh.600519"),
             "sz.000858": _make_abnormality_flag("sz.000858"),

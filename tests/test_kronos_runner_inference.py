@@ -396,5 +396,3 @@ class TestKronosBatchInference:
             assert len(results) == 1
             assert results[0].expected_change_pct == 2.0
             assert results[0].error is None
-
-

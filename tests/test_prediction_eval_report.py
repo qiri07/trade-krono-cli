@@ -14,7 +14,6 @@ def test_print_report_empty_summary(caplog):
     """打印空 summary 的报告不应崩溃。"""
     from loguru import logger
 
-
     evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
     evaluator.HORIZONS = [5, 10, 20]
     summary = EvaluationSummary()
@@ -35,7 +34,6 @@ def test_print_report_empty_summary(caplog):
 def test_print_report_with_data(caplog):
     """打印有数据的报告应包含正确的指标。"""
     from loguru import logger
-
 
     evaluator = PredictionEvaluator.__new__(PredictionEvaluator)
     evaluator.HORIZONS = [5, 10, 20]
@@ -74,7 +72,6 @@ def test_run_evaluation_no_results(caplog):
     """latest=True 且无评估结果时，应打印提示并返回。"""
     from loguru import logger
 
-
     captured: list[str] = []
 
     def _capture(*args, **kwargs):
@@ -91,7 +88,6 @@ def test_run_evaluation_no_results(caplog):
 def test_run_evaluation_with_latest_result(caplog):
     """latest=True 且有评估结果时，应打印结果。"""
     from loguru import logger
-
 
     class FakeSummary:
         kronos_n = 3
@@ -140,5 +136,3 @@ def test_run_evaluation_with_latest_result(caplog):
 # ═══════════════════════════════════════════════════════
 # 交易约束感知评估测试
 # ═══════════════════════════════════════════════════════
-
-

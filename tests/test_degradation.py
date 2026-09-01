@@ -486,7 +486,7 @@ class TestOrchestratorCacheFallback:
         ta_result_failed.reasoning = None
 
         with patch(
-            "trade_krono_cli.pipeline.orchestrator.get_research", return_value=mock_research
+            "trade_krono_cli.pipeline.pipeline_core.get_research", return_value=mock_research
         ):
             # 模拟 orchestrator 中 ta_cache_fallback 的核心逻辑片段
             cfg = SimpleNamespace(

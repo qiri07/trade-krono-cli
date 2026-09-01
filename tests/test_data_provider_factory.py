@@ -170,7 +170,6 @@ class TestDataProviderFactory:
 # ═══════════════════════════════════════════════════════
 
 
-
 class TestEdgeCases:
     def test_kline_data_nan_protection(self):
         """to_dataframe 在空数据时不会崩溃。"""
@@ -328,4 +327,3 @@ class TestEdgeCases:
                 with patch.object(bs, "health_check", return_value=True):
                     result = factory.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
                     assert result is None  # 空结果视为失败
-

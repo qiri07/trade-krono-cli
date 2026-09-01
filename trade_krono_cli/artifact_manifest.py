@@ -91,6 +91,7 @@ def _git_sha(repo_path: Path) -> tuple[Optional[str], Optional[str]]:
 
 
 def _git_dirty(repo_path: Path) -> bool:
+    """判断 git 仓库是否有未提交的修改。"""
     if not (repo_path / ".git").exists():
         return False
     try:
@@ -308,6 +309,7 @@ def _build_model_artifact(settings: Settings) -> ModelArtifact:
 
 
 def _build_llm_artifact(settings: Settings) -> LlmArtifact:
+    """收集 LLM 配置信息（provider / 模型名 / backend URL）。"""
     return LlmArtifact(
         provider=settings.llm_provider,
         deep_think_model=settings.deep_think_llm,
@@ -333,6 +335,7 @@ def _build_data_artifact(settings: Settings) -> DataArtifact:
 
 
 def _build_prompt_artifact(settings: Settings) -> PromptArtifact:
+    """从 Settings 构建 PromptArtifact（辩论轮次 / 语言 / 结构化输出）。"""
     return PromptArtifact(
         max_debate_rounds=settings.max_debate_rounds,
         max_risk_discuss_rounds=settings.max_risk_discuss_rounds,
@@ -342,6 +345,7 @@ def _build_prompt_artifact(settings: Settings) -> PromptArtifact:
 
 
 def _build_strategy_artifact(settings: Settings) -> StrategyArtifact:
+    """从 Settings 构建 StrategyArtifact（评分策略 / 风险策略 / 阈值）。"""
     return StrategyArtifact(
         scoring_strategy=settings.scoring_strategy,
         risk_boost_strategy=settings.risk_boost_strategy,
@@ -415,6 +419,7 @@ def save_artifact_lock(
     entries: list[dict],
     project_root: Optional[Path] = None,
 ) -> Path:
+    """保存 artifact.lock（追加模式：先 load，append，再 save）。"""
     """保存 artifact.lock（追加模式：先 load，append，再 save）。"""
     lock_path = _artifact_lock_path(project_root)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -503,6 +508,7 @@ def describe(manifest: Optional[ArtifactManifest] = None) -> str:
 
 
 def print_manifest(manifest: Optional[ArtifactManifest] = None) -> None:
+    """将 manifest 摘要以 INFO 级别打印到日志。"""
     from loguru import logger
 
     logger.info(describe(manifest))

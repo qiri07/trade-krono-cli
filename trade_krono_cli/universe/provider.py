@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Optional
 
+import requests
 from loguru import logger
 
 # ── 数据结构 ──────────────────────────────────────────────────────────────────
@@ -194,27 +195,13 @@ class MootDxUniverseProvider(UniverseProvider):
                 return []
 
             rs = bs.query_stock_basic()
-            raw_codes: list[str] = []
-            while rs.next():
-                row = rs.get_row_data()
-                # Fields: code, code_name, ipoDate, outDate, type, status
-                if len(row) < 6:
-                    continue
-                code = row[0]  # sh.600519 / sz.000858
-                stock_type = row[4]  # '1' = A-share
-                status = row[5]  # '1' = listed
-                if stock_type != "1" or status != "1":
-                    continue
-                raw_codes.append(code)
+            raw_codes: list[str] = self._fetch_stock_codes(rs)
 
             # ── 在同一 session 内批量补充行业数据，避免第二次 login/logout ──────
             industry_map: dict[str, str] = {}
             try:
                 ind_rs = bs.query_stock_industry()
-                while ind_rs.next():
-                    ind_row = ind_rs.get_row_data()
-                    if len(ind_row) > 1 and ind_row[1]:
-                        industry_map[ind_row[0]] = str(ind_row[1])
+                industry_map = self._fetch_industry_map(ind_rs)
             except Exception as e:
                 logger.debug(f"baostock 行业查询失败（非致命）: {e}")
 
@@ -238,6 +225,48 @@ class MootDxUniverseProvider(UniverseProvider):
             logger.info(f"📡 MootDx 降级获取: {len(fallback_tickets)} 只 A 股（无行情）")
             return fallback_tickets
 
+        tickets: list[UniverseTicket] = self._fetch_quotes_batch(q, raw_codes, industry_map)
+
+        # ── 补充 market_cap：通过 mootdx finance 获取总股本，计算市值 ──────
+        if self._populate_market_cap:
+            tickets = self._populate_market_caps(q, tickets)
+
+        return tickets
+
+    @staticmethod
+    def _fetch_stock_codes(rs: Any) -> list[str]:
+        """从 baostock RecordSet 提取 A 股代码列表。"""
+        raw_codes: list[str] = []
+        while rs.next():
+            row = rs.get_row_data()
+            # Fields: code, code_name, ipoDate, outDate, type, status
+            if len(row) < 6:
+                continue
+            code = row[0]  # sh.600519 / sz.000858
+            stock_type = row[4]  # '1' = A-share
+            status = row[5]  # '1' = listed
+            if stock_type != "1" or status != "1":
+                continue
+            raw_codes.append(code)
+        return raw_codes
+
+    @staticmethod
+    def _fetch_industry_map(rs: Any) -> dict[str, str]:
+        """从 baostock RecordSet 构建行业映射。"""
+        industry_map: dict[str, str] = {}
+        while rs.next():
+            ind_row = rs.get_row_data()
+            if len(ind_row) > 1 and ind_row[1]:
+                industry_map[ind_row[0]] = str(ind_row[1])
+        return industry_map
+
+    def _fetch_quotes_batch(
+        self,
+        q: Any,
+        raw_codes: list[str],
+        industry_map: dict[str, str],
+    ) -> list[UniverseTicket]:
+        """使用 mootdx 批量获取实时行情并构建 UniverseTicket 列表。"""
         tickets: list[UniverseTicket] = []
         # mootdx quotes API 每请求最多返回 80 行，批量过大会被静默截断。
         # 使用 20 作为安全批次大小，并加入间隔以避免被服务端限流。
@@ -277,34 +306,34 @@ class MootDxUniverseProvider(UniverseProvider):
             _time.sleep(0.3)
 
         logger.info(f"📡 MootDx 全市场获取: {len(tickets)} 只 A 股")
+        return tickets
 
-        # ── 补充 market_cap：通过 mootdx finance 获取总股本，计算市值 ──────
-        if self._populate_market_cap:
-            logger.info("📊 正在补充市值数据（mootdx finance）...")
-            code_to_ticket = {t.ticker: t for t in tickets}
-            updated = 0
-            failed = 0
-            for i, ticker in enumerate([t.ticker for t in tickets]):
-                plain_code = ticker.split(".")[-1]
-                try:
-                    fin_df = q.finance(symbol=plain_code)
-                    if fin_df is not None and not fin_df.empty:
-                        zongguben = fin_df["zongguben"].values[0]  # 总股本（股）
-                        t = code_to_ticket.get(ticker)
-                        if t and t.price:
-                            price = t.price
-                            # 市值（亿元）= 总股本 × 价格 / 1亿
-                            t.market_cap = round(zongguben * price / 1e8, 2)
-                            updated += 1
-                except Exception:
-                    failed += 1
-                # 每 50 只打印进度
-                if (i + 1) % 50 == 0:
-                    logger.debug(
-                        f"  市值数据进度: {i + 1}/{len(tickets)} (已更新={updated}, 失败={failed})"
-                    )
-            logger.info(f"📊 市值数据补充完成: {updated}/{len(tickets)} 只成功, {failed} 只失败")
-
+    def _populate_market_caps(self, q: Any, tickets: list[UniverseTicket]) -> list[UniverseTicket]:
+        """通过 mootdx finance API 补充市值数据。"""
+        logger.info("📊 正在补充市值数据（mootdx finance）...")
+        code_to_ticket = {t.ticker: t for t in tickets}
+        updated = 0
+        failed = 0
+        for i, ticker in enumerate([t.ticker for t in tickets]):
+            plain_code = ticker.split(".")[-1]
+            try:
+                fin_df = q.finance(symbol=plain_code)
+                if fin_df is not None and not fin_df.empty:
+                    zongguben = fin_df["zongguben"].values[0]  # 总股本（股）
+                    t = code_to_ticket.get(ticker)
+                    if t and t.price:
+                        price = t.price
+                        # 市值（亿元）= 总股本 × 价格 / 1亿
+                        t.market_cap = round(zongguben * price / 1e8, 2)
+                        updated += 1
+            except Exception:
+                failed += 1
+            # 每 50 只打印进度
+            if (i + 1) % 50 == 0:
+                logger.debug(
+                    f"  市值数据进度: {i + 1}/{len(tickets)} (已更新={updated}, 失败={failed})"
+                )
+        logger.info(f"📊 市值数据补充完成: {updated}/{len(tickets)} 只成功, {failed} 只失败")
         return tickets
 
 
@@ -338,12 +367,6 @@ class TongHuaShunUniverseProvider(UniverseProvider):
             logger.warning(
                 "HITHINK_FINANCE_API_KEY / FUYAO_API_KEY 未配置，无法使用同花顺 UniverseProvider"
             )
-            return []
-
-        try:
-            import requests
-        except ImportError:
-            logger.warning("requests 未安装，无法使用同花顺 UniverseProvider")
             return []
 
         # 1. 分页拉取全市场 A 股代码表
