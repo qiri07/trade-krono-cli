@@ -230,13 +230,10 @@ class MootDxUniverseProvider(UniverseProvider):
 
             q = Quotes.factory(market="std")
         except Exception as e:
-            logger.warning(
-                f"mootdx 初始化失败，降级为仅 baostock 数据（无实时行情）: {e}"
-            )
+            logger.warning(f"mootdx 初始化失败，降级为仅 baostock 数据（无实时行情）: {e}")
             # 降级：返回 baostock 原始代码列表，不阻塞流水线
             fallback_tickets: list[UniverseTicket] = [
-                UniverseTicket(ticker=c, source=self.name)
-                for c in raw_codes
+                UniverseTicket(ticker=c, source=self.name) for c in raw_codes
             ]
             logger.info(f"📡 MootDx 降级获取: {len(fallback_tickets)} 只 A 股（无行情）")
             return fallback_tickets

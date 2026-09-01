@@ -115,7 +115,9 @@ class StreamPipeline:
                 except Exception as e:
                     logger.error(f"❌ Kronos 预测异常 {tk}: {e}")
                     results.append(
-                        KronosForecastResult(ticker=tk, eval_date=date, horizon=self._pred_len, error=str(e))
+                        KronosForecastResult(
+                            ticker=tk, eval_date=date, horizon=self._pred_len, error=str(e)
+                        )
                     )
                 finally:
                     if self.progress_cb:

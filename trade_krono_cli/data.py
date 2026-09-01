@@ -134,7 +134,15 @@ def fetch_kline(
             # 写缓存（永久）
             from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL
 
-            cache.set_kline(ticker, start_date, end_date, frequency, out, ttl=_KLINE_HISTORICAL_TTL, adjustflag=adjustflag)
+            cache.set_kline(
+                ticker,
+                start_date,
+                end_date,
+                frequency,
+                out,
+                ttl=_KLINE_HISTORICAL_TTL,
+                adjustflag=adjustflag,
+            )
             logger.debug(
                 f"✅ K 线就绪（via {kline_data.source if hasattr(kline_data, 'source') else 'factory'}）: {ticker} 共 {len(out)} 行"
             )
@@ -200,7 +208,15 @@ def fetch_kline(
     # 写缓存：永久缓存
     from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL
 
-    cache.set_kline(ticker, start_date, end_date, frequency, out, ttl=_KLINE_HISTORICAL_TTL, adjustflag=adjustflag)
+    cache.set_kline(
+        ticker,
+        start_date,
+        end_date,
+        frequency,
+        out,
+        ttl=_KLINE_HISTORICAL_TTL,
+        adjustflag=adjustflag,
+    )
     logger.debug(f"✅ K 线就绪: {ticker} 共 {len(out)} 行")
 
     return out
@@ -381,7 +397,9 @@ def _write_merged_cache(
 
     seg_start = df["timestamps"].iloc[0].strftime("%Y-%m-%d")
     seg_end = df["timestamps"].iloc[-1].strftime("%Y-%m-%d")
-    cache.set_kline(ticker, seg_start, seg_end, frequency, df, ttl=_KLINE_HISTORICAL_TTL, adjustflag="1")
+    cache.set_kline(
+        ticker, seg_start, seg_end, frequency, df, ttl=_KLINE_HISTORICAL_TTL, adjustflag="1"
+    )
     logger.debug(f"📦 永久缓存: {ticker} {seg_start}~{seg_end}")
 
 

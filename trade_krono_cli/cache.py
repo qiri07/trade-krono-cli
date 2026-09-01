@@ -113,7 +113,9 @@ class Cache:
 
     # ── K 线缓存 ──────────────────────────────────────
 
-    def get_kline(self, ticker: str, start: str, end: str, freq: str, adjustflag: str = "1") -> Optional[pd.DataFrame]:
+    def get_kline(
+        self, ticker: str, start: str, end: str, freq: str, adjustflag: str = "1"
+    ) -> Optional[pd.DataFrame]:
         with self._conn as conn:
             row = conn.execute(
                 "SELECT data, created, ttl FROM kline_cache "
@@ -300,7 +302,9 @@ class Cache:
 
     # ── 工具方法 ──────────────────────────────────────
 
-    def get_cached_date_range(self, ticker: str, freq: str = "d", adjustflag: str = "1") -> Optional[tuple[str, str]]:
+    def get_cached_date_range(
+        self, ticker: str, freq: str = "d", adjustflag: str = "1"
+    ) -> Optional[tuple[str, str]]:
         """
         查询某只股票的已有 K 线缓存覆盖的日期范围。
 
