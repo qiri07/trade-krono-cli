@@ -36,7 +36,13 @@ trade_krono_cli/
 │   ├── __init__.py       # 统一导出 run/ta/kronos/repo_* 等
 │   ├── core.py           # 共享工具函数 + run/ta/kronos 主流程命令
 │   ├── repo.py           # repo status/doctor/update/pin 子命令
-│   └── maintenance.py    # status/clear-cache/warm-cache/history/eval/retry-failed
+│   ├── maintenance.py    # 向后兼容薄包装（re-export 子模块）
+│   ├── maintenance_status.py   # status 命令
+│   ├── maintenance_cache.py    # clear-cache / warm-cache 命令
+│   ├── maintenance_sync.py     # sync-universe / sync-whitelist + _resolve_tickers
+│   ├── maintenance_history.py  # history 命令
+│   ├── maintenance_eval.py     # eval-prediction 命令
+│   └── maintenance_retry.py    # retry-failed 命令
 ├── config.py             # Settings dataclass：从 .env 加载，模块级单例 get_settings()
 ├── errors.py             # 异常层次：TradeKronoError → ModuleError / DataError / ModelError 等
 ├── logger.py             # loguru 初始化（控制台 + 文本日志 + JSON 结构化日志）
@@ -81,8 +87,9 @@ tests/buffett_screen.py            # 巴菲特六闸门筛选器（串行版，�
 tests/buffett_screen_parallel.py   # 巴菲特六闸门筛选器（并行版，20 并发）
 tests/check_cache_integrity.py     # 缓存完整性检查工具
 tests/check_cache_quality.py       # 缓存质量分析工具
-tests/test_sync_whitelist.py       # sync-whitelist 单元测试
-tests/conftest.py            # 共享 fixture（make_mock_settings）+ pytest_configure/env var 路由 + pytest_sessionstart 隔离校验 + clear_all_globals hook
+tests/test_sync_whitelist.py       # sync-whitelist / sync-universe 单元测试
+tests/conftest.py                  # 共享 fixture（make_mock_settings）+ pytest_configure/env var 路由 + clear_all_globals hook
+tests/test_*.py                    # 扁平化测试结构：每个源模块对应一个测试文件（91 个测试文件）
 outputs/                     # 运行时产物（gitignore）
 outputs/results/             # 报告输出目录（gitignore 中 *.db/*.log，结果文件可提交）
 ```
@@ -156,7 +163,7 @@ uv run python tests/buffett_screen.py
 - 依赖注入：协作者作为函数参数传入，不要在内部 `new`
 
 ## 架构约定（Architecture）
-- **分层依赖**（由外向内）：`cli.py → cli_commands.py → pipeline/orchestrator.py → adapters/ / models/ → domain/ / data_providers/ → config.py`
+- **分层依赖**（由外向内）：`cli.py → cli_commands/ → pipeline/orchestrator.py → adapters/ / models/ → domain/ / data_providers/ → config.py`
 - 领域层（`domain/`）禁止依赖外部项目或网络库
 - 数据源统一返回标准化 `KlineData` / `RealtimeQuote` / `StockMetadata`；通过 `DataProvider` ABC 抽象
 - 外部项目（TradingAgents / Kronos）通过 `adapters/` 层适配，不直接引用其内部 API
@@ -166,6 +173,7 @@ uv run python tests/buffett_screen.py
 - 测试文件：`tests/test_<module>.py`（扁平结构）；每个新模块必须有对应测试文件
 - 共享 fixture：`make_mock_settings()`（在 `conftest.py` 中定义），禁止重复
 - 多场景用 `@pytest.mark.parametrize`；测试函数命名描述场景（如 `test_get_user_token_when_expired_returns_none`）
+- 单测试文件超过 500 行时，应按测试类/功能分组拆分为多个文件
 - 禁止在单元测试中发起真实网络请求，必须 mock
 
 ## 安全约束（Security）

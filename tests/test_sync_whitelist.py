@@ -92,7 +92,7 @@ class TestSyncWhitelist:
     def test_sync_whitelist_no_config(self, runner):
         """未配置 SYNC_WHITELIST 时应报错退出。"""
         with (
-            patch("trade_krono_cli.cli_commands.maintenance._load_env"),
+            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
         ):
             mock_settings.return_value.sync_whitelist = ""
@@ -103,7 +103,7 @@ class TestSyncWhitelist:
     def test_sync_whitelist_invalid_codes(self, runner):
         """白名单全为无效代码时应报错退出。"""
         with (
-            patch("trade_krono_cli.cli_commands.maintenance._load_env"),
+            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
         ):
             mock_settings.return_value.sync_whitelist = "abc,xyz"
@@ -117,7 +117,7 @@ class TestSyncWhitelist:
         mock_df.__len__ = MagicMock(return_value=800)
 
         with (
-            patch("trade_krono_cli.cli_commands.maintenance._load_env"),
+            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
                 "trade_krono_cli.data.fetch_kline_incremental", return_value=mock_df
@@ -148,7 +148,7 @@ class TestSyncWhitelist:
             return mock_df
 
         with (
-            patch("trade_krono_cli.cli_commands.maintenance._load_env"),
+            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch("trade_krono_cli.data.fetch_kline_incremental", side_effect=side_effect),
         ):
@@ -182,6 +182,8 @@ class TestSyncUniverseWhitelist:
             MagicMock(ticker="sh.600000"),
             MagicMock(ticker="sz.000001"),
         ]
+        mock_settings = MagicMock()
+        mock_settings.sync_whitelist = "600519,000858"
 
         call_order: list[str] = []
 
@@ -190,7 +192,7 @@ class TestSyncUniverseWhitelist:
             return mock_df
 
         with (
-            patch("trade_krono_cli.cli_commands.maintenance._load_env"),
+            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
                 "trade_krono_cli.universe.provider.TongHuaShunUniverseProvider"
@@ -222,9 +224,11 @@ class TestSyncUniverseWhitelist:
             MagicMock(ticker="sh.600519"),
             MagicMock(ticker="sz.000858"),
         ]
+        mock_settings = MagicMock()
+        mock_settings.sync_whitelist = ""
 
         with (
-            patch("trade_krono_cli.cli_commands.maintenance._load_env"),
+            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
                 "trade_krono_cli.universe.provider.TongHuaShunUniverseProvider"

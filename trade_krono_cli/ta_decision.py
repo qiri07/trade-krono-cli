@@ -226,12 +226,6 @@ class DecisionAdapter:
         re.DOTALL | re.IGNORECASE,
     )
 
-    # 多因子评分
-    _RE_SCORE = re.compile(
-        r"(?:估值|基本面|技术面|情绪|资金流向|宏观)[:]?\s*(\d+(?:\.\d+)?)\s*/?\s*100",
-        re.IGNORECASE,
-    )
-
     def parse(self, decision_text: str) -> InvestmentDecision:
         """
         主入口：解析 LLM 输出 → InvestmentDecision。

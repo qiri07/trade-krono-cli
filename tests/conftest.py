@@ -4,13 +4,73 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
+
+from trade_krono_cli.data_providers.base import KlineData, RealtimeQuote, StockMetadata
+from trade_krono_cli.data_providers.factory import reset_data_factory
 
 
 def _strip_ansi(text: str) -> str:
     """移除 ANSI 转义码，用于 CI 环境下 Rich 着色输出后的字符串检查。"""
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
+# ═══════════════════════════════════════════════════════
+# 数据源测试共享 fixture
+# ═══════════════════════════════════════════════════════
+
+
+@pytest.fixture(autouse=True)
+def _reset_data_factory():
+    """每个测试前重置数据源工厂缓存。"""
+    reset_data_factory()
+    yield
+    reset_data_factory()
+
+
+@pytest.fixture
+def sample_kline_data() -> KlineData:
+    return KlineData(
+        timestamps=[datetime(2026, 8, 1), datetime(2026, 8, 4)],
+        open=[100.0, 102.0],
+        high=[103.0, 104.0],
+        low=[99.0, 101.0],
+        close=[101.0, 103.0],
+        volume=[1e6, 1.2e6],
+        amount=[1e8, 1.2e8],
+    )
+
+
+@pytest.fixture
+def sample_quote() -> RealtimeQuote:
+    return RealtimeQuote(
+        ticker="sh.600519",
+        price=1800.5,
+        pe=28.5,
+        pb=5.2,
+        market_cap=22600.0,
+        turnover=0.3,
+        source="akshare",
+    )
+
+
+@pytest.fixture
+def sample_metadata() -> StockMetadata:
+    return StockMetadata(
+        ticker="sh.600519",
+        industry="白酒",
+        industry_code="C16",
+        pe_ttm=28.5,
+        pb=5.2,
+        ipo_date="1999-11-10",
+        out_date=None,
+        is_st=False,
+        source="baostock",
+    )
 
 
 def pytest_configure(config: object) -> None:
