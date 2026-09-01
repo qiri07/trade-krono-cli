@@ -102,8 +102,8 @@ class StreamPipeline:
                     if self.progress_cb:
                         try:
                             self.progress_cb("TA分析", idx, n)
-                        except Exception:
-                            pass
+                        except Exception as _e:
+                            logger.debug(f"进度回调异常（非致命）: {_e}")
             return results
 
         def _run_kronos() -> list:
@@ -123,8 +123,8 @@ class StreamPipeline:
                     if self.progress_cb:
                         try:
                             self.progress_cb("Kronos预测", idx, n)
-                        except Exception:
-                            pass
+                        except Exception as _e:
+                            logger.debug(f"进度回调异常（非致命）: {_e}")
             return results
 
         # 三线程并发：fetch + TA + Kronos 同时启动
