@@ -275,7 +275,7 @@ def fetch_kline_incremental(
     cache = get_cache()
 
     if use_cache:
-        cached_range = cache.get_cached_date_range(ticker, freq=frequency)
+        cached_range = cache.get_cached_date_range(ticker, freq=frequency, adjustflag=adjustflag)
     else:
         cached_range = None
 
