@@ -23,7 +23,6 @@ from trade_krono_cli.scoring.registry import (
 )
 from trade_krono_cli.ta_decision import Signal
 
-
 # ═══════════════════════════════════════════════════════
 # 测试辅助：具体实现（供 ABC 行为测试使用）
 # ═══════════════════════════════════════════════════════
@@ -196,6 +195,7 @@ class TestRiskBoostStrategyABC:
 
     def test_boost_returns_float_from_result(self):
         """返回 BoostResult 时，boost() 应提取 boosted_risk。"""
+
         class ResultBooster(RiskBoostStrategy):
             name = "result_booster"
 
@@ -240,6 +240,7 @@ class TestRatingMapperABC:
 
     def test_map_chinese_text(self):
         """支持中文评级文本。"""
+
         class ChineseMapper(RatingMapper):
             name = "chinese_mapper"
 
