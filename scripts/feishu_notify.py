@@ -142,11 +142,13 @@ def send_feishu(url: str, payload: dict) -> bool:
         with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
             body = resp.read().decode("utf-8")
             result = json.loads(body)
-            if result.get("code") == 0 or result.get("StatusCode") == 0:
+            # 飞书 Webhook 成功码：code==0 或 StatusCode==0（兼容不同版本）
+            ok = result.get("code") == 0 or result.get("StatusCode") == 0
+            if not ok:
+                print(f"⚠️ 飞书返回错误: {result}", file=sys.stderr)
+            else:
                 print("✅ 飞书推送成功")
-                return True
-            print(f"⚠️ 飞书返回错误: {result}", file=sys.stderr)
-            return False
+            return ok
     except Exception as e:
         print(f"❌ 飞书推送失败: {e}", file=sys.stderr)
         return False

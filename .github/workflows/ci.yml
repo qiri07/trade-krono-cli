@@ -104,6 +104,7 @@ jobs:
 
       - name: 推送飞书通知
         if: vars.FEISHU_WEBHOOK_URL != ''
+        continue-on-error: true
         run: |
           uv run python scripts/feishu_notify.py ci \
             --status ${{ steps.status.outputs.status }} \
