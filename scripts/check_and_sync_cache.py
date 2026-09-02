@@ -66,9 +66,14 @@ def is_cache_up_to_date(expected_date: str) -> bool:
 def run_sync(source: str = "mootdx", dry_run: bool = False) -> bool:
     """执行缓存同步。"""
     cmd = [
-        sys.executable, "-m", "uv", "run",
-        "trade-krono-cli", "sync-universe",
-        "--source", source,
+        sys.executable,
+        "-m",
+        "uv",
+        "run",
+        "trade-krono-cli",
+        "sync-universe",
+        "--source",
+        source,
         "--no-progress",
     ]
     print(f"🔄 执行数据同步: {' '.join(cmd)}")
@@ -89,8 +94,12 @@ def run_sync(source: str = "mootdx", dry_run: bool = False) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description="每日数据缓存检查与同步")
     parser.add_argument("--dry-run", action="store_true", help="仅检查，不执行同步")
-    parser.add_argument("--source", default="mootdx", choices=["mootdx", "akshare", "tonghuashun"],
-                        help="数据源（默认 mootdx）")
+    parser.add_argument(
+        "--source",
+        default="mootdx",
+        choices=["mootdx", "akshare", "tonghuashun"],
+        help="数据源（默认 mootdx）",
+    )
     args = parser.parse_args()
 
     print("=" * 60)

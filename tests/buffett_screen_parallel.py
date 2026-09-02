@@ -48,10 +48,17 @@ def _api_get(path: str, params: dict | None = None, timeout: int = 8) -> dict | 
     if params:
         url += "?" + urlencode(params)
     cmd = [
-        "curl", "-s", "--max-time", str(timeout), "-w", "\n%{http_code}",
+        "curl",
+        "-s",
+        "--max-time",
+        str(timeout),
+        "-w",
+        "\n%{http_code}",
         url,
-        "-H", f"X-api-key: {_API_KEY}",
-        "-A", "BuffettScreen/1.0",
+        "-H",
+        f"X-api-key: {_API_KEY}",
+        "-A",
+        "BuffettScreen/1.0",
     ]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 2)
@@ -59,7 +66,7 @@ def _api_get(path: str, params: dict | None = None, timeout: int = 8) -> dict | 
         last_nl = stdout.rfind("\n")
         if last_nl >= 0:
             body = stdout[:last_nl]
-            http_code = int(stdout[last_nl + 1:])
+            http_code = int(stdout[last_nl + 1 :])
         else:
             return None
         if http_code != 200:
@@ -71,15 +78,18 @@ def _api_get(path: str, params: dict | None = None, timeout: int = 8) -> dict | 
 
 # ── 数据获取 ─────────────────────────────────────────────────────────────────
 
+
 def get_all_stocks() -> list[dict]:
     """分页获取全部 A 股列表"""
     all_stocks: list[dict] = []
     offset = 0
     limit = 5000
     while True:
-        data = _api_get("/api/meta/tickers/list", {
-            "asset_type": "a-share", "limit": limit, "offset": offset
-        }, timeout=30)
+        data = _api_get(
+            "/api/meta/tickers/list",
+            {"asset_type": "a-share", "limit": limit, "offset": offset},
+            timeout=30,
+        )
         if not data:
             break
         items = data.get("data", {}).get("item", [])
@@ -99,9 +109,9 @@ def batch_valuations(thscodes: list[str]) -> dict[str, dict]:
     total_batches = (len(thscodes) + 49) // 50
     for idx, i in enumerate(range(0, len(thscodes), 50)):
         batch = thscodes[i : i + 50]
-        data = _api_get("/api/a-share/valuations/snapshot", {
-            "thscodes": ",".join(batch)
-        }, timeout=15)
+        data = _api_get(
+            "/api/a-share/valuations/snapshot", {"thscodes": ",".join(batch)}, timeout=15
+        )
         if data and data.get("code") == 0:
             for item in data.get("data", {}).get("item", []):
                 result[item["thscode"]] = {
@@ -118,9 +128,9 @@ def batch_valuations(thscodes: list[str]) -> dict[str, dict]:
 def _fetch_financials(thscode: str, report: str) -> dict[str, float | None]:
     """获取单只股票单期财务指标"""
     result: dict[str, float | None] = {"roe": None, "roe_excl": None, "debt_ratio": None}
-    data = _api_get("/api/a-share/financials/indicators", {
-        "thscode": thscode, "report": report
-    }, timeout=8)
+    data = _api_get(
+        "/api/a-share/financials/indicators", {"thscode": thscode, "report": report}, timeout=8
+    )
     if not data or data.get("code") != 0:
         return result
     for ab in data.get("data", {}).get("abilities", []):
@@ -138,9 +148,11 @@ def _fetch_financials(thscode: str, report: str) -> dict[str, float | None]:
 
 def _fetch_income(thscode: str) -> list[dict]:
     """获取最近4年年报净利润"""
-    data = _api_get("/api/a-share/financials/income-statements", {
-        "thscode": thscode, "period": "annual", "limit": 4
-    }, timeout=8)
+    data = _api_get(
+        "/api/a-share/financials/income-statements",
+        {"thscode": thscode, "period": "annual", "limit": 4},
+        timeout=8,
+    )
     if not data or data.get("code") != 0:
         return []
     return data.get("data", {}).get("item", [])
@@ -148,9 +160,11 @@ def _fetch_income(thscode: str) -> list[dict]:
 
 def _fetch_cfo(thscode: str) -> Optional[float]:
     """获取最新一期经营现金流净额"""
-    data = _api_get("/api/a-share/financials/cash-flow-statements", {
-        "thscode": thscode, "period": "annual", "limit": 1
-    }, timeout=8)
+    data = _api_get(
+        "/api/a-share/financials/cash-flow-statements",
+        {"thscode": thscode, "period": "annual", "limit": 1},
+        timeout=8,
+    )
     if not data or data.get("code") != 0:
         return None
     items = data.get("data", {}).get("item", [])
@@ -160,6 +174,7 @@ def _fetch_cfo(thscode: str) -> Optional[float]:
 
 
 # ── 筛选逻辑 ─────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class StockMetrics:
@@ -193,9 +208,16 @@ def screen_one(
         reason = f"PE={pe} PB={pb}" if pe else "无估值数据"
         return StockMetrics(
             ticker=thscode.replace(".SH", "").replace(".SZ", ""),
-            thscode=thscode, name=name, pe_ttm=pe, pb=pb,
-            roe=None, roe_excl=None, debt_ratio=None, cagr_3y=None,
-            cfo_ok=False, gate_fail=f"①{reason}",
+            thscode=thscode,
+            name=name,
+            pe_ttm=pe,
+            pb=pb,
+            roe=None,
+            roe_excl=None,
+            debt_ratio=None,
+            cagr_3y=None,
+            cfo_ok=False,
+            gate_fail=f"①{reason}",
         )
 
     # ② 好生意
@@ -204,9 +226,16 @@ def screen_one(
     if roe is None or roe < 15 or (roe_excl is not None and roe_excl < 12):
         return StockMetrics(
             ticker=thscode.replace(".SH", "").replace(".SZ", ""),
-            thscode=thscode, name=name, pe_ttm=pe, pb=pb,
-            roe=roe, roe_excl=roe_excl, debt_ratio=None, cagr_3y=None,
-            cfo_ok=False, gate_fail=f"②ROE={roe} 扣非ROE={roe_excl}",
+            thscode=thscode,
+            name=name,
+            pe_ttm=pe,
+            pb=pb,
+            roe=roe,
+            roe_excl=roe_excl,
+            debt_ratio=None,
+            cagr_3y=None,
+            cfo_ok=False,
+            gate_fail=f"②ROE={roe} 扣非ROE={roe_excl}",
         )
 
     # ③ 财务稳健
@@ -214,9 +243,16 @@ def screen_one(
     if debt is None or debt >= 50:
         return StockMetrics(
             ticker=thscode.replace(".SH", "").replace(".SZ", ""),
-            thscode=thscode, name=name, pe_ttm=pe, pb=pb,
-            roe=roe, roe_excl=roe_excl, debt_ratio=debt, cagr_3y=None,
-            cfo_ok=False, gate_fail=f"③负债率={debt}",
+            thscode=thscode,
+            name=name,
+            pe_ttm=pe,
+            pb=pb,
+            roe=roe,
+            roe_excl=roe_excl,
+            debt_ratio=debt,
+            cagr_3y=None,
+            cfo_ok=False,
+            gate_fail=f"③负债率={debt}",
         )
 
     # ⑤ 能持续（3年净利复合增长）
@@ -233,9 +269,16 @@ def screen_one(
     if cagr is None or cagr <= 0:
         return StockMetrics(
             ticker=thscode.replace(".SH", "").replace(".SZ", ""),
-            thscode=thscode, name=name, pe_ttm=pe, pb=pb,
-            roe=roe, roe_excl=roe_excl, debt_ratio=debt, cagr_3y=cagr,
-            cfo_ok=False, gate_fail=f"⑤CAGR={cagr}",
+            thscode=thscode,
+            name=name,
+            pe_ttm=pe,
+            pb=pb,
+            roe=roe,
+            roe_excl=roe_excl,
+            debt_ratio=debt,
+            cagr_3y=cagr,
+            cfo_ok=False,
+            gate_fail=f"⑤CAGR={cagr}",
         )
 
     # ④ 利润是真（经营现金流 > 0）
@@ -243,17 +286,31 @@ def screen_one(
     if not cfo_ok:
         return StockMetrics(
             ticker=thscode.replace(".SH", "").replace(".SZ", ""),
-            thscode=thscode, name=name, pe_ttm=pe, pb=pb,
-            roe=roe, roe_excl=roe_excl, debt_ratio=debt, cagr_3y=cagr,
-            cfo_ok=False, gate_fail=f"④CFO={cfo}",
+            thscode=thscode,
+            name=name,
+            pe_ttm=pe,
+            pb=pb,
+            roe=roe,
+            roe_excl=roe_excl,
+            debt_ratio=debt,
+            cagr_3y=cagr,
+            cfo_ok=False,
+            gate_fail=f"④CFO={cfo}",
         )
 
     # ⑥ 安全边际 — 个股无历史 PE 分位接口
     return StockMetrics(
         ticker=thscode.replace(".SH", "").replace(".SZ", ""),
-        thscode=thscode, name=name, pe_ttm=pe, pb=pb,
-        roe=roe, roe_excl=roe_excl, debt_ratio=debt, cagr_3y=cagr,
-        cfo_ok=True, gate_fail="⑥无PE历史分位数据",
+        thscode=thscode,
+        name=name,
+        pe_ttm=pe,
+        pb=pb,
+        roe=roe,
+        roe_excl=roe_excl,
+        debt_ratio=debt,
+        cagr_3y=cagr,
+        cfo_ok=True,
+        gate_fail="⑥无PE历史分位数据",
     )
 
 
@@ -265,9 +322,16 @@ def process_one_stock(s: dict, vals: dict) -> StockMetrics:
 
     if not val:
         return StockMetrics(
-            ticker="", thscode=thscode, name=name,
-            pe_ttm=None, pb=None, roe=None, roe_excl=None,
-            debt_ratio=None, cagr_3y=None, cfo_ok=False,
+            ticker="",
+            thscode=thscode,
+            name=name,
+            pe_ttm=None,
+            pb=None,
+            roe=None,
+            roe_excl=None,
+            debt_ratio=None,
+            cagr_3y=None,
+            cfo_ok=False,
             gate_fail="无估值数据",
         )
 
@@ -281,8 +345,11 @@ def process_one_stock(s: dict, vals: dict) -> StockMetrics:
 
 # ── 主流程 ────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
-    print(f"🔍 巴菲特六闸门筛选（同花顺 API 版·curl并行）— {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(
+        f"🔍 巴菲特六闸门筛选（同花顺 API 版·curl并行）— {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    )
     print("=" * 85)
 
     if not _API_KEY:
@@ -412,7 +479,9 @@ def main() -> None:
             f"  {'代码':<8} {'名称':<10} {'PE_TTM':>7} {'PB':>6} {'ROE%':>7} "
             f"{'扣非ROE%':>8} {'负债率%':>7} {'CAGR%':>7}\n"
         )
-        f.write(f"  {'-' * 8} {'-' * 10} {'-' * 7} {'-' * 6} {'-' * 7} {'-' * 8} {'-' * 7} {'-' * 7}\n")
+        f.write(
+            f"  {'-' * 8} {'-' * 10} {'-' * 7} {'-' * 6} {'-' * 7} {'-' * 8} {'-' * 7} {'-' * 7}\n"
+        )
         for r in sorted(results_pass, key=lambda x: (x.pe_ttm or 999, -(x.roe or 0))):
             f.write(
                 f"  {r.ticker:<8} {r.name:<10} {r.pe_ttm:>7.1f} {r.pb:>6.2f} "
