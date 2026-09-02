@@ -25,3 +25,4 @@ Tests/*.json
 pipeline_cache.db-shm
 pipeline_cache.db-wal
 pipeline_cache.db
+raw/
