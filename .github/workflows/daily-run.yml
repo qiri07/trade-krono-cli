@@ -18,7 +18,7 @@
 #   ALLOWED_SIGNALS    — 允许的 TA 信号（默认 BUY,HOLD）
 #   AUTO_UNIVERSE      — 是否启用全市场自动筛选（true/false，默认 false）
 #   UNIVERSE_SOURCE    — 全市场数据源（akshare/mootdx/baostock，默认 mootdx）
-#   MAX_TICKERS        — 自动筛选后最多处理股票数（留空不限）
+#   MAX_TICKERS        — 自动筛选后最多处理股票数（默认 20，防止超时）
 #   SKIP_KRONOS        — 是否跳过 Kronos 预测（true/false，默认 false）
 #   OUTPUT_LANGUAGE    — 报告语言（Chinese/English，默认 Chinese）
 #   OUTPUT_DIR         — 输出目录（默认 outputs）
@@ -222,10 +222,8 @@ jobs:
             if [ "$AUTO_UNIVERSE" = "true" ]; then
               UNIVERSE_SOURCE="${{ github.event.inputs.universe_source || vars.UNIVERSE_SOURCE || 'mootdx' }}"
               CMD="$CMD --auto-universe --universe-source $UNIVERSE_SOURCE"
-              MAX_TICKERS="${{ github.event.inputs.max_tickers || vars.MAX_TICKERS || '' }}"
-              if [ -n "$MAX_TICKERS" ]; then
-                CMD="$CMD --max-tickers $MAX_TICKERS"
-              fi
+              MAX_TICKERS="${{ github.event.inputs.max_tickers || vars.MAX_TICKERS || '20' }}"
+              CMD="$CMD --max-tickers $MAX_TICKERS"
             else
               echo "  ⚠️ 未配置股票列表且未启用自动筛选，请设置 TICKER_LIST 变量或使用 --auto-universe"
               echo "  ⚠️ 跳过本次分析"
