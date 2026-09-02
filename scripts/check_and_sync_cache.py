@@ -45,22 +45,12 @@ def get_cache_latest_date() -> str | None:
 
 
 def get_expected_date() -> str:
-    """获取期望的缓存日期（昨天，因为今天数据可能还未收盘）。"""
-    # 工作日检查：周一到周五
+    """获取期望的缓存日期（最近的交易日，优先昨天，周末则回退到周五）。"""
     today = datetime.now()
-    # 如果是周末，回退到最近的周五
-    if today.weekday() >= 5:  # 5=周六, 6=周日
-        days_back = today.weekday() - 4
-        yesterday = today - timedelta(days=days_back + 1)
-    else:
-        yesterday = today - timedelta(days=1)
-    # 如果昨天是周一（即今天是周二），检查上周五
-    if yesterday.weekday() == 0:  # 周一
-        yesterday = yesterday - timedelta(days=1)  # 回退到周日
-        if yesterday.weekday() == 6:  # 周日
-            yesterday = yesterday - timedelta(days=1)  # 回退到周六
-            if yesterday.weekday() == 5:  # 周六
-                yesterday = yesterday - timedelta(days=1)  # 回退到周五
+    yesterday = today - timedelta(days=1)
+    # 如果昨天是周末，回退到周五
+    if yesterday.weekday() >= 5:  # 5=周六, 6=周日
+        yesterday = yesterday - timedelta(days=yesterday.weekday() - 4)
     return yesterday.strftime("%Y-%m-%d")
 
 
