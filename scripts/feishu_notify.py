@@ -93,11 +93,14 @@ def build_daily_card(
     tickers: str,
     top3: str,
     run_url: str,
+    content: str = "",
 ) -> dict:
     """构建每日分析结果飞书卡片。"""
     sections = [f"**日期：** {date}  **股票：** {tickers or '全市场自动筛选'}"]
     if top3:
         sections.append(f"**Top 3 推荐：**\n{top3}")
+    if content:
+        sections.append(f"**📋 分析摘要：**\n{content}")
     return {
         "msg_type": "interactive",
         "card": {
@@ -204,6 +207,7 @@ def main() -> None:
     p_daily.add_argument("--date", required=True, help="分析日期 YYYY-MM-DD")
     p_daily.add_argument("--tickers", default="", help="股票代码列表")
     p_daily.add_argument("--top3", default="", help="Top 3 推荐摘要")
+    p_daily.add_argument("--content", default="", help="分析摘要内容（可选，支持多行）")
     p_daily.add_argument("--run-url", required=True, help="GitHub Runs URL")
     p_daily.add_argument("--url", required=True, help="飞书 Webhook URL")
 
@@ -213,7 +217,9 @@ def main() -> None:
         payload = build_ci_card(args.status, args.branch, args.commit, args.jobs, args.run_url)
     else:
         top3 = args.top3 if args.top3 else _read_top3_from_results()
-        payload = build_daily_card(args.status, args.date, args.tickers, top3, args.run_url)
+        payload = build_daily_card(
+            args.status, args.date, args.tickers, top3, args.run_url, content=args.content
+        )
 
     ok = send_feishu(args.url, payload)
     sys.exit(0 if ok else 1)
