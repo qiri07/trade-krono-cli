@@ -295,9 +295,33 @@ jobs:
           if [ "${{ job.status }}" = "failure" ]; then STATUS="failure"; fi
           if [ "${{ job.status }}" = "cancelled" ]; then STATUS="cancelled"; fi
           TICKERS_DISPLAY="${TICKERS:-全市场自动筛选}"
+
+          # 读取 Top 3 推荐（兼容新旧格式）
+          TOP3=""
+          if [ -f "outputs/results.json" ]; then
+            TOP3=$(python3 -c "
+import json, sys
+from pathlib import Path
+try:
+    data = json.loads(Path('outputs/results.json').read_text())
+    items = data.get('results', []) if isinstance(data, dict) else data
+    parts = []
+    for item in items[:3]:
+        t = item.get('ticker', '?').replace('sh.', '').replace('sz.', '')
+        s = item.get('ta_signal', '?')
+        c = item.get('ranking_score') or item.get('composite_score', '?')
+        parts.append(f'{t}:{s} {c}')
+    print('  /  '.join(parts) if parts else '')
+except Exception:
+    print('')
+" 2>/dev/null)
+          fi
+          [ -z "$TOP3" ] && TOP3="（无报告生成）"
+
           uv run python scripts/feishu_notify.py daily \
             --status "$STATUS" \
             --date "$ANALYSIS_DATE" \
             --tickers "$TICKERS_DISPLAY" \
+            --top3 "$TOP3" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --url "${{ vars.FEISHU_WEBHOOK_URL }}"

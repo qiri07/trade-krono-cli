@@ -201,6 +201,7 @@ def main() -> None:
     p_daily.add_argument("--status", required=True, choices=["success", "failure", "cancelled"])
     p_daily.add_argument("--date", required=True, help="分析日期 YYYY-MM-DD")
     p_daily.add_argument("--tickers", default="", help="股票代码列表")
+    p_daily.add_argument("--top3", default="", help="Top 3 推荐摘要")
     p_daily.add_argument("--run-url", required=True, help="GitHub Runs URL")
     p_daily.add_argument("--url", required=True, help="飞书 Webhook URL")
 
@@ -209,7 +210,7 @@ def main() -> None:
     if args.mode == "ci":
         payload = build_ci_card(args.status, args.branch, args.commit, args.jobs, args.run_url)
     else:
-        top3 = _read_top3_from_results()
+        top3 = args.top3 if args.top3 else _read_top3_from_results()
         payload = build_daily_card(args.status, args.date, args.tickers, top3, args.run_url)
 
     ok = send_feishu(args.url, payload)
