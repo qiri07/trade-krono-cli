@@ -12,6 +12,8 @@ Filter Rules Stage — 自定义规则链过滤。
 
 from __future__ import annotations
 
+from typing import Sequence
+
 from loguru import logger
 
 from trade_krono_cli.stock_filter import FilterOp, FilterRule
@@ -46,8 +48,8 @@ class FilterRulesStage(FilterStage):
 
     name = "rules"
 
-    def __init__(self, rules: list[FilterRule] | None = None):
-        self.rules = rules or []
+    def __init__(self, rules: Sequence[FilterRule] | None = None):
+        self.rules: list[FilterRule] = list(rules) if rules is not None else []
 
     def filter(self, tickets: list[UniverseTicket]) -> list[UniverseTicket]:
         if not tickets or not self.rules:

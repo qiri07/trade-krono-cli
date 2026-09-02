@@ -59,7 +59,7 @@ class FilterRule:
 
     def __post_init__(self):
         if not self.label:
-            self.label = f"{self.field} {self.op.value}"
+            object.__setattr__(self, "label", f"{self.field} {self.op.value}")
 
 
 class MinValueRule(FilterRule):

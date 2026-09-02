@@ -5,6 +5,8 @@ models — 模型常驻会话。
 避免重复加载带来的启动开销。
 """
 
+from __future__ import annotations
+
 from trade_krono_cli.models.kronos_session import KronosSession
 from trade_krono_cli.models.ta_session import TASession
 

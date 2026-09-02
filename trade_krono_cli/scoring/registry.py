@@ -23,7 +23,7 @@ class ScorerRegistry:
 
     _registry: dict[str, type[CompositeScorer]] = {}
     _instance_cache: dict[str, CompositeScorer] = {}
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def register(self, cls: type[CompositeScorer]) -> None:
         """注册一个打分策略类。"""
@@ -75,7 +75,7 @@ class ScorerRegistry:
         return list(self._registry.keys())
 
     def reset(self) -> None:
-        """清空缓存（用于测试隔离）。"""
+        """清空实例缓存（用于测试隔离），保留注册表。"""
         with self._lock:
             self._instance_cache.clear()
 
@@ -90,7 +90,7 @@ class RiskBoostRegistry:
 
     _registry: dict[str, type[RiskBoostStrategy]] = {}
     _instance_cache: dict[str, RiskBoostStrategy] = {}
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def register(self, cls: type[RiskBoostStrategy]) -> None:
         with self._lock:
