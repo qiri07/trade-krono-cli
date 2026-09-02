@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+from trade_krono_cli.utils import strip_ticker_prefix
+
 
 def main() -> None:
     results_path = Path("outputs/results.json")
@@ -32,7 +34,7 @@ def main() -> None:
         return
 
     for item in items[:5]:
-        ticker = item.get("ticker", "?")
+        ticker = strip_ticker_prefix(item.get("ticker", "?"))
         signal = item.get("ta_signal", "?")
         score = item.get("ranking_score") or item.get("composite_score", "?")
         print(f"  {ticker}  {signal}  score={score}")

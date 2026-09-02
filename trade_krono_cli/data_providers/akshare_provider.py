@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import datetime
 from typing import Any, Optional
 
 from loguru import logger
@@ -25,6 +24,7 @@ from trade_krono_cli.data_providers.base import (
     RealtimeQuote,
     StockMetadata,
 )
+from trade_krono_cli.utils import pd_to_datetime_safe, safe_float
 
 _ST_PATTERNS = re.compile(r"^(ST|\*ST|SST|N ST)", re.IGNORECASE)
 
@@ -180,27 +180,3 @@ class AkShareProvider(DataProvider):
             return df is not None and not df.empty
         except Exception:
             return False
-
-
-# ═══════════════════════════════════════════════════════
-# 工具函数
-# ═══════════════════════════════════════════════════════
-
-
-def safe_float(value) -> Optional[float]:
-    """安全地将值转为 float，失败返回 None。"""
-    if value is None or (isinstance(value, float) and value != value):  # NaN check
-        return None
-    try:
-        f = float(value)
-        return f if not (f != f or f == float("inf") or f == float("-inf")) else None
-    except (ValueError, TypeError):
-        return None
-
-
-def pd_to_datetime_safe(values: list) -> list[datetime]:
-    """将日期列表安全转为 datetime。"""
-    import pandas as pd
-
-    ts = pd.to_datetime(values)
-    return ts.tolist()

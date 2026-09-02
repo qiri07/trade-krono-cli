@@ -290,6 +290,13 @@ jobs:
       # ── 飞书通知：无论成功失败均推送 ─────────────────────────────
       - name: 推送飞书通知
         if: vars.FEISHU_WEBHOOK_URL != ''
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+          enable-cache: false
+
+      - name: 推送飞书通知
+        if: vars.FEISHU_WEBHOOK_URL != ''
         run: |
           STATUS="success"
           if [ "${{ job.status }}" = "failure" ]; then STATUS="failure"; fi

@@ -11,7 +11,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from trade_krono_cli.abnormal_stock import _RISK_BOOST_MAP, StockAbnormality
+from trade_krono_cli.abnormal_stock import (  # noqa: F401
+    _RISK_BOOST_MAP,
+    StockAbnormality,
+    apply_abnormality_risk_boost,
+)
 from trade_krono_cli.scoring.base import BoostResult, RiskBoostStrategy
 
 # ═══════════════════════════════════════════════════════
@@ -146,49 +150,3 @@ class DiminishingBoostBooster(RiskBoostStrategy):
             total_boost=round(total_boost, 1),
             flags_applied=applied,
         )
-
-
-# ═══════════════════════════════════════════════════════
-# 便捷函数（向后兼容）
-# ═══════════════════════════════════════════════════════
-
-
-def apply_abnormality_risk_boost(
-    base_risk_score: float,
-    flags: list[str],
-    enabled: bool = True,
-    strategy: str = "fixed_boost",
-    params: Optional[dict] = None,
-) -> float:
-    """
-    向后兼容接口：根据异常标记上调风险分。
-
-    Parameters
-    ----------
-    base_risk_score : float
-        原始风险分（0-100）
-    flags : list[str]
-        异常类型列表，如 ["ST", "SUSPENDED"]
-    enabled : bool
-        是否启用风险加分
-    strategy : str
-        策略名称：fixed_boost / scaled_boost / diminishing_boost
-    params : dict | None
-        策略参数（multiplier / diminishing_power）
-
-    Returns
-    -------
-    float
-        上调后的风险分（0-100）
-    """
-    if not enabled:
-        return base_risk_score
-
-    from trade_krono_cli.scoring.registry import get_risk_boost_registry
-
-    registry = get_risk_boost_registry()
-    booster = registry.get(strategy) or registry.get("fixed_boost")
-    if booster is None:
-        return base_risk_score
-    result = booster.boost(base_risk_score, flags, params)
-    return result if isinstance(result, float) else result.boosted_risk

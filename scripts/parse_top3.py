@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from trade_krono_cli.utils import strip_ticker_prefix
+
 
 def parse_top3(results_path: Path = Path("outputs/results.json")) -> str:
     """从 results.json 解析 Top 3 推荐，格式为 'ticker:信号 分数'。"""
@@ -30,7 +32,7 @@ def parse_top3(results_path: Path = Path("outputs/results.json")) -> str:
         return ""
     parts = []
     for item in items[:3]:
-        t = item.get("ticker", "?").replace("sh.", "").replace("sz.", "")
+        t = strip_ticker_prefix(item.get("ticker", "?"))
         s = item.get("ta_signal", "?")
         c = item.get("ranking_score") or item.get("composite_score", "?")
         parts.append(f"{t}:{s} {c}")

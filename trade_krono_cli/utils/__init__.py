@@ -11,6 +11,7 @@ trade_krono_cli.utils — 共享工具函数。
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 
@@ -62,3 +63,66 @@ def merge_with_nested(obj: Any, overrides: dict) -> Any:  # noqa: ANN401 — typ
             flat[k] = v
     merged = obj.merge(**flat, **nested)
     return merged
+
+
+def safe_float(value) -> float | None:
+    """将值安全地转为 float，None / NaN / Inf 均返回 None。"""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if f != f or f == float("inf") or f == float("-inf"):
+        return None
+    return f
+
+
+def pd_to_datetime_safe(values: list) -> list[datetime]:
+    """将日期列表安全转为 datetime（使用 pandas）。"""
+    import pandas as pd
+
+    ts = pd.to_datetime(values)
+    return ts.tolist()
+
+
+def strip_ticker_prefix(ticker: str) -> str:
+    """去除 ticker 前缀（sh./sz./bj.），返回纯6位代码。
+
+    示例：
+        >>> strip_ticker_prefix("sh.600519")
+        '600519'
+        >>> strip_ticker_prefix("600519")
+        '600519'
+    """
+    for prefix in ("sh.", "sz.", "bj.", "SH.", "SZ.", "BJ."):
+        if ticker.startswith(prefix):
+            return ticker[len(prefix) :]
+    return ticker
+
+
+def add_ticker_prefix(code: str) -> str:
+    """为纯6位股票代码添加交易所前缀。
+
+    规则（与 A 股市场惯例一致）：
+      - 6xx / 5xx → sh.
+      - 9xx       → bj.
+      - 其他      → sz.
+
+    示例：
+        >>> add_ticker_prefix("600519")
+        'sh.600519'
+        >>> add_ticker_prefix("000858")
+        'sz.000858'
+        >>> add_ticker_prefix("920208")
+        'bj.920208'
+    """
+    code = code.strip()
+    if len(code) == 6 and code.isdigit():
+        if code[0] in ("6", "5"):
+            return f"sh.{code}"
+        if code[0] == "9":
+            return f"bj.{code}"
+        return f"sz.{code}"
+    # 已有前缀或非数字，原样返回
+    return code

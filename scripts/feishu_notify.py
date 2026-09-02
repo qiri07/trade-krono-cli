@@ -33,6 +33,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
+from trade_krono_cli.utils import strip_ticker_prefix
+
 # 飞书北京时间
 _CST = timezone(timedelta(hours=8))
 
@@ -174,7 +176,7 @@ def _read_top3_from_results() -> str:
         return "（无推荐结果）"
     parts = []
     for item in items[:3]:
-        t = item.get("ticker", "?").replace("sh.", "").replace("sz.", "")
+        t = strip_ticker_prefix(item.get("ticker", "?"))
         s = item.get("ta_signal", "?")
         c = item.get("ranking_score") or item.get("composite_score", "?")
         parts.append(f"{t}:{s} {c}")

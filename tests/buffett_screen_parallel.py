@@ -23,6 +23,8 @@ from datetime import datetime
 from typing import Optional
 from urllib.parse import urlencode
 
+from trade_krono_cli.utils import add_ticker_prefix
+
 _API_KEY = (
     os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
 )
@@ -495,24 +497,7 @@ def main() -> None:
     print(f"\n  💾 结果已保存至: {out_path}")
 
     # 5. 输出股票代码列表（供后续流水线使用）
-    # 归一化格式：920208.BJ → bj.920208，600210 → sh.600210 等
-    def _normalize_ticker(t: str) -> str:
-        t = t.strip()
-        # 处理 .BJ / .SH / .SZ 后缀格式
-        for suffix, prefix in [(".BJ", "bj."), (".SH", "sh."), (".SZ", "sz.")]:
-            if t.upper().endswith(suffix):
-                code = t[: -len(suffix)]
-                return f"{prefix}{code}"
-        # 纯6位数字：按规则补前缀
-        if len(t) == 6 and t.isdigit():
-            if t.startswith(("6", "5")):
-                return f"sh.{t}"
-            if t.startswith("9"):
-                return f"bj.{t}"
-            return f"sz.{t}"
-        return t
-
-    ticker_list = [_normalize_ticker(r.ticker) for r in results_pass]
+    ticker_list = [add_ticker_prefix(r.ticker) for r in results_pass]
     if ticker_list:
         print(f"\n  📋 通过筛选的股票代码: {','.join(ticker_list)}")
 

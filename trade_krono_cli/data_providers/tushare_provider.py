@@ -14,7 +14,6 @@ API 参考：
 from __future__ import annotations
 
 import os
-from datetime import datetime
 from typing import Any, Optional
 
 from loguru import logger
@@ -25,6 +24,7 @@ from trade_krono_cli.data_providers.base import (
     RealtimeQuote,
     StockMetadata,
 )
+from trade_krono_cli.utils import pd_to_datetime_safe, safe_float
 
 
 class TushareProvider(DataProvider):
@@ -168,21 +168,6 @@ class TushareProvider(DataProvider):
             return False
 
 
-# ═══════════════════════════════════════════════════════
-# 工具函数
-# ═══════════════════════════════════════════════════════
-
-
-def safe_float(value) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        f = float(value)
-        return f if not (f != f or f == float("inf") or f == float("-inf")) else None
-    except (ValueError, TypeError):
-        return None
-
-
 def pd_notna(value) -> bool:
     """检查 pandas NaN 安全。"""
     try:
@@ -191,10 +176,3 @@ def pd_notna(value) -> bool:
         return not pd.isna(value)
     except Exception:
         return value is not None
-
-
-def pd_to_datetime_safe(values: list) -> list[datetime]:
-    import pandas as pd
-
-    ts = pd.to_datetime(values)
-    return ts.tolist()

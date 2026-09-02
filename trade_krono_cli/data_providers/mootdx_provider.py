@@ -11,7 +11,6 @@ API 参考：
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Optional
 
 from loguru import logger
@@ -22,6 +21,7 @@ from trade_krono_cli.data_providers.base import (
     RealtimeQuote,
     StockMetadata,
 )
+from trade_krono_cli.utils import pd_to_datetime_safe, safe_float
 
 
 class MootDxProvider(DataProvider):
@@ -138,25 +138,3 @@ class MootDxProvider(DataProvider):
             return df is not None and not df.empty
         except Exception:
             return False
-
-
-# ═══════════════════════════════════════════════════════
-# 工具函数
-# ═══════════════════════════════════════════════════════
-
-
-def safe_float(value) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        f = float(value)
-        return f if not (f != f or f == float("inf") or f == float("-inf")) else None
-    except (ValueError, TypeError):
-        return None
-
-
-def pd_to_datetime_safe(values: list) -> list[datetime]:
-    import pandas as pd
-
-    ts = pd.to_datetime(values)
-    return ts.tolist()
