@@ -18,12 +18,12 @@ from typing import Any, TypeVar
 F = TypeVar("F", bound=Callable[..., Any])
 
 
-def cached(ttl: int = 1800) -> Callable[[F], F]:
+def cached(ttl: float = 1800) -> Callable[[F], F]:
     """装饰器：为函数结果添加 TTL 缓存。
 
     Parameters
     ----------
-    ttl : int
+    ttl : float
         缓存存活时间（秒），默认 1800（30 分钟）
 
     """

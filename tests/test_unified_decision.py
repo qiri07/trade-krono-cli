@@ -50,8 +50,10 @@ class TestDirectionToSignal:
 class TestComputeExpectedValue:
     def test_missing_expected_return_returns_self(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
         )
         result = d.compute_expected_value()
         assert result is d
@@ -60,8 +62,10 @@ class TestComputeExpectedValue:
 
     def test_missing_last_close_returns_self(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
             kronos_expected_return=2.0,
         )
         result = d.compute_expected_value()
@@ -69,10 +73,14 @@ class TestComputeExpectedValue:
 
     def test_positive_return(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            kronos_expected_return=3.0, last_close=100.0,
-            p10=95.0, p90=110.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            kronos_expected_return=3.0,
+            last_close=100.0,
+            p10=95.0,
+            p90=110.0,
         )
         d.compute_expected_value()
         assert d.prob_win is not None
@@ -82,10 +90,14 @@ class TestComputeExpectedValue:
 
     def test_negative_return(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            kronos_expected_return=-2.0, last_close=100.0,
-            p10=95.0, p90=98.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            kronos_expected_return=-2.0,
+            last_close=100.0,
+            p10=95.0,
+            p90=98.0,
         )
         d.compute_expected_value()
         assert d.prob_win is not None
@@ -93,10 +105,14 @@ class TestComputeExpectedValue:
 
     def test_zero_return(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            kronos_expected_return=0.0, last_close=100.0,
-            p10=99.0, p90=101.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            kronos_expected_return=0.0,
+            last_close=100.0,
+            p10=99.0,
+            p90=101.0,
         )
         d.compute_expected_value()
         # prob_win should be 0.5 for zero return
@@ -105,21 +121,28 @@ class TestComputeExpectedValue:
     def test_prob_bounds_clamped(self) -> None:
         """prob_win 应在 [0.05, 0.95] 范围内。"""
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            kronos_expected_return=50.0, last_close=100.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            kronos_expected_return=50.0,
+            last_close=100.0,
         )
         d.compute_expected_value()
-        assert d.prob_win >= 0.05
-        assert d.prob_win <= 0.95
+        assert d.prob_win is not None and d.prob_win >= 0.05
+        assert d.prob_win is not None and d.prob_win <= 0.95
+        assert d.prob_win is not None and d.prob_loss is not None
         assert abs(d.prob_win + d.prob_loss - 1.0) < 1e-6
 
     def test_no_p10_p90_fallback(self) -> None:
         """未提供 p10/p90 时使用 expected_return 的 0.5/1.5 倍作为退路。"""
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            kronos_expected_return=2.0, last_close=100.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            kronos_expected_return=2.0,
+            last_close=100.0,
         )
         d.compute_expected_value()
         assert d.expected_value is not None
@@ -127,10 +150,14 @@ class TestComputeExpectedValue:
     def test_near_zero_vol_gives_zero_raev(self) -> None:
         """当 p10==p90==last_close 时，ret_p10=ret_p90=0，vol_proxy=|ret|*0.5=1.0，raev=ev/vol_proxy≈0.53。"""
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            kronos_expected_return=2.0, last_close=100.0,
-            p10=100.0, p90=100.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            kronos_expected_return=2.0,
+            last_close=100.0,
+            p10=100.0,
+            p90=100.0,
         )
         d.compute_expected_value()
         # vol_proxy = abs(ret_p90 - ret_p10)/2 = 0 → falls to abs(ret)*0.5 = 1.0
@@ -146,8 +173,10 @@ class TestComputeExpectedValue:
 class TestDetectConflict:
     def test_single_source_no_conflict(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
             ta_signal=Signal.BUY,
         )
         d.detect_conflict()
@@ -155,35 +184,46 @@ class TestDetectConflict:
 
     def test_two_sources_agree_no_conflict(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            ta_signal=Signal.BUY, kronos_direction="UP",
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            ta_signal=Signal.BUY,
+            kronos_direction="UP",
         )
         d.detect_conflict()
         assert d.conflict == "none"
 
     def test_ta_vs_kronos_conflict(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            ta_signal=Signal.BUY, kronos_direction="DOWN",
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            ta_signal=Signal.BUY,
+            kronos_direction="DOWN",
         )
         d.detect_conflict()
         assert d.conflict == "ta_vs_kronos"
 
     def test_ta_vs_committee_conflict(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            ta_signal=Signal.BUY, committee_rec=Signal.SELL,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            ta_signal=Signal.BUY,
+            committee_rec=Signal.SELL,
         )
         d.detect_conflict()
         assert d.conflict == "ta_vs_committee"
 
     def test_all_three_conflict(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
             ta_signal=Signal.BUY,
             kronos_direction="DOWN",
             committee_rec=Signal.HOLD,
@@ -193,8 +233,10 @@ class TestDetectConflict:
 
     def test_no_active_sources_no_conflict(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
         )
         d.detect_conflict()
         assert d.conflict == "none"
@@ -208,8 +250,10 @@ class TestDetectConflict:
 class TestApplyFinalSignal:
     def test_empty_votes_default_hold(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
         )
         d.apply_final_signal()
         assert d.final_signal is Signal.HOLD
@@ -217,9 +261,12 @@ class TestApplyFinalSignal:
 
     def test_single_source_adopt(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            ta_signal=Signal.BUY, ta_confidence=80.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            ta_signal=Signal.BUY,
+            ta_confidence=80.0,
         )
         d.apply_final_signal()
         assert d.final_signal is Signal.BUY
@@ -227,10 +274,14 @@ class TestApplyFinalSignal:
 
     def test_two_sources_agree(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            ta_signal=Signal.BUY, ta_confidence=70.0,
-            kronos_direction="UP", direction_score=0.8,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            ta_signal=Signal.BUY,
+            ta_confidence=70.0,
+            kronos_direction="UP",
+            direction_score=0.8,
         )
         d.apply_final_signal()
         assert d.final_signal is Signal.BUY
@@ -239,11 +290,16 @@ class TestApplyFinalSignal:
 
     def test_two_against_one_dissent(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            ta_signal=Signal.BUY, ta_confidence=70.0,
-            kronos_direction="UP", direction_score=0.7,
-            committee_rec=Signal.SELL, committee_confidence=60.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            ta_signal=Signal.BUY,
+            ta_confidence=70.0,
+            kronos_direction="UP",
+            direction_score=0.7,
+            committee_rec=Signal.SELL,
+            committee_confidence=60.0,
         )
         d.apply_final_signal()
         assert d.final_signal is Signal.BUY
@@ -257,11 +313,16 @@ class TestApplyFinalSignal:
 
     def test_three_way_conflict_hold(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            ta_signal=Signal.BUY, ta_confidence=70.0,
-            kronos_direction="DOWN", direction_score=0.6,
-            committee_rec=Signal.HOLD, committee_confidence=50.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            ta_signal=Signal.BUY,
+            ta_confidence=70.0,
+            kronos_direction="DOWN",
+            direction_score=0.6,
+            committee_rec=Signal.HOLD,
+            committee_confidence=50.0,
         )
         d.apply_final_signal()
         # Three-way tie: max(sig_counts) returns first inserted (BUY). Conflicts, but signal is BUY.
@@ -271,9 +332,12 @@ class TestApplyFinalSignal:
 
     def test_kronos_none_skipped(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
-            ta_signal=Signal.BUY, ta_confidence=80.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
+            ta_signal=Signal.BUY,
+            ta_confidence=80.0,
             kronos_direction=None,
         )
         d.apply_final_signal()
@@ -288,13 +352,20 @@ class TestApplyFinalSignal:
 class TestSerialization:
     def test_to_dict_roundtrip(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.BUY, final_confidence=75.0,
-            ta_signal=Signal.BUY, ta_confidence=80.0,
-            kronos_direction="UP", kronos_expected_return=3.0,
-            committee_rec=Signal.BUY, committee_confidence=70.0,
-            expected_value=1.5, risk_adjusted_ev=0.8,
-            thesis="Strong momentum", risks=["high_vol"],
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.BUY,
+            final_confidence=75.0,
+            ta_signal=Signal.BUY,
+            ta_confidence=80.0,
+            kronos_direction="UP",
+            kronos_expected_return=3.0,
+            committee_rec=Signal.BUY,
+            committee_confidence=70.0,
+            expected_value=1.5,
+            risk_adjusted_ev=0.8,
+            thesis="Strong momentum",
+            risks=["high_vol"],
             invalidations=["break_100"],
         )
         d.compute_expected_value().detect_conflict().apply_final_signal()
@@ -312,16 +383,20 @@ class TestSerialization:
 
     def test_to_dict_missing_signals(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.HOLD, final_confidence=50.0,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.HOLD,
+            final_confidence=50.0,
         )
         data = d.to_dict()
         assert "ta_signal" not in data or data["ta_signal"] is None
 
     def test_from_dict_string_conflict_kept(self) -> None:
         data = {
-            "ticker": "sh.600519", "eval_date": "2026-08-11",
-            "final_signal": "BUY", "final_confidence": 70.0,
+            "ticker": "sh.600519",
+            "eval_date": "2026-08-11",
+            "final_signal": "BUY",
+            "final_confidence": 70.0,
             "conflict": "ta_vs_kronos",
         }
         d = UnifiedInvestmentDecision.from_dict(data)
@@ -336,10 +411,16 @@ class TestSerialization:
 class TestToTADecision:
     def test_conversion(self) -> None:
         d = UnifiedInvestmentDecision(
-            ticker="sh.600519", eval_date="2026-08-11",
-            final_signal=Signal.BUY, final_confidence=75.0,
-            thesis="test thesis", risks=["r1"], invalidations=["i1"],
-            target_price=110.0, stop_loss=95.0, horizon=30,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            final_signal=Signal.BUY,
+            final_confidence=75.0,
+            thesis="test thesis",
+            risks=["r1"],
+            invalidations=["i1"],
+            target_price=110.0,
+            stop_loss=95.0,
+            horizon=30,
             kronos_expected_return=5.0,
         )
         td = d.to_ta_decision()
@@ -365,12 +446,16 @@ class TestBuildUnifiedDecision:
 
     def test_with_ta_decision(self) -> None:
         td = TADecision(
-            signal=Signal.BUY, confidence=80.0,
-            thesis="bullish", risks=["vol"],
+            signal=Signal.BUY,
+            confidence=80.0,
+            thesis="bullish",
+            risks=["vol"],
         )
         d = build_unified_decision(
-            "sh.600519", "2026-08-11",
-            ta_decision=td, kronos_direction="UP",
+            "sh.600519",
+            "2026-08-11",
+            ta_decision=td,
+            kronos_direction="UP",
             kronos_expected_return=3.0,
         )
         assert d.ta_signal is Signal.BUY
@@ -379,9 +464,16 @@ class TestBuildUnifiedDecision:
 
     def test_with_distribution(self) -> None:
         d = build_unified_decision(
-            "sh.600519", "2026-08-11",
-            kronos_direction="UP", kronos_expected_return=2.0,
-            distribution={"p10": 95.0, "p90": 110.0, "direction_score": 0.7, "predicted_close_final": 100.0},
+            "sh.600519",
+            "2026-08-11",
+            kronos_direction="UP",
+            kronos_expected_return=2.0,
+            distribution={
+                "p10": 95.0,
+                "p90": 110.0,
+                "direction_score": 0.7,
+                "predicted_close_final": 100.0,
+            },
         )
         assert d.p10 == 95.0
         assert d.p90 == 110.0
@@ -390,10 +482,13 @@ class TestBuildUnifiedDecision:
 
     def test_with_committee(self) -> None:
         d = build_unified_decision(
-            "sh.600519", "2026-08-11",
+            "sh.600519",
+            "2026-08-11",
             ta_decision=TADecision(signal=Signal.BUY, confidence=70.0),
-            committee_rec=Signal.BUY, committee_confidence=65.0,
-            bull_case="strong earnings", bear_case="macro headwind",
+            committee_rec=Signal.BUY,
+            committee_confidence=65.0,
+            bull_case="strong earnings",
+            bear_case="macro headwind",
         )
         assert d.committee_rec is Signal.BUY
         assert d.bull_case == "strong earnings"

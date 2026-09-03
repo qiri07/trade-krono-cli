@@ -215,7 +215,10 @@ async def main() -> None:
             ak._ensure_import()
             code = ak._ticker_to_ak(ticker)
             df_hist = ak._ak.stock_zh_a_hist(
-                symbol=code, start_date="20260101", end_date="20260830", adjust="1",
+                symbol=code,
+                start_date="20260101",
+                end_date="20260830",
+                adjust="1",
             )
             if df_hist is not None and not df_hist.empty:
                 logger.info("\n📈 stock_zh_a_hist 返回列:")
@@ -337,8 +340,10 @@ async def main() -> None:
             "tonghuashun",
             "OHLCV+amount",
             "无",
-            ("✅ last_price/price_change/price_change_ratio_pct/"
-            "open/high/low/prev_price/volume/turnover"),
+            (
+                "✅ last_price/price_change/price_change_ratio_pct/"
+                "open/high/low/prev_price/volume/turnover"
+            ),
             "11",
             "⚠️ 仅name/exchange",
             "API稳定，但封装层未充分利用snapshot字段",

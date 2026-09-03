@@ -80,15 +80,21 @@ def run_sync(source: str = "tonghuashun", dry_run: bool = False) -> bool:
         ]
         for p in uv_paths:
             if p.exists():
-                cmd = [str(p), "run", "trade-krono-cli", "sync-universe",
-                       "--source", source, "--no-progress"]
+                cmd = [
+                    str(p),
+                    "run",
+                    "trade-krono-cli",
+                    "sync-universe",
+                    "--source",
+                    source,
+                    "--no-progress",
+                ]
                 break
         else:
             logger.error("无法找到 uv 二进制")
             return False
     else:
-        cmd = ["uv", "run", "trade-krono-cli", "sync-universe",
-               "--source", source, "--no-progress"]
+        cmd = ["uv", "run", "trade-krono-cli", "sync-universe", "--source", source, "--no-progress"]
 
     if dry_run:
         logger.info(f"[dry-run] 将执行: {' '.join(cmd)}")
@@ -127,7 +133,6 @@ def main() -> int:
         help="数据源（默认 tonghuashun）",
     )
     args = parser.parse_args()
-
 
     # 获取期望日期
     expected_date = get_expected_date()

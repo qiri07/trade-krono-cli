@@ -24,63 +24,140 @@ from trade_krono_cli.experiment_registry import (
 
 class TestExperimentRecord:
     def test_full_id_is_deterministic(self) -> None:
-        h = Hypothesis(statement="win_rate > 55", prediction="win_rate > 55", falsification="win_rate <= 55",
-                       metric="win_rate", threshold=55.0, direction=">")
+        h = Hypothesis(
+            statement="win_rate > 55",
+            prediction="win_rate > 55",
+            falsification="win_rate <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
         fixed_time = "2026-09-02T12:00:00+00:00"
-        r1 = ExperimentRecord(experiment_id="exp_001", experiment_type=ExperimentType.ALPHA, hypothesis=h,
-                              created_at=fixed_time)
-        r2 = ExperimentRecord(experiment_id="exp_001", experiment_type=ExperimentType.ALPHA, hypothesis=h,
-                              created_at=fixed_time)
+        r1 = ExperimentRecord(
+            experiment_id="exp_001",
+            experiment_type=ExperimentType.ALPHA,
+            hypothesis=h,
+            created_at=fixed_time,
+        )
+        r2 = ExperimentRecord(
+            experiment_id="exp_001",
+            experiment_type=ExperimentType.ALPHA,
+            hypothesis=h,
+            created_at=fixed_time,
+        )
         assert r1.full_id == r2.full_id
 
     def test_full_id_differs_on_change(self) -> None:
-        h1 = Hypothesis(statement="win_rate > 55", prediction="win_rate > 55", falsification="win_rate <= 55",
-                        metric="win_rate", threshold=55.0, direction=">")
-        h2 = Hypothesis(statement="win_rate > 60", prediction="win_rate > 60", falsification="win_rate <= 60",
-                        metric="win_rate", threshold=60.0, direction=">")
-        r1 = ExperimentRecord(experiment_id="exp_001", experiment_type=ExperimentType.ALPHA, hypothesis=h1)
-        r2 = ExperimentRecord(experiment_id="exp_001", experiment_type=ExperimentType.ALPHA, hypothesis=h2)
+        h1 = Hypothesis(
+            statement="win_rate > 55",
+            prediction="win_rate > 55",
+            falsification="win_rate <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
+        h2 = Hypothesis(
+            statement="win_rate > 60",
+            prediction="win_rate > 60",
+            falsification="win_rate <= 60",
+            metric="win_rate",
+            threshold=60.0,
+            direction=">",
+        )
+        r1 = ExperimentRecord(
+            experiment_id="exp_001", experiment_type=ExperimentType.ALPHA, hypothesis=h1
+        )
+        r2 = ExperimentRecord(
+            experiment_id="exp_001", experiment_type=ExperimentType.ALPHA, hypothesis=h2
+        )
         assert r1.full_id != r2.full_id
 
     def test_full_id_is_32_chars(self) -> None:
-        h = Hypothesis(statement="test", prediction="test", falsification="test",
-                       metric="win_rate", threshold=55.0, direction=">")
+        h = Hypothesis(
+            statement="test",
+            prediction="test",
+            falsification="test",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
         r = ExperimentRecord(experiment_id="x", experiment_type=ExperimentType.ALPHA, hypothesis=h)
         assert len(r.full_id) == 32
 
     def test_evaluate_pass(self) -> None:
-        h = Hypothesis(statement="win_rate > 55", prediction="win_rate > 55", falsification="win_rate <= 55",
-                       metric="win_rate", threshold=55.0, direction=">")
-        r = ExperimentRecord(experiment_id="exp_001", experiment_type=ExperimentType.ALPHA, hypothesis=h,
-                             result_summary={"win_rate": 60.0})
+        h = Hypothesis(
+            statement="win_rate > 55",
+            prediction="win_rate > 55",
+            falsification="win_rate <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
+        r = ExperimentRecord(
+            experiment_id="exp_001",
+            experiment_type=ExperimentType.ALPHA,
+            hypothesis=h,
+            result_summary={"win_rate": 60.0},
+        )
         passed, expl = r.evaluate()
         assert passed is True
         assert "60.0" in expl
 
     def test_evaluate_fail(self) -> None:
-        h = Hypothesis(statement="win_rate > 55", prediction="win_rate > 55", falsification="win_rate <= 55",
-                       metric="win_rate", threshold=55.0, direction=">")
-        r = ExperimentRecord(experiment_id="exp_001", experiment_type=ExperimentType.ALPHA, hypothesis=h,
-                             result_summary={"win_rate": 50.0})
+        h = Hypothesis(
+            statement="win_rate > 55",
+            prediction="win_rate > 55",
+            falsification="win_rate <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
+        r = ExperimentRecord(
+            experiment_id="exp_001",
+            experiment_type=ExperimentType.ALPHA,
+            hypothesis=h,
+            result_summary={"win_rate": 50.0},
+        )
         passed, expl = r.evaluate()
         assert passed is False
 
     def test_evaluate_missing_metric(self) -> None:
-        h = Hypothesis(statement="win_rate > 55", prediction="win_rate > 55", falsification="win_rate <= 55",
-                       metric="win_rate", threshold=55.0, direction=">")
-        r = ExperimentRecord(experiment_id="exp_001", experiment_type=ExperimentType.ALPHA, hypothesis=h,
-                             result_summary={})
+        h = Hypothesis(
+            statement="win_rate > 55",
+            prediction="win_rate > 55",
+            falsification="win_rate <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
+        r = ExperimentRecord(
+            experiment_id="exp_001",
+            experiment_type=ExperimentType.ALPHA,
+            hypothesis=h,
+            result_summary={},
+        )
         passed, expl = r.evaluate()
         assert passed is False
         assert "win_rate" in expl
 
     def test_to_dict_roundtrip(self) -> None:
-        h = Hypothesis(statement="alpha > 0", prediction="alpha > 0", falsification="alpha <= 0",
-                       metric="alpha", threshold=0.0, direction=">")
+        h = Hypothesis(
+            statement="alpha > 0",
+            prediction="alpha > 0",
+            falsification="alpha <= 0",
+            metric="alpha",
+            threshold=0.0,
+            direction=">",
+        )
         r = ExperimentRecord(
-            experiment_id="exp_001", experiment_type=ExperimentType.ALPHA, hypothesis=h,
-            description="test desc", config={"lr": 0.01},
-            result_summary={"win_rate": 58.0}, passed=True, notes="good run",
+            experiment_id="exp_001",
+            experiment_type=ExperimentType.ALPHA,
+            hypothesis=h,
+            description="test desc",
+            config={"lr": 0.01},
+            result_summary={"win_rate": 58.0},
+            passed=True,
+            notes="good run",
         )
         d = r.to_dict()
         assert d["experiment_id"] == "exp_001"
@@ -108,31 +185,58 @@ class TestExperimentRecord:
 class TestExperimentRegistry:
     def test_register(self) -> None:
         reg = ExperimentRegistry()
-        h = Hypothesis(statement="win_rate > 55", prediction="win_rate > 55", falsification="win_rate <= 55",
-                       metric="win_rate", threshold=55.0, direction=">")
+        h = Hypothesis(
+            statement="win_rate > 55",
+            prediction="win_rate > 55",
+            falsification="win_rate <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
         rec = reg.register("exp_001", h)
         assert rec.experiment_id == "exp_001"
         assert reg.get("exp_001") is rec
 
     def test_register_duplicate_overwrites(self) -> None:
         reg = ExperimentRegistry()
-        h = Hypothesis(statement="test", prediction="test", falsification="fail",
-                       metric="win_rate", threshold=55.0, direction=">")
+        h = Hypothesis(
+            statement="test",
+            prediction="test",
+            falsification="fail",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
         reg.register("exp_001", h)
-        h2 = Hypothesis(statement="test2", prediction="test2", falsification="fail2",
-                         metric="win_rate", threshold=60.0, direction=">")
+        h2 = Hypothesis(
+            statement="test2",
+            prediction="test2",
+            falsification="fail2",
+            metric="win_rate",
+            threshold=60.0,
+            direction=">",
+        )
         reg.register("exp_001", h2)
         rec = reg.get("exp_001")
+        assert rec is not None
         assert rec.hypothesis.statement == "test2"
 
     def test_add_run(self) -> None:
         reg = ExperimentRegistry()
-        h = Hypothesis(statement="test", prediction="test", falsification="fail",
-                       metric="win_rate", threshold=55.0, direction=">")
+        h = Hypothesis(
+            statement="test",
+            prediction="test",
+            falsification="fail",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
         reg.register("exp_001", h)
         reg.add_run("exp_001", "run_001")
         reg.add_run("exp_001", "run_002")
-        assert reg.get("exp_001").run_ids == ["run_001", "run_002"]
+        rec = reg.get("exp_001")
+        assert rec is not None
+        assert rec.run_ids == ["run_001", "run_002"]
 
     def test_add_run_missing_experiment(self) -> None:
         """添加不存在的实验 run 应静默忽略。"""
@@ -142,21 +246,37 @@ class TestExperimentRegistry:
 
     def test_set_result_pass(self) -> None:
         reg = ExperimentRegistry()
-        h = Hypothesis(statement="win_rate > 55", prediction="win_rate > 55", falsification="win_rate <= 55",
-                       metric="win_rate", threshold=55.0, direction=">")
+        h = Hypothesis(
+            statement="win_rate > 55",
+            prediction="win_rate > 55",
+            falsification="win_rate <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
         reg.register("exp_001", h)
         passed, expl = reg.set_result("exp_001", {"win_rate": 60.0})
         assert passed is True
-        assert reg.get("exp_001").passed is True
+        rec = reg.get("exp_001")
+        assert rec is not None
+        assert rec.passed is True
 
     def test_set_result_fail(self) -> None:
         reg = ExperimentRegistry()
-        h = Hypothesis(statement="win_rate > 55", prediction="win_rate > 55", falsification="win_rate <= 55",
-                       metric="win_rate", threshold=55.0, direction=">")
+        h = Hypothesis(
+            statement="win_rate > 55",
+            prediction="win_rate > 55",
+            falsification="win_rate <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
         reg.register("exp_001", h)
         passed, expl = reg.set_result("exp_001", {"win_rate": 50.0})
         assert passed is False
-        assert reg.get("exp_001").passed is False
+        rec = reg.get("exp_001")
+        assert rec is not None
+        assert rec.passed is False
 
     def test_set_result_missing_experiment_raises(self) -> None:
         reg = ExperimentRegistry()
@@ -165,10 +285,22 @@ class TestExperimentRegistry:
 
     def test_list_experiments(self) -> None:
         reg = ExperimentRegistry()
-        h1 = Hypothesis(statement="a > 0", prediction="a > 0", falsification="a <= 0",
-                        metric="alpha", threshold=0.0, direction=">")
-        h2 = Hypothesis(statement="b > 0", prediction="b > 0", falsification="b <= 0",
-                        metric="beta", threshold=0.0, direction=">")
+        h1 = Hypothesis(
+            statement="a > 0",
+            prediction="a > 0",
+            falsification="a <= 0",
+            metric="alpha",
+            threshold=0.0,
+            direction=">",
+        )
+        h2 = Hypothesis(
+            statement="b > 0",
+            prediction="b > 0",
+            falsification="b <= 0",
+            metric="beta",
+            threshold=0.0,
+            direction=">",
+        )
         reg.register("exp_1", h1, exp_type=ExperimentType.ALPHA)
         reg.register("exp_2", h2, exp_type=ExperimentType.MODEL)
         all_exp = reg.list_experiments()
@@ -180,8 +312,14 @@ class TestExperimentRegistry:
 
     def test_list_experiments_passed_filter(self) -> None:
         reg = ExperimentRegistry()
-        h = Hypothesis(statement="w > 55", prediction="w > 55", falsification="w <= 55",
-                       metric="win_rate", threshold=55.0, direction=">")
+        h = Hypothesis(
+            statement="w > 55",
+            prediction="w > 55",
+            falsification="w <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
         reg.register("exp_1", h)
         reg.set_result("exp_1", {"win_rate": 60.0})
         reg.register("exp_2", h)
@@ -197,8 +335,14 @@ class TestExperimentRegistry:
 
     def test_compare(self) -> None:
         reg = ExperimentRegistry()
-        h = Hypothesis(statement="w > 55", prediction="w > 55", falsification="w <= 55",
-                       metric="win_rate", threshold=55.0, direction=">")
+        h = Hypothesis(
+            statement="w > 55",
+            prediction="w > 55",
+            falsification="w <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
         reg.register("exp_1", h)
         reg.set_result("exp_1", {"win_rate": 60.0, "sharpe": 1.5})
         reg.add_run("exp_1", "run_a")
@@ -212,8 +356,14 @@ class TestExperimentRegistry:
 
     def test_save_load_roundtrip(self, tmp_path: Path) -> None:
         reg = ExperimentRegistry()
-        h = Hypothesis(statement="w > 55", prediction="w > 55", falsification="w <= 55",
-                       metric="win_rate", threshold=55.0, direction=">")
+        h = Hypothesis(
+            statement="w > 55",
+            prediction="w > 55",
+            falsification="w <= 55",
+            metric="win_rate",
+            threshold=55.0,
+            direction=">",
+        )
         reg.register("exp_001", h, description="first experiment")
         reg.set_result("exp_001", {"win_rate": 62.0})
         reg.add_run("exp_001", "run_001")
@@ -261,7 +411,8 @@ class TestRegisterAlphaExperiment:
     def test_basic(self) -> None:
         reg = ExperimentRegistry()
         rec = register_alpha_experiment(
-            reg, "exp_001",
+            reg,
+            "exp_001",
             "Kronos UP signals outperform",
             prediction_threshold=55.0,
         )
@@ -272,7 +423,8 @@ class TestRegisterAlphaExperiment:
     def test_custom_params(self) -> None:
         reg = ExperimentRegistry()
         rec = register_alpha_experiment(
-            reg, "exp_002",
+            reg,
+            "exp_002",
             "Alpha > 2%",
             prediction_metric="alpha",
             prediction_threshold=2.0,

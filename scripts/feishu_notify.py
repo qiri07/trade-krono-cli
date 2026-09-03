@@ -196,7 +196,9 @@ def main() -> None:
     p_ci.add_argument("--branch", required=True, help="分支名")
     p_ci.add_argument("--commit", required=True, help="Commit SHA（短）")
     p_ci.add_argument(
-        "--jobs", required=True, help="各 Job 结果摘要，如 'lint✅ type-check✅ test✅'",
+        "--jobs",
+        required=True,
+        help="各 Job 结果摘要，如 'lint✅ type-check✅ test✅'",
     )
     p_ci.add_argument("--run-url", required=True, help="GitHub Runs URL")
     p_ci.add_argument("--url", required=True, help="飞书 Webhook URL")
@@ -218,7 +220,12 @@ def main() -> None:
     else:
         top3 = args.top3 or _read_top3_from_results()
         payload = build_daily_card(
-            args.status, args.date, args.tickers, top3, args.run_url, content=args.content,
+            args.status,
+            args.date,
+            args.tickers,
+            top3,
+            args.run_url,
+            content=args.content,
         )
 
     ok = send_feishu(args.url, payload)

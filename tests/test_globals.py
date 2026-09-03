@@ -17,7 +17,7 @@ class TestClearAllGlobals:
 
         # 先初始化单例
         with patch.object(Cache, "__init__", return_value=None):
-            Cache._instance = object()
+            Cache._instance = object()  # type: ignore[attr-defined]
 
         clear_all_globals()
         # 验证 Cache._instance 被清除
@@ -28,8 +28,8 @@ class TestClearAllGlobals:
         from trade_krono_cli.research_db import ResearchDatabase
 
         # 确保单例存在
-        ResearchDatabase._instance = object()
-        ResearchDatabase._lock = type("Lock", (), {"release": lambda s: None})()
+        ResearchDatabase._instance = object()  # type: ignore[attr-defined]
+        ResearchDatabase._lock = type("Lock", (), {"release": lambda s: None})()  # type: ignore[attr-defined]
 
         clear_all_globals()
 
@@ -38,10 +38,10 @@ class TestClearAllGlobals:
         from trade_krono_cli.models.kronos_session import KronosSession
         from trade_krono_cli.models.ta_session import TASession
 
-        TASession._instance = object()
-        TASession._lock = type("Lock", (), {"release": lambda s: None})()
-        KronosSession._instance = object()
-        KronosSession._lock = type("Lock", (), {"release": lambda s: None})()
+        TASession._instance = object()  # type: ignore[attr-defined]
+        TASession._lock = type("Lock", (), {"release": lambda s: None})()  # type: ignore[attr-defined]
+        KronosSession._instance = object()  # type: ignore[attr-defined]
+        KronosSession._lock = type("Lock", (), {"release": lambda s: None})()  # type: ignore[attr-defined]
 
         clear_all_globals()
 

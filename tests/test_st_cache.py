@@ -178,7 +178,7 @@ class TestClear:
 
         fn(5)
         assert call_count == 1
-        fn.clear()
+        fn.clear()  # type: ignore[attr-defined]
         fn(5)
         assert call_count == 2
 
@@ -194,7 +194,7 @@ class TestClear:
         fn(1)
         fn(2)
         assert call_count == 2
-        fn.clear()
+        fn.clear()  # type: ignore[attr-defined]
         fn(1)
         fn(2)
         assert call_count == 4
@@ -219,4 +219,4 @@ class TestWrapsPreservation:
             """My docstring."""
             return x
 
-        assert "My docstring" in documented.__doc__
+        assert "My docstring" in (documented.__doc__ or "")
