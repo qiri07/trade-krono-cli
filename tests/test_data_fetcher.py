@@ -30,7 +30,8 @@ class TestFetchStockData:
 
         mock_df = _make_df(400)
         with patch(
-            "trade_krono_cli.pipeline.data_fetcher.fetch_lookback", return_value=mock_df,
+            "trade_krono_cli.pipeline.data_fetcher.fetch_lookback",
+            return_value=mock_df,
         ) as mock_fetch:
             result = fetch_stock_data("sh.600519", "2026-08-12")
 
@@ -51,10 +52,15 @@ class TestFetchStockData:
 
         mock_df = _make_df(300)
         with patch(
-            "trade_krono_cli.pipeline.data_fetcher.fetch_lookback", return_value=mock_df,
+            "trade_krono_cli.pipeline.data_fetcher.fetch_lookback",
+            return_value=mock_df,
         ) as mock_fetch:
             fetch_stock_data(
-                "sz.000858", "2026-08-12", lookback=300, adjustflag="3", use_cache=False,
+                "sz.000858",
+                "2026-08-12",
+                lookback=300,
+                adjustflag="3",
+                use_cache=False,
             )
 
         mock_fetch.assert_called_once_with(
@@ -87,7 +93,8 @@ class TestFetchStockQuote:
 
         mock_quote = {"price": 1680.0, "pe": 35.6, "pb": 18.2}
         with patch(
-            "trade_krono_cli.pipeline.data_fetcher.fetch_realtime_quote", return_value=mock_quote,
+            "trade_krono_cli.pipeline.data_fetcher.fetch_realtime_quote",
+            return_value=mock_quote,
         ) as mock_fetch:
             result = fetch_stock_quote("sh.600519")
 
@@ -99,7 +106,8 @@ class TestFetchStockQuote:
         from trade_krono_cli.pipeline.data_fetcher import fetch_stock_quote
 
         with patch(
-            "trade_krono_cli.pipeline.data_fetcher.fetch_realtime_quote", return_value={},
+            "trade_krono_cli.pipeline.data_fetcher.fetch_realtime_quote",
+            return_value={},
         ) as mock_fetch:
             result = fetch_stock_quote("sh.600519")
 
@@ -116,7 +124,8 @@ class TestPrepareKlineBatch:
 
         mock_df = _make_df(400)
         with patch(
-            "trade_krono_cli.pipeline.data_fetcher.fetch_stock_data", return_value=mock_df,
+            "trade_krono_cli.pipeline.data_fetcher.fetch_stock_data",
+            return_value=mock_df,
         ) as mock_fetch:
             result = prepare_kline_batch(["sh.600519"], "2026-08-12")
 
@@ -130,7 +139,8 @@ class TestPrepareKlineBatch:
 
         mock_df = _make_df(400)
         with patch(
-            "trade_krono_cli.pipeline.data_fetcher.fetch_stock_data", return_value=mock_df,
+            "trade_krono_cli.pipeline.data_fetcher.fetch_stock_data",
+            return_value=mock_df,
         ) as mock_fetch:
             result = prepare_kline_batch(["sh.600519", "sz.000858", "sh.600036"], "2026-08-12")
 
@@ -187,7 +197,8 @@ class TestPrepareKlineBatch:
 
         mock_df = _make_df(400)
         with patch(
-            "trade_krono_cli.pipeline.data_fetcher.fetch_stock_data", return_value=mock_df,
+            "trade_krono_cli.pipeline.data_fetcher.fetch_stock_data",
+            return_value=mock_df,
         ) as mock_fetch:
             prepare_kline_batch(["sh.600519"], "2026-08-12")
 
@@ -202,7 +213,8 @@ class TestPrepareKlineBatch:
 
         mock_df = _make_df(500)
         with patch(
-            "trade_krono_cli.pipeline.data_fetcher.fetch_stock_data", return_value=mock_df,
+            "trade_krono_cli.pipeline.data_fetcher.fetch_stock_data",
+            return_value=mock_df,
         ) as mock_fetch:
             prepare_kline_batch(
                 ["sh.600519"],

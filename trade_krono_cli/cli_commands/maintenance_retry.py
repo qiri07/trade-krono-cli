@@ -17,7 +17,10 @@ console = Console()
 
 def retry_failed(
     date: str = typer.Option(
-        ..., "--date", "-d", help="要重跑的日期 YYYY-MM-DD（默认最新有失败的日期）",
+        ...,
+        "--date",
+        "-d",
+        help="要重跑的日期 YYYY-MM-DD（默认最新有失败的日期）",
     ),
     module: str = typer.Option(
         None,
@@ -95,7 +98,9 @@ def retry_failed(
 
     # 构建重试策略
     retry_overrides = _build_retry_overrides(
-        max_retries=max_retries, base_delay=base_delay, no_jitter=no_jitter,
+        max_retries=max_retries,
+        base_delay=base_delay,
+        no_jitter=no_jitter,
     )
     cfg = (
         PipelineConfig.default(settings).override(**retry_overrides)

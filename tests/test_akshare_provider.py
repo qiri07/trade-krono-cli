@@ -31,7 +31,8 @@ class TestAkShareProvider:
     def test_fetch_kline_import_error(self, provider) -> None:
         with patch.object(
             __import__(
-                "trade_krono_cli.data_providers.akshare_provider", fromlist=["AkShareProvider"],
+                "trade_krono_cli.data_providers.akshare_provider",
+                fromlist=["AkShareProvider"],
             ).AkShareProvider,
             "_ensure_import",
             side_effect=RuntimeError("not installed"),

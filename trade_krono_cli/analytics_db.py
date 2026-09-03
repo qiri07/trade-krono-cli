@@ -45,7 +45,9 @@ def _duckdb_available() -> bool:
 
 def _ensure_duckdb() -> None:
     if not _HAS_DUCKDB:
-        msg = "DuckDB 未安装，无法使用 Analytics 引擎。\n请运行: pip install duckdb 或 uv add duckdb"
+        msg = (
+            "DuckDB 未安装，无法使用 Analytics 引擎。\n请运行: pip install duckdb 或 uv add duckdb"
+        )
         raise RuntimeError(
             msg,
         )

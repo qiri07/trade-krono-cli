@@ -230,7 +230,9 @@ class TestPrecheckStockStatus:
         monkeypatch.setattr(BaostockProvider, "check_st_status", lambda self, t: False)
         monkeypatch.setattr(BaostockProvider, "check_delisted", lambda self, t: False)
         monkeypatch.setattr(
-            BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, ""),
+            BaostockProvider,
+            "check_new_stock",
+            lambda self, t, d, n=60: (False, ""),
         )
 
         import trade_krono_cli.abnormal_stock as m
@@ -254,7 +256,9 @@ class TestPrecheckStockStatus:
         monkeypatch.setattr(BaostockProvider, "check_st_status", lambda self, t: True)
         monkeypatch.setattr(BaostockProvider, "check_delisted", lambda self, t: False)
         monkeypatch.setattr(
-            BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, ""),
+            BaostockProvider,
+            "check_new_stock",
+            lambda self, t, d, n=60: (False, ""),
         )
 
         import trade_krono_cli.abnormal_stock as m
@@ -278,7 +282,9 @@ class TestPrecheckStockStatus:
         monkeypatch.setattr(BaostockProvider, "check_st_status", lambda self, t: False)
         monkeypatch.setattr(BaostockProvider, "check_delisted", lambda self, t: True)
         monkeypatch.setattr(
-            BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, ""),
+            BaostockProvider,
+            "check_new_stock",
+            lambda self, t, d, n=60: (False, ""),
         )
 
         import trade_krono_cli.abnormal_stock as m
@@ -327,7 +333,9 @@ class TestPrecheckStockStatus:
         monkeypatch.setattr(BaostockProvider, "check_st_status", lambda self, t: False)
         monkeypatch.setattr(BaostockProvider, "check_delisted", lambda self, t: False)
         monkeypatch.setattr(
-            BaostockProvider, "check_new_stock", lambda self, t, d, n=60: (False, ""),
+            BaostockProvider,
+            "check_new_stock",
+            lambda self, t, d, n=60: (False, ""),
         )
 
         import trade_krono_cli.abnormal_stock as m

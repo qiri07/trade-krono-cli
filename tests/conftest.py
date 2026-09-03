@@ -107,7 +107,9 @@ def pytest_sessionstart(session: object) -> None:  # type: ignore[no-redef]
     expected = Path(cache_dir).resolve()
     if not actual.startswith(str(expected)):
         _session.config.exitstatus = 1  # type: ignore[attr-defined]
-        msg = f"⛔ 测试环境隔离失败：cache_dir 不匹配！\n  期望前缀：{expected}\n  实际路径：{actual}"
+        msg = (
+            f"⛔ 测试环境隔离失败：cache_dir 不匹配！\n  期望前缀：{expected}\n  实际路径：{actual}"
+        )
         raise RuntimeError(
             msg,
         )

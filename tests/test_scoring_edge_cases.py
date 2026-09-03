@@ -118,6 +118,7 @@ class TestScorerRegistryEdgeCases:
     def test_list_all_empty(self) -> None:
         """新创建的独立 ScorerRegistry 实例应不含内置策略。"""
         from trade_krono_cli.scoring.registry import ScorerRegistry
+
         # 重置类级别注册表，确保测试隔离
         ScorerRegistry._registry.clear()
         reg = ScorerRegistry()

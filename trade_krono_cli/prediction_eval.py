@@ -209,7 +209,10 @@ class PredictionEvaluator:
                 entry_blocked = False
                 if entry_prev_close and entry_prev_close > 0:
                     entry_blocked = _is_price_at_limit(
-                        sig.ticker, entry_price, entry_prev_close, direction="up",
+                        sig.ticker,
+                        entry_price,
+                        entry_prev_close,
+                        direction="up",
                     )
                 if entry_blocked:
                     summary.entry_limit_up_blocked += 1
@@ -224,7 +227,10 @@ class PredictionEvaluator:
                 if exit_prev_kline is not None and len(exit_prev_kline) >= 2:
                     exit_prev_close = float(exit_prev_kline["close"].iloc[-2])
                     exit_blocked = _is_price_at_limit(
-                        sig.ticker, exit_price, exit_prev_close, direction="down",
+                        sig.ticker,
+                        exit_price,
+                        exit_prev_close,
+                        direction="down",
                     )
 
                 if exit_blocked:
@@ -299,11 +305,13 @@ class PredictionEvaluator:
             bench_ret = compute_benchmark_returns(bt_result.records, {})
             full_summary.benchmark_curve = bench_ret  # type: ignore[assignment]
             full_summary.benchmark_cum_return_pct = round(
-                float(list(bench_ret.values())[-1][-1] if bench_ret else 0.0), 2,
+                float(list(bench_ret.values())[-1][-1] if bench_ret else 0.0),
+                2,
             )
             if bt_result.total_return_pct != 0.0:
                 full_summary.excess_return_pct = round(
-                    bt_result.total_return_pct - full_summary.benchmark_cum_return_pct, 2,
+                    bt_result.total_return_pct - full_summary.benchmark_cum_return_pct,
+                    2,
                 )
             equity_curve = cast("list[tuple[str, float]]", bt_result.equity_curve)
             full_summary.excess_curve = (
@@ -311,7 +319,8 @@ class PredictionEvaluator:
                     d: round(float(bt_val - bench_val), 4)  # type: ignore[has-type]
                     for d, (bt_val, bench_val) in zip(
                         [d for d, _ in equity_curve],
-                        [v for _, v in equity_curve], strict=False,
+                        [v for _, v in equity_curve],
+                        strict=False,
                     )
                 }
                 if equity_curve

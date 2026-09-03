@@ -101,7 +101,9 @@ class TestDataclasses:
         from trade_krono_cli.artifact_manifest import LlmArtifact
 
         la = LlmArtifact(
-            provider="deepseek", deep_think_model="deepseek-chat", quick_think_model="deepseek-chat",
+            provider="deepseek",
+            deep_think_model="deepseek-chat",
+            quick_think_model="deepseek-chat",
         )
         assert la.version_tag == "deepseek/deepseek-chat+deepseek-chat"
 
@@ -109,7 +111,9 @@ class TestDataclasses:
         from trade_krono_cli.artifact_manifest import PromptArtifact
 
         pa = PromptArtifact(
-            max_debate_rounds=1, max_risk_discuss_rounds=2, output_language="Chinese",
+            max_debate_rounds=1,
+            max_risk_discuss_rounds=2,
+            output_language="Chinese",
         )
         assert pa.version_tag == "ta-v1r2-chinese-json"
 

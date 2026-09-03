@@ -140,7 +140,9 @@ class TestBuildTARequest:
         assert r.model == "deepseek-chat"
         assert r.system_prompt_hash == hash_system_prompt("You are a stock analyst.")
         assert r.user_prompt_hash == hash_user_prompt_structural(
-            ticker="sh.600519", date="2026-08-11", analysts=["market", "news"],
+            ticker="sh.600519",
+            date="2026-08-11",
+            analysts=["market", "news"],
         )
         assert r.latency_sec == 3.2
         assert r.success is True

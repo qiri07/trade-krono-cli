@@ -297,7 +297,10 @@ class TestApplyAbnormalityRiskBoost:
 
     def test_scaled_strategy(self) -> None:
         result = apply_abnormality_risk_boost(
-            40.0, ["ST"], strategy="scaled_boost", params={"multiplier": 2.0},
+            40.0,
+            ["ST"],
+            strategy="scaled_boost",
+            params={"multiplier": 2.0},
         )
         assert result == 80.0
 
@@ -568,10 +571,18 @@ class TestStrategyRunHistory:
         db = ResearchDatabase(db_path=tmp_path / "test_strategy_all.db")
         t = time.time()
         db.insert_strategy_run(
-            run_at=t, strategy="linear", params={}, tickers=["sh.600519"], results=[],
+            run_at=t,
+            strategy="linear",
+            params={},
+            tickers=["sh.600519"],
+            results=[],
         )
         db.insert_strategy_run(
-            run_at=t + 1, strategy="multiplicative", params={}, tickers=["sz.000001"], results=[],
+            run_at=t + 1,
+            strategy="multiplicative",
+            params={},
+            tickers=["sz.000001"],
+            results=[],
         )
 
         all_rows = db.query_strategy_history()
@@ -585,7 +596,11 @@ class TestStrategyRunHistory:
         db.insert_strategy_run(run_at=t, strategy="linear", params={}, tickers=[], results=[])
         db.insert_strategy_run(run_at=t + 1, strategy="linear", params={}, tickers=[], results=[])
         db.insert_strategy_run(
-            run_at=t + 2, strategy="multiplicative", params={}, tickers=[], results=[],
+            run_at=t + 2,
+            strategy="multiplicative",
+            params={},
+            tickers=[],
+            results=[],
         )
 
         linear_rows = db.query_strategy_history(strategy="linear")

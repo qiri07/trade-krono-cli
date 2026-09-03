@@ -16,7 +16,10 @@ class TestPipelineOrchestrator:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=80.0,
             ),
         ]
 
@@ -63,7 +66,10 @@ class TestPipelineOrchestrator:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=85.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=85.0,
             ),
         ]
 
@@ -104,7 +110,10 @@ class TestPipelineOrchestrator:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=80.0,
             ),
         ]
         mock_kr = MagicMock()
@@ -123,13 +132,22 @@ class TestPipelineOrchestrator:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=80.0,
             ),
             StockAnalysisResult(
-                ticker="sz.000858", date="2026-08-12", signal="BUY", confidence=40.0,
+                ticker="sz.000858",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=40.0,
             ),
             StockAnalysisResult(
-                ticker="sh.600036", date="2026-08-12", signal="SELL", confidence=90.0,
+                ticker="sh.600036",
+                date="2026-08-12",
+                signal="SELL",
+                confidence=90.0,
             ),
         ]
         mock_kr = MagicMock()

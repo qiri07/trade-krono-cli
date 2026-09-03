@@ -312,7 +312,10 @@ class TestQuantPipelineStreaming:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=80.0,
             ),
         ]
         pu = PredictionUncertainty(
@@ -367,7 +370,10 @@ class TestQuantPipelineStreaming:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=80.0,
             ),
         ]
         pu = PredictionUncertainty(

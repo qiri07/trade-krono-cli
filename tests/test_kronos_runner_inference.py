@@ -299,7 +299,8 @@ class TestKronosBatchInference:
                 with patch.object(runner, "_pred_df_to_dict") as mock_dict:
                     mock_dict.return_value = {"close": [101.0, 102.0]}
                     results = runner.predict_batch(
-                        ["sh.600519", "sz.000001", "sh.601318"], "2026-08-12",
+                        ["sh.600519", "sz.000001", "sh.601318"],
+                        "2026-08-12",
                     )
                     assert len(results) == 3
                     # 3 只股票，batch_size=2 → 2 批

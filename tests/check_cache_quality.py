@@ -59,7 +59,8 @@ bad_order = conn.execute(
 ).fetchall()
 for r in bad_order:
     data = conn.execute(
-        "SELECT data FROM kline_cache WHERE ticker=? AND freq=? AND start=? AND end=?", r[:4],
+        "SELECT data FROM kline_cache WHERE ticker=? AND freq=? AND start=? AND end=?",
+        r[:4],
     ).fetchone()[0]
     df = pickle.loads(data)
     ts = df["timestamps"]
@@ -88,4 +89,3 @@ for (t,) in multi:
     dup_dates += dupes
     if dupes > 0:
         pass
-

@@ -398,7 +398,13 @@ def _write_merged_cache(
     seg_start = df["timestamps"].iloc[0].strftime("%Y-%m-%d")
     seg_end = df["timestamps"].iloc[-1].strftime("%Y-%m-%d")
     cache.set_kline(
-        ticker, seg_start, seg_end, frequency, df, ttl=_KLINE_HISTORICAL_TTL, adjustflag=adjustflag,
+        ticker,
+        seg_start,
+        seg_end,
+        frequency,
+        df,
+        ttl=_KLINE_HISTORICAL_TTL,
+        adjustflag=adjustflag,
     )
     logger.debug(f"📦 永久缓存: {ticker} {seg_start}~{seg_end}")
 

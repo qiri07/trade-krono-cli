@@ -152,7 +152,8 @@ class TestEvaluateConstraintAware:
 
         with patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline):
             with patch(
-                "trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close,
+                "trade_krono_cli.prediction_eval._get_close_price",
+                side_effect=fake_get_close,
             ):
                 summary = evaluator.evaluate(store=False)
 
@@ -216,7 +217,8 @@ class TestEvaluateConstraintAware:
 
         with patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline):
             with patch(
-                "trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close,
+                "trade_krono_cli.prediction_eval._get_close_price",
+                side_effect=fake_get_close,
             ):
                 summary = evaluator.evaluate(store=False)
 

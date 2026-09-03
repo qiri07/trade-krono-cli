@@ -64,7 +64,10 @@ class TestStockAnalysisResult:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="HOLD", confidence=60.0,
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="HOLD",
+            confidence=60.0,
         )
         d = r.decision
         assert d.signal.value == "HOLD"
@@ -74,7 +77,10 @@ class TestStockAnalysisResult:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="BUY",
+            confidence=80.0,
         )
         assert r.is_buy(min_confidence=55.0) is True
 
@@ -82,7 +88,10 @@ class TestStockAnalysisResult:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=50.0,
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="BUY",
+            confidence=50.0,
         )
         assert r.is_buy(min_confidence=55.0) is False
 
@@ -90,7 +99,10 @@ class TestStockAnalysisResult:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="HOLD", confidence=80.0,
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="HOLD",
+            confidence=80.0,
         )
         assert r.is_buy(min_confidence=55.0) is False
 
@@ -98,7 +110,11 @@ class TestStockAnalysisResult:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0, error="some error",
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="BUY",
+            confidence=80.0,
+            error="some error",
         )
         assert r.is_buy(min_confidence=55.0) is False
 
@@ -270,10 +286,16 @@ class TestTradingAgentsRunnerSaveResults:
         runner = _make_ta_runner()
         results = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=80.0,
             ),
             StockAnalysisResult(
-                ticker="sz.000858", date="2026-08-12", signal="HOLD", confidence=60.0,
+                ticker="sz.000858",
+                date="2026-08-12",
+                signal="HOLD",
+                confidence=60.0,
             ),
         ]
         path = str(tmp_path / "results.json")
@@ -451,7 +473,9 @@ class TestTradingAgentsRunnerLoadRawReport:
         from trade_krono_cli.ta_runner import TradingAgentsRunner
 
         result = TradingAgentsRunner.load_raw_report(
-            "sh.600519", "2026-08-12", results_dir=tmp_path,
+            "sh.600519",
+            "2026-08-12",
+            results_dir=tmp_path,
         )
         assert result is not None
         assert result["ticker"] == "sh.600519"
@@ -460,6 +484,8 @@ class TestTradingAgentsRunnerLoadRawReport:
         from trade_krono_cli.ta_runner import TradingAgentsRunner
 
         result = TradingAgentsRunner.load_raw_report(
-            "sh.600519", "2026-08-12", results_dir=tmp_path,
+            "sh.600519",
+            "2026-08-12",
+            results_dir=tmp_path,
         )
         assert result is None

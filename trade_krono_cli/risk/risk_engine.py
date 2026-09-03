@@ -214,8 +214,10 @@ class RiskMetrics:
             f"  Market Regime     {self.market_regime_score:>6.0f}",
             f"{'─' * 44}",
             f"  Total Risk        {self.total_risk:>6.1f}",
-            (f"  Return Adj        {self.return_adjustment:>6.3f}  "
-            f"({self.return_adjustment * 100:+.1f}%)"),
+            (
+                f"  Return Adj        {self.return_adjustment:>6.3f}  "
+                f"({self.return_adjustment * 100:+.1f}%)"
+            ),
             f"{'=' * 44}",
         ]
         return "\n".join(lines)
@@ -280,7 +282,9 @@ class RiskEngine:
 
         market_cap = quote_data.get("market_cap") if quote_data else None
         liq_score, avg_turnover = calc_liquidity_risk(
-            volume, market_cap, thresholds=self._config.liquidity,
+            volume,
+            market_cap,
+            thresholds=self._config.liquidity,
         )
 
         conc_score = calc_concentration_risk(ta_result)

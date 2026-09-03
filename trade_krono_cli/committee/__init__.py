@@ -72,7 +72,9 @@ class InvestmentCommittee:
 
         if llm_client is not None:
             bull_case, bear_case, recommendation, confidence, reasoning = self._llm_deliberate(
-                input_data, llm_client, consensus,
+                input_data,
+                llm_client,
+                consensus,
             )
         else:
             bull_case, bear_case, recommendation, confidence, reasoning = (

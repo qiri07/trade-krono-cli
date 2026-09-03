@@ -394,11 +394,15 @@ class SignalLifecycle:
         history = self.get_history(ticker, limit=10)
         lines = [
             f"📡 {ticker} 信号生命周期",
-            (f"  当前状态 : {current['lifecycle_state']} "
-            f"({_STATE_LABELS.get(SignalLifecycleState(current['lifecycle_state']), '')})"),
+            (
+                f"  当前状态 : {current['lifecycle_state']} "
+                f"({_STATE_LABELS.get(SignalLifecycleState(current['lifecycle_state']), '')})"
+            ),
             f"  最新日期 : {current['date']}",
-            (f"  信号     : {current['signal']}  confidence={current['confidence']:.0f}  "
-            f"score={current['composite_score']:.1f}"),
+            (
+                f"  信号     : {current['signal']}  confidence={current['confidence']:.0f}  "
+                f"score={current['composite_score']:.1f}"
+            ),
             f"  迁移原因 : {current['transition_reason']}",
         ]
         if len(history) > 1:

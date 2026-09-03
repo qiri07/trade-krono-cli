@@ -170,7 +170,9 @@ class PipelineConfig:
         self.scoring = self._merge_sub(ScoringConfig(), scoring, {})
         self.scoring_strategy = self._merge_sub(ScoringStrategyConfig(), scoring_strategy, {})
         self.risk_boost_strategy = self._merge_sub(
-            RiskBoostStrategyConfig(), risk_boost_strategy, {},
+            RiskBoostStrategyConfig(),
+            risk_boost_strategy,
+            {},
         )
         self.risk = self._merge_sub(RiskConfig(), risk, {})
         self.filters = self._merge_sub(

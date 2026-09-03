@@ -148,7 +148,9 @@ class InvestmentDecision:
 
     @classmethod
     def fallback(
-        cls, signal: Signal = Signal.HOLD, confidence: float = 50.0,
+        cls,
+        signal: Signal = Signal.HOLD,
+        confidence: float = 50.0,
     ) -> InvestmentDecision:
         return cls(signal=signal, confidence=confidence)
 

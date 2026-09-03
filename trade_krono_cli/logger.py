@@ -37,7 +37,9 @@ def _make_json_handler(json_file: str):
 
 
 def setup_logger(
-    level: str = "INFO", log_file: Path | None = None, settings: Settings | None = None,
+    level: str = "INFO",
+    log_file: Path | None = None,
+    settings: Settings | None = None,
 ) -> None:
     """初始化 loguru 日志。
 

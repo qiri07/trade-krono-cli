@@ -68,6 +68,7 @@ class TestSaveJsonReport:
         assert result_path == path
 
         import json
+
         data = json.loads(Path(path).read_text())
         assert data["project"] == "trade-krono-cli"
         assert data["count"] == 2
@@ -87,6 +88,7 @@ class TestSaveJsonReport:
         path = str(tmp_path / "trunc.json")
         save_json_report(merged, path)
         import json
+
         data = json.loads(Path(path).read_text())
         fd = data["results"][0]["forecast_dict"]
         assert len(fd["timestamps"]) <= 5
@@ -97,6 +99,7 @@ class TestSaveJsonReport:
         path = str(tmp_path / "empty.json")
         save_json_report([], path)
         import json
+
         data = json.loads(Path(path).read_text())
         assert data["count"] == 0
         assert data["results"] == []
@@ -118,7 +121,11 @@ class TestSaveHtmlReport:
                 "kronos_change_pct": 2.5,
                 "kronos_last_close": 100.0,
                 "kronos_pred_close": 102.5,
-                "kronos_prediction_uncertainty": {"confidence_score": 75.0, "path_dispersion": 0.02, "direction_score": 0.8},
+                "kronos_prediction_uncertainty": {
+                    "confidence_score": 75.0,
+                    "path_dispersion": 0.02,
+                    "direction_score": 0.8,
+                },
                 "ranking_score": 78.0,
                 "expected_value": 1.5,
                 "prob_win": 0.65,
@@ -155,21 +162,45 @@ class TestSaveHtmlReport:
     def test_html_color_by_score(self, tmp_path: Path) -> None:
         """ranking_score >= 70 应绿色，50-70 黄色，< 50 红色。"""
         merged = [
-            {"ticker": "A", "ranking_score": 80.0, "ta_signal": "BUY", "kronos_change_pct": 3.0,
-             "kronos_last_close": None, "kronos_pred_close": None,
-             "kronos_prediction_uncertainty": {},
-             "expected_value": None, "prob_win": None, "risk_adjusted_ev": None,
-             "degradation_mode": None},
-            {"ticker": "B", "ranking_score": 55.0, "ta_signal": "HOLD", "kronos_change_pct": 1.0,
-             "kronos_last_close": None, "kronos_pred_close": None,
-             "kronos_prediction_uncertainty": {},
-             "expected_value": None, "prob_win": None, "risk_adjusted_ev": None,
-             "degradation_mode": None},
-            {"ticker": "C", "ranking_score": 30.0, "ta_signal": "SELL", "kronos_change_pct": -2.0,
-             "kronos_last_close": None, "kronos_pred_close": None,
-             "kronos_prediction_uncertainty": {},
-             "expected_value": None, "prob_win": None, "risk_adjusted_ev": None,
-             "degradation_mode": None},
+            {
+                "ticker": "A",
+                "ranking_score": 80.0,
+                "ta_signal": "BUY",
+                "kronos_change_pct": 3.0,
+                "kronos_last_close": None,
+                "kronos_pred_close": None,
+                "kronos_prediction_uncertainty": {},
+                "expected_value": None,
+                "prob_win": None,
+                "risk_adjusted_ev": None,
+                "degradation_mode": None,
+            },
+            {
+                "ticker": "B",
+                "ranking_score": 55.0,
+                "ta_signal": "HOLD",
+                "kronos_change_pct": 1.0,
+                "kronos_last_close": None,
+                "kronos_pred_close": None,
+                "kronos_prediction_uncertainty": {},
+                "expected_value": None,
+                "prob_win": None,
+                "risk_adjusted_ev": None,
+                "degradation_mode": None,
+            },
+            {
+                "ticker": "C",
+                "ranking_score": 30.0,
+                "ta_signal": "SELL",
+                "kronos_change_pct": -2.0,
+                "kronos_last_close": None,
+                "kronos_pred_close": None,
+                "kronos_prediction_uncertainty": {},
+                "expected_value": None,
+                "prob_win": None,
+                "risk_adjusted_ev": None,
+                "degradation_mode": None,
+            },
         ]
         path = str(tmp_path / "colors.html")
         save_html_report(merged, path, "2026-08-11")

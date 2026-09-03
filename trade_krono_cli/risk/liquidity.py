@@ -55,7 +55,8 @@ def calc_liquidity_risk(
     if log_vol >= sorted_bps[0][0]:
         # 超过最大 threshold：使用 tail_penalty_rate 递减
         risk_score = max(
-            0.0, sorted_bps[0][1] - (log_vol - sorted_bps[0][0]) * th.tail_penalty_rate,
+            0.0,
+            sorted_bps[0][1] - (log_vol - sorted_bps[0][0]) * th.tail_penalty_rate,
         )
     elif log_vol < sorted_bps[-1][0]:
         # 低于最小 threshold：使用该点的分数

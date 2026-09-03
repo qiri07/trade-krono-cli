@@ -150,7 +150,9 @@ def compute_benchmark_metrics(
     max_dd = float(np.min(dd)) if len(dd) > 0 else 0.0
 
     # ── 权益曲线（百分比累计收益）───────────────────────────────────────
-    equity_curve = [(d, round((p / prices[0] - 1) * 100, 4)) for d, p in zip(dates, prices, strict=False)]
+    equity_curve = [
+        (d, round((p / prices[0] - 1) * 100, 4)) for d, p in zip(dates, prices, strict=False)
+    ]
 
     return BenchmarkResult(
         name=name,

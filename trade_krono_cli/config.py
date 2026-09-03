@@ -72,7 +72,9 @@ class Settings:
     kronos_T: float = field(default_factory=lambda: float(os.getenv("KRONOS_T", "1.0")))
     kronos_top_p: float = field(default_factory=lambda: float(os.getenv("KRONOS_TOP_P", "0.9")))
     kronos_use_sample_confidence: bool = field(
-        default_factory=lambda: os.getenv("KRONOS_USE_SAMPLE_CONFIDENCE", "false").lower() == "true",
+        default_factory=lambda: (
+            os.getenv("KRONOS_USE_SAMPLE_CONFIDENCE", "false").lower() == "true"
+        ),
     )
     kronos_batch_size: int = field(default_factory=lambda: int(os.getenv("KRONOS_BATCH_SIZE", "8")))
 
@@ -151,7 +153,9 @@ class Settings:
     )
     """K 线最低完整率阈值（0-1）。"""
     filter_abnormality_risk_boost_enabled: bool = field(
-        default_factory=lambda: os.getenv("FILTER_ABNORMALITY_RISK_BOOST", "true").lower() == "true",
+        default_factory=lambda: (
+            os.getenv("FILTER_ABNORMALITY_RISK_BOOST", "true").lower() == "true"
+        ),
     )
     """是否根据异常标记上调风险分。"""
 

@@ -46,7 +46,12 @@ def _timing(fn, label: str) -> tuple[float, Exception | None, Any]:
 
 
 async def bench_provider(
-    factory: DataProviderFactory, name: str, ticker: str, start: str, end: str, n_runs: int,
+    factory: DataProviderFactory,
+    name: str,
+    ticker: str,
+    start: str,
+    end: str,
+    n_runs: int,
 ) -> BenchResult:
     result = BenchResult(provider=name, cold_time=None, warm_times=[], errors=[])
 

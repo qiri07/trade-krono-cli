@@ -228,7 +228,10 @@ class BaostockProvider(DataProvider):
             return False
 
     def check_new_stock(
-        self, ticker: str, eval_date: str, min_listing_days: int = 60,
+        self,
+        ticker: str,
+        eval_date: str,
+        min_listing_days: int = 60,
     ) -> tuple[bool, str]:
         """检查是否为次新股。
 

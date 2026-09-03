@@ -202,7 +202,8 @@ class TestExternalRepoErrors:
             patch("trade_krono_cli.external.pin", side_effect=ValueError("未知 repo: fake")),
         ):
             result = runner.invoke(
-                app, ["repo", "repo-pin", "--name", "fake", "--commit", "abc123"],
+                app,
+                ["repo", "repo-pin", "--name", "fake", "--commit", "abc123"],
             )
             assert result.exit_code != 0
             assert "未知 repo" in _strip_ansi(result.output)
@@ -262,7 +263,8 @@ class TestInvalidDate:
             patch("trade_krono_cli.cache.get_cache", return_value=mock_cache),
         ):
             result = runner.invoke(
-                app, ["warm-cache", "--tickers", "600519", "--date", "2099-01-01"],
+                app,
+                ["warm-cache", "--tickers", "600519", "--date", "2099-01-01"],
             )
             assert result.exit_code == 0
 

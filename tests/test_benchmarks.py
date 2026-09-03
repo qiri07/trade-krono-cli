@@ -39,7 +39,9 @@ def _make_ta_result(ticker: str, confidence: float = 70.0) -> StockAnalysisResul
 
 
 def _make_kronos_result(
-    ticker: str, direction: str = "UP", change: float = 2.0,
+    ticker: str,
+    direction: str = "UP",
+    change: float = 2.0,
 ) -> KronosForecastResult:
     return KronosForecastResult(
         ticker=ticker,
@@ -116,7 +118,9 @@ class TestMergeResultsBenchmark:
         constraints = ConstraintConfig(enable_st_filter=False)
 
         avg_ms = benchmark(
-            lambda: merge_results(ta_results, kronos_results, scoring_strategy=config, constraints_config=constraints),
+            lambda: merge_results(
+                ta_results, kronos_results, scoring_strategy=config, constraints_config=constraints
+            ),
             iterations=50,
         )
         assert avg_ms < 500
@@ -213,7 +217,9 @@ class TestRiskBoostBenchmark:
         avg_ms = benchmark(
             lambda: [
                 booster.boost(
-                    base_risk=m["risk_score_total"], flags=["ST"], params={"multiplier": 1.5},
+                    base_risk=m["risk_score_total"],
+                    flags=["ST"],
+                    params={"multiplier": 1.5},
                 )
                 for m in pool
             ],

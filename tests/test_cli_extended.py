@@ -417,7 +417,11 @@ class TestRepoCommands:
                 "trade_krono_cli.external.status",
                 return_value=[
                     ExternalRepo(
-                        name="kronos", path="/tmp/kronos", branch="main", url="", commit=None,
+                        name="kronos",
+                        path="/tmp/kronos",
+                        branch="main",
+                        url="",
+                        commit=None,
                     ),
                 ],
             ),
@@ -442,7 +446,8 @@ class TestRepoCommands:
             patch("trade_krono_cli.external.pin") as mock_pin,
         ):
             result = runner.invoke(
-                app, ["repo", "repo-pin", "--name", "tradingagents", "--commit", "abc123def"],
+                app,
+                ["repo", "repo-pin", "--name", "tradingagents", "--commit", "abc123def"],
             )
             assert result.exit_code == 0
             assert "已 pin" in _strip_ansi(result.output)
@@ -454,7 +459,8 @@ class TestRepoCommands:
             patch("trade_krono_cli.external.pin", side_effect=ValueError("未知 repo: nonexistent")),
         ):
             result = runner.invoke(
-                app, ["repo", "repo-pin", "--name", "nonexistent", "--commit", "abc123"],
+                app,
+                ["repo", "repo-pin", "--name", "nonexistent", "--commit", "abc123"],
             )
             assert result.exit_code != 0
             assert "未知 repo" in _strip_ansi(result.output)

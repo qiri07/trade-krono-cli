@@ -22,10 +22,13 @@ class TestBaostockProvider:
         assert provider.supports_metadata is True
 
     def test_fetch_kline_import_error(self, provider) -> None:
-        with patch(
-            "trade_krono_cli.data_providers.baostock_provider.BaostockProvider._ensure_import",
-            side_effect=RuntimeError("baostock not installed"),
-        ), pytest.raises(RuntimeError, match="baostock not installed"):
+        with (
+            patch(
+                "trade_krono_cli.data_providers.baostock_provider.BaostockProvider._ensure_import",
+                side_effect=RuntimeError("baostock not installed"),
+            ),
+            pytest.raises(RuntimeError, match="baostock not installed"),
+        ):
             provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
 
     def test_fetch_kline_success(self, provider) -> None:

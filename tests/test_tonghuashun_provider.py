@@ -43,7 +43,8 @@ def api_key(monkeypatch: pytest.MonkeyPatch) -> str:
 
 
 def test_init_raises_without_api_key(
-    provider: TongHuaShunProvider, monkeypatch: pytest.MonkeyPatch,
+    provider: TongHuaShunProvider,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("HITHINK_FINANCE_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="HITHINK_FINANCE_API_KEY"):

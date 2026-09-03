@@ -117,7 +117,12 @@ class Cache:
     # ── K 线缓存 ──────────────────────────────────────
 
     def get_kline(
-        self, ticker: str, start: str, end: str, freq: str, adjustflag: str = "1",
+        self,
+        ticker: str,
+        start: str,
+        end: str,
+        freq: str,
+        adjustflag: str = "1",
     ) -> pd.DataFrame | None:
         with self._conn as conn:
             row = conn.execute(
@@ -306,7 +311,10 @@ class Cache:
     # ── 工具方法 ──────────────────────────────────────
 
     def get_cached_date_range(
-        self, ticker: str, freq: str = "d", adjustflag: str = "1",
+        self,
+        ticker: str,
+        freq: str = "d",
+        adjustflag: str = "1",
     ) -> tuple[str, str] | None:
         """查询某只股票的已有 K 线缓存覆盖的日期范围。
 
@@ -410,17 +418,19 @@ class Cache:
                 logger.info(f"  读取缓存 {i}/{total} 只...")
 
         combined = pd.concat(rows_raw, ignore_index=True)
-        logger.info(
-            f"导出原始: {len(combined):,} 行, "
-            f"{combined['instrument'].nunique()} 只"
-        )
+        logger.info(f"导出原始: {len(combined):,} 行, {combined['instrument'].nunique()} 只")
 
         # ── 转换为 RD-Agent 格式 ──────────────────────────────────────────
         df = combined.copy()
         df["date"] = pd.to_datetime(df["timestamps"]).dt.normalize()
         df = df.rename(
-            columns={"open": "$open", "high": "$high", "low": "$low",
-                     "close": "$close", "volume": "$volume"}
+            columns={
+                "open": "$open",
+                "high": "$high",
+                "low": "$low",
+                "close": "$close",
+                "volume": "$volume",
+            }
         )
         df["$factor"] = 1.0
         df = df.dropna(subset=["$open", "$close", "$volume"])
@@ -435,7 +445,9 @@ class Cache:
 
         Path(parquet_path).parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(parquet_path, engine="pyarrow")
-        logger.info(f"✅ parquet 已写入: {parquet_path} ({Path(parquet_path).stat().st_size / 1024 / 1024:.1f} MB)")
+        logger.info(
+            f"✅ parquet 已写入: {parquet_path} ({Path(parquet_path).stat().st_size / 1024 / 1024:.1f} MB)"
+        )
 
         result: dict = {
             "rows": len(df),
@@ -450,17 +462,23 @@ class Cache:
             Path(h5_path).parent.mkdir(parents=True, exist_ok=True)
             try:
                 import subprocess
+
                 _base = Path(__file__).resolve().parents[2]
                 env_py = _base / "RD-Agent-Work" / "rdagent-env" / "bin" / "python"
                 if not env_py.exists():
                     env_py = _base / "rdagent-env" / "bin" / "python"
                 if env_py.exists():
                     r = subprocess.run(
-                        [str(env_py), "-c",
-                         f"import pandas as pd; "
-                         f"df=pd.read_parquet('{parquet_path}'); "
-                         f"df.to_hdf('{h5_path}', key='data', mode='w')"],
-                        capture_output=True, text=True, timeout=180,
+                        [
+                            str(env_py),
+                            "-c",
+                            f"import pandas as pd; "
+                            f"df=pd.read_parquet('{parquet_path}'); "
+                            f"df.to_hdf('{h5_path}', key='data', mode='w')",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=180,
                     )
                     if r.returncode == 0:
                         h5_size = Path(h5_path).stat().st_size / 1024 / 1024
@@ -476,7 +494,9 @@ class Cache:
 
         # ── 可选：debug 数据集（前 N 只股票）───────────────────────────────
         if debug_insts > 0:
-            debug_dir = Path(parquet_path).parent.parent / (Path(parquet_path).parent.name + "_debug")
+            debug_dir = Path(parquet_path).parent.parent / (
+                Path(parquet_path).parent.name + "_debug"
+            )
             debug_path = debug_dir / "daily_pv.parquet"
             debug_h5_path = debug_dir / "daily_pv.h5"
             debug_dir.mkdir(parents=True, exist_ok=True)
@@ -496,17 +516,23 @@ class Cache:
             debug_h5_path = debug_dir / "daily_pv.h5"
             try:
                 import subprocess
+
                 _base = Path(__file__).resolve().parents[2]
                 env_py = _base / "RD-Agent-Work" / "rdagent-env" / "bin" / "python"
                 if not env_py.exists():
                     env_py = _base / "rdagent-env" / "bin" / "python"
                 if env_py.exists():
                     r = subprocess.run(
-                        [str(env_py), "-c",
-                         f"import pandas as pd; "
-                         f"df=pd.read_parquet('{debug_path}'); "
-                         f"df.to_hdf('{debug_h5_path}', key='data', mode='w')"],
-                        capture_output=True, text=True, timeout=120,
+                        [
+                            str(env_py),
+                            "-c",
+                            f"import pandas as pd; "
+                            f"df=pd.read_parquet('{debug_path}'); "
+                            f"df.to_hdf('{debug_h5_path}', key='data', mode='w')",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
                     )
                     if r.returncode == 0:
                         result["debug_h5_path"] = str(debug_h5_path)

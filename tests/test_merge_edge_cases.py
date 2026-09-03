@@ -15,10 +15,16 @@ class TestMergeEdgeCases:
     def test_mixed_signal_types(self) -> None:
         """SELL 信号应与 BUY 正常合并。"""
         ta = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="SELL", confidence=70.0,
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="SELL",
+            confidence=70.0,
         )
         kronos = KronosForecastResult(
-            ticker="sh.600519", eval_date="2026-08-12", horizon=30, direction="DOWN",
+            ticker="sh.600519",
+            eval_date="2026-08-12",
+            horizon=30,
+            direction="DOWN",
         )
         merged = merge_results([ta], [kronos])
         assert len(merged) == 1
@@ -27,7 +33,10 @@ class TestMergeEdgeCases:
     def test_ta_only_no_kronos(self) -> None:
         """仅 TA 结果，无 Kronos 数据。"""
         ta = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="BUY",
+            confidence=80.0,
         )
         merged = merge_results([ta], [])
         assert len(merged) == 1
@@ -37,7 +46,10 @@ class TestMergeEdgeCases:
     def test_kronos_only_no_ta(self) -> None:
         """仅 Kronos 结果，无 TA 数据时合并结果为空（merge 遍历 TA 列表）。"""
         kronos = KronosForecastResult(
-            ticker="sh.600519", eval_date="2026-08-12", horizon=30, direction="UP",
+            ticker="sh.600519",
+            eval_date="2026-08-12",
+            horizon=30,
+            direction="UP",
         )
         merged = merge_results([], [kronos])
         assert merged == []
@@ -46,12 +58,18 @@ class TestMergeEdgeCases:
         """TA 缺少某 ticker 时，该 ticker 的 Kronos 结果不会出现在合并中。"""
         ta = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=80.0,
             ),
         ]
         kronos = [
             KronosForecastResult(
-                ticker="sz.000858", eval_date="2026-08-12", horizon=30, direction="DOWN",
+                ticker="sz.000858",
+                eval_date="2026-08-12",
+                horizon=30,
+                direction="DOWN",
             ),
         ]
         merged = merge_results(ta, kronos)
@@ -61,10 +79,16 @@ class TestMergeEdgeCases:
     def test_no_uncertainty_data(self) -> None:
         """无 uncertainty 数据时不应报错。"""
         ta = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="BUY",
+            confidence=80.0,
         )
         kronos = KronosForecastResult(
-            ticker="sh.600519", eval_date="2026-08-12", horizon=30, direction="UP",
+            ticker="sh.600519",
+            eval_date="2026-08-12",
+            horizon=30,
+            direction="UP",
         )
         merged = merge_results([ta], [kronos])
         assert len(merged) == 1
@@ -79,7 +103,10 @@ class TestMergeWithConstraints:
         cfg = ConstraintConfig(enable_limit_check=True)
         tracker = T1Tracker()
         ta = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="BUY",
+            confidence=80.0,
         )
         # 设置 predicted_close_final=110，prev_close=100 → 涨停
         kronos = KronosForecastResult(
@@ -105,11 +132,17 @@ class TestMergeWithConstraints:
         tracker.record_buy("sh.600519", "2026-08-12")
 
         ta = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="BUY",
+            confidence=80.0,
         )
         # 不设 pred_close，让 merge 检查触发
         kronos = KronosForecastResult(
-            ticker="sh.600519", eval_date="2026-08-12", horizon=30, direction="UP",
+            ticker="sh.600519",
+            eval_date="2026-08-12",
+            horizon=30,
+            direction="UP",
         )
         import pandas as pd
 
@@ -143,10 +176,16 @@ class TestFilterPoolEdgeCases:
     def test_all_pass(self) -> None:
         ta = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=80.0,
             ),
             StockAnalysisResult(
-                ticker="sz.000858", date="2026-08-12", signal="HOLD", confidence=70.0,
+                ticker="sz.000858",
+                date="2026-08-12",
+                signal="HOLD",
+                confidence=70.0,
             ),
         ]
         pool = filter_pool(ta, min_confidence=55.0, allowed_signals=("BUY", "HOLD"))
@@ -155,7 +194,10 @@ class TestFilterPoolEdgeCases:
     def test_filter_all_out(self) -> None:
         ta = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="SELL", confidence=90.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="SELL",
+                confidence=90.0,
             ),
         ]
         pool = filter_pool(ta, min_confidence=55.0, allowed_signals=("BUY", "HOLD"))
@@ -164,7 +206,10 @@ class TestFilterPoolEdgeCases:
     def test_low_confidence_filtered(self) -> None:
         ta = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=40.0,
+                ticker="sh.600519",
+                date="2026-08-12",
+                signal="BUY",
+                confidence=40.0,
             ),
         ]
         pool = filter_pool(ta, min_confidence=55.0, allowed_signals=("BUY",))
@@ -215,7 +260,10 @@ class TestMergeCostAdjustment:
     def test_net_of_cost_applied(self) -> None:
         """kronos_change_pct 应已扣除交易成本。"""
         ta = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="BUY",
+            confidence=80.0,
         )
         kronos = KronosForecastResult(
             ticker="sh.600519",

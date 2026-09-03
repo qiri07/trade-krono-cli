@@ -140,7 +140,9 @@ class DecisionAdapter:
         invalidations = self._extract_invalidations(decision_text)
         entry_zone = self._extract_price_range(decision_text, self._RE_ENTRY_ZONE, "entry_zone")
         target_price = self._extract_price_range(
-            decision_text, self._RE_TARGET_PRICE, "target_price",
+            decision_text,
+            self._RE_TARGET_PRICE,
+            "target_price",
         )
         stop_loss = self._extract_price_range(decision_text, self._RE_STOP_LOSS, "stop_loss")
         holding_period = self._extract_holding_period(decision_text)
@@ -439,7 +441,10 @@ class DecisionAdapter:
         return result[:8]
 
     def _extract_price_range(
-        self, text: str, pattern: re.Pattern, key: str,
+        self,
+        text: str,
+        pattern: re.Pattern,
+        key: str,
     ) -> list[float] | None:
         """从文本中提取价格区间或单一价格。
 

@@ -22,10 +22,16 @@ def clear_cache() -> None:
 
 def warm_cache(
     tickers: str | None = typer.Option(
-        None, "--tickers", "-t", help="逗号分隔的股票代码，如 600519,000858,600036",
+        None,
+        "--tickers",
+        "-t",
+        help="逗号分隔的股票代码，如 600519,000858,600036",
     ),
     config: str | None = typer.Option(
-        None, "--config", "-c", help="股票列表文件路径（每行一只，支持 # 注释）",
+        None,
+        "--config",
+        "-c",
+        help="股票列表文件路径（每行一只，支持 # 注释）",
     ),
     date: str = typer.Option(..., "--date", "-d", help="基准日期 YYYY-MM-DD（默认今天）"),
     lookback: int = typer.Option(730, "--lookback", "-l", help="回溯天数，默认 730（2年）"),

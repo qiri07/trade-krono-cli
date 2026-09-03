@@ -277,13 +277,19 @@ class BacktestEngine:
     # ── 价格获取 ─────────────────────────────────────────────────────────────
 
     def _get_entry_price(
-        self, ticker: str, date: str, prev_close_map: dict[str, float],
+        self,
+        ticker: str,
+        date: str,
+        prev_close_map: dict[str, float],
     ) -> float | None:
         """简化：使用 prev_close_map 中的最新收盘价作为近似入场价。"""
         return prev_close_map.get(ticker)
 
     def _get_exit_price(
-        self, ticker: str, date: str, prev_close_map: dict[str, float],
+        self,
+        ticker: str,
+        date: str,
+        prev_close_map: dict[str, float],
     ) -> float | None:
         """简化：使用 prev_close_map 中该日的前一日收盘作为退出价。"""
         # 这里用 prev_close_map 本身作为近似（需要调用方维护）

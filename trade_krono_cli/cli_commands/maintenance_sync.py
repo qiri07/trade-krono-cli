@@ -61,10 +61,15 @@ def sync_universe(
     ),
     lookback: int = typer.Option(730, "--lookback", "-l", help="回溯天数，默认 730（约 2 年）"),
     delay: float = typer.Option(
-        0.05, "--delay", help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）",
+        0.05,
+        "--delay",
+        help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）",
     ),
     show_progress: bool = typer.Option(
-        True, "--no-progress", "-p", help="不显示进度条（静默模式）",
+        True,
+        "--no-progress",
+        "-p",
+        help="不显示进度条（静默模式）",
     ),
 ) -> None:
     """全量 A 股 K 线缓存同步。
@@ -186,8 +191,10 @@ def sync_universe(
             h5_path=str(h5_main),
             debug_insts=100,
         )
-        console.print(f"[bold green]✅ 已自动导出 daily_pv: {result['stocks']:,} 只, "
-                      f"{result['rows']:,} 行 ({result['date_min']} ~ {result['date_max']})[/bold green]")
+        console.print(
+            f"[bold green]✅ 已自动导出 daily_pv: {result['stocks']:,} 只, "
+            f"{result['rows']:,} 行 ({result['date_min']} ~ {result['date_max']})[/bold green]"
+        )
     except Exception as ex:
         logger.warning(f"自动导出 daily_pv 失败（不影响同步结果）: {ex}")
 
@@ -201,10 +208,15 @@ def sync_whitelist(
     ),
     lookback: int = typer.Option(730, "--lookback", "-l", help="回溯天数，默认 730（约 2 年）"),
     delay: float = typer.Option(
-        0.05, "--delay", help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）",
+        0.05,
+        "--delay",
+        help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）",
     ),
     show_progress: bool = typer.Option(
-        True, "--no-progress", "-p", help="不显示进度条（静默模式）",
+        True,
+        "--no-progress",
+        "-p",
+        help="不显示进度条（静默模式）",
     ),
 ) -> None:
     """仅同步白名单股票的 K 线缓存。

@@ -1,4 +1,5 @@
 """Regression tests for bugs fixed in previous phases."""
+
 from typing import NoReturn
 
 
@@ -198,7 +199,9 @@ class TestRegressionModuleError:
         from trade_krono_cli.errors import ModuleError
 
         e = ModuleError(
-            module="kronos", message="OOM", original_exception=RuntimeError("out of memory"),
+            module="kronos",
+            message="OOM",
+            original_exception=RuntimeError("out of memory"),
         )
         assert e.module == "kronos"
         assert "kronos" in str(e)

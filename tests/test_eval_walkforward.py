@@ -27,7 +27,9 @@ class TestWalkForwardConfig:
         assert cfg.min_train_samples == 60
 
     def test_custom(self) -> None:
-        cfg = WalkForwardConfig(lookback_days=60, step_days=10, horizons=(10, 30), min_train_samples=20)
+        cfg = WalkForwardConfig(
+            lookback_days=60, step_days=10, horizons=(10, 30), min_train_samples=20
+        )
         assert cfg.lookback_days == 60
         assert cfg.horizons == (10, 30)
 
@@ -81,11 +83,14 @@ class TestWalkForwardEngineRun:
             horizons=(30,),
         )
         engine = WalkForwardEngine(config=cfg)
-        predict_fn = MagicMock(return_value={
-            "direction": "UP",
-            "expected_change_pct": 2.0,
-            "p10": 95.0, "p90": 110.0,
-        })
+        predict_fn = MagicMock(
+            return_value={
+                "direction": "UP",
+                "expected_change_pct": 2.0,
+                "p10": 95.0,
+                "p90": 110.0,
+            }
+        )
         fetch_actual_fn = MagicMock(return_value=1.5)
         snapshot = self._make_snapshot(cut_date="2026-08-01")
 

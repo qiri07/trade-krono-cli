@@ -105,7 +105,8 @@ class TestComputeSingleSample:
         closes = np.array([100.0, 97.0, 94.0, 90.0])
         last_close = 100.0
         change_pct, direction, _vol, _path_disp, _dir_score, _conf_score, _ = compute_single_sample(
-            closes, last_close,
+            closes,
+            last_close,
         )
         assert direction == "DOWN"
         assert change_pct < 0
@@ -123,7 +124,8 @@ class TestComputeSingleSample:
         closes = np.array([100.0, 200.0, 0.0, 150.0])
         last_close = 100.0
         _change_pct, direction, vol, _, dir_score, conf_score, _ = compute_single_sample(
-            closes, last_close,
+            closes,
+            last_close,
         )
         assert vol > 50.0  # 极高波动
         # 高波动稀释 direction_score（分母大），但 change_pct=50% 较大
@@ -185,7 +187,9 @@ class TestComputeMultiSample:
         )
         last_close = 100.0
         _, _, _, path_disp, dir_score, conf_score, _ = compute_multi_sample(
-            avg_close, stacked, last_close,
+            avg_close,
+            stacked,
+            last_close,
         )
         assert path_disp > 0.1  # 高分散
         # 高 dispersion 会降低 confidence_score
@@ -203,7 +207,9 @@ class TestComputeMultiSample:
         )
         last_close = 100.0
         _, _, _, path_disp, dir_score, conf_score, _ = compute_multi_sample(
-            avg_close, stacked, last_close,
+            avg_close,
+            stacked,
+            last_close,
         )
         assert path_disp < 0.01  # 极低分散
         assert conf_score > dir_score * 50  # 高 confidence

@@ -36,9 +36,13 @@ class TestRankProviders:
     def test_basic_ranking_outputs_table(self, capsys) -> None:
         """正常执行时输出排名表格。"""
         factory = _make_mock_factory()
-        with patch(
-            "trade_krono_cli.data_providers.factory.get_data_factory", return_value=factory,
-        ), patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"):
+        with (
+            patch(
+                "trade_krono_cli.data_providers.factory.get_data_factory",
+                return_value=factory,
+            ),
+            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+        ):
             rank_providers(ticker="sh.600519", workers=3, force=False)
         captured = capsys.readouterr()
         assert "Provider Benchmark" in captured.out
@@ -50,9 +54,13 @@ class TestRankProviders:
     def test_force_flag_invalidates_cache(self, capsys) -> None:
         """force=True 时应调用 invalidate_rank_cache。"""
         factory = _make_mock_factory()
-        with patch(
-            "trade_krono_cli.data_providers.factory.get_data_factory", return_value=factory,
-        ), patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"):
+        with (
+            patch(
+                "trade_krono_cli.data_providers.factory.get_data_factory",
+                return_value=factory,
+            ),
+            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+        ):
             rank_providers(ticker="sh.600519", workers=3, force=True)
         factory.invalidate_rank_cache.assert_called_once_with("sh")
 
@@ -60,18 +68,26 @@ class TestRankProviders:
         """没有可用 provider 时退出码为 1。"""
         factory = MagicMock()
         factory.bench_all.return_value = []
-        with patch(
-            "trade_krono_cli.data_providers.factory.get_data_factory", return_value=factory,
-        ), patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"):
+        with (
+            patch(
+                "trade_krono_cli.data_providers.factory.get_data_factory",
+                return_value=factory,
+            ),
+            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+        ):
             with pytest.raises(typer.Exit):
                 rank_providers(ticker="sh.600519")
 
     def test_bj_ticker_type(self, capsys) -> None:
         """北交所 ticker 使用正确的 ticker_type。"""
         factory = _make_mock_factory()
-        with patch(
-            "trade_krono_cli.data_providers.factory.get_data_factory", return_value=factory,
-        ), patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"):
+        with (
+            patch(
+                "trade_krono_cli.data_providers.factory.get_data_factory",
+                return_value=factory,
+            ),
+            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+        ):
             rank_providers(ticker="bj.920001", workers=2, force=False)
         factory.bench_all.assert_called_once_with(ticker="bj.920001", workers=2)
         captured = capsys.readouterr()

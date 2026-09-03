@@ -92,7 +92,10 @@ class InSetRule(FilterRule):
 
     def __init__(self, field: str, values: set, label: str = "") -> None:
         super().__init__(
-            field=field, op=FilterOp.IN, value=frozenset(values), label=label or f"IN {values}",
+            field=field,
+            op=FilterOp.IN,
+            value=frozenset(values),
+            label=label or f"IN {values}",
         )
 
 
@@ -113,7 +116,10 @@ class ContainsRule(FilterRule):
 
     def __init__(self, field: str, substr: str, label: str = "") -> None:
         super().__init__(
-            field=field, op=FilterOp.CONTAINS, value=substr, label=label or f"contains '{substr}'",
+            field=field,
+            op=FilterOp.CONTAINS,
+            value=substr,
+            label=label or f"contains '{substr}'",
         )
 
 
@@ -304,7 +310,9 @@ class StockFilter:
         if industry_whitelist:
             rules.append(
                 InSetRule(
-                    "industry", set(industry_whitelist), label=f"industry IN {industry_whitelist}",
+                    "industry",
+                    set(industry_whitelist),
+                    label=f"industry IN {industry_whitelist}",
                 ),
             )
 
@@ -321,13 +329,19 @@ class StockFilter:
         if pe_range:
             rules.append(
                 RangeRule(
-                    "pe_ttm", pe_range[0], pe_range[1], label=f"PE [{pe_range[0]}, {pe_range[1]}]",
+                    "pe_ttm",
+                    pe_range[0],
+                    pe_range[1],
+                    label=f"PE [{pe_range[0]}, {pe_range[1]}]",
                 ),
             )
         if pb_range:
             rules.append(
                 RangeRule(
-                    "pb", pb_range[0], pb_range[1], label=f"PB [{pb_range[0]}, {pb_range[1]}]",
+                    "pb",
+                    pb_range[0],
+                    pb_range[1],
+                    label=f"PB [{pb_range[0]}, {pb_range[1]}]",
                 ),
             )
 
@@ -341,7 +355,9 @@ class StockFilter:
         if min_volume_ratio is not None:
             rules.append(
                 MinValueRule(
-                    "volume_ratio", min_volume_ratio, label=f"volume_ratio >= {min_volume_ratio}",
+                    "volume_ratio",
+                    min_volume_ratio,
+                    label=f"volume_ratio >= {min_volume_ratio}",
                 ),
             )
         if min_turnover_rate is not None:

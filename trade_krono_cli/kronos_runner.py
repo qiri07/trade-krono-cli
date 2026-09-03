@@ -191,7 +191,9 @@ class KronosRunner:
         return [items[i : i + size] for i in range(0, len(items), size)]
 
     def _prepare(
-        self, ticker: str, eval_date: str,
+        self,
+        ticker: str,
+        eval_date: str,
     ) -> tuple[pd.DataFrame, pd.Series, pd.Series, float]:
         """拉 K 线 + 构造 x/y timestamp。优先使用预取数据（流式流水线）。"""
         from trade_krono_cli.constraints_config import ConstraintConfig
@@ -247,7 +249,6 @@ class KronosRunner:
             raise RuntimeError(msg)
 
         return build_result_dict(closes, last_close, sample_count=sample_count)
-
 
     def _pred_df_to_dict(self, pred_df: pd.DataFrame) -> dict:
         idx = pred_df.index
@@ -490,7 +491,9 @@ class KronosRunner:
             res.prediction_uncertainty = _pd
         else:
             parsed = self._parse_pred_df(
-                pd.DataFrame({"close": avg_close}), last_close, sample_count=1,
+                pd.DataFrame({"close": avg_close}),
+                last_close,
+                sample_count=1,
             )
             res.last_close = last_close
             self._apply_parsed_to_result(res, parsed)

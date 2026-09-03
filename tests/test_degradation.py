@@ -271,10 +271,14 @@ class TestConsoleOutput:
     def test_summary_shows_degradation_stats(self, capsys) -> None:
         items = [
             _make_merged_item(
-                ticker="600519", degradation_mode="kronos_degraded", composite_score=80.0,
+                ticker="600519",
+                degradation_mode="kronos_degraded",
+                composite_score=80.0,
             ),
             _make_merged_item(
-                ticker="000858", degradation_mode="ta_cache_fallback", composite_score=60.0,
+                ticker="000858",
+                degradation_mode="ta_cache_fallback",
+                composite_score=60.0,
             ),
         ]
         print_results_summary(items, date="2026-01-15")
@@ -416,7 +420,8 @@ class TestResearchDbLatestTA:
         # 第一次作业：600519 成功，000858 失败（不影响目标查询）
         research_db.insert_ta(job_old, self._make_ta_mock("600519", "BUY", 70.0, "old thesis"))
         research_db.insert_ta(
-            job_old, self._make_ta_mock("000858", "SELL", 30.0, "", error="some error"),
+            job_old,
+            self._make_ta_mock("000858", "SELL", 30.0, "", error="some error"),
         )
         # 第二次作业：600519 再次成功（最新的 run_at）
         research_db.insert_ta(job_new, self._make_ta_mock("600519", "HOLD", 55.0, "new thesis"))
@@ -435,7 +440,8 @@ class TestResearchDbLatestTA:
         """全部记录均有 error → 返回 None."""
         job_id = research_db.create_job("2026-01-15", ["600519"])
         research_db.insert_ta(
-            job_id, self._make_ta_mock("600519", "SELL", 30.0, "", error="LLM error"),
+            job_id,
+            self._make_ta_mock("600519", "SELL", 30.0, "", error="LLM error"),
         )
         result = research_db.get_latest_ta_for_ticker("600519", max_age_days=7)
         assert result is None
@@ -484,7 +490,8 @@ class TestOrchestratorCacheFallback:
         ta_result_failed.reasoning = None
 
         with patch(
-            "trade_krono_cli.pipeline.pipeline_core.get_research", return_value=mock_research,
+            "trade_krono_cli.pipeline.pipeline_core.get_research",
+            return_value=mock_research,
         ):
             # 模拟 orchestrator 中 ta_cache_fallback 的核心逻辑片段
             cfg = SimpleNamespace(

@@ -23,7 +23,10 @@ class DummyRiskBoost(RiskBoostStrategy):
     name = "dummy_boost"
 
     def _boost_impl(
-        self, base_risk: float, flags: list[str], params: object | None = None,
+        self,
+        base_risk: float,
+        flags: list[str],
+        params: object | None = None,
     ) -> float:
         return base_risk + 10.0
 

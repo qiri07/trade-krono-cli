@@ -117,7 +117,10 @@ class StreamPipeline:
                     logger.error(f"❌ Kronos 预测异常 {tk}: {e}")
                     results.append(
                         KronosForecastResult(
-                            ticker=tk, eval_date=date, horizon=self._pred_len, error=str(e),
+                            ticker=tk,
+                            eval_date=date,
+                            horizon=self._pred_len,
+                            error=str(e),
                         ),
                     )
                 finally:
@@ -165,7 +168,10 @@ class StreamPipeline:
         return ta_results, kr_results, kline_data
 
     def _ta_analyze_one(
-        self, ticker: str, date: str, df: pd.DataFrame | None,
+        self,
+        ticker: str,
+        date: str,
+        df: pd.DataFrame | None,
     ) -> StockAnalysisResult:
         """单只股票 TA 分析，优先使用预取数据。"""
         if self.ta_runner is None:
@@ -175,7 +181,10 @@ class StreamPipeline:
         return self.ta_runner.analyze_one(ticker, date)
 
     def _kronos_predict_one(
-        self, ticker: str, date: str, df: pd.DataFrame | None,
+        self,
+        ticker: str,
+        date: str,
+        df: pd.DataFrame | None,
     ) -> KronosForecastResult:
         """单只股票 Kronos 预测，优先使用预取数据。"""
         if self.kronos_runner is None:

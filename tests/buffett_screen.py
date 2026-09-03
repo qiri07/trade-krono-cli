@@ -329,7 +329,6 @@ def main() -> None:
             continue
         filtered.append(s)
 
-
     # 2. 批量获取估值快照
     thscodes = [s["thscode"] for s in filtered]
     vals = batch_valuations(thscodes)
@@ -389,7 +388,6 @@ def main() -> None:
     if fail_gates:
         for _gate, _count in sorted(fail_gates.items(), key=lambda x: -x[1]):
             pass
-
 
 
 if __name__ == "__main__":

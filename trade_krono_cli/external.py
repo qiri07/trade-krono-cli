@@ -322,7 +322,8 @@ def save_config(
 
 
 def get_repos(
-    project_root: Path | None = None, settings: Settings | None = None,
+    project_root: Path | None = None,
+    settings: Settings | None = None,
 ) -> list[ExternalRepo]:
     """获取所有外部 repo 配置（从 YAML 或 .env fallback）。
 

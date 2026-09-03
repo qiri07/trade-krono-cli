@@ -144,7 +144,12 @@ def test_kronos_cache_set_and_get(tmp_path) -> None:
     c = Cache(db_path=tmp_path / "cache.db")
     data = {"direction": "UP", "expected_change_pct": 3.2}
     c.set_kronos(
-        "sh.600519", "2026-08-11", pred_len=30, result=data, sample_count=5, config_hash="xyz",
+        "sh.600519",
+        "2026-08-11",
+        pred_len=30,
+        result=data,
+        sample_count=5,
+        config_hash="xyz",
     )
     result = c.get_kronos("sh.600519", "2026-08-11", pred_len=30, sample_count=5, config_hash="xyz")
     assert result == data

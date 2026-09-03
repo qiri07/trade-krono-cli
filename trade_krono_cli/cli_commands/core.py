@@ -152,10 +152,16 @@ def _load_tickers(tickers_str: str | None, config_file: str | None) -> list[str]
 
 def run(
     tickers: str | None = typer.Option(
-        None, "--tickers", "-t", help="逗号分隔的股票代码，如 600519,000858,600036",
+        None,
+        "--tickers",
+        "-t",
+        help="逗号分隔的股票代码，如 600519,000858,600036",
     ),
     stock_file: str | None = typer.Option(
-        None, "--stock-file", "-f", help="股票列表文件路径（每行一只，支持 # 注释）",
+        None,
+        "--stock-file",
+        "-f",
+        help="股票列表文件路径（每行一只，支持 # 注释）",
     ),
     date: str = typer.Option(..., "--date", "-d", help="分析日期 YYYY-MM-DD"),
     min_confidence: float = typer.Option(55.0, "--min-confidence", help="最低 TA 置信度"),
@@ -167,29 +173,43 @@ def run(
     html_out: str = typer.Option("outputs/report.html", "--html", help="HTML 报告路径"),
     no_cache: bool = typer.Option(False, "--no-cache", help="禁用缓存"),
     market_cap_range: str | None = typer.Option(
-        None, "--market-cap", help='市值范围（亿元），如 "50,5000"',
+        None,
+        "--market-cap",
+        help='市值范围（亿元），如 "50,5000"',
     ),
     industry_whitelist: str | None = typer.Option(
-        None, "--industry-whitelist", help='行业白名单，逗号分隔，如 "银行,食品饮料"',
+        None,
+        "--industry-whitelist",
+        help='行业白名单，逗号分隔，如 "银行,食品饮料"',
     ),
     industry_blacklist: str | None = typer.Option(
-        None, "--industry-blacklist", help='行业黑名单，逗号分隔，如 "房地产,煤炭"',
+        None,
+        "--industry-blacklist",
+        help='行业黑名单，逗号分隔，如 "房地产,煤炭"',
     ),
     pe_range: str | None = typer.Option(None, "--pe-range", help='PE 区间，如 "5,30"'),
     pb_range: str | None = typer.Option(None, "--pb-range", help='PB 区间，如 "0,3"'),
     max_risk_score: float | None = typer.Option(None, "--max-risk-score", help="风险分上限（0-1）"),
     min_volume_ratio: float | None = typer.Option(None, "--min-volume-ratio", help="最小量比"),
     min_volume: float | None = typer.Option(
-        None, "--min-volume", help="最小成交量（股），低于此值排除（如 10000000 表示 1000 万股）",
+        None,
+        "--min-volume",
+        help="最小成交量（股），低于此值排除（如 10000000 表示 1000 万股）",
     ),
     market_cap_min: float | None = typer.Option(
-        None, "--market-cap-min", help="市值最小值（亿元），低于此值排除",
+        None,
+        "--market-cap-min",
+        help="市值最小值（亿元），低于此值排除",
     ),
     exclude_st: bool = typer.Option(
-        True, "--exclude-st/--include-st", help="是否排除 ST 股票（默认排除）",
+        True,
+        "--exclude-st/--include-st",
+        help="是否排除 ST 股票（默认排除）",
     ),
     sample_count: int = typer.Option(
-        None, "--sample-count", help="Kronos 采样次数（默认 5，设 1 为快速模式）",
+        None,
+        "--sample-count",
+        help="Kronos 采样次数（默认 5，设 1 为快速模式）",
     ),
     scoring_strategy: str = typer.Option(
         "linear",
@@ -216,7 +236,10 @@ def run(
         rich_help_panel="评分策略",
     ),
     config_file: str | None = typer.Option(
-        None, "--config", "-c", help="Pipeline 配置文件路径（YAML/JSON，覆盖默认配置）",
+        None,
+        "--config",
+        "-c",
+        help="Pipeline 配置文件路径（YAML/JSON，覆盖默认配置）",
     ),
     streaming: bool = typer.Option(
         False,
@@ -496,7 +519,9 @@ def ta(
 
     # 构建重试策略
     retry_overrides = _build_retry_overrides(
-        max_retries=max_retries, base_delay=base_delay, no_jitter=no_jitter,
+        max_retries=max_retries,
+        base_delay=base_delay,
+        no_jitter=no_jitter,
     )
     cfg = PipelineConfig.default().override(**retry_overrides) if retry_overrides else None
     degrade_overrides = _build_degrade_overrides(degrade_mode, ta_cache_fallback)
@@ -520,10 +545,15 @@ def kronos(
     pred_len: int = typer.Option(30, "--pred-len"),
     lookback: int = typer.Option(400, "--lookback"),
     sample_count: int = typer.Option(
-        None, "--sample-count", help="Kronos 采样次数（默认 5，设 1 为快速模式）",
+        None,
+        "--sample-count",
+        help="Kronos 采样次数（默认 5，设 1 为快速模式）",
     ),
     config_file: str | None = typer.Option(
-        None, "--config", "-c", help="Pipeline 配置文件路径（YAML/JSON，覆盖默认配置）",
+        None,
+        "--config",
+        "-c",
+        help="Pipeline 配置文件路径（YAML/JSON，覆盖默认配置）",
     ),
     output: str = typer.Option("outputs/kronos_result.json", "--output", "-o"),
     max_retries: int = typer.Option(
@@ -572,7 +602,9 @@ def kronos(
 
     # 构建重试策略
     retry_overrides = _build_retry_overrides(
-        max_retries=max_retries, base_delay=base_delay, no_jitter=no_jitter,
+        max_retries=max_retries,
+        base_delay=base_delay,
+        no_jitter=no_jitter,
     )
     cfg = PipelineConfig.default().override(**retry_overrides) if retry_overrides else None
     degrade_overrides = _build_degrade_overrides(degrade_mode, ta_cache_fallback)

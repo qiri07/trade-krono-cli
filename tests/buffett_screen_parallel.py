@@ -110,7 +110,9 @@ def batch_valuations(thscodes: list[str]) -> dict[str, dict]:
     for idx, i in enumerate(range(0, len(thscodes), 50)):
         batch = thscodes[i : i + 50]
         data = _api_get(
-            "/api/a-share/valuations/snapshot", {"thscodes": ",".join(batch)}, timeout=15,
+            "/api/a-share/valuations/snapshot",
+            {"thscodes": ",".join(batch)},
+            timeout=15,
         )
         if data and data.get("code") == 0:
             for item in data.get("data", {}).get("item", []):
@@ -129,7 +131,9 @@ def _fetch_financials(thscode: str, report: str) -> dict[str, float | None]:
     """获取单只股票单期财务指标."""
     result: dict[str, float | None] = {"roe": None, "roe_excl": None, "debt_ratio": None}
     data = _api_get(
-        "/api/a-share/financials/indicators", {"thscode": thscode, "report": report}, timeout=8,
+        "/api/a-share/financials/indicators",
+        {"thscode": thscode, "report": report},
+        timeout=8,
     )
     if not data or data.get("code") != 0:
         return result
@@ -367,7 +371,6 @@ def main() -> None:
             continue
         filtered.append(s)
 
-
     # 2. 批量获取估值快照
     thscodes = [s["thscode"] for s in filtered]
     vals = batch_valuations(thscodes)
@@ -425,7 +428,6 @@ def main() -> None:
         for gate, count in sorted(fail_gates.items(), key=lambda x: -x[1]):
             pass
 
-
     # 4. 写入结果文件
     date_str = datetime.now().strftime("%Y%m%d")
     out_path = f"outputs/results/buffett_screen_{date_str}.txt"
@@ -449,7 +451,6 @@ def main() -> None:
         for gate, count in sorted(fail_gates.items(), key=lambda x: -x[1]):
             f.write(f"  {gate}: {count} 只\n")
         f.write("\n注：闸门⑥（PE历史分位）同花顺 API 仅支持指数，个股无法验证。\n")
-
 
     # 5. 输出股票代码列表（供后续流水线使用）
     ticker_list = [add_ticker_prefix(r.ticker) for r in results_pass]

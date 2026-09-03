@@ -466,9 +466,13 @@ class TestEndToEnd:
             )
             fake_eval.evaluate.return_value = fake_summary
             fake_eval.print_report = MagicMock()
-            with patch(
-                "trade_krono_cli.prediction_eval.PredictionEvaluator", return_value=fake_eval,
-            ), patch.object(logger, "info", capture_info):
+            with (
+                patch(
+                    "trade_krono_cli.prediction_eval.PredictionEvaluator",
+                    return_value=fake_eval,
+                ),
+                patch.object(logger, "info", capture_info),
+            ):
                 run_evaluation(backtest=True)
             full_output = "\n".join(captured_lines)
             assert "回测" in full_output or "总收益率" in full_output

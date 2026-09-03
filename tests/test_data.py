@@ -228,7 +228,8 @@ class TestWarmHistory:
         # 全部段应为永久（ttl=0）
         with cache._conn as conn:
             rows_hist = conn.execute(
-                "SELECT ttl FROM kline_cache WHERE ticker=?", (ticker,),
+                "SELECT ttl FROM kline_cache WHERE ticker=?",
+                (ticker,),
             ).fetchall()
             ttls = [r[0] for r in rows_hist]
             assert _KLINE_HISTORICAL_TTL in ttls

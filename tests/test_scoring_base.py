@@ -112,7 +112,10 @@ class TestBoostResult:
 
     def test_with_flags(self) -> None:
         r = BoostResult(
-            boosted_risk=70.0, base_risk=40.0, total_boost=30.0, flags_applied=["ST", "SUSPENDED"],
+            boosted_risk=70.0,
+            base_risk=40.0,
+            total_boost=30.0,
+            flags_applied=["ST", "SUSPENDED"],
         )
         assert r.flags_applied == ["ST", "SUSPENDED"]
 

@@ -120,7 +120,8 @@ class TestSyncWhitelist:
             patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
-                "trade_krono_cli.data.fetch_kline_incremental", return_value=mock_df,
+                "trade_krono_cli.data.fetch_kline_incremental",
+                return_value=mock_df,
             ) as mock_fetch,
         ):
             mock_settings.return_value.sync_whitelist = "600519,000858"

@@ -62,7 +62,8 @@ bad_order = conn.execute(
 ).fetchall()
 for r in bad_order:
     data = conn.execute(
-        "SELECT data FROM kline_cache WHERE ticker=? AND freq=? AND start=? AND end=?", r[:4],
+        "SELECT data FROM kline_cache WHERE ticker=? AND freq=? AND start=? AND end=?",
+        r[:4],
     ).fetchone()[0]
     df = pickle.loads(data)
     ts = df["timestamps"]
@@ -122,7 +123,8 @@ multi = conn.execute(
 ).fetchall()
 for t, _c in multi:
     rows = conn.execute(
-        "SELECT start, end FROM kline_cache WHERE ticker=? AND freq='d' ORDER BY start", (t,),
+        "SELECT start, end FROM kline_cache WHERE ticker=? AND freq='d' ORDER BY start",
+        (t,),
     ).fetchall()
     total_k = sum(
         len(pickle.loads(r[0]))

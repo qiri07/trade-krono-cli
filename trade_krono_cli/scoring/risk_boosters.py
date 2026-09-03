@@ -30,7 +30,10 @@ class FixedBoostBooster(RiskBoostStrategy):
     name = "fixed_boost"
 
     def _boost_impl(
-        self, base_risk: float, flags: list[str], params: dict | None = None,
+        self,
+        base_risk: float,
+        flags: list[str],
+        params: dict | None = None,
     ) -> BoostResult:
         multiplier = (params or {}).get("multiplier", 1.0)
         total_boost = 0.0
@@ -69,7 +72,10 @@ class ScaledBoostBooster(RiskBoostStrategy):
     name = "scaled_boost"
 
     def _boost_impl(
-        self, base_risk: float, flags: list[str], params: dict | None = None,
+        self,
+        base_risk: float,
+        flags: list[str],
+        params: dict | None = None,
     ) -> BoostResult:
         multiplier = (params or {}).get("multiplier", 1.0)
         total_boost = 0.0
@@ -112,13 +118,19 @@ class DiminishingBoostBooster(RiskBoostStrategy):
     name = "diminishing_boost"
 
     def _boost_impl(
-        self, base_risk: float, flags: list[str], params: dict | None = None,
+        self,
+        base_risk: float,
+        flags: list[str],
+        params: dict | None = None,
     ) -> BoostResult:
         power = (params or {}).get("diminishing_power", 0.5)
         n_flags = len(flags)
         if n_flags == 0:
             return BoostResult(
-                boosted_risk=base_risk, base_risk=base_risk, total_boost=0.0, flags_applied=[],
+                boosted_risk=base_risk,
+                base_risk=base_risk,
+                total_boost=0.0,
+                flags_applied=[],
             )
 
         # 计算原始总加分
