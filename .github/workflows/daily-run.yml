@@ -2,7 +2,7 @@
 # 每日定时投研分析流水线
 #
 # 触发方式：
-#   1. 定时触发：每个交易日北京时间 15:30（UTC 07:30）
+#   1. 定时触发：每个交易日北京时间 15:05（UTC 07:05）
 #   2. 手动触发：workflow_dispatch，可配置股票池、日期等参数
 #
 # 必要 Secrets（GitHub Settings → Secrets and variables → Actions）：
@@ -85,16 +85,17 @@ on:
         required: false
         default: 'Chinese'
 
-# ── 并发控制：同一时间只运行一个分析任务 ──────────────────────────────
+# ── 并发控制：同一时间只运行一个分析任务，不同 run 互不干扰 ─────────
 concurrency:
-  group: daily-analysis
-  cancel-in-progress: true
+  group: daily-analysis-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   analysis:
     name: 投研分析
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # TA+Kronos 并行分析含 LLM 调用，单次需 20-40 分钟，预留充足时间
+    timeout-minutes: 60
 
     steps:
       # ── 随机延迟，避免固定时间对数据源的并发访问 ────────────────────
@@ -123,8 +124,7 @@ jobs:
 
       # ── 创建必要目录 ─────────────────────────────────────────────────
       - name: 创建必要目录
-        run: |
-          mkdir -p outputs/results outputs/cache
+        run: mkdir -p outputs/results outputs/cache
 
       # ── 安装数据源依赖（mootdx/akshare/tushare，支持 --auto-universe）────
       - name: 安装数据源扩展
@@ -132,6 +132,7 @@ jobs:
 
       # ── 执行投研分析 ─────────────────────────────────────────────────
       - name: 运行投研分析流水线
+        id: run_pipeline
         env:
           # ── LLM API Keys（必须至少配置一个）───────────────────────────
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -161,7 +162,7 @@ jobs:
           MIN_CONFIDENCE: ${{ github.event.inputs.min_confidence || vars.MIN_CONFIDENCE || '55.0' }}
           ALLOWED_SIGNALS: ${{ github.event.inputs.signals || vars.ALLOWED_SIGNALS || 'BUY,HOLD' }}
 
-          # ── 数据源配置 ────────────────────────────────────────────────
+          # ── 数据源配置 ─────────────────────────────────────────────────
           BAOSTOCK_SLEEP_SEC: ${{ vars.BAOSTOCK_SLEEP_SEC || '1.0' }}
 
           # ── 外部项目路径（GitHub Actions 环境默认无需修改）─────────────
@@ -227,6 +228,7 @@ jobs:
             else
               echo "  ⚠️ 未配置股票列表且未启用自动筛选，请设置 TICKER_LIST 变量或使用 --auto-universe"
               echo "  ⚠️ 跳过本次分析"
+              echo "::warning::未配置股票列表且未启用自动筛选，跳过本次分析"
               exit 0
             fi
           fi
@@ -275,7 +277,7 @@ jobs:
             ls -la outputs/results/ 2>/dev/null || true
             echo ""
             echo "前 5 条结果:"
-            python3 scripts/_gh_summary.py 2>/dev/null || true
+            uv run python scripts/_gh_summary.py 2>/dev/null || true
           else
             echo "⚠️ 未生成 results.json（可能流水线未执行或已跳过）"
           fi
@@ -290,29 +292,46 @@ jobs:
       # ── 飞书通知：无论成功失败均推送 ─────────────────────────────
       - name: 推送飞书通知
         if: vars.FEISHU_WEBHOOK_URL != ''
-        uses: astral-sh/setup-uv@v5
-        with:
-          python-version: '3.12'
-          enable-cache: false
-
-      - name: 推送飞书通知
-        if: vars.FEISHU_WEBHOOK_URL != ''
+        continue-on-error: true
+        env:
+          ANALYSIS_DATE: ${{ github.event.inputs.date || '' }}
         run: |
           STATUS="success"
           if [ "${{ job.status }}" = "failure" ]; then STATUS="failure"; fi
           if [ "${{ job.status }}" = "cancelled" ]; then STATUS="cancelled"; fi
-          TICKERS_DISPLAY="${TICKERS:-全市场自动筛选}"
+
+          # 确定股票列表显示
+          if [ -n "${{ github.event.inputs.tickers || vars.TICKER_LIST || secrets.TICKER_LIST }}" ]; then
+            TICKERS_DISPLAY="${{ github.event.inputs.tickers || vars.TICKER_LIST || secrets.TICKER_LIST }}"
+          else
+            AUTO_UNIVERSE="${{ github.event.inputs.auto_universe || vars.AUTO_UNIVERSE || 'false' }}"
+            if [ "$AUTO_UNIVERSE" = "true" ]; then
+              TICKERS_DISPLAY="全市场自动筛选"
+            else
+              TICKERS_DISPLAY="（未配置）"
+            fi
+          fi
+
+          # 确定分析日期
+          ANALYSIS_DATE_INPUT="${{ github.event.inputs.date }}"
+          if [ -z "$ANALYSIS_DATE_INPUT" ]; then
+            ANALYSIS_DATE_DISPLAY=$(TZ='Asia/Shanghai' date -d 'yesterday' '+%Y-%m-%d' 2>/dev/null \
+              || date -v-1d '+%Y-%m-%d' 2>/dev/null \
+              || date -d '1 day ago' '+%Y-%m-%d')
+          else
+            ANALYSIS_DATE_DISPLAY="$ANALYSIS_DATE_INPUT"
+          fi
 
           # 读取 Top 3 推荐
           TOP3=""
           if [ -f "outputs/results.json" ]; then
-            TOP3=$(uv run python scripts/parse_top3.py 2>/dev/null)
+            TOP3=$(uv run python scripts/parse_top3.py 2>/dev/null || echo "")
           fi
           [ -z "$TOP3" ] && TOP3="（无报告生成）"
 
           uv run python scripts/feishu_notify.py daily \
             --status "$STATUS" \
-            --date "$ANALYSIS_DATE" \
+            --date "$ANALYSIS_DATE_DISPLAY" \
             --tickers "$TICKERS_DISPLAY" \
             --top3 "$TOP3" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
