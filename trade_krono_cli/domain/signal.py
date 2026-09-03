@@ -125,7 +125,7 @@ class SignalAssessment:
     # ── 序列化 ──────────────────────────────────────────────────────────
 
     def to_dict(self) -> dict:
-        d: dict[str, Any] = {
+        d: dict[str, Any] = {  # Any: dict contains mixed-tuple values from external Kronos scoring
             "ticker": self.ticker,
             "eval_date": self.eval_date,
             "final_signal": self.final_signal.value,

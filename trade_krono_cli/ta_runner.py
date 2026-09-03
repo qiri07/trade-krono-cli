@@ -359,7 +359,7 @@ class TradingAgentsRunner:
 
         # 使用智能重试执行分析
         try:
-            return self._analyze_one_retriable(ticker, date)  # type: ignore[call-arg,misc,return-value]
+            return self._analyze_one_retriable(ticker, date)  # type: ignore[call-arg,misc,return-value]  # retriable fn signature differs from outer wrapper
         except Exception as e:
             # 重试耗尽，记录失败
             result.error = f"{type(e).__name__}: {e}"

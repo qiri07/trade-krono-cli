@@ -78,8 +78,8 @@ class KronosSession:
             no_cache=no_cache,
             sample_count=sample_count,
         )
-        self._kronos_adapter: Any | None = None
-        self._predictor: Any | None = None
+        self._kronos_adapter: Any | None = None  # External Kronos project adapter; lazy-loaded
+        self._predictor: Any | None = None  # External Kronos predictor; loaded after model warm-up
         self._device: str = "cpu"
         self._max_context: int = 512
         self._loaded = False

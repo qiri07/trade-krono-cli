@@ -95,7 +95,9 @@ class InvestmentDecision:
     # ── 序列化 ──────────────────────────────────────────────────────────
 
     def to_dict(self) -> dict:
-        d: dict[str, Any] = {
+        d: dict[
+            str, Any
+        ] = {  # Any: serialization to external pipeline consumes heterogeneous values
             "ticker": self.ticker,
             "eval_date": self.eval_date,
             "signal": self.signal.value,
@@ -182,7 +184,9 @@ class InvestmentDecision:
 
     def to_legacy_dict(self) -> dict:
         """转换为旧版 pipeline dict（向后兼容）。"""
-        d: dict[str, Any] = {
+        d: dict[
+            str, Any
+        ] = {  # Any: legacy dict with heterogeneous values for backward compatibility
             "ticker": self.ticker,
             "signal": self.signal.value,
             "confidence": self.confidence,

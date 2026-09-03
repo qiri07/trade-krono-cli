@@ -319,7 +319,7 @@ class KronosRunner:
                 return res
 
         try:
-            return self._predict_one_retriable(ticker, eval_date)  # type: ignore[call-arg,misc,return-value]
+            return self._predict_one_retriable(ticker, eval_date)  # type: ignore[call-arg,misc,return-value]  # retriable fn signature differs from outer wrapper
         except Exception as e:
             res.error = f"{type(e).__name__}: {e}"
             category, _desc = classify_error(e)

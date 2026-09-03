@@ -36,7 +36,7 @@ try:
     _HAS_DUCKDB = True
 except ImportError:
     _HAS_DUCKDB = False
-    duckdb = None  # type: ignore
+    duckdb = None  # type: ignore[misc]  # Optional dependency; set via conditional import above
 
 
 def _duckdb_available() -> bool:
