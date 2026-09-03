@@ -35,28 +35,45 @@ _KEY_REDACT_RE = re.compile(
 # 输入校验
 # ═══════════════════════════════════════════════════════
 
-_TICKER_RE = re.compile(r"^(?:sh\.|sz\.|bj\.)?([0-9]{6})$")
+_TICKER_RE = re.compile(
+    r"^(?:"
+    r"(?P<prefix>sh|sz|bj)\.(?P<code>[0-9]{6})"  # prefix format: sh.600519
+    r"|"
+    r"(?P<code2>[0-9]{6})\.(?P<suffix>sh|sz|bj)"  # suffix format: 600519.SH
+    r"|"
+    r"(?P<code3>[0-9]{6})"  # bare code: 600519
+    r")$",
+    re.IGNORECASE,
+)
 
 
 def validate_ticker(ticker: str) -> str:
     """校验并归一化 A 股代码。
-    接受: '600519', 'sh.600519', 'SZ.000858', 'bj.920002'
+    接受: '600519', 'sh.600519', 'SZ.000858', '600519.SH', 'bj.920002'
     返回: 'sh.600519', 'sz.000858' 或 'bj.920002'.
     """
-    ticker = ticker.strip().lower()
+    ticker = ticker.strip()
     m = _TICKER_RE.match(ticker)
     if not m:
-        msg = f"无效股票代码: '{ticker}'，应为 6 位数字，如 600519 / sh.600519 / bj.920002"
+        msg = f"无效股票代码: '{ticker}'，应为 6 位数字，如 600519 / sh.600519 / 600519.SH / bj.920002"
         raise ValueError(
             msg,
         )
-    code = m.group(1)
-    # 判断市场：以 9 开头（含 920xxx 北交所）归入 bj，6/5 开头归入 sh，其余归入 sz
-    if code.startswith(("6", "5")):
-        return f"sh.{code}"
-    if code.startswith("9"):
-        return f"bj.{code}"
-    return f"sz.{code}"
+    # 提取代码和市场前缀/后缀
+    code = m.group("code") or m.group("code2") or m.group("code3")
+    prefix = (m.group("prefix") or "").lower()
+    suffix = (m.group("suffix") or "").lower()
+    exchange = prefix or suffix
+
+    # 未指定市场时根据代码推断
+    if not exchange:
+        if code.startswith(("6", "5")):
+            exchange = "sh"
+        elif code.startswith("9"):
+            exchange = "bj"
+        else:
+            exchange = "sz"
+    return f"{exchange}.{code}"
 
 
 def validate_date(date_str: str) -> str:

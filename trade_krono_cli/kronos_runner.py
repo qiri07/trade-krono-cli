@@ -391,8 +391,8 @@ class KronosRunner:
             res.elapsed_sec = round(time.time() - t0, 2)
         return res
 
-    @staticmethod
     def _prepare_stream(
+        self,
         df: pd.DataFrame,
         ticker: str,
         eval_date: str,
@@ -408,7 +408,8 @@ class KronosRunner:
         last_close = float(x_df["close"].iloc[-1])
         from trade_krono_cli.data import next_business_days
 
-        future = next_business_days(eval_date, 30)[:30]
+        pred_len = self._settings_obj.kronos_pred_len
+        future = next_business_days(eval_date, pred_len)[:pred_len]
         y_ts = pd.Series(future, name="y_timestamp")
         return x_df, x_ts, y_ts, last_close
 
