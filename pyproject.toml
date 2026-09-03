@@ -101,4 +101,4 @@ per-file-ignores = { "trade_krono_cli/domain/__init__.py" = ["I001"] }
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
-exclude = ["external/", ".venv/"]
+exclude = ["external/", ".venv/", "tests/"]
