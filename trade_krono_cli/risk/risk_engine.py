@@ -229,7 +229,7 @@ class RiskEngine:
     用法：
         engine = RiskEngine()
         score, metrics = engine.assess(ticker, date, kline_df, quote_data=None)
-        print(metrics.print_report())
+        # score: float (0-100)，metrics: RiskMetrics
 
         # 调整预期收益
         adj = metrics.return_adjustment  # e.g. -0.062

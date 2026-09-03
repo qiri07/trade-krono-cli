@@ -116,8 +116,11 @@ def validate_settings(s: Settings) -> tuple[list[str], list[str]]:
         errors.append(f"FILTER_NEW_STOCK_MIN_DAYS={s.filter_new_stock_min_days} 必须 >= 5")
 
     kc = s.filter_kline_min_completeness
-    if not (0 < kc <= 1.0):
-        errors.append(f"FILTER_KLINE_MIN_COMPLETENESS={kc} 必须在 (0, 1.0] 范围内")
+    try:
+        if not (0 < kc <= 1.0):
+            errors.append(f"FILTER_KLINE_MIN_COMPLETENESS={kc} 必须在 (0, 1.0] 范围内")
+    except TypeError:
+        errors.append(f"FILTER_KLINE_MIN_COMPLETENESS={kc} 不是合法数值")
 
     # ── 评分策略配置校验 ─────────────────────────────────────────────
     valid_scorers = {"linear", "multiplicative", "rank_based"}

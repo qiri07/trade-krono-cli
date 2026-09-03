@@ -205,3 +205,125 @@ def test_warning_ta_cache_fallback_mismatch() -> None:
     errors, warnings = validate_settings(s)
     assert errors == []
     assert any("TA_CACHE_FALLBACK_ENABLED" in w for w in warnings)
+
+
+# ── 过滤配置校验 ──────────────────────────────────────────────────────────────
+
+
+def test_filter_market_cap_range_valid() -> None:
+    """有效 market_cap_range 不应产生错误。"""
+    s = _make_settings(filter_market_cap_range="100,5000")
+    errors, _ = validate_settings(s)
+    assert errors == []
+
+
+def test_filter_market_cap_range_bad_format() -> None:
+    """market_cap_range 格式错误时应产生错误。"""
+    s = _make_settings(filter_market_cap_range="abc")
+    errors, _ = validate_settings(s)
+    assert any("FILTER_MARKET_CAP_RANGE" in e for e in errors)
+
+
+def test_filter_market_cap_range_inverted() -> None:
+    """market_cap_range 下限 >= 上限时应产生错误。"""
+    s = _make_settings(filter_market_cap_range="5000,100")
+    errors, _ = validate_settings(s)
+    assert any("必须小于" in e for e in errors)
+
+
+def test_filter_pe_range_invalid() -> None:
+    """filter_pe_range 格式错误时应产生错误。"""
+    s = _make_settings(filter_pe_range="bad")
+    errors, _ = validate_settings(s)
+    assert any("FILTER_PE_RANGE" in e for e in errors)
+
+
+def test_filter_pb_range_invalid() -> None:
+    """filter_pb_range 格式错误时应产生错误。"""
+    s = _make_settings(filter_pb_range="bad")
+    errors, _ = validate_settings(s)
+    assert any("FILTER_PB_RANGE" in e for e in errors)
+
+
+def test_filter_max_risk_score_invalid() -> None:
+    """filter_max_risk_score 非数值时应产生错误。"""
+    s = _make_settings(filter_max_risk_score="abc")
+    errors, _ = validate_settings(s)
+    assert any("FILTER_MAX_RISK_SCORE" in e for e in errors)
+
+
+def test_filter_max_risk_score_out_of_range() -> None:
+    """filter_max_risk_score > 1 时应产生错误。"""
+    s = _make_settings(filter_max_risk_score="1.5")
+    errors, _ = validate_settings(s)
+    assert any("FILTER_MAX_RISK_SCORE" in e for e in errors)
+
+
+def test_filter_min_volume_ratio_invalid() -> None:
+    """filter_min_volume_ratio 非数值时应产生错误。"""
+    s = _make_settings(filter_min_volume_ratio="abc")
+    errors, _ = validate_settings(s)
+    assert any("FILTER_MIN_VOLUME_RATIO" in e for e in errors)
+
+
+def test_filter_min_volume_ratio_non_positive() -> None:
+    """filter_min_volume_ratio <= 0 时应产生错误。"""
+    s = _make_settings(filter_min_volume_ratio="-1.0")
+    errors, _ = validate_settings(s)
+    assert any("FILTER_MIN_VOLUME_RATIO" in e for e in errors)
+
+
+def test_filter_new_stock_min_days_too_low() -> None:
+    """filter_new_stock_min_days < 5 时应产生错误。"""
+    s = _make_settings(filter_new_stock_min_days=3)
+    errors, _ = validate_settings(s)
+    assert any("FILTER_NEW_STOCK_MIN_DAYS" in e for e in errors)
+
+
+def test_filter_new_stock_min_days_valid() -> None:
+    """filter_new_stock_min_days >= 5 时应通过校验。"""
+    s = _make_settings(filter_new_stock_min_days=5)
+    errors, _ = validate_settings(s)
+    assert errors == []
+
+
+def test_filter_kline_min_completeness_invalid() -> None:
+    """filter_kline_min_completeness 非数值时应产生错误。"""
+    s = _make_settings(filter_kline_min_completeness="abc")
+    errors, _ = validate_settings(s)
+    assert any("FILTER_KLINE_MIN_COMPLETENESS" in e for e in errors)
+
+
+def test_filter_kline_min_completeness_out_of_range() -> None:
+    """filter_kline_min_completeness > 1.0 时应产生错误。"""
+    s = _make_settings(filter_kline_min_completeness=1.5)
+    errors, _ = validate_settings(s)
+    assert any("FILTER_KLINE_MIN_COMPLETENESS" in e for e in errors)
+
+
+def test_filter_kline_min_completeness_zero() -> None:
+    """filter_kline_min_completeness = 0 时应产生错误（必须 > 0）。"""
+    s = _make_settings(filter_kline_min_completeness=0.0)
+    errors, _ = validate_settings(s)
+    assert any("FILTER_KLINE_MIN_COMPLETENESS" in e for e in errors)
+
+
+def test_data_provider_invalid() -> None:
+    """无效 data_provider 应产生错误。"""
+    s = _make_settings(data_provider="invalid_source")
+    errors, _ = validate_settings(s)
+    assert any("DATA_PROVIDER" in e for e in errors)
+
+
+def test_data_fallback_contains_primary() -> None:
+    """data_fallback 包含主数据源时应产生错误。"""
+    s = _make_settings(data_provider="baostock", data_fallback="baostock,akshare")
+    errors, _ = validate_settings(s)
+    assert any("DATA_FALLBACK" in e and "baostock" in e for e in errors)
+
+
+def test_data_fallback_unknown_source() -> None:
+    """data_fallback 包含未知数据源时应产生错误。"""
+    s = _make_settings(data_provider="baostock", data_fallback="baostock,unknown_provider")
+    errors, _ = validate_settings(s)
+    assert any("未知源" in e or "unknown_provider" in e for e in errors)
