@@ -1,5 +1,4 @@
-"""
-Kronos 适配器实现。
+"""Kronos 适配器实现。
 
 封装 cli_anything.kronos 的全部导入和调用，
 业务代码只通过 KronosAdapter 与 Kronos 外部项目交互。
@@ -8,21 +7,23 @@ Kronos 适配器实现。
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 
-import pandas as pd
 from loguru import logger
 
 from trade_krono_cli.adapters.base import KronosAdapter
 from trade_krono_cli.errors import ModelLoadError
 from trade_krono_cli.security import ensure_import_path
 
+if TYPE_CHECKING:
+    import pandas as pd
+
 
 class KronosAdapterImpl(KronosAdapter):
     """基于 cli_anything.kronos 的 Kronos 预测适配器实现。"""
 
     def __init__(self) -> None:
-        self._predictor: Optional[Any] = None
+        self._predictor: Any | None = None
         self._device: str = "cpu"
         self._max_context: int = 512
 
@@ -41,10 +42,8 @@ class KronosAdapterImpl(KronosAdapter):
                 pass
         return "cpu"
 
-    def load_model(self, settings: Any) -> None:
-        """
-        懒加载 Kronos 模型：注入路径 → 导入 load_model → 实例化。
-        """
+    def load_model(self, settings: Any) -> None:  # noqa: ANN401 — Settings 来自 trade_krono_cli.config，此处为懒加载注入点
+        """懒加载 Kronos 模型：注入路径 → 导入 load_model → 实例化。"""
         if self._predictor is not None:
             return
 
@@ -71,10 +70,13 @@ class KronosAdapterImpl(KronosAdapter):
             logger.info(f"✅ KronosAdapter 模型加载完成 ({time.time() - t0:.1f}s, device={device})")
 
         except ImportError as e:
-            raise ModelLoadError(
+            msg = (
                 f"无法导入 cli_anything.kronos：{e}。"
                 f"请确认已安装 Kronos agent-harness "
                 f"（pip install -e {settings.kronos_root / 'agent-harness'}）"
+            )
+            raise ModelLoadError(
+                msg,
             ) from e
 
     @property
@@ -90,9 +92,9 @@ class KronosAdapterImpl(KronosAdapter):
 
     def predict(
         self,
-        df: Any,
-        x_timestamp: Any,
-        y_timestamp: Any,
+        df: Any,  # noqa: ANN401 — Kronos 框架内部 DataFrame 类型
+        x_timestamp: Any,  # noqa: ANN401 — Kronos 框架时间戳类型
+        y_timestamp: Any,  # noqa: ANN401 — Kronos 框架时间戳类型
         pred_len: int,
         T: float,
         top_p: float,
@@ -100,7 +102,8 @@ class KronosAdapterImpl(KronosAdapter):
     ) -> pd.DataFrame:
         """单只股票预测，返回含 'close' 列的 DataFrame。"""
         if self._predictor is None:
-            raise RuntimeError("KronosAdapter 模型尚未加载，请先调用 load_model()")
+            msg = "KronosAdapter 模型尚未加载，请先调用 load_model()"
+            raise RuntimeError(msg)
         return self._predictor.predict(
             df=df,
             x_timestamp=x_timestamp,
@@ -124,7 +127,8 @@ class KronosAdapterImpl(KronosAdapter):
     ) -> list[pd.DataFrame]:
         """批量预测，返回 DataFrame 列表。"""
         if self._predictor is None:
-            raise RuntimeError("KronosAdapter 模型尚未加载，请先调用 load_model()")
+            msg = "KronosAdapter 模型尚未加载，请先调用 load_model()"
+            raise RuntimeError(msg)
         return self._predictor.predict_batch(
             df_list=df_list,
             x_timestamp_list=x_timestamp_list,

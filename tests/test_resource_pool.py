@@ -1,6 +1,7 @@
 """测试 ResourcePool — 统一并发资源管理器。"""
 
 import asyncio
+from typing import NoReturn
 
 from trade_krono_cli.pipeline.resource_pool import (
     PoolConfig,
@@ -13,27 +14,27 @@ from trade_krono_cli.pipeline.resource_pool import (
 class TestResourcePool:
     """ResourcePool 基础功能测试。"""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         clear_pool_singleton()
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         clear_pool_singleton()
 
-    def test_submit_cpu(self):
+    def test_submit_cpu(self) -> None:
         """submit_cpu 应提交任务并返回 Future。"""
         pool = ResourcePool()
         fut = pool.submit_cpu(lambda: 42)
         assert fut.result() == 42
         pool.close()
 
-    def test_submit_io(self):
+    def test_submit_io(self) -> None:
         """submit_io 应提交 IO 任务。"""
         pool = ResourcePool()
         fut = pool.submit_io(lambda: "io_result")
         assert fut.result() == "io_result"
         pool.close()
 
-    def test_run_parallel(self):
+    def test_run_parallel(self) -> None:
         """run_parallel 应并行执行多个 callable。"""
         pool = ResourcePool()
         results = pool.run_parallel(
@@ -41,26 +42,27 @@ class TestResourcePool:
                 lambda: 1,
                 lambda: 2,
                 lambda: 3,
-            ]
+            ],
         )
         assert sorted(results) == [1, 2, 3]
         pool.close()
 
-    def test_run_parallel_empty(self):
+    def test_run_parallel_empty(self) -> None:
         """空列表应返回空列表。"""
         pool = ResourcePool()
         assert pool.run_parallel([]) == []
         pool.close()
 
-    def test_run_parallel_with_exception(self):
+    def test_run_parallel_with_exception(self) -> None:
         """单个 callable 抛异常不应中断其他任务。"""
         pool = ResourcePool()
 
-        def good():
+        def good() -> str:
             return "ok"
 
-        def bad():
-            raise ValueError("intentional failure")
+        def bad() -> NoReturn:
+            msg = "intentional failure"
+            raise ValueError(msg)
 
         results = pool.run_parallel([good, bad, good])
         assert results[0] == "ok"
@@ -68,7 +70,7 @@ class TestResourcePool:
         assert results[2] == "ok"
         pool.close()
 
-    def test_config_custom_workers(self):
+    def test_config_custom_workers(self) -> None:
         """自定义 PoolConfig 应生效。"""
         config = PoolConfig(cpu_workers=4, io_workers=2)
         pool = ResourcePool(config)
@@ -76,7 +78,7 @@ class TestResourcePool:
         assert pool._config.io_workers == 2
         pool.close()
 
-    def test_config_llm_and_gpu_defaults(self):
+    def test_config_llm_and_gpu_defaults(self) -> None:
         """PoolConfig 默认值应包含 LLM 和 GPU 配置。"""
         config = PoolConfig()
         assert config.llm_concurrency == 3
@@ -84,7 +86,7 @@ class TestResourcePool:
         pool = ResourcePool(config)
         pool.close()
 
-    def test_singleton_get_pool(self):
+    def test_singleton_get_pool(self) -> None:
         """get_pool() 应返回单例。"""
         p1 = get_pool()
         p2 = get_pool()
@@ -92,8 +94,8 @@ class TestResourcePool:
         p1.close()
         clear_pool_singleton()
 
-    def test_context_manager(self):
-        """with 语句应自动关闭池。"""
+    def test_context_manager(self) -> None:
+        """With 语句应自动关闭池。"""
         with ResourcePool() as pool:
             fut = pool.submit_cpu(lambda: "done")
             assert fut.result() == "done"
@@ -102,7 +104,7 @@ class TestResourcePool:
         pool.close()  # 二次 close 不应抛异常
         pool.close()  # 三次也安全
 
-    def test_separate_pools_are_independent(self):
+    def test_separate_pools_are_independent(self) -> None:
         """不同 ResourcePool 实例应有独立的线程池。"""
         pool_a = ResourcePool()
         pool_b = ResourcePool()
@@ -110,7 +112,7 @@ class TestResourcePool:
         pool_a.close()
         pool_b.close()
 
-    def test_llm_semaphore_lazy_init(self):
+    def test_llm_semaphore_lazy_init(self) -> None:
         """LLM 信号量应在首次访问时懒初始化。"""
         pool = ResourcePool()
         assert pool._llm_semaphore is None
@@ -120,7 +122,7 @@ class TestResourcePool:
         assert sem._value == pool._config.llm_concurrency
         pool.close()
 
-    def test_gpu_semaphore_lazy_init(self):
+    def test_gpu_semaphore_lazy_init(self) -> None:
         """GPU 信号量应在首次访问时懒初始化。"""
         pool = ResourcePool()
         assert pool._gpu_semaphore is None
@@ -130,13 +132,13 @@ class TestResourcePool:
         assert sem._value == pool._config.gpu_queue_size
         pool.close()
 
-    def test_llm_async_context(self):
+    def test_llm_async_context(self) -> None:
         """LLM 异步上下文管理器应正确限制并发。"""
         pool = ResourcePool(config=PoolConfig(llm_concurrency=2))
         max_concurrent = 0
         current = 0
 
-        async def tracked_task():
+        async def tracked_task() -> None:
             nonlocal max_concurrent, current
             async with pool.llm():
                 current += 1
@@ -144,20 +146,20 @@ class TestResourcePool:
                 await asyncio.sleep(0.01)
                 current -= 1
 
-        async def _run():
+        async def _run() -> None:
             await asyncio.gather(*[tracked_task() for _ in range(6)])
 
         asyncio.run(_run())
         assert max_concurrent <= 2
         pool.close()
 
-    def test_gpu_async_context(self):
+    def test_gpu_async_context(self) -> None:
         """GPU 异步上下文管理器应正确限制并发（queue_size=1）。"""
         pool = ResourcePool(config=PoolConfig(gpu_queue_size=1))
         max_concurrent = 0
         current = 0
 
-        async def tracked_task():
+        async def tracked_task() -> None:
             nonlocal max_concurrent, current
             async with pool.gpu():
                 current += 1
@@ -165,7 +167,7 @@ class TestResourcePool:
                 await asyncio.sleep(0.01)
                 current -= 1
 
-        async def _run():
+        async def _run() -> None:
             await asyncio.gather(*[tracked_task() for _ in range(4)])
 
         asyncio.run(_run())
@@ -174,12 +176,11 @@ class TestResourcePool:
 
 
 class TestDeprecatedBatchRunner:
-    """
-    BatchRunner（async）已停止使用，保留测试确保不被破坏。
+    """BatchRunner（async）已停止使用，保留测试确保不被破坏。
     生产代码应使用 ResourcePool。
     """
 
-    def test_batch_runner_still_importable(self):
+    def test_batch_runner_still_importable(self) -> None:
         """BatchRunner 仍可导入（向后兼容）。"""
         from trade_krono_cli.batch.batch_runner import BatchRunner
 

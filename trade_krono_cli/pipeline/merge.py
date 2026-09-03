@@ -1,5 +1,4 @@
-"""
-pipeline.merge — 结果合并 + 综合打分。
+"""pipeline.merge — 结果合并 + 综合打分。
 
 从 trade_krono_cli.merge 收敛而来，职责明确：
   - default_scorer   ：综合打分函数（满分 100），输出 ranking_score
@@ -16,30 +15,35 @@ V0.3 语义升级：
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import TYPE_CHECKING
 
-import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.configs.risk import RiskConfig
 from trade_krono_cli.configs.scoring import ScoringConfig, ScoringStrategyConfig
 from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.domain.signal import _compute_ev as _domain_compute_ev
-from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.risk.models import adjust_expected_return
 from trade_krono_cli.risk.risk_engine import RiskEngine
 from trade_krono_cli.scoring.registry import get_scorer_registry
-from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.trading_constraints import (
     T1Tracker,
     check_all_constraints,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import pandas as pd
+
+    from trade_krono_cli.configs.risk import RiskConfig
+    from trade_krono_cli.kronos_runner import KronosForecastResult
+    from trade_krono_cli.ta_runner import StockAnalysisResult
+
 REASONING_TRUNCATE_LEN = 500
 DEFAULT_COST_BPS = 17.0
 
 
-def _uncertainty_confidence_bonus(pu: Optional[dict], scoring: ScoringConfig) -> float:
+def _uncertainty_confidence_bonus(pu: dict | None, scoring: ScoringConfig) -> float:
     """基于预测不确定性的置信度加分/减分。"""
     if not pu:
         return 0.0
@@ -48,22 +52,21 @@ def _uncertainty_confidence_bonus(pu: Optional[dict], scoring: ScoringConfig) ->
         return 0.0
     if cs >= scoring.uncertainty_high_threshold:
         return scoring.uncertainty_high_bonus
-    elif cs >= scoring.uncertainty_med_threshold:
+    if cs >= scoring.uncertainty_med_threshold:
         return scoring.uncertainty_med_bonus
-    else:
-        return scoring.uncertainty_low_penalty
+    return scoring.uncertainty_low_penalty
 
 
 def _compute_ev_for_merged(
-    kronos: Optional[KronosForecastResult],
+    kronos: KronosForecastResult | None,
     cost_bps: float = DEFAULT_COST_BPS,
-) -> tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
-    """
-    从 KronosForecastResult 计算 EV 指标（委托给领域层 _compute_ev）。
+) -> tuple[float | None, float | None, float | None, float | None]:
+    """从 KronosForecastResult 计算 EV 指标（委托给领域层 _compute_ev）。
 
     Returns
     -------
     (prob_win, prob_loss, expected_value, risk_adjusted_ev)
+
     """
     if kronos is None:
         return None, None, None, None
@@ -73,7 +76,7 @@ def _compute_ev_for_merged(
         return None, None, None, None
     try:
         ret = float(ret)
-        if not (ret == ret):  # NaN check
+        if ret != ret:  # NaN check
             return None, None, None, None
     except (TypeError, ValueError):
         return None, None, None, None
@@ -94,9 +97,8 @@ def _compute_ev_for_merged(
     return prob_win, prob_loss, ev, raev
 
 
-def default_scorer(merged: dict, scoring: Optional[ScoringConfig] = None) -> float:
-    """
-    综合打分（满分 100），输出 ranking_score。
+def default_scorer(merged: dict, scoring: ScoringConfig | None = None) -> float:
+    """综合打分（满分 100），输出 ranking_score。
 
     ranking_score 是辅助排序分，不是收益率、Alpha、Sharpe 或 EV。
     真正的决策依据是 merged["expected_value"]。
@@ -137,8 +139,8 @@ def default_scorer(merged: dict, scoring: Optional[ScoringConfig] = None) -> flo
 
 def _make_empty_merged(
     ticker: str,
-    ta: Optional[StockAnalysisResult],
-    kronos: Optional[KronosForecastResult],
+    ta: StockAnalysisResult | None,
+    kronos: KronosForecastResult | None,
 ) -> dict:
     pu = None
     if kronos and kronos.prediction_uncertainty:
@@ -183,9 +185,9 @@ def run_risk_assessment(
     ticker: str,
     date: str,
     kline_df: pd.DataFrame,
-    quote_data: Optional[dict] = None,
-    ta_result: Optional[StockAnalysisResult] = None,
-    risk_config: Optional[RiskConfig] = None,
+    quote_data: dict | None = None,
+    ta_result: StockAnalysisResult | None = None,
+    risk_config: RiskConfig | None = None,
 ) -> tuple[float, dict, dict]:
     """对单只股票运行风险引擎。"""
     engine = RiskEngine(risk_config=risk_config)
@@ -209,18 +211,17 @@ def run_risk_assessment(
 def merge_results(
     ta_results: list[StockAnalysisResult],
     kronos_results: list[KronosForecastResult],
-    scorer: Optional[Callable[..., float]] = None,
-    kline_data: Optional[dict[str, pd.DataFrame]] = None,
-    quote_data: Optional[dict[str, dict]] = None,
-    constraints_config: Optional[ConstraintConfig] = None,
-    t1_tracker: Optional[T1Tracker] = None,
-    scoring_config: Optional[ScoringConfig] = None,
-    risk_config: Optional[RiskConfig] = None,
-    scoring_strategy: Optional[ScoringStrategyConfig] = None,
+    scorer: Callable[..., float] | None = None,
+    kline_data: dict[str, pd.DataFrame] | None = None,
+    quote_data: dict[str, dict] | None = None,
+    constraints_config: ConstraintConfig | None = None,
+    t1_tracker: T1Tracker | None = None,
+    scoring_config: ScoringConfig | None = None,
+    risk_config: RiskConfig | None = None,
+    scoring_strategy: ScoringStrategyConfig | None = None,
     degrade_mode: str = "strict",
 ) -> list[dict]:
-    """
-    将 TA 分析结果和 Kronos 预测结果合并。
+    """将 TA 分析结果和 Kronos 预测结果合并。
 
     V0.3 排序逻辑：
       primary  ：expected_value 降序（金融意义最大）
@@ -238,7 +239,7 @@ def merge_results(
             else:
                 scorer = LinearScorer().score
                 logger.warning(
-                    f"⚠️  未找到打分策略 '{scoring_strategy.strategy}'，fallback 到 linear"
+                    f"⚠️  未找到打分策略 '{scoring_strategy.strategy}'，fallback 到 linear",
                 )
         else:
             scorer = LinearScorer().score
@@ -343,7 +344,7 @@ def merge_results(
 
         # ── 计算 EV 指标 ──────────────────────────────────────────
         cost_bps = item.get("cost_bps_applied", DEFAULT_COST_BPS)
-        prob_win, prob_loss, ev, raev = _compute_ev_for_merged(kr, cost_bps=cost_bps)
+        prob_win, _prob_loss, ev, raev = _compute_ev_for_merged(kr, cost_bps=cost_bps)
         item["expected_value"] = ev
         item["prob_win"] = prob_win
         item["risk_adjusted_ev"] = raev
@@ -364,7 +365,7 @@ def merge_results(
     logger.info(
         f"📊 合并完成: {len(merged)} 只股票，"
         f"TA 成功 {sum(1 for r in ta_results if r.error is None)}/{len(ta_results)}, "
-        f"Kronos 成功 {len(kronos_map)}/{len(kronos_results)}"
+        f"Kronos 成功 {len(kronos_map)}/{len(kronos_results)}",
     )
     return merged
 

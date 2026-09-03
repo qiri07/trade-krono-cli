@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from trade_krono_cli.config import Settings, get_settings
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 def _make_json_handler(json_file: str):
     """返回 JSON 日志 handler，写入指定文件。"""
 
-    def json_handler(record):
+    def json_handler(record) -> None:
         r = record.record
         entry = {
             "ts": r["time"].strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
@@ -35,7 +37,7 @@ def _make_json_handler(json_file: str):
 
 
 def setup_logger(
-    level: str = "INFO", log_file: Optional[Path] = None, settings: Optional[Settings] = None
+    level: str = "INFO", log_file: Path | None = None, settings: Settings | None = None,
 ) -> None:
     """初始化 loguru 日志。
 

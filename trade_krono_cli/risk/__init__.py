@@ -1,5 +1,4 @@
-"""
-风险引擎 v2 — Risk Engine。
+"""风险引擎 v2 — Risk Engine。
 
 多维度风险量化，输出 RiskMetrics（VaR/CVaR/Beta/Gap/Event/Valuation）
 + 向后兼容的 RiskScore（0-100 综合分）。
@@ -33,7 +32,7 @@ from trade_krono_cli.risk.risk_engine import (
 
 __all__ = [
     "RiskEngine",
-    "RiskScore",
     "RiskMetrics",
+    "RiskScore",
     "assess_risk",
 ]

@@ -1,5 +1,4 @@
-"""
-data_providers — 多数据源抽象层。
+"""data_providers — 多数据源抽象层。
 
 提供统一的 DataProvider 接口，支持 baostock / akshare / mootdx / tushare
 四种 A 股数据源，并内置主备降级机制。
@@ -29,11 +28,11 @@ from trade_krono_cli.data_providers.factory import (
 __all__ = [
     # 数据模型
     "DataProvider",
+    # 工厂
+    "DataProviderFactory",
     "KlineData",
     "RealtimeQuote",
     "StockMetadata",
-    # 工厂
-    "DataProviderFactory",
     "get_data_factory",
     "reset_data_factory",
 ]

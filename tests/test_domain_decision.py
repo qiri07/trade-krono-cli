@@ -11,7 +11,7 @@ from trade_krono_cli.domain.types import Signal
 # ── 基本构造 ──────────────────────────────────────────────────────────────────
 
 
-def test_basic():
+def test_basic() -> None:
     d = InvestmentDecision(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -27,7 +27,7 @@ def test_basic():
     assert d.risks == ["风险A", "风险B"]
 
 
-def test_frozen():
+def test_frozen() -> None:
     d = InvestmentDecision(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -38,7 +38,7 @@ def test_frozen():
         d.ticker = "sz.000858"  # type: ignore[misc]
 
 
-def test_defaults():
+def test_defaults() -> None:
     d = InvestmentDecision(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -57,7 +57,7 @@ def test_defaults():
 # ── EV 指标传播 ───────────────────────────────────────────────────────────────
 
 
-def test_with_ev_fields():
+def test_with_ev_fields() -> None:
     d = InvestmentDecision(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -75,7 +75,7 @@ def test_with_ev_fields():
 # ── to_dict / from_dict ───────────────────────────────────────────────────────
 
 
-def test_to_dict():
+def test_to_dict() -> None:
     d = InvestmentDecision(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -101,7 +101,7 @@ def test_to_dict():
     assert result["ranking_score"] is None
 
 
-def test_to_dict_no_optional_fields():
+def test_to_dict_no_optional_fields() -> None:
     d = InvestmentDecision(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -121,7 +121,7 @@ def test_to_dict_no_optional_fields():
     assert result["prob_win"] is None
 
 
-def test_from_dict():
+def test_from_dict() -> None:
     data = {
         "ticker": "sh.600519",
         "eval_date": "2026-08-11",
@@ -142,14 +142,14 @@ def test_from_dict():
     assert d.stop_loss == 140.0
 
 
-def test_from_dict_missing_optional():
+def test_from_dict_missing_optional() -> None:
     data = {"ticker": "sh.600519", "eval_date": "2026-08-11", "signal": "HOLD", "confidence": 50.0}
     d = InvestmentDecision.from_dict(data)
     assert d.target_price is None
     assert d.stop_loss is None
 
 
-def test_from_dict_invalid_signal():
+def test_from_dict_invalid_signal() -> None:
     data = {
         "ticker": "sh.600519",
         "eval_date": "2026-08-11",
@@ -161,7 +161,7 @@ def test_from_dict_invalid_signal():
     assert d.signal == Signal.HOLD
 
 
-def test_from_dict_invalid_confidence():
+def test_from_dict_invalid_confidence() -> None:
     data = {
         "ticker": "sh.600519",
         "eval_date": "2026-08-11",
@@ -173,7 +173,7 @@ def test_from_dict_invalid_confidence():
         InvestmentDecision.from_dict(data)
 
 
-def test_from_dict_empty():
+def test_from_dict_empty() -> None:
     with pytest.raises(KeyError):
         InvestmentDecision.from_dict({})
 
@@ -181,7 +181,7 @@ def test_from_dict_empty():
 # ── ranking_score / composite_score 向后兼容 ─────────────────────────────────
 
 
-def test_to_dict_ranking_score():
+def test_to_dict_ranking_score() -> None:
     d = InvestmentDecision(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -193,7 +193,7 @@ def test_to_dict_ranking_score():
     assert result["ranking_score"] == 75.0
 
 
-def test_from_dict_composite_score_backward_compat():
+def test_from_dict_composite_score_backward_compat() -> None:
     """composite_score 字段向后兼容到 ranking_score。"""
     data = {
         "ticker": "sh.600519",
@@ -209,7 +209,7 @@ def test_from_dict_composite_score_backward_compat():
 # ── empty decision ────────────────────────────────────────────────────────────
 
 
-def test_empty():
+def test_empty() -> None:
     """InvestmentDecision 无 empty() 工厂方法；使用 fallback 或最小构造。"""
     d = InvestmentDecision(
         ticker="",
@@ -225,7 +225,7 @@ def test_empty():
 # ── 领域工厂测试（domain/factory.py build_investment_decision）────────────────
 
 
-def test_domain_factory_build_decision():
+def test_domain_factory_build_decision() -> None:
     from trade_krono_cli.domain.factory import build_investment_decision
 
     assessment = SignalAssessment(

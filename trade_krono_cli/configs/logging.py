@@ -12,7 +12,7 @@ class LoggingConfig:
     log_level: str = "INFO"
     log_json: bool = False
 
-    def merge(self, **overrides) -> "LoggingConfig":
+    def merge(self, **overrides) -> LoggingConfig:
         current = {k: getattr(self, k) for k in self.__dataclass_fields__}
         current.update(overrides)
         return LoggingConfig(**current)

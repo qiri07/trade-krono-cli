@@ -9,9 +9,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class ScoringConfig:
-    """
-    综合打分（满分 100）各子项权重与分段映射参数。
-    """
+    """综合打分（满分 100）各子项权重与分段映射参数。"""
 
     ta_confidence_weight: float = 0.40
     change_pct_weight: float = 0.30
@@ -41,11 +39,11 @@ class ScoringConfig:
             errors.append(f"打分权重之和应为 (0, 1.0]，当前={total_weight:.3f}")
         if not (0 <= self.uncertainty_high_threshold <= 100):
             errors.append(
-                f"uncertainty_high_threshold 应在 [0, 100]，当前={self.uncertainty_high_threshold}"
+                f"uncertainty_high_threshold 应在 [0, 100]，当前={self.uncertainty_high_threshold}",
             )
         if not (0 <= self.uncertainty_med_threshold <= 100):
             errors.append(
-                f"uncertainty_med_threshold 应在 [0, 100]，当前={self.uncertainty_med_threshold}"
+                f"uncertainty_med_threshold 应在 [0, 100]，当前={self.uncertainty_med_threshold}",
             )
         if self.uncertainty_med_threshold >= self.uncertainty_high_threshold:
             errors.append("uncertainty_med_threshold 必须 < uncertainty_high_threshold")
@@ -53,7 +51,7 @@ class ScoringConfig:
             errors.append(f"change_pct_offset={self.change_pct_offset} 必须 > 0")
         return errors
 
-    def merge(self, **overrides) -> "ScoringConfig":
+    def merge(self, **overrides) -> ScoringConfig:
         current = {
             "ta_confidence_weight": self.ta_confidence_weight,
             "change_pct_weight": self.change_pct_weight,
@@ -88,11 +86,11 @@ class ScoringStrategyConfig:
         if self.strategy not in valid_strategies:
             errors.append(
                 f"SCORING_STRATEGY={self.strategy} 必须是以下之一: "
-                f"{', '.join(sorted(valid_strategies))}"
+                f"{', '.join(sorted(valid_strategies))}",
             )
         return errors
 
-    def merge(self, **overrides) -> "ScoringStrategyConfig":
+    def merge(self, **overrides) -> ScoringStrategyConfig:
         current: dict[str, object] = {"strategy": self.strategy, "params": dict(self.params)}
         current.update(overrides)
         return ScoringStrategyConfig(  # type: ignore[call-arg]
@@ -117,17 +115,17 @@ class RiskBoostStrategyConfig:
         valid = {"fixed_boost", "scaled_boost", "diminishing_boost"}
         if self.strategy not in valid:
             errors.append(
-                f"RISK_BOOST_STRATEGY={self.strategy} 必须是以下之一: {', '.join(sorted(valid))}"
+                f"RISK_BOOST_STRATEGY={self.strategy} 必须是以下之一: {', '.join(sorted(valid))}",
             )
         if not (0 < self.multiplier <= 5.0):
             errors.append(f"RISK_BOOST_MULTIPLIER={self.multiplier} 必须在 (0, 5.0] 范围内")
         if not (0 < self.diminishing_power <= 1.0):
             errors.append(
-                f"RISK_BOOST_DIMINISHING_POWER={self.diminishing_power} 必须在 (0, 1.0] 范围内"
+                f"RISK_BOOST_DIMINISHING_POWER={self.diminishing_power} 必须在 (0, 1.0] 范围内",
             )
         return errors
 
-    def merge(self, **overrides) -> "RiskBoostStrategyConfig":
+    def merge(self, **overrides) -> RiskBoostStrategyConfig:
         current: dict[str, object] = {
             "strategy": self.strategy,
             "multiplier": self.multiplier,

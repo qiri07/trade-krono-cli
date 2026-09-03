@@ -15,7 +15,7 @@ def _make_df(rows: int = 400) -> pd.DataFrame:
             "close": [100.5] * rows,
             "volume": [1e6] * rows,
             "amount": [1e8] * rows,
-        }
+        },
     )
 
 
@@ -57,7 +57,7 @@ class TestStreamPipeline:
         mock_kr.predict_one.return_value = kr_result or _mock_kr_result()
         return StreamPipeline(ta_runner=mock_ta, kronos_runner=mock_kr)
 
-    def test_run_returns_ta_and_kronos_results(self):
+    def test_run_returns_ta_and_kronos_results(self) -> None:
         """run() 应返回 (ta_results, kronos_results, kline_data)。"""
         pipeline = self._make_pipeline()
         with patch("trade_krono_cli.pipeline.stream_pipeline.prepare_kline_batch") as mock_fetch:
@@ -76,7 +76,7 @@ class TestStreamPipeline:
         assert "sh.600519" in kline_data
         assert "sz.000858" in kline_data
 
-    def test_run_injects_prefetched_kline_into_kronos(self):
+    def test_run_injects_prefetched_kline_into_kronos(self) -> None:
         """预取的 K 线数据应注入到 KronosRunner._pre_fetched。"""
         from trade_krono_cli.pipeline.stream_pipeline import StreamPipeline
 
@@ -93,7 +93,7 @@ class TestStreamPipeline:
 
         assert "sh.600519" in mock_kr._pre_fetched
 
-    def test_run_calls_progress_cb(self):
+    def test_run_calls_progress_cb(self) -> None:
         """progress_cb 应在关键节点被调用。"""
         from trade_krono_cli.pipeline.stream_pipeline import StreamPipeline
 
@@ -104,7 +104,7 @@ class TestStreamPipeline:
 
         calls = []
 
-        def cb(stage, cur, total):
+        def cb(stage, cur, total) -> None:
             calls.append((stage, cur, total))
 
         pipeline = StreamPipeline(
@@ -119,7 +119,7 @@ class TestStreamPipeline:
         assert any(c[0] == "启动" for c in calls)
         assert any(c[0] == "完成" for c in calls)
 
-    def test_run_handles_fetch_failure_gracefully(self):
+    def test_run_handles_fetch_failure_gracefully(self) -> None:
         """K 线拉取失败时应跳过该股票，不中断其他股票。"""
         pipeline = self._make_pipeline()
         with patch("trade_krono_cli.pipeline.stream_pipeline.prepare_kline_batch") as mock_fetch:
@@ -134,7 +134,7 @@ class TestStreamPipeline:
         assert kr_r[0].error is None
         assert kline_data == {}
 
-    def test_run_ta_exception_does_not_crash(self):
+    def test_run_ta_exception_does_not_crash(self) -> None:
         """TA 分析异常时不应中断 Kronos 预测。"""
         from trade_krono_cli.pipeline.stream_pipeline import StreamPipeline
 
@@ -146,13 +146,13 @@ class TestStreamPipeline:
         pipeline = StreamPipeline(ta_runner=mock_ta, kronos_runner=mock_kr)
         with patch("trade_krono_cli.pipeline.stream_pipeline.prepare_kline_batch") as mock_fetch:
             mock_fetch.return_value = {"sh.600519": _make_df(400)}
-            ta_r, kr_r, kline_data = pipeline.run(tickers=["sh.600519"], date="2026-08-12")
+            ta_r, kr_r, _kline_data = pipeline.run(tickers=["sh.600519"], date="2026-08-12")
 
         assert len(ta_r) == 1
         assert ta_r[0].error is not None
         assert kr_r[0].error is None
 
-    def test_run_kronos_exception_does_not_crash(self):
+    def test_run_kronos_exception_does_not_crash(self) -> None:
         """Kronos 预测异常时不应中断 TA 分析。"""
         from trade_krono_cli.pipeline.stream_pipeline import StreamPipeline
 
@@ -164,7 +164,7 @@ class TestStreamPipeline:
         pipeline = StreamPipeline(ta_runner=mock_ta, kronos_runner=mock_kr)
         with patch("trade_krono_cli.pipeline.stream_pipeline.prepare_kline_batch") as mock_fetch:
             mock_fetch.return_value = {"sh.600519": _make_df(400)}
-            ta_r, kr_r, kline_data = pipeline.run(tickers=["sh.600519"], date="2026-08-12")
+            ta_r, kr_r, _kline_data = pipeline.run(tickers=["sh.600519"], date="2026-08-12")
 
         assert ta_r[0].error is None
         assert len(kr_r) == 1
@@ -177,7 +177,7 @@ class TestStreamPipeline:
 class TestKronosRunnerPreFetched:
     """KronosRunner._prepare 预取数据路径测试。"""
 
-    def test_prepare_uses_pre_fetched_when_available(self):
+    def test_prepare_uses_pre_fetched_when_available(self) -> None:
         """_pre_fetched 中有数据时应直接返回，不调用 fetch_lookback。"""
         from tests.conftest import make_mock_settings
         from trade_krono_cli.kronos_runner import KronosRunner
@@ -200,13 +200,13 @@ class TestKronosRunnerPreFetched:
         runner._pre_fetched["sh.600519"] = df
 
         with patch("trade_krono_cli.kronos_runner.fetch_lookback") as mock_fetch:
-            x_df, x_ts, y_ts, last_close = runner._prepare("sh.600519", "2026-08-12")
+            x_df, _x_ts, _y_ts, last_close = runner._prepare("sh.600519", "2026-08-12")
             mock_fetch.assert_not_called()
 
         assert len(x_df) == 400
         assert last_close == 100.5
 
-    def test_prepare_falls_back_to_fetch_lookback(self):
+    def test_prepare_falls_back_to_fetch_lookback(self) -> None:
         """_pre_fetched 无数据时应走正常 fetch_lookback 路径。"""
         from tests.conftest import make_mock_settings
         from trade_krono_cli.kronos_runner import KronosRunner
@@ -228,7 +228,7 @@ class TestKronosRunnerPreFetched:
 
         mock_df = _make_df(500)
         with patch("trade_krono_cli.kronos_runner.fetch_lookback", return_value=mock_df):
-            x_df, x_ts, y_ts, last_close = runner._prepare("sh.600519", "2026-08-12")
+            x_df, _x_ts, _y_ts, _last_close = runner._prepare("sh.600519", "2026-08-12")
 
         assert len(x_df) == 400
 
@@ -239,7 +239,7 @@ class TestKronosRunnerPreFetched:
 class TestKronosRunnerStreamPredictOne:
     """stream_predict_one 测试。"""
 
-    def test_stream_predict_one_uses_pre_fetched_df(self):
+    def test_stream_predict_one_uses_pre_fetched_df(self) -> None:
         """stream_predict_one 应直接使用传入的 df，不调用 fetch_lookback。"""
         from tests.conftest import make_mock_settings
         from trade_krono_cli.kronos_runner import KronosRunner
@@ -267,7 +267,7 @@ class TestKronosRunnerStreamPredictOne:
                 mock_fetch.assert_not_called()
                 mock_fill.assert_called_once()
 
-    def test_stream_predict_one_returns_result(self):
+    def test_stream_predict_one_returns_result(self) -> None:
         """stream_predict_one 应返回 KronosForecastResult。"""
         from tests.conftest import make_mock_settings
         from trade_krono_cli.kronos_runner import KronosForecastResult, KronosRunner
@@ -303,7 +303,7 @@ class TestKronosRunnerStreamPredictOne:
 class TestQuantPipelineStreaming:
     """QuantPipeline.run_parallel(streaming=True) 测试。"""
 
-    def test_streaming_mode_uses_stream_pipeline(self):
+    def test_streaming_mode_uses_stream_pipeline(self) -> None:
         """streaming=True 时应走 StreamPipeline 路径。"""
         from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
         from trade_krono_cli.pipeline import QuantPipeline
@@ -312,7 +312,7 @@ class TestQuantPipelineStreaming:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
             ),
         ]
         pu = PredictionUncertainty(
@@ -358,7 +358,7 @@ class TestQuantPipelineStreaming:
             mock_stream_instance.run.assert_called_once()
             assert len(merged) >= 1
 
-    def test_non_streaming_unchanged(self):
+    def test_non_streaming_unchanged(self) -> None:
         """streaming=False（默认）应保持原有并行路径行为。"""
         from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
         from trade_krono_cli.pipeline import QuantPipeline
@@ -367,7 +367,7 @@ class TestQuantPipelineStreaming:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
             ),
         ]
         pu = PredictionUncertainty(

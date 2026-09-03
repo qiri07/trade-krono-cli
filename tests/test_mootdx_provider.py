@@ -18,13 +18,13 @@ class TestMootDxProvider:
 
         return MootDxProvider()
 
-    def test_name(self, provider):
+    def test_name(self, provider) -> None:
         assert provider.name == "mootdx"
         assert provider.supports_kline is True
         assert provider.supports_quote is True
         assert provider.supports_metadata is False
 
-    def test_ticker_conversion(self, provider):
+    def test_ticker_conversion(self, provider) -> None:
         market, code = provider._ticker_to_mootdx("sh.600519")
         assert market == 1
         assert code == "600519"
@@ -32,7 +32,7 @@ class TestMootDxProvider:
         assert market == 0
         assert code == "000001"
 
-    def test_fetch_kline_success(self, provider):
+    def test_fetch_kline_success(self, provider) -> None:
 
         mock_df = pd.DataFrame(
             {
@@ -43,7 +43,7 @@ class TestMootDxProvider:
                 "close": [101.0, 103.0],
                 "vol": [1e6, 1.2e6],
                 "amount": [1e8, 1.2e8],
-            }
+            },
         )
         mock_client = MagicMock()
         mock_client.bars.return_value = mock_df
@@ -56,7 +56,7 @@ class TestMootDxProvider:
                 assert result is not None
                 assert result.length == 2
 
-    def test_fetch_kline_empty(self, provider):
+    def test_fetch_kline_empty(self, provider) -> None:
         mock_client = MagicMock()
         mock_client.bars.return_value = None
 
@@ -67,10 +67,10 @@ class TestMootDxProvider:
                 result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
                 assert result is None
 
-    def test_fetch_metadata_returns_none(self, provider):
+    def test_fetch_metadata_returns_none(self, provider) -> None:
         assert provider.fetch_metadata("sh.600519") is None
 
-    def test_health_check_success(self, provider):
+    def test_health_check_success(self, provider) -> None:
 
         mock_df = pd.DataFrame(
             {
@@ -81,7 +81,7 @@ class TestMootDxProvider:
                 "close": [100.5],
                 "vol": [1e6],
                 "amount": [1e8],
-            }
+            },
         )
         mock_client = MagicMock()
         mock_client.bars.return_value = mock_df
@@ -92,7 +92,7 @@ class TestMootDxProvider:
             with patch.object(provider, "_client", mock_client):
                 assert provider.health_check() is True
 
-    def test_health_check_failure(self, provider):
+    def test_health_check_failure(self, provider) -> None:
         mock_client = MagicMock()
         mock_client.bars.side_effect = Exception("fail")
 

@@ -13,14 +13,14 @@ from trade_krono_cli.prediction_eval import (
 )
 
 
-def test_calc_return():
+def test_calc_return() -> None:
     assert abs(_calc_return(100.0, 105.0) - 5.0) < 0.01
     assert abs(_calc_return(100.0, 95.0) - (-5.0)) < 0.01
     assert _calc_return(0, 100) == 0.0
     assert _calc_return(-1, 100) == 0.0
 
 
-def test_eval_record_creation():
+def test_eval_record_creation() -> None:
     r = EvalRecord(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -39,7 +39,7 @@ def test_eval_record_creation():
     assert r.error_pct == 1.8
 
 
-def test_evaluation_summary_defaults():
+def test_evaluation_summary_defaults() -> None:
     s = EvaluationSummary()
     assert s.kronos_n == 0
     assert s.ta_buy_n == 0
@@ -51,7 +51,7 @@ def test_evaluation_summary_defaults():
     assert isinstance(s.records, list)
 
 
-def test_prediction_evaluator_init(tmp_path):
+def test_prediction_evaluator_init(tmp_path) -> None:
     """PredictionEvaluator 可以正常初始化。"""
     from trade_krono_cli.research_db import ResearchDatabase
 
@@ -63,7 +63,7 @@ def test_prediction_evaluator_init(tmp_path):
     assert evaluator.HORIZONS == [5, 10, 20]
 
 
-def test_predict_empty_evaluation(tmp_path):
+def test_predict_empty_evaluation(tmp_path) -> None:
     """没有历史数据时返回空 Summary。"""
     from trade_krono_cli.research_db import ResearchDatabase
 
@@ -82,7 +82,7 @@ def test_predict_empty_evaluation(tmp_path):
     assert summary.records == []
 
 
-def test_compute_summary_with_mock_records():
+def test_compute_summary_with_mock_records() -> None:
     """用 mock 记录验证统计计算逻辑。"""
     from trade_krono_cli.prediction_eval import PredictionEvaluator
 
@@ -105,7 +105,7 @@ def test_compute_summary_with_mock_records():
                 error_pct=0.0,
                 ta_signal="BUY",
                 composite_score=80.0 if i < 3 else 60.0,
-            )
+            ),
         )
 
     summary = evaluator._compute_summary(records)
@@ -132,7 +132,7 @@ def test_compute_summary_with_mock_records():
     assert summary.kronos_n == 5
 
 
-def test_get_close_price_returns_none_on_empty():
+def test_get_close_price_returns_none_on_empty() -> None:
     """当 fetch_kline 返回空 DataFrame 时，应返回 None。"""
     with patch("trade_krono_cli.eval_data.fetch_kline") as mock_fetch:
         mock_fetch.return_value = MagicMock()
@@ -141,7 +141,7 @@ def test_get_close_price_returns_none_on_empty():
     assert result is None
 
 
-def test_get_close_price_returns_none_on_error():
+def test_get_close_price_returns_none_on_error() -> None:
     """fetch_kline 抛异常时，应返回 None。"""
     with patch("trade_krono_cli.eval_data.fetch_kline") as mock_fetch:
         mock_fetch.side_effect = RuntimeError("network error")
@@ -149,7 +149,7 @@ def test_get_close_price_returns_none_on_error():
     assert result is None
 
 
-def test_get_close_price_fallback_to_nearest():
+def test_get_close_price_fallback_to_nearest() -> None:
     """精确日期无数据时，应回退到最近交易日。"""
     import pandas as pd
 
@@ -158,7 +158,7 @@ def test_get_close_price_fallback_to_nearest():
             {
                 "timestamps": ["2026-08-08", "2026-08-12"],
                 "close": [100.0, 105.0],
-            }
+            },
         )
         mock_fetch.return_value = df
         result = _get_close_price("sh.600519", "2026-08-11")
@@ -166,7 +166,7 @@ def test_get_close_price_fallback_to_nearest():
     assert result == 105.0
 
 
-def test_compute_summary_empty_horizon():
+def test_compute_summary_empty_horizon() -> None:
     """记录跨多个 horizon 时的正确分组。"""
     from trade_krono_cli.prediction_eval import PredictionEvaluator
 
@@ -175,7 +175,7 @@ def test_compute_summary_empty_horizon():
 
     records = []
     # 5D 记录
-    for i in range(2):
+    for _i in range(2):
         records.append(
             EvalRecord(
                 ticker="sh.600519",
@@ -189,7 +189,7 @@ def test_compute_summary_empty_horizon():
                 error_pct=0.0,
                 ta_signal="BUY",
                 composite_score=75.0,
-            )
+            ),
         )
     # 10D 记录
     records.append(
@@ -205,7 +205,7 @@ def test_compute_summary_empty_horizon():
             error_pct=0.0,
             ta_signal=None,
             composite_score=None,
-        )
+        ),
     )
 
     summary = evaluator._compute_summary(records)
@@ -216,7 +216,7 @@ def test_compute_summary_empty_horizon():
     assert summary.horizons[10].kronos_dir_accuracy == pytest.approx(100.0, abs=0.1)
 
 
-def test_compute_summary_no_pred_direction():
+def test_compute_summary_no_pred_direction() -> None:
     """pred_direction 为 None 时，Kronos 方向准确率不计入。"""
     from trade_krono_cli.prediction_eval import PredictionEvaluator
 
@@ -236,7 +236,7 @@ def test_compute_summary_no_pred_direction():
             error_pct=0.0,
             ta_signal="BUY",
             composite_score=70.0,
-        )
+        ),
     ]
 
     summary = evaluator._compute_summary(records)
@@ -246,7 +246,7 @@ def test_compute_summary_no_pred_direction():
     assert m5.kronos_dir_accuracy == 0.0
 
 
-def test_compute_summary_flat_direction():
+def test_compute_summary_flat_direction() -> None:
     """FLAT 方向的 Kronos 预测仍计入 kronos_n，但方向不判定为正确。"""
     from trade_krono_cli.prediction_eval import PredictionEvaluator
 
@@ -266,7 +266,7 @@ def test_compute_summary_flat_direction():
             error_pct=0.0,
             ta_signal=None,
             composite_score=None,
-        )
+        ),
     ]
 
     summary = evaluator._compute_summary(records)
@@ -276,7 +276,7 @@ def test_compute_summary_flat_direction():
     assert m5.kronos_dir_accuracy == 0.0
 
 
-def test_compute_summary_high_conf_threshold():
+def test_compute_summary_high_conf_threshold() -> None:
     """composite_score >= 70 才计入高置信。"""
     from trade_krono_cli.prediction_eval import PredictionEvaluator
 

@@ -1,5 +1,4 @@
-"""
-pipeline/pipeline_core — QuantPipeline 核心实现。
+"""pipeline/pipeline_core — QuantPipeline 核心实现。
 
 负责 TA + Kronos 并行执行、结果合并、落盘和数据库写入。
 从原 orchestrator.py 拆出，保持向后兼容的导入路径。
@@ -11,7 +10,7 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -27,7 +26,6 @@ from trade_krono_cli.committee import (
     build_committee_input,
 )
 from trade_krono_cli.config import Settings, get_settings
-from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.data import fetch_realtime_quote
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
@@ -41,38 +39,42 @@ from trade_krono_cli.pipeline_config import PipelineConfig
 from trade_krono_cli.research_db import get_research
 from trade_krono_cli.security import sanitize_for_log
 from trade_krono_cli.stock_filter import StockFilter, StockMeta
-from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.trading_constraints import T1Tracker
-from trade_krono_cli.universe.engine import UniverseEngine
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from trade_krono_cli.constraints_config import ConstraintConfig
+    from trade_krono_cli.ta_runner import StockAnalysisResult
+    from trade_krono_cli.universe.engine import UniverseEngine
 
 
 class QuantPipeline:
-    """
-    一站式投研流水线：
-      1. TradingAgents 批量分析（线程1）
-      2. Kronos 批量预测   （线程2）
-      3. 两者并行完成后融合打分
+    """一站式投研流水线：
+    1. TradingAgents 批量分析（线程1）
+    2. Kronos 批量预测   （线程2）
+    3. 两者并行完成后融合打分.
     """
 
     def __init__(
         self,
-        ta_session: Optional[Any] = None,
-        kronos_session: Optional[Any] = None,
-        config: Optional[PipelineConfig] = None,
+        ta_session: Any | None = None,
+        kronos_session: Any | None = None,
+        config: PipelineConfig | None = None,
         # 向后兼容参数（创建默认 session 时使用）
-        min_confidence: Optional[float] = None,
-        allowed_signals: Optional[tuple[str, ...]] = None,
+        min_confidence: float | None = None,
+        allowed_signals: tuple[str, ...] | None = None,
         skip_kronos: bool = False,
         no_cache: bool = False,
-        constraints_config: Optional[ConstraintConfig] = None,
-        sample_count: Optional[int] = None,
-        settings: Optional[Settings] = None,
+        constraints_config: ConstraintConfig | None = None,
+        sample_count: int | None = None,
+        settings: Settings | None = None,
         # 向后兼容：直接注入 runner
-        ta_runner: Optional[Any] = None,
-        kronos_runner: Optional[Any] = None,
+        ta_runner: Any | None = None,
+        kronos_runner: Any | None = None,
         # Universe Engine（可选：无 tickers 时自动从全市场生成）
-        universe_engine: Optional[UniverseEngine] = None,
-    ):
+        universe_engine: UniverseEngine | None = None,
+    ) -> None:
         self._settings = settings or get_settings()
         self._config = config or PipelineConfig.default()
 
@@ -128,7 +130,7 @@ class QuantPipeline:
             f"allowed_signals={self.allowed_signals} "
             f"skip_kronos={skip_kronos} "
             f"constraints={'enabled' if self.constraints_config.enable_limit_check else 'disabled'} "
-            f"sample_count={'(default)' if sample_count is None else sample_count}"
+            f"sample_count={'(default)' if sample_count is None else sample_count}",
         )
 
     def _apply_ta_cache_fallback(self, ta_results: list) -> None:
@@ -146,7 +148,7 @@ class QuantPipeline:
             if cached:
                 logger.info(
                     f"📦 {ta.ticker} TA 失败，回退到 {cached['date']} 的缓存结果 "
-                    f"(signal={cached['signal']}, confidence={cached['confidence']})"
+                    f"(signal={cached['signal']}, confidence={cached['confidence']})",
                 )
                 ta.signal = cached["signal"]
                 ta.confidence = cached["confidence"]
@@ -160,9 +162,9 @@ class QuantPipeline:
         self,
         tickers: list[str],
         date: str,
-        output_json: Optional[str] = None,
-        output_html: Optional[str] = None,
-        progress_cb: Optional[Callable[[str, int, int], None]] = None,
+        output_json: str | None = None,
+        output_html: str | None = None,
+        progress_cb: Callable[[str, int, int], None] | None = None,
         streaming: bool = False,
     ) -> list[dict]:
         """并行运行 TA + Kronos，合并结果。
@@ -171,6 +173,7 @@ class QuantPipeline:
         ----------
         streaming : 是否启用流式模式。True 时数据拉取与计算重叠执行，
                     总耗时 ≈ max(T_fetch, T_compute)；默认 False 使用传统批量模式。
+
         """
         t0 = time.time()
         # ── 自动宇宙解析：无 tickers 时从全市场生成 ─────────────────────
@@ -187,7 +190,7 @@ class QuantPipeline:
 
         logger.info(
             f"🚀 流水线启动{'（流式）' if streaming else '（并行）'}| "
-            f"{len(tickers)} 只候选 | date={date}"
+            f"{len(tickers)} 只候选 | date={date}",
         )
 
         research = get_research()
@@ -211,7 +214,7 @@ class QuantPipeline:
         ]
         if delisted:
             logger.warning(
-                f"🚫 检测到 {len(delisted)} 只退市股票，将从分析中排除: {', '.join(delisted)}"
+                f"🚫 检测到 {len(delisted)} 只退市股票，将从分析中排除: {', '.join(delisted)}",
             )
         # 过滤掉退市股票，不参与后续分析
         tickers_clean: list[str] = []
@@ -272,7 +275,7 @@ class QuantPipeline:
                     existing = abnormal_flags_map.get(tk)
                     if existing and StockAbnormality.DATA_INSUFFICIENT not in existing.flags:
                         # AbnormalityFlag is frozen — create a new instance
-                        new_flags = existing.flags + [StockAbnormality.DATA_INSUFFICIENT]
+                        new_flags = [*existing.flags, StockAbnormality.DATA_INSUFFICIENT]
                         abnormal_flags_map[tk] = AbnormalityFlag(
                             ticker=tk,
                             flags=new_flags,
@@ -360,7 +363,7 @@ class QuantPipeline:
 
         logger.info(
             f"📋 元数据过滤完成: 保留 {len(filtered_ta_final)} 只 "
-            f"（原始池 {len(filtered_ta)} + 已过滤 {len(rejected_ta)}）"
+            f"（原始池 {len(filtered_ta)} + 已过滤 {len(rejected_ta)}）",
         )
 
         # ── 合并 + 打分（含交易约束）────────────────────────────
@@ -445,7 +448,7 @@ class QuantPipeline:
         research.complete_job(job_id, n_success=n_success, elapsed=elapsed)
         logger.info(
             f"📊 研究作业完成: job={job_id} run_id={version_snapshot['run_id']} "
-            f"| 耗时 {elapsed:.1f}s | 结果 {len(merged)} 条 → 已记录到研究数据库"
+            f"| 耗时 {elapsed:.1f}s | 结果 {len(merged)} 条 → 已记录到研究数据库",
         )
 
         if progress_cb:
@@ -457,8 +460,8 @@ class QuantPipeline:
         self,
         tickers: list[str],
         date: str,
-        output: Optional[str] = None,
-        progress_cb: Optional[Callable[[int, int, StockAnalysisResult], None]] = None,
+        output: str | None = None,
+        progress_cb: Callable[[int, int, StockAnalysisResult], None] | None = None,
     ) -> list[StockAnalysisResult]:
         """仅运行 TA 分析。"""
         t0 = time.time()
@@ -514,11 +517,12 @@ class QuantPipeline:
         self,
         tickers: list[str],
         date: str,
-        output: Optional[str] = None,
+        output: str | None = None,
     ) -> list[KronosForecastResult]:
         """仅运行 Kronos 预测。"""
         if self.kronos is None:
-            raise RuntimeError("KronosSession 未初始化（skip_kronos=True）")
+            msg = "KronosSession 未初始化（skip_kronos=True）"
+            raise RuntimeError(msg)
         logger.info(f"🚀 Kronos 预测启动 | {len(tickers)} 只 | date={date}")
         results = self.kronos.predict_batch(tickers, date)
         if output:
@@ -558,14 +562,13 @@ class QuantPipeline:
 
     @staticmethod
     def _run_committee(
-        research: Any,
+        research: Any,  # noqa: ANN401 — ResearchDatabase 在运行时注入，避免循环导入
         job_id: str,
         date: str,
         ta_results: list,
         kronos_results: list,
     ) -> None:
-        """
-        对每只 TA 分析过的股票运行 Investment Committee 审议。
+        """对每只 TA 分析过的股票运行 Investment Committee 审议。
 
         跳过无 final_state（分析失败）或无 agent reports 的股票。
         审议结果写入 committee_deliberations 表。
@@ -622,7 +625,7 @@ class QuantPipeline:
                 deliberated += 1
                 logger.info(
                     f"🏛️  委员会审议完成: {ta.ticker} "
-                    f"→ {result.recommendation}(conf={result.recommendation_confidence:.0f})"
+                    f"→ {result.recommendation}(conf={result.recommendation_confidence:.0f})",
                 )
             except Exception as e:
                 safe_msg = sanitize_for_log(str(e))

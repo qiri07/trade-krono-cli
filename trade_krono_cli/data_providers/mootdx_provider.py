@@ -1,5 +1,4 @@
-"""
-data_providers.mootdx_provider — MootDx 数据源实现。
+"""data_providers.mootdx_provider — MootDx 数据源实现。
 
 MootDx 是开源的行情数据接口，支持 level-2 数据。
 无需注册，但需要安装 mootdx 包。
@@ -11,7 +10,7 @@ API 参考：
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -47,9 +46,11 @@ class MootDxProvider(DataProvider):
             cls._client = Quotes.factory(market="std")
             cls._connected = True
         except ImportError:
-            raise RuntimeError("mootdx 未安装，无法使用 mootdx 数据源。请运行: pip install mootdx")
-        except Exception:
+            msg = "mootdx 未安装，无法使用 mootdx 数据源。请运行: pip install mootdx"
+            raise RuntimeError(msg)
+        except Exception as e:
             # 连接失败时重置状态，下次调用会重新建立
+            logger.debug(f"mootdx 连接失败: {e}，已重置客户端状态")
             cls._client = None
             cls._connected = False
             raise
@@ -72,10 +73,10 @@ class MootDxProvider(DataProvider):
         end_date: str,
         frequency: str = "d",
         adjustflag: str = "1",
-    ) -> Optional[KlineData]:
+    ) -> KlineData | None:
         try:
             self._ensure_client()
-            market, code = self._ticker_to_mootdx(ticker)
+            _market, code = self._ticker_to_mootdx(ticker)
 
             # mootdx freq: 0=5min, 1=15min, 2=30min, 3=60min, 8=daily
             freq_map = {"d": 8, "5min": 0, "15min": 1, "30min": 2, "60min": 3}
@@ -106,7 +107,7 @@ class MootDxProvider(DataProvider):
             logger.warning(f"{self.name} K 线拉取异常 {ticker}: {str(e)[:200]}")
             return None
 
-    def fetch_quote(self, ticker: str) -> Optional[RealtimeQuote]:
+    def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
         try:
             self._ensure_client()
             market, code = self._ticker_to_mootdx(ticker)
@@ -127,8 +128,8 @@ class MootDxProvider(DataProvider):
             logger.debug(f"{self.name} 实时行情异常 {ticker}: {str(e)[:100]}")
             return None
 
-    def fetch_metadata(self, ticker: str) -> Optional[StockMetadata]:
-        """mootdx 不提供完整的基本面元数据。"""
+    def fetch_metadata(self, ticker: str) -> StockMetadata | None:
+        """Mootdx 不提供完整的基本面元数据。"""
         return None
 
     def health_check(self) -> bool:
@@ -136,5 +137,6 @@ class MootDxProvider(DataProvider):
             self._ensure_client()
             df = self._client.bars(symbol="600519", start=0, end=5, freq=8)
             return df is not None and not df.empty
-        except Exception:
+        except Exception as e:
+            logger.debug(f"mootdx health check 异常: {e}")
             return False

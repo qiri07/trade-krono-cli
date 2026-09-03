@@ -1,14 +1,16 @@
-"""
-Gap Risk — 跳空缺口风险。
+"""Gap Risk — 跳空缺口风险。
 
 基于收盘价突变的缺口频率计算风险分。
 """
 
 from __future__ import annotations
 
-import pandas as pd
+from typing import TYPE_CHECKING
 
 from trade_krono_cli.risk.models import gap_risk_score as _gap_risk_score
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def calc_gap_risk(
@@ -17,8 +19,7 @@ def calc_gap_risk(
     low: pd.Series,
     min_gap_pct: float = 3.0,
 ) -> float:
-    """
-    计算缺口风险分（0-100）。
+    """计算缺口风险分（0-100）。
 
     Parameters
     ----------
@@ -30,5 +31,6 @@ def calc_gap_risk(
     Returns
     -------
     float : 缺口风险分 0-100
+
     """
     return _gap_risk_score(close, high, low, min_gap_pct)

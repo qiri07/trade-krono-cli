@@ -1,5 +1,4 @@
-"""
-UnifiedInvestmentDecision — 跨源统一投资决策。
+"""UnifiedInvestmentDecision — 跨源统一投资决策。
 
 将 TA 信号、Kronos 预测、Committee 审议结果、风险调整后收益，
 统一到单一数据结构中，并计算 Expected Value（期望收益）。
@@ -15,7 +14,6 @@ UnifiedInvestmentDecision — 跨源统一投资决策。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from trade_krono_cli.domain.signal import SignalConflict
 from trade_krono_cli.ta_decision import InvestmentDecision as TADecision
@@ -36,8 +34,7 @@ _AllConflict = SignalConflict.ALL_CONFLICT
 
 @dataclass
 class UnifiedInvestmentDecision:
-    """
-    统一投资决策：TA + Kronos + Committee + Risk-Adjusted EV。
+    """统一投资决策：TA + Kronos + Committee + Risk-Adjusted EV。
 
     字段分组
     ──────────────────────────────────────────────────────
@@ -92,42 +89,42 @@ class UnifiedInvestmentDecision:
     final_confidence: float
 
     # TA 源
-    ta_signal: Optional[Signal] = None
-    ta_confidence: Optional[float] = None
+    ta_signal: Signal | None = None
+    ta_confidence: float | None = None
     ta_reasoning: str = ""
 
     # Kronos 源
-    kronos_direction: Optional[str] = None  # "UP"/"DOWN"/"FLAT"
-    kronos_expected_return: Optional[float] = None
-    direction_score: Optional[float] = None  # 方向强度 0-1，来自 PredictionDistribution
-    p10: Optional[float] = None
-    p25: Optional[float] = None
-    p50: Optional[float] = None
-    p75: Optional[float] = None
-    p90: Optional[float] = None
-    last_close: Optional[float] = None
+    kronos_direction: str | None = None  # "UP"/"DOWN"/"FLAT"
+    kronos_expected_return: float | None = None
+    direction_score: float | None = None  # 方向强度 0-1，来自 PredictionDistribution
+    p10: float | None = None
+    p25: float | None = None
+    p50: float | None = None
+    p75: float | None = None
+    p90: float | None = None
+    last_close: float | None = None
 
     # Committee 源
-    committee_rec: Optional[Signal] = None
-    committee_confidence: Optional[float] = None
+    committee_rec: Signal | None = None
+    committee_confidence: float | None = None
     bull_case: str = ""
     bear_case: str = ""
 
     # Expected Value
-    prob_win: Optional[float] = None
-    prob_loss: Optional[float] = None
-    avg_win_return: Optional[float] = None
-    avg_loss_return: Optional[float] = None
-    expected_value: Optional[float] = None  # 百分比，如 1.5 = 1.5%
-    risk_adjusted_ev: Optional[float] = None  # EV / vol，类 Sharpe
+    prob_win: float | None = None
+    prob_loss: float | None = None
+    avg_win_return: float | None = None
+    avg_loss_return: float | None = None
+    expected_value: float | None = None  # 百分比，如 1.5 = 1.5%
+    risk_adjusted_ev: float | None = None  # EV / vol，类 Sharpe
     cost_bps: float = 17.0  # 双边交易成本（bps）
 
     # 交易执行
-    position_size: Optional[float] = None
-    entry_zone: Optional[list[float]] = None
-    target_price: Optional[float] = None
-    stop_loss: Optional[float] = None
-    horizon: Optional[int] = None
+    position_size: float | None = None
+    entry_zone: list[float] | None = None
+    target_price: float | None = None
+    stop_loss: float | None = None
+    horizon: int | None = None
 
     # 质量控制
     conflict: str = _NoneConflict
@@ -137,9 +134,8 @@ class UnifiedInvestmentDecision:
 
     # ── EV 计算 ───────────────────────────────────────────────────────────
 
-    def compute_expected_value(self) -> "UnifiedInvestmentDecision":
-        """
-        基于分位数计算 EV 指标，原地更新后返回 self。
+    def compute_expected_value(self) -> UnifiedInvestmentDecision:
+        """基于分位数计算 EV 指标，原地更新后返回 self。
 
         算法：
           · prob_win：假设分布对称，用 p50 作为中位收益点
@@ -187,7 +183,7 @@ class UnifiedInvestmentDecision:
 
         return self
 
-    def detect_conflict(self) -> "UnifiedInvestmentDecision":
+    def detect_conflict(self) -> UnifiedInvestmentDecision:
         """检测多源信号冲突，更新 conflict 字段。"""
         signals = {
             "ta": self.ta_signal,
@@ -198,7 +194,7 @@ class UnifiedInvestmentDecision:
         if len(active) < 2:
             self.conflict = _NoneConflict
             return self
-        unique = set(v.value for v in active.values())
+        unique = {v.value for v in active.values()}
         if len(unique) == 1:
             self.conflict = _NoneConflict
         elif len(unique) == 2:
@@ -212,9 +208,8 @@ class UnifiedInvestmentDecision:
             self.conflict = _AllConflict
         return self
 
-    def apply_final_signal(self) -> "UnifiedInvestmentDecision":
-        """
-        综合所有源信号，确定 final_signal 和 final_confidence。
+    def apply_final_signal(self) -> UnifiedInvestmentDecision:
+        """综合所有源信号，确定 final_signal 和 final_confidence。
 
         规则：
           · 三方一致 → 直接采用，confidence = min of all
@@ -271,7 +266,7 @@ class UnifiedInvestmentDecision:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> "UnifiedInvestmentDecision":
+    def from_dict(cls, data: dict) -> UnifiedInvestmentDecision:
         d = dict(data)
         # 还原枚举
         if isinstance(d.get("final_signal"), str):
@@ -304,7 +299,7 @@ class UnifiedInvestmentDecision:
 # ═══════════════════════════════════════════════════════
 
 
-def _direction_to_signal(direction: Optional[str]) -> Optional[Signal]:
+def _direction_to_signal(direction: str | None) -> Signal | None:
     """将 Kronos direction (UP/DOWN/FLAT) 映射到 Signal。"""
     if direction is None:
         return None
@@ -316,17 +311,16 @@ def build_unified_decision(
     ticker: str,
     eval_date: str,
     *,
-    ta_decision: Optional[TADecision] = None,
-    kronos_direction: Optional[str] = None,
-    kronos_expected_return: Optional[float] = None,
-    distribution: Optional[dict] = None,
-    committee_rec: Optional[Signal] = None,
-    committee_confidence: Optional[float] = None,
+    ta_decision: TADecision | None = None,
+    kronos_direction: str | None = None,
+    kronos_expected_return: float | None = None,
+    distribution: dict | None = None,
+    committee_rec: Signal | None = None,
+    committee_confidence: float | None = None,
     bull_case: str = "",
     bear_case: str = "",
 ) -> UnifiedInvestmentDecision:
-    """
-    工厂函数：从各源数据构建 UnifiedInvestmentDecision。
+    """工厂函数：从各源数据构建 UnifiedInvestmentDecision。
 
     Parameters
     ----------
@@ -338,6 +332,7 @@ def build_unified_decision(
     committee_rec          委员会推荐
     committee_confidence   委员会置信度
     bull_case / bear_case  委员会 case 摘要
+
     """
     d = distribution or {}
     decision = UnifiedInvestmentDecision(

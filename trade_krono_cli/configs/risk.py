@@ -31,7 +31,7 @@ class RiskWeights:
                 errors.append(f"风险权重 {name}={w} 不能为负")
         return errors
 
-    def merge(self, **overrides) -> "RiskWeights":
+    def merge(self, **overrides) -> RiskWeights:
         current = {k: getattr(self, k) for k in self.__dataclass_fields__}
         current.update({k: v for k, v in overrides.items() if v is not None})
         return RiskWeights(**current)
@@ -55,7 +55,7 @@ class DrawdownThresholds:
     """最大回撤 → 风险分 分段映射。"""
 
     breakpoints: list[tuple[float, float]] = field(
-        default_factory=lambda: [(5.0, 20.0), (20.0, 60.0), (40.0, 100.0)]
+        default_factory=lambda: [(5.0, 20.0), (20.0, 60.0), (40.0, 100.0)],
     )
     insufficient_data_score: float = 20.0
     insufficient_data_min_rows: int = 30
@@ -86,7 +86,7 @@ class LiquidityThresholds:
             (6.0, 60.0),
             (7.0, 40.0),
             (8.0, 20.0),
-        ]
+        ],
     )
     tail_penalty_rate: float = 5.0
     insufficient_data_score: float = 30.0
@@ -182,7 +182,7 @@ class RiskConfig:
                 errors.append(f"{name}={val} 不能为负")
         return errors
 
-    def merge(self, **overrides) -> "RiskConfig":
+    def merge(self, **overrides) -> RiskConfig:
         """支持嵌套覆盖：merge(weights__volatility=0.35)。"""
         nested: dict[str, dict] = {}
         flat: dict = {}

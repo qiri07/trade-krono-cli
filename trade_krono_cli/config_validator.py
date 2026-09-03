@@ -1,5 +1,4 @@
-"""
-配置校验 — 在启动前验证 Settings 合法性，提前暴露问题而非运行时失败。
+"""配置校验 — 在启动前验证 Settings 合法性，提前暴露问题而非运行时失败。
 
 validate_settings() 返回错误列表；空列表表示配置合法。
 可在 repo doctor / run 命令入口调用，提前终止非法配置。
@@ -15,11 +14,10 @@ if TYPE_CHECKING:
     from trade_krono_cli.config import Settings
 
 
-def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
-    """
-    校验配置合法性，返回 (errors, warnings) 元组。
+def validate_settings(s: Settings) -> tuple[list[str], list[str]]:
+    """校验配置合法性，返回 (errors, warnings) 元组。
     errors   — 致命问题，程序应终止
-    warnings — 非致命问题，记录但不阻塞运行
+    warnings — 非致命问题，记录但不阻塞运行.
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -68,7 +66,7 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
         parts = [p.strip() for p in s.filter_market_cap_range.split(",") if p.strip()]
         if len(parts) != 2:
             errors.append(
-                f'FILTER_MARKET_CAP_RANGE={s.filter_market_cap_range} 格式应为 "low,high"'
+                f'FILTER_MARKET_CAP_RANGE={s.filter_market_cap_range} 格式应为 "low,high"',
             )
         else:
             try:
@@ -126,14 +124,14 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
     if s.scoring_strategy not in valid_scorers:
         errors.append(
             f"SCORING_STRATEGY={s.scoring_strategy} 必须是以下之一: "
-            f"{', '.join(sorted(valid_scorers))}"
+            f"{', '.join(sorted(valid_scorers))}",
         )
 
     valid_boosters = {"fixed_boost", "scaled_boost", "diminishing_boost"}
     if s.risk_boost_strategy not in valid_boosters:
         errors.append(
             f"RISK_BOOST_STRATEGY={s.risk_boost_strategy} 必须是以下之一: "
-            f"{', '.join(sorted(valid_boosters))}"
+            f"{', '.join(sorted(valid_boosters))}",
         )
 
     if not (0 < s.risk_boost_multiplier <= 5.0):
@@ -141,7 +139,7 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
 
     if not (0 < s.risk_boost_diminishing_power <= 1.0):
         errors.append(
-            f"RISK_BOOST_DIMINISHING_POWER={s.risk_boost_diminishing_power} 必须在 (0, 1.0] 范围内"
+            f"RISK_BOOST_DIMINISHING_POWER={s.risk_boost_diminishing_power} 必须在 (0, 1.0] 范围内",
         )
 
     # ── 数据源配置校验 ─────────────────────────────────────────────────────
@@ -149,7 +147,7 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
     primary = s.data_provider.strip().lower() if s.data_provider else "baostock"
     if primary not in valid_sources:
         errors.append(
-            f"DATA_PROVIDER={s.data_provider} 必须是以下之一: {', '.join(sorted(valid_sources))}"
+            f"DATA_PROVIDER={s.data_provider} 必须是以下之一: {', '.join(sorted(valid_sources))}",
         )
 
     if s.data_fallback:
@@ -157,7 +155,7 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
         for fb in fallbacks:
             if fb.lower() not in valid_sources:
                 errors.append(
-                    f"DATA_FALLBACK 包含未知源: '{fb}'，合法值: {', '.join(sorted(valid_sources))}"
+                    f"DATA_FALLBACK 包含未知源: '{fb}'，合法值: {', '.join(sorted(valid_sources))}",
                 )
         # 不能包含主源自身
         if primary in [f.lower() for f in fallbacks]:
@@ -185,7 +183,7 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
     if s.degrade_mode not in valid_degrade_modes:
         errors.append(
             f"DEGRADE_MODE={s.degrade_mode} 必须是以下之一: "
-            f"{', '.join(sorted(valid_degrade_modes))}"
+            f"{', '.join(sorted(valid_degrade_modes))}",
         )
     if s.ta_cache_max_age_days < 1:
         errors.append("TA_CACHE_MAX_AGE_DAYS 必须 >= 1")
@@ -195,14 +193,14 @@ def validate_settings(s: "Settings") -> tuple[list[str], list[str]]:
     if s.ta_cache_fallback_enabled and s.degrade_mode != "ta_cache_fallback":
         warnings.append(
             f"TA_CACHE_FALLBACK_ENABLED=true 但 DEGRADE_MODE={s.degrade_mode}，"
-            f"TA 缓存回退仅在 degrade_mode=ta_cache_fallback 时生效"
+            f"TA 缓存回退仅在 degrade_mode=ta_cache_fallback 时生效",
         )
 
     # 由调用方格式化输出，此处仅作校验入口
     return errors, warnings
 
 
-def _validate_retry_policy(s: "Settings") -> list[str]:
+def _validate_retry_policy(s: Settings) -> list[str]:
     """校验重试策略参数。"""
     errs: list[str] = []
     if s.retry_max_attempts < 1:
@@ -231,8 +229,7 @@ _PROVIDER_ENV_KEY = {
 
 
 def print_validation_report(errors: list[str], warnings: list[str]) -> bool:
-    """
-    打印校验报告到控制台，返回是否通过（无错误 = True）。
+    """打印校验报告到控制台，返回是否通过（无错误 = True）。
 
     Warnings（⚠️）不阻止运行，errors（❌）会。
     """

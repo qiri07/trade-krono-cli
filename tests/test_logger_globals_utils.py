@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 from trade_krono_cli.globals import clear_all_globals
 from trade_krono_cli.logger import setup_logger
 from trade_krono_cli.utils import add_ticker_prefix, safe_float, strip_ticker_prefix
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestLogger:

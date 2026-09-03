@@ -1,5 +1,4 @@
-"""
-缓存层 — TTL 驱动的 SQLite 缓存。
+"""缓存层 — TTL 驱动的 SQLite 缓存。
 
 支持三种缓存类型：
   kline_cache  — K 线数据（pd.DataFrame pickle）
@@ -15,15 +14,18 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from io import BytesIO
-from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from loguru import logger
 
 from trade_krono_cli.config import Settings, get_settings
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Whitelist of allowed cache table names
 _CACHE_TABLES: frozenset[str] = frozenset({"kline_cache", "ta_cache", "kronos_cache"})
@@ -36,14 +38,15 @@ _KLINE_HISTORY_WINDOW_DAYS = 1  # 保留，实际已不用于 TTL 判定
 
 def _validate_table_name(table: str, allowed: frozenset[str]) -> str:
     if table not in allowed:
-        raise ValueError(f"Unauthorized table: {table}")
+        msg = f"Unauthorized table: {table}"
+        raise ValueError(msg)
     return table
 
 
 class Cache:
     """SQLite 缓存，支持 K 线、TA 结果、Kronos 预测三种类型。"""
 
-    def __init__(self, db_path: Optional[Path] = None, settings: Optional[Settings] = None):
+    def __init__(self, db_path: Path | None = None, settings: Settings | None = None) -> None:
         self._db_path = db_path or ((settings or get_settings()).cache_dir / "pipeline_cache.db")
         from trade_krono_cli.config import _validate_test_isolation
 
@@ -114,8 +117,8 @@ class Cache:
     # ── K 线缓存 ──────────────────────────────────────
 
     def get_kline(
-        self, ticker: str, start: str, end: str, freq: str, adjustflag: str = "1"
-    ) -> Optional[pd.DataFrame]:
+        self, ticker: str, start: str, end: str, freq: str, adjustflag: str = "1",
+    ) -> pd.DataFrame | None:
         with self._conn as conn:
             row = conn.execute(
                 "SELECT data, created, ttl FROM kline_cache "
@@ -203,7 +206,7 @@ class Cache:
         config_hash: str = "",
         prompt_ver: str = "",
         model_ver: str = "",
-    ) -> Optional[dict]:
+    ) -> dict | None:
         with self._conn as conn:
             row = conn.execute(
                 "SELECT data, created, ttl FROM ta_cache "
@@ -255,7 +258,7 @@ class Cache:
         sample_count: int = 1,
         config_hash: str = "",
         model_ver: str = "",
-    ) -> Optional[dict]:
+    ) -> dict | None:
         with self._conn as conn:
             row = conn.execute(
                 "SELECT data, created, ttl FROM kronos_cache "
@@ -303,10 +306,9 @@ class Cache:
     # ── 工具方法 ──────────────────────────────────────
 
     def get_cached_date_range(
-        self, ticker: str, freq: str = "d", adjustflag: str = "1"
-    ) -> Optional[tuple[str, str]]:
-        """
-        查询某只股票的已有 K 线缓存覆盖的日期范围。
+        self, ticker: str, freq: str = "d", adjustflag: str = "1",
+    ) -> tuple[str, str] | None:
+        """查询某只股票的已有 K 线缓存覆盖的日期范围。
 
         该Ticker 的所有缓存条目会被合并成一个连续的 [start, end] 区间。
         若没有缓存或缓存已过期，返回 None。
@@ -320,6 +322,7 @@ class Cache:
         Returns
         -------
         (start_date, end_date) 或 None
+
         """
         with self._conn as conn:
             rows = conn.execute(
@@ -360,32 +363,185 @@ class Cache:
             count = 0
             for table in _CACHE_TABLES:
                 r = conn.execute(
-                    f"DELETE FROM {_validate_table_name(table, _CACHE_TABLES)}"
+                    f"DELETE FROM {_validate_table_name(table, _CACHE_TABLES)}",
                 ).rowcount
                 count += r
             conn.commit()
         logger.info(f"🧹 清除缓存 {count} 条（research 数据不受影响）")
         return count
 
+    # ── RD-Agent 兼容导出 ─────────────────────────────────
+
+    def export_daily_pv(
+        self,
+        parquet_path: str,
+        h5_path: str | None = None,
+        debug_insts: int = 0,
+    ) -> dict:
+        """将 kline_cache 全量导出为 RD-Agent daily_pv 格式（parquet + 可选 h5）。
+
+        Parameters
+        ----------
+        parquet_path : str
+            输出 parquet 文件路径（必填）。
+        h5_path : str, optional
+            输出 HDF5 文件路径。若提供则额外生成 h5。
+        debug_insts : int, optional
+            若 > 0，额外生成 debug parquet（前 N 只股票）。
+
+        Returns
+        -------
+        dict
+            {"rows": int, "stocks": int, "date_range": (str, str), ...}
+        """
+        from pathlib import Path
+
+        # ── 读取所有 kline_cache 条目 ──────────────────────────────────────
+        rows_raw: list[pd.DataFrame] = []
+        with self._conn as conn:
+            cursor = conn.execute("SELECT ticker, data FROM kline_cache")
+            total = conn.execute("SELECT COUNT(*) FROM kline_cache").fetchone()[0]
+
+        for i, (ticker, blob) in enumerate(cursor, 1):
+            df = pd.read_pickle(BytesIO(blob))
+            df["instrument"] = ticker.replace(".", "").upper()
+            rows_raw.append(df)
+            if i % 1000 == 0:
+                logger.info(f"  读取缓存 {i}/{total} 只...")
+
+        combined = pd.concat(rows_raw, ignore_index=True)
+        logger.info(
+            f"导出原始: {len(combined):,} 行, "
+            f"{combined['instrument'].nunique()} 只"
+        )
+
+        # ── 转换为 RD-Agent 格式 ──────────────────────────────────────────
+        df = combined.copy()
+        df["date"] = pd.to_datetime(df["timestamps"]).dt.normalize()
+        df = df.rename(
+            columns={"open": "$open", "high": "$high", "low": "$low",
+                     "close": "$close", "volume": "$volume"}
+        )
+        df["$factor"] = 1.0
+        df = df.dropna(subset=["$open", "$close", "$volume"])
+        df = df[df["$high"] > 0]
+        df = df.set_index(["date", "instrument"]).sort_index()
+        df.index.names = ["date", "instrument"]
+        df = df[["$open", "$close", "$high", "$low", "$volume", "$factor"]]
+
+        stocks = int(df.index.get_level_values("instrument").nunique())
+        date_min = df.index.get_level_values("date").min().strftime("%Y-%m-%d")
+        date_max = df.index.get_level_values("date").max().strftime("%Y-%m-%d")
+
+        Path(parquet_path).parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(parquet_path, engine="pyarrow")
+        logger.info(f"✅ parquet 已写入: {parquet_path} ({Path(parquet_path).stat().st_size / 1024 / 1024:.1f} MB)")
+
+        result: dict = {
+            "rows": len(df),
+            "stocks": stocks,
+            "date_min": date_min,
+            "date_max": date_max,
+            "parquet_path": parquet_path,
+        }
+
+        # ── 可选：生成 h5 ─────────────────────────────────────────────────
+        if h5_path:
+            Path(h5_path).parent.mkdir(parents=True, exist_ok=True)
+            try:
+                import subprocess
+                _base = Path(__file__).resolve().parents[2]
+                env_py = _base / "RD-Agent-Work" / "rdagent-env" / "bin" / "python"
+                if not env_py.exists():
+                    env_py = _base / "rdagent-env" / "bin" / "python"
+                if env_py.exists():
+                    r = subprocess.run(
+                        [str(env_py), "-c",
+                         f"import pandas as pd; "
+                         f"df=pd.read_parquet('{parquet_path}'); "
+                         f"df.to_hdf('{h5_path}', key='data', mode='w')"],
+                        capture_output=True, text=True, timeout=180,
+                    )
+                    if r.returncode == 0:
+                        h5_size = Path(h5_path).stat().st_size / 1024 / 1024
+                        logger.info(f"✅ h5 已写入: {h5_path} ({h5_size:.1f} MB)")
+                        result["h5_path"] = h5_path
+                        result["h5_size_mb"] = round(h5_size, 1)
+                    else:
+                        logger.warning(f"h5 生成失败: {r.stderr.strip()}")
+                else:
+                    logger.warning("未找到 rdagent-env/python，跳过 h5 生成")
+            except Exception as e:
+                logger.warning(f"h5 生成异常: {e}")
+
+        # ── 可选：debug 数据集（前 N 只股票）───────────────────────────────
+        if debug_insts > 0:
+            debug_dir = Path(parquet_path).parent.parent / (Path(parquet_path).parent.name + "_debug")
+            debug_path = debug_dir / "daily_pv.parquet"
+            debug_h5_path = debug_dir / "daily_pv.h5"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            insts = df.index.get_level_values("instrument").unique()[:debug_insts]
+            debug_df = df.loc[pd.IndexSlice[:, insts], :]
+            debug_df.to_parquet(str(debug_path), engine="pyarrow")
+            result["debug_path"] = str(debug_path)
+            result["debug_rows"] = len(debug_df)
+            result["debug_stocks"] = len(insts)
+            logger.info(
+                f"✅ debug parquet: {debug_path} "
+                f"({debug_df.index.get_level_values('instrument').nunique()} 只, "
+                f"{debug_df.index.get_level_values('date').min()} ~ "
+                f"{debug_df.index.get_level_values('date').max()})"
+            )
+            # 同时生成 debug h5
+            debug_h5_path = debug_dir / "daily_pv.h5"
+            try:
+                import subprocess
+                _base = Path(__file__).resolve().parents[2]
+                env_py = _base / "RD-Agent-Work" / "rdagent-env" / "bin" / "python"
+                if not env_py.exists():
+                    env_py = _base / "rdagent-env" / "bin" / "python"
+                if env_py.exists():
+                    r = subprocess.run(
+                        [str(env_py), "-c",
+                         f"import pandas as pd; "
+                         f"df=pd.read_parquet('{debug_path}'); "
+                         f"df.to_hdf('{debug_h5_path}', key='data', mode='w')"],
+                        capture_output=True, text=True, timeout=120,
+                    )
+                    if r.returncode == 0:
+                        result["debug_h5_path"] = str(debug_h5_path)
+                        logger.info(f"✅ debug h5: {debug_h5_path}")
+                    else:
+                        logger.warning(f"debug h5 生成失败: {r.stderr.strip()}")
+                else:
+                    logger.warning("未找到 rdagent-env/python，跳过 debug h5 生成")
+            except Exception as e:
+                logger.warning(f"debug h5 生成异常: {e}")
+
+        return result
+
     def stats(self) -> dict:
         """返回各缓存表的记录数，格式为 {"cache_kline_cache": N, ...}。"""
         with self._conn as conn:
             return {
                 f"cache_{t}": conn.execute(
-                    f"SELECT COUNT(*) FROM {_validate_table_name(t, _CACHE_TABLES)}"
+                    f"SELECT COUNT(*) FROM {_validate_table_name(t, _CACHE_TABLES)}",
                 ).fetchone()[0]
                 for t in _CACHE_TABLES
             }
 
 
-_cache: Optional[Cache] = None
+_cache: Cache | None = None
+_cache_lock = threading.Lock()
 
 
 def get_cache() -> Cache:
     """获取全局 Cache 单例，首次调用时自动初始化。"""
     global _cache
     if _cache is None:
-        _cache = Cache()
+        with _cache_lock:
+            if _cache is None:
+                _cache = Cache()
     return _cache
 
 

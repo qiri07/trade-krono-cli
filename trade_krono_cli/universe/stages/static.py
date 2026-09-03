@@ -1,21 +1,23 @@
-"""
-Static Filter Stage — ST / 停牌 / 次新股 静态过滤。
+"""Static Filter Stage — ST / 停牌 / 次新股 静态过滤。
 
 利用 abnormal_stock.py 的预检能力，对全市场股票做一次性静态排除。
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from loguru import logger
 
 from trade_krono_cli.abnormal_stock import precheck_stock_status
-from trade_krono_cli.universe.provider import UniverseTicket
 from trade_krono_cli.universe.stages import FilterStage
+
+if TYPE_CHECKING:
+    from trade_krono_cli.universe.provider import UniverseTicket
 
 
 class StaticFilterStage(FilterStage):
-    """
-    静态过滤阶段：排除 ST、停牌、退市、次新股票。
+    """静态过滤阶段：排除 ST、停牌、退市、次新股票。
 
     这是第一层过滤，在基本面数据获取之前进行，
     因为异常标记检查不需要额外的财务数据。
@@ -32,7 +34,7 @@ class StaticFilterStage(FilterStage):
         batch_size: int = 200,
         exclude_low_price: bool = True,
         low_price_threshold: float = 3.0,
-    ):
+    ) -> None:
         self.exclude_st = exclude_st
         self.skip_suspended = skip_suspended
         self.skip_new_stock = skip_new_stock
@@ -93,7 +95,7 @@ class StaticFilterStage(FilterStage):
 
         logger.info(
             f"📋 Static stage: {len(tickets)} → {len(kept)} "
-            f"(排除 {rejected_count} 只: ST/停牌/次新/低价)"
+            f"(排除 {rejected_count} 只: ST/停牌/次新/低价)",
         )
 
         # 低价股过滤（独立于 precheck，确保始终生效）
@@ -103,7 +105,7 @@ class StaticFilterStage(FilterStage):
             rejected_count += pre_lp - len(kept)
             logger.info(
                 f"📋 Static stage low-price: {pre_lp} → {len(kept)} "
-                f"(排除 {pre_lp - len(kept)} 只 < {self.low_price_threshold}元)"
+                f"(排除 {pre_lp - len(kept)} 只 < {self.low_price_threshold}元)",
             )
 
         return kept

@@ -1,6 +1,4 @@
-"""
-Tests for universe engine — multi-stage A-share universe discovery.
-"""
+"""Tests for universe engine — multi-stage A-share universe discovery."""
 
 from __future__ import annotations
 
@@ -28,12 +26,12 @@ from trade_krono_cli.universe.stages.static import StaticFilterStage
 
 
 class TestUniverseTicket:
-    def test_basic(self):
+    def test_basic(self) -> None:
         t = UniverseTicket(ticker="sh.600519", name="贵州茅台")
         assert t.ticker == "sh.600519"
         assert t.pe is None
 
-    def test_with_data(self):
+    def test_with_data(self) -> None:
         t = UniverseTicket(
             ticker="sz.000858",
             name="五粮液",
@@ -49,32 +47,32 @@ class TestUniverseTicket:
 
 
 class TestAkshareUniverseProvider:
-    def test_code_to_ticker_shanghai(self):
+    def test_code_to_ticker_shanghai(self) -> None:
         assert AkshareUniverseProvider._code_to_ticker("600519") == "sh.600519"
         assert AkshareUniverseProvider._code_to_ticker("510000") == "sh.510000"
         assert AkshareUniverseProvider._code_to_ticker("920000") == "sh.920000"
 
-    def test_code_to_ticker_shenzhen(self):
+    def test_code_to_ticker_shenzhen(self) -> None:
         assert AkshareUniverseProvider._code_to_ticker("000858") == "sz.000858"
         assert AkshareUniverseProvider._code_to_ticker("300750") == "sz.300750"
         assert AkshareUniverseProvider._code_to_ticker("002594") == "sz.002594"
 
-    def test_safe_float_none(self):
-        assert AkshareUniverseProvider._safe_float(None) is None
+    def test_safe_float_none(self) -> None:
+        assert UniverseProvider._safe_float(None) is None
 
-    def test_safe_float_nan(self):
-        assert AkshareUniverseProvider._safe_float(float("nan")) is None
+    def test_safe_float_nan(self) -> None:
+        assert UniverseProvider._safe_float(float("nan")) is None
 
-    def test_safe_float_inf(self):
-        assert AkshareUniverseProvider._safe_float(float("inf")) is None
-        assert AkshareUniverseProvider._safe_float(float("-inf")) is None
+    def test_safe_float_inf(self) -> None:
+        assert UniverseProvider._safe_float(float("inf")) is None
+        assert UniverseProvider._safe_float(float("-inf")) is None
 
-    def test_safe_float_valid(self):
-        assert AkshareUniverseProvider._safe_float("25.5") == 25.5
-        assert AkshareUniverseProvider._safe_float(42) == 42.0
+    def test_safe_float_valid(self) -> None:
+        assert UniverseProvider._safe_float("25.5") == 25.5
+        assert UniverseProvider._safe_float(42) == 42.0
 
     @patch.object(AkshareUniverseProvider, "get_universe")
-    def test_health_check_true(self, mock_get):
+    def test_health_check_true(self, mock_get) -> None:
         mock_get.return_value = [
             UniverseTicket(ticker="sh.600519"),
             UniverseTicket(ticker="sz.000858"),
@@ -83,19 +81,19 @@ class TestAkshareUniverseProvider:
         assert p.health_check() is True
 
     @patch.object(AkshareUniverseProvider, "get_universe")
-    def test_health_check_false(self, mock_get):
+    def test_health_check_false(self, mock_get) -> None:
         mock_get.return_value = []
         p = AkshareUniverseProvider()
         assert p.health_check() is False
 
     @patch.object(AkshareUniverseProvider, "get_universe")
-    def test_health_check_exception(self, mock_get):
+    def test_health_check_exception(self, mock_get) -> None:
         mock_get.side_effect = RuntimeError("network down")
         p = AkshareUniverseProvider()
         assert p.health_check() is False
 
-    def test_get_universe_import_error(self):
-        """akshare 未安装时返回空列表。"""
+    def test_get_universe_import_error(self) -> None:
+        """Akshare 未安装时返回空列表。"""
         import sys
 
         with pytest.MonkeyPatch().context() as mp:
@@ -104,8 +102,8 @@ class TestAkshareUniverseProvider:
             result = p.get_universe()
             assert result == []
 
-    def test_get_universe_runtime_error(self):
-        """akshare 抛出异常时返回空列表。"""
+    def test_get_universe_runtime_error(self) -> None:
+        """Akshare 抛出异常时返回空列表。"""
         import sys
         import types
 
@@ -119,15 +117,15 @@ class TestAkshareUniverseProvider:
 
 
 class TestGetUniverseProvider:
-    def test_akshare(self):
+    def test_akshare(self) -> None:
         p = get_universe_provider("akshare")
         assert isinstance(p, AkshareUniverseProvider)
 
-    def test_unknown_falls_back_to_akshare(self):
+    def test_unknown_falls_back_to_akshare(self) -> None:
         p = get_universe_provider("unknown_source")
         assert isinstance(p, AkshareUniverseProvider)
 
-    def test_empty_source_falls_back_to_akshare(self):
+    def test_empty_source_falls_back_to_akshare(self) -> None:
         p = get_universe_provider("")
         assert isinstance(p, AkshareUniverseProvider)
 
@@ -152,11 +150,11 @@ def _make_tickets(n: int = 10, **kwargs) -> list[UniverseTicket]:
 
 
 class TestStaticFilterStage:
-    def test_empty_input(self):
+    def test_empty_input(self) -> None:
         stage = StaticFilterStage()
         assert stage.filter([]) == []
 
-    def test_no_filters(self):
+    def test_no_filters(self) -> None:
         """所有过滤选项关闭时，所有 tickets 通过。"""
         stage = StaticFilterStage(
             exclude_st=False,
@@ -167,7 +165,7 @@ class TestStaticFilterStage:
         result = stage.filter(tickets)
         assert len(result) == 5
 
-    def test_exclude_low_price(self):
+    def test_exclude_low_price(self) -> None:
         """低价股（price < threshold）被排除。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", price=2.0),
@@ -190,7 +188,7 @@ class TestStaticFilterStage:
         assert result[0].ticker == "sh.600002"
         assert result[1].ticker == "sh.600004"
 
-    def test_exclude_low_price_disabled(self):
+    def test_exclude_low_price_disabled(self) -> None:
         """exclude_low_price=False 时不过滤低价股。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", price=2.0),
@@ -209,11 +207,11 @@ class TestStaticFilterStage:
 
 
 class TestFundamentalFilterStage:
-    def test_empty_input(self):
+    def test_empty_input(self) -> None:
         stage = FundamentalFilterStage()
         assert stage.filter([]) == []
 
-    def test_market_cap_filter(self):
+    def test_market_cap_filter(self) -> None:
         stage = FundamentalFilterStage(market_cap_range=(200.0, 500.0))
         tickets = _make_tickets(5)
         result = stage.filter(tickets)
@@ -221,7 +219,7 @@ class TestFundamentalFilterStage:
         for t in result:
             assert 200.0 <= t.market_cap <= 500.0
 
-    def test_pe_filter_excludes_negative(self):
+    def test_pe_filter_excludes_negative(self) -> None:
         """PE <= 0 的亏损股被排除。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", pe=-5.0, market_cap=100.0),
@@ -232,7 +230,7 @@ class TestFundamentalFilterStage:
         assert len(result) == 1
         assert result[0].ticker == "sh.600002"
 
-    def test_pe_filter_range(self):
+    def test_pe_filter_range(self) -> None:
         tickets = [
             UniverseTicket(ticker="sh.600001", pe=3.0, market_cap=100.0),
             UniverseTicket(ticker="sh.600002", pe=25.0, market_cap=200.0),
@@ -243,7 +241,7 @@ class TestFundamentalFilterStage:
         assert len(result) == 1
         assert result[0].ticker == "sh.600002"
 
-    def test_pb_filter(self):
+    def test_pb_filter(self) -> None:
         tickets = [
             UniverseTicket(ticker="sh.600001", pb=0.5, market_cap=100.0),
             UniverseTicket(ticker="sh.600002", pb=3.0, market_cap=200.0),
@@ -254,13 +252,13 @@ class TestFundamentalFilterStage:
         assert len(result) == 1
         assert result[0].ticker == "sh.600002"
 
-    def test_no_filters_all_pass(self):
+    def test_no_filters_all_pass(self) -> None:
         stage = FundamentalFilterStage()
         tickets = _make_tickets(3)
         result = stage.filter(tickets)
         assert len(result) == 3
 
-    def test_min_pb_filter(self):
+    def test_min_pb_filter(self) -> None:
         """PB < min_pb 的股票被排除（资不抵债风险）。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", pb=0.5, market_cap=100.0),
@@ -272,7 +270,7 @@ class TestFundamentalFilterStage:
         assert len(result) == 2
         assert all(t.ticker != "sh.600001" for t in result)
 
-    def test_min_pb_none_ignores(self):
+    def test_min_pb_none_ignores(self) -> None:
         """min_pb=None 时不做 PB 下限过滤。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", pb=0.3, market_cap=100.0),
@@ -282,7 +280,7 @@ class TestFundamentalFilterStage:
         result = stage.filter(tickets)
         assert len(result) == 2
 
-    def test_industry_whitelist(self):
+    def test_industry_whitelist(self) -> None:
         """industry_whitelist 精确匹配过滤。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", industry="银行"),
@@ -294,7 +292,7 @@ class TestFundamentalFilterStage:
         assert len(result) == 2
         assert all(t.industry == "银行" for t in result)
 
-    def test_industry_blacklist(self):
+    def test_industry_blacklist(self) -> None:
         """industry_blacklist 排除指定行业。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", industry="银行"),
@@ -306,7 +304,7 @@ class TestFundamentalFilterStage:
         assert len(result) == 1
         assert result[0].ticker == "sh.600001"
 
-    def test_industry_none_skips_filter(self):
+    def test_industry_none_skips_filter(self) -> None:
         """industry=None 时，whitelist/blacklist 不过滤（宽松策略）。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", industry="银行"),
@@ -320,8 +318,8 @@ class TestFundamentalFilterStage:
         assert result[0].ticker == "sh.600001"
         assert result[1].ticker == "sh.600002"
 
-    def test_industry_combined_with_pe_filter(self):
-        """industry 过滤与 PE 过滤联合生效。"""
+    def test_industry_combined_with_pe_filter(self) -> None:
+        """Industry 过滤与 PE 过滤联合生效。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", industry="银行", pe=8.0),
             UniverseTicket(ticker="sh.600002", industry="房地产", pe=15.0),
@@ -337,11 +335,11 @@ class TestFundamentalFilterStage:
 
 
 class TestFactorFilterStage:
-    def test_empty_input(self):
+    def test_empty_input(self) -> None:
         stage = FactorFilterStage()
         assert stage.filter([]) == []
 
-    def test_volume_ratio_filter(self):
+    def test_volume_ratio_filter(self) -> None:
         tickets = [
             UniverseTicket(ticker="sh.600001", volume_ratio=0.5),
             UniverseTicket(ticker="sh.600002", volume_ratio=1.5),
@@ -352,7 +350,7 @@ class TestFactorFilterStage:
         assert len(result) == 2
         assert all(t.volume_ratio >= 1.0 for t in result)
 
-    def test_turnover_rate_filter(self):
+    def test_turnover_rate_filter(self) -> None:
         tickets = [
             UniverseTicket(ticker="sh.600001", turnover_rate=0.1),
             UniverseTicket(ticker="sh.600002", turnover_rate=0.8),
@@ -362,7 +360,7 @@ class TestFactorFilterStage:
         result = stage.filter(tickets)
         assert len(result) == 2
 
-    def test_combined_filters(self):
+    def test_combined_filters(self) -> None:
         tickets = [
             UniverseTicket(ticker="sh.600001", volume_ratio=0.5, turnover_rate=0.1),
             UniverseTicket(ticker="sh.600002", volume_ratio=1.5, turnover_rate=0.8),
@@ -373,7 +371,7 @@ class TestFactorFilterStage:
         assert len(result) == 1
         assert result[0].ticker == "sh.600002"
 
-    def test_no_filters_all_pass(self):
+    def test_no_filters_all_pass(self) -> None:
         stage = FactorFilterStage()
         tickets = _make_tickets(3)
         result = stage.filter(tickets)
@@ -386,13 +384,13 @@ class TestFactorFilterStage:
 
 
 class TestUniverseEngine:
-    def test_from_config(self):
+    def test_from_config(self) -> None:
         fc = FilterConfig(universe_source="akshare")
         engine = UniverseEngine.from_config(fc)
         assert engine is not None
         assert len(engine.stage_summary()) == 3
 
-    def test_run_with_mock_provider(self):
+    def test_run_with_mock_provider(self) -> None:
         mock_provider = MagicMock(spec=UniverseProvider)
         mock_provider.name = "mock"
         mock_provider.get_universe.return_value = _make_tickets(5)
@@ -414,7 +412,7 @@ class TestUniverseEngine:
         assert len(tickers) == 5
         assert all(isinstance(t, str) for t in tickers)
 
-    def test_run_returns_empty_when_provider_empty(self):
+    def test_run_returns_empty_when_provider_empty(self) -> None:
         mock_provider = MagicMock(spec=UniverseProvider)
         mock_provider.name = "mock"
         mock_provider.get_universe.return_value = []
@@ -430,7 +428,7 @@ class TestUniverseEngine:
             tickers = engine.run()
         assert tickers == []
 
-    def test_stage_summary(self):
+    def test_stage_summary(self) -> None:
         fc = FilterConfig(universe_source="akshare")
         engine = UniverseEngine.from_config(fc)
         stages = engine.stage_summary()
@@ -440,7 +438,7 @@ class TestUniverseEngine:
         assert "fundamental" in names
         assert "factor" in names
 
-    def test_stage_summary_with_rules(self):
+    def test_stage_summary_with_rules(self) -> None:
         """含 filter_rules 时 stages 包含 rules。"""
         from trade_krono_cli.stock_filter import MinValueRule
 
@@ -452,7 +450,7 @@ class TestUniverseEngine:
         names = [s["name"] for s in engine.stage_summary()]
         assert "rules" in names
 
-    def test_cache_key_deterministic(self):
+    def test_cache_key_deterministic(self) -> None:
         mock_provider = MagicMock(spec=UniverseProvider)
         mock_provider.name = "mock"
         engine = UniverseEngine(
@@ -465,7 +463,7 @@ class TestUniverseEngine:
         assert key1 == key2
         assert len(key1) == 16  # 16-char hex
 
-    def test_cache_key_differs_by_date(self):
+    def test_cache_key_differs_by_date(self) -> None:
         mock_provider = MagicMock(spec=UniverseProvider)
         mock_provider.name = "mock"
         engine = UniverseEngine(
@@ -479,7 +477,7 @@ class TestUniverseEngine:
 
 
 class TestGetUniverse:
-    def test_returns_list_of_strings(self):
+    def test_returns_list_of_strings(self) -> None:
         mock_provider = MagicMock(spec=UniverseProvider)
         mock_provider.name = "mock"
         mock_provider.get_universe.return_value = _make_tickets(3)
@@ -493,11 +491,11 @@ class TestGetUniverse:
 
 
 class TestFilterRulesStage:
-    def test_empty_input(self):
+    def test_empty_input(self) -> None:
         stage = FilterRulesStage()
         assert stage.filter([]) == []
 
-    def test_no_rules(self):
+    def test_no_rules(self) -> None:
         """无规则时所有 tickets 通过。"""
         stage = FilterRulesStage(rules=[])
         tickets = [
@@ -506,8 +504,8 @@ class TestFilterRulesStage:
         ]
         assert len(stage.filter(tickets)) == 2
 
-    def test_min_price_rule(self):
-        """price >= 5.0 的规则。"""
+    def test_min_price_rule(self) -> None:
+        """Price >= 5.0 的规则。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", price=2.0),
             UniverseTicket(ticker="sh.600002", price=50.0),
@@ -520,8 +518,8 @@ class TestFilterRulesStage:
         assert result[0].ticker == "sh.600002"
         assert result[1].ticker == "sh.600003"
 
-    def test_max_pe_rule(self):
-        """pe <= 50 的规则（PE 别名映射）。"""
+    def test_max_pe_rule(self) -> None:
+        """Pe <= 50 的规则（PE 别名映射）。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", pe=10.0),
             UniverseTicket(ticker="sh.600002", pe=80.0),
@@ -532,7 +530,7 @@ class TestFilterRulesStage:
         result = stage.filter(tickets)
         assert len(result) == 2
 
-    def test_none_field_skips_rule(self):
+    def test_none_field_skips_rule(self) -> None:
         """price=None 时跳过依赖 price 的规则。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", price=None),
@@ -543,7 +541,7 @@ class TestFilterRulesStage:
         result = stage.filter(tickets)
         assert len(result) == 2
 
-    def test_market_cap_billion_alias(self):
+    def test_market_cap_billion_alias(self) -> None:
         """market_cap_billion 别名映射到 market_cap。"""
         tickets = [
             UniverseTicket(ticker="sh.600001", market_cap=10.0),

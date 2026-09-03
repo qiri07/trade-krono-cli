@@ -1,5 +1,4 @@
-"""
-Risk — 风险评估领域对象。
+"""Risk — 风险评估领域对象。
 
 RiskAssessment 整合多源风险因子（波动率 / 流动性 / 估值 / 事件 / 市场状态），
 输出综合风险评分和风险调整后的预期收益。
@@ -8,7 +7,6 @@ RiskAssessment 整合多源风险因子（波动率 / 流动性 / 估值 / 事�
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -31,8 +29,7 @@ class RiskFactor:
 
 @dataclass(frozen=True)
 class RiskAssessment:
-    """
-    综合风险评估结果。
+    """综合风险评估结果。
 
     Parameters
     ----------
@@ -56,6 +53,7 @@ class RiskAssessment:
     var_95                  95% 置信度 VaR（%）
     cvar_95                 95% 置信度 CVaR（%）
     max_drawdown_pct        最大回撤（%）
+
     """
 
     ticker: str
@@ -72,15 +70,15 @@ class RiskAssessment:
     concentration_score: float = 0.0
 
     # 风险调整后收益
-    adjusted_expected_return: Optional[float] = None
+    adjusted_expected_return: float | None = None
 
     # 风险因子的详细描述
     risk_factors: list[RiskFactor] = field(default_factory=list)
 
     # VaR / CVaR
-    var_95: Optional[float] = None
-    cvar_95: Optional[float] = None
-    max_drawdown_pct: Optional[float] = None
+    var_95: float | None = None
+    cvar_95: float | None = None
+    max_drawdown_pct: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -102,7 +100,7 @@ class RiskAssessment:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "RiskAssessment":
+    def from_dict(cls, data: dict) -> RiskAssessment:
         factors = [RiskFactor(**f) for f in data.get("risk_factors", [])]
         return cls(
             ticker=data["ticker"],
@@ -123,5 +121,5 @@ class RiskAssessment:
         )
 
     @classmethod
-    def empty(cls, ticker: str, eval_date: str) -> "RiskAssessment":
+    def empty(cls, ticker: str, eval_date: str) -> RiskAssessment:
         return cls(ticker=ticker, eval_date=eval_date)

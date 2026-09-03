@@ -5,7 +5,7 @@ import pytest
 from trade_krono_cli.constraints_config import ConstraintConfig
 
 
-def test_default_config():
+def test_default_config() -> None:
     cfg = ConstraintConfig()
     assert cfg.enable_limit_check is True
     assert cfg.enable_t1 is True
@@ -19,49 +19,49 @@ def test_default_config():
     assert cfg.adjustflag == "1"
 
 
-def test_total_roundtrip_bps():
+def test_total_roundtrip_bps() -> None:
     cfg = ConstraintConfig()
     # buy: 3+5=8bps, sell: 3+5+1=9bps, total=17bps
     assert cfg.total_roundtrip_bps() == 17.0
 
 
-def test_buy_cost_bps():
+def test_buy_cost_bps() -> None:
     cfg = ConstraintConfig()
     assert cfg.buy_cost_bps() == 8.0
 
 
-def test_sell_cost_bps():
+def test_sell_cost_bps() -> None:
     cfg = ConstraintConfig()
     assert cfg.sell_cost_bps() == 9.0
 
 
-def test_apply_cost_with_model():
+def test_apply_cost_with_model() -> None:
     cfg = ConstraintConfig()
     # gross 5%, buy cost 8bps = 0.08%
     net = cfg.apply_cost(5.0)
     assert net == pytest.approx(4.92, abs=0.01)
 
 
-def test_apply_cost_disabled():
+def test_apply_cost_disabled() -> None:
     cfg = ConstraintConfig(enable_cost_model=False)
     net = cfg.apply_cost(5.0)
     assert net == 5.0
 
 
-def test_apply_roundtrip_cost():
+def test_apply_roundtrip_cost() -> None:
     cfg = ConstraintConfig()
     # gross 5%, roundtrip 17bps = 0.17%
     net = cfg.apply_roundtrip_cost(5.0)
     assert net == pytest.approx(4.83, abs=0.01)
 
 
-def test_apply_roundtrip_cost_disabled():
+def test_apply_roundtrip_cost_disabled() -> None:
     cfg = ConstraintConfig(enable_cost_model=False)
     net = cfg.apply_roundtrip_cost(5.0)
     assert net == 5.0
 
 
-def test_custom_config():
+def test_custom_config() -> None:
     cfg = ConstraintConfig(
         commission_bps=2.0,
         slippage_bps=3.0,
@@ -72,7 +72,7 @@ def test_custom_config():
     assert cfg.total_roundtrip_bps() == 2.0 + 3.0 + 2.0 + 3.0 + 0.5  # 10.5
 
 
-def test_config_frozen_false():
+def test_config_frozen_false() -> None:
     """ConstraintConfig 不是 frozen，允许运行时修改。"""
     cfg = ConstraintConfig()
     cfg.enable_limit_check = False

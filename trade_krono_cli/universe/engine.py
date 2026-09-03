@@ -1,5 +1,4 @@
-"""
-Universe Engine — 多阶段 A 股市场范围发现与过滤。
+"""Universe Engine — 多阶段 A 股市场范围发现与过滤。
 
 编排流程：
   Provider.get_universe()           → ~5300 A 股
@@ -19,7 +18,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -44,8 +43,7 @@ CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "outputs" / "cache" 
 
 
 class UniverseEngine:
-    """
-    A 股市场范围发现引擎。
+    """A 股市场范围发现引擎。
 
     通过多阶段管道从全市场 A 股中逐层过滤，最终产出让 TA/Kronos 消费的股票列表。
 
@@ -58,9 +56,9 @@ class UniverseEngine:
         self,
         provider: UniverseProvider,
         stages: list,  # list[FilterStage]
-        cache_dir: Optional[Path] = None,
+        cache_dir: Path | None = None,
         cache_ttl_hours: int = 4,
-    ):
+    ) -> None:
         self._provider = provider
         self._stages = stages
         self._cache_dir = cache_dir or CACHE_DIR
@@ -71,13 +69,12 @@ class UniverseEngine:
     @classmethod
     def from_config(
         cls,
-        filter_config: "FilterConfig",
+        filter_config: FilterConfig,
         universe_source: str = "akshare",
-        cache_dir: Optional[Path] = None,
+        cache_dir: Path | None = None,
         cache_ttl_hours: int = 4,
-    ) -> "UniverseEngine":
-        """
-        从 FilterConfig 构建 UniverseEngine。
+    ) -> UniverseEngine:
+        """从 FilterConfig 构建 UniverseEngine。
 
         Parameters
         ----------
@@ -89,6 +86,7 @@ class UniverseEngine:
             缓存目录
         cache_ttl_hours : int
             缓存有效期（小时）
+
         """
         provider = get_universe_provider(
             universe_source,
@@ -97,7 +95,8 @@ class UniverseEngine:
         if provider is None:
             provider = get_universe_provider("akshare")
         if provider is None:
-            raise ValueError(f"无法初始化 UniverseProvider，source={universe_source!r}")
+            msg = f"无法初始化 UniverseProvider，source={universe_source!r}"
+            raise ValueError(msg)
 
         stages: list = []
 
@@ -114,7 +113,7 @@ class UniverseEngine:
                 new_stock_min_days=abnormality.new_stock_min_days,
                 exclude_low_price=filter_config.exclude_low_price,
                 low_price_threshold=filter_config.low_price_threshold,
-            )
+            ),
         )
 
         # Stage 2: 基本面过滤
@@ -127,7 +126,7 @@ class UniverseEngine:
                 min_pb=filter_config.min_pb,
                 industry_whitelist=filter_config.industry_whitelist,
                 industry_blacklist=filter_config.industry_blacklist,
-            )
+            ),
         )
 
         # Stage 2.5: 自定义规则过滤（filter_rules）
@@ -140,7 +139,7 @@ class UniverseEngine:
                 min_volume_ratio=filter_config.min_volume_ratio,
                 min_turnover_rate=filter_config.min_turnover_rate,
                 min_volume=filter_config.min_volume,
-            )
+            ),
         )
 
         return cls(
@@ -153,8 +152,7 @@ class UniverseEngine:
     # ── 主入口 ───────────────────────────────────────────────────────────────
 
     def run(self, eval_date: str = "") -> list[str]:
-        """
-        执行完整市场范围发现流程。
+        """执行完整市场范围发现流程。
 
         Parameters
         ----------
@@ -166,6 +164,7 @@ class UniverseEngine:
         -------
         list[str]
             通过所有阶段过滤的股票代码列表（归一化格式）
+
         """
         date_key = eval_date or _today_str()
         cache_key = self._cache_key(date_key)
@@ -234,7 +233,7 @@ class UniverseEngine:
     def _cache_path(self, key: str) -> Path:
         return self._cache_dir / f"{key}.json"
 
-    def _load_cache(self, key: str, date_key: str) -> Optional[list[str]]:
+    def _load_cache(self, key: str, date_key: str) -> list[str] | None:
         path = self._cache_path(key)
         if not path.exists():
             return None
@@ -273,12 +272,11 @@ class UniverseEngine:
 
 
 def get_universe(
-    filter_config: "FilterConfig",
+    filter_config: FilterConfig,
     universe_source: str = "akshare",
     eval_date: str = "",
 ) -> list[str]:
-    """
-    便捷函数：从 FilterConfig 直接获取宇宙列表。
+    """便捷函数：从 FilterConfig 直接获取宇宙列表。
 
     等价于 UniverseEngine.from_config(...) 的速写。
     """

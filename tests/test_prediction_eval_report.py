@@ -10,7 +10,7 @@ from trade_krono_cli.prediction_eval import (
 )
 
 
-def test_print_report_empty_summary(caplog):
+def test_print_report_empty_summary(caplog) -> None:
     """打印空 summary 的报告不应崩溃。"""
     from loguru import logger
 
@@ -20,7 +20,7 @@ def test_print_report_empty_summary(caplog):
 
     captured: list[str] = []
 
-    def _capture(*args, **kwargs):
+    def _capture(*args, **kwargs) -> None:
         if args:
             captured.append(str(args[0]))
 
@@ -31,7 +31,7 @@ def test_print_report_empty_summary(caplog):
     assert "5D 准确率:   0.0%" in full
 
 
-def test_print_report_with_data(caplog):
+def test_print_report_with_data(caplog) -> None:
     """打印有数据的报告应包含正确的指标。"""
     from loguru import logger
 
@@ -51,13 +51,13 @@ def test_print_report_with_data(caplog):
             error_pct=0.5,
             ta_signal="BUY",
             composite_score=80.0,
-        )
+        ),
     ]
     summary = evaluator._compute_summary(records)
 
     captured: list[str] = []
 
-    def _capture(*args, **kwargs):
+    def _capture(*args, **kwargs) -> None:
         if args:
             captured.append(str(args[0]))
 
@@ -68,13 +68,13 @@ def test_print_report_with_data(caplog):
     assert "综合信号" in full
 
 
-def test_run_evaluation_no_results(caplog):
+def test_run_evaluation_no_results(caplog) -> None:
     """latest=True 且无评估结果时，应打印提示并返回。"""
     from loguru import logger
 
     captured: list[str] = []
 
-    def _capture(*args, **kwargs):
+    def _capture(*args, **kwargs) -> None:
         if args:
             captured.append(str(args[0]))
 
@@ -85,7 +85,7 @@ def test_run_evaluation_no_results(caplog):
     assert "暂无评估结果" in "\n".join(captured)
 
 
-def test_run_evaluation_with_latest_result(caplog):
+def test_run_evaluation_with_latest_result(caplog) -> None:
     """latest=True 且有评估结果时，应打印结果。"""
     from loguru import logger
 
@@ -103,7 +103,7 @@ def test_run_evaluation_with_latest_result(caplog):
                 combined_buy_up_avg_return=0.0,
                 high_conf_win_rate=0.0,
                 high_conf_avg_return=0.0,
-            )
+            ),
         }
         records = []
 
@@ -112,7 +112,7 @@ def test_run_evaluation_with_latest_result(caplog):
 
     captured: list[str] = []
 
-    def _capture(*args, **kwargs):
+    def _capture(*args, **kwargs) -> None:
         if args:
             captured.append(str(args[0]))
 

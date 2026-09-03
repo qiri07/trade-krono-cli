@@ -9,7 +9,7 @@ from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.pipeline_config import PipelineConfig
 
 
-def test_default_config():
+def test_default_config() -> None:
     cfg = PipelineConfig.default()
     assert cfg.sample_count == 5
     assert cfg.pred_len == 30
@@ -24,7 +24,7 @@ def test_default_config():
     assert isinstance(cfg.risk, RiskConfig)
 
 
-def test_override():
+def test_override() -> None:
     cfg = PipelineConfig.default().override(
         sample_count=10,
         min_confidence=40.0,
@@ -35,7 +35,7 @@ def test_override():
     assert cfg.pred_len == 30
 
 
-def test_to_dict_roundtrip():
+def test_to_dict_roundtrip() -> None:
     cfg = PipelineConfig.default()
     d = cfg.to_dict()
     assert isinstance(d["output_dir"], str)
@@ -49,7 +49,7 @@ def test_to_dict_roundtrip():
     assert isinstance(cfg2.risk, RiskConfig)
 
 
-def test_save_and_load_json(tmp_path: Path):
+def test_save_and_load_json(tmp_path: Path) -> None:
     cfg = PipelineConfig.default().override(sample_count=7, min_confidence=45.0)
     path = tmp_path / "config.json"
     cfg.save(path)
@@ -59,7 +59,7 @@ def test_save_and_load_json(tmp_path: Path):
     assert loaded.min_confidence == 45.0
 
 
-def test_save_and_load_yaml(tmp_path: Path):
+def test_save_and_load_yaml(tmp_path: Path) -> None:
     pytest.importorskip("yaml")
     # YAML 无法原生序列化 tuple，用 from_dict 方式绕过
     cfg = PipelineConfig.default().override(sample_count=3, allowed_signals=["BUY", "HOLD"])
@@ -81,20 +81,20 @@ def test_save_and_load_yaml(tmp_path: Path):
     assert loaded.sample_count == 3
 
 
-def test_load_nonexistent_raises():
+def test_load_nonexistent_raises() -> None:
     with pytest.raises((FileNotFoundError, OSError)):
         PipelineConfig.load("/nonexistent/path.json")
 
 
-def test_constraints_nested_in_override():
+def test_constraints_nested_in_override() -> None:
     cfg = PipelineConfig.default().override(
-        constraints={"enable_limit_check": False, "commission_bps": 2.0}
+        constraints={"enable_limit_check": False, "commission_bps": 2.0},
     )
     assert cfg.constraints.enable_limit_check is False
     assert cfg.constraints.commission_bps == 2.0
 
 
-def test_log_json_flag():
+def test_log_json_flag() -> None:
     cfg = PipelineConfig.default().override(log_json=True)
     assert cfg.log_json is True
 
@@ -102,7 +102,7 @@ def test_log_json_flag():
     assert cfg2.log_json is False
 
 
-def test_scoring_defaults():
+def test_scoring_defaults() -> None:
     """ScoringConfig 默认值应与原 hard-coded 常量一致。"""
     cfg = PipelineConfig.default()
     s = cfg.scoring
@@ -120,7 +120,7 @@ def test_scoring_defaults():
     assert s.uncertainty_low_penalty == -2.0
 
 
-def test_risk_defaults():
+def test_risk_defaults() -> None:
     """RiskConfig 默认值应与新架构一致。"""
     cfg = PipelineConfig.default()
     r = cfg.risk
@@ -142,7 +142,7 @@ def test_risk_defaults():
     assert r.commission_bps == 3.0
 
 
-def test_from_dict_restores_dataclasses(tmp_path: Path):
+def test_from_dict_restores_dataclasses(tmp_path: Path) -> None:
     """from_dict 必须将 scoring/risk 恢复为 dataclass 实例。"""
     cfg = PipelineConfig.default().override(sample_count=7)
     path = tmp_path / "config.json"
@@ -154,7 +154,7 @@ def test_from_dict_restores_dataclasses(tmp_path: Path):
     assert loaded.sample_count == 7
 
 
-def test_merge_works_with_loaded_config(tmp_path: Path):
+def test_merge_works_with_loaded_config(tmp_path: Path) -> None:
     """从文件加载的配置用于 merge_results 不应 AttributeError。"""
     import numpy as np
     import pandas as pd
@@ -181,7 +181,7 @@ def test_merge_works_with_loaded_config(tmp_path: Path):
             "low": close_vals * 0.98,
             "close": close_vals,
             "volume": pd.Series([1e7] * 60),
-        }
+        },
     )
 
     cfg = PipelineConfig.default()

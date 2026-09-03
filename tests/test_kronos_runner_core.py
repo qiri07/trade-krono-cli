@@ -28,7 +28,7 @@ class TestKronosRunnerParsePredDf:
         )
         return KronosRunner(no_cache=True, sample_count=1, settings=settings)
 
-    def test_single_sample_up(self):
+    def test_single_sample_up(self) -> None:
         runner = self._make_runner()
         pred_df = pd.DataFrame({"close": [100.0, 102.0, 104.0]})
         result = runner._parse_pred_df(pred_df, last_close=100.0, sample_count=1)
@@ -41,7 +41,7 @@ class TestKronosRunnerParsePredDf:
         assert result["prediction_uncertainty"]["path_dispersion"] is None
         assert result["prediction_uncertainty"]["confidence_score"] > 0
 
-    def test_single_sample_down(self):
+    def test_single_sample_down(self) -> None:
         runner = self._make_runner()
         pred_df = pd.DataFrame({"close": [100.0, 97.0, 94.0]})
         result = runner._parse_pred_df(pred_df, last_close=100.0, sample_count=1)
@@ -49,20 +49,20 @@ class TestKronosRunnerParsePredDf:
         assert result["expected_change_pct"] == pytest.approx(-6.0, abs=0.1)
         assert result["direction"] == "DOWN"
 
-    def test_single_sample_flat(self):
+    def test_single_sample_flat(self) -> None:
         runner = self._make_runner()
         pred_df = pd.DataFrame({"close": [100.0, 100.5, 100.8]})
         result = runner._parse_pred_df(pred_df, last_close=100.0, sample_count=1)
 
         assert result["direction"] == "FLAT"
 
-    def test_empty_pred_df_raises(self):
+    def test_empty_pred_df_raises(self) -> None:
         runner = self._make_runner()
         pred_df = pd.DataFrame({"close": []})
         with pytest.raises(RuntimeError, match="空预测"):
             runner._parse_pred_df(pred_df, last_close=100.0)
 
-    def test_direction_score_bounds(self):
+    def test_direction_score_bounds(self) -> None:
         """direction_score 应在 [0, 1] 区间内。"""
         runner = self._make_runner()
         pred_df = pd.DataFrame({"close": [100.0, 150.0, 200.0]})
@@ -70,7 +70,7 @@ class TestKronosRunnerParsePredDf:
         dc = result["prediction_uncertainty"]["direction_score"]
         assert 0.0 <= dc <= 1.0
 
-    def test_confidence_score_clamped_0_100(self):
+    def test_confidence_score_clamped_0_100(self) -> None:
         """confidence_score 应被 clamp 到 [0, 100]。"""
         runner = self._make_runner()
         pred_df = pd.DataFrame({"close": [100.0, 50.0, 150.0]})
@@ -78,9 +78,8 @@ class TestKronosRunnerParsePredDf:
         cs = result["prediction_uncertainty"]["confidence_score"]
         assert 0.0 <= cs <= 100.0
 
-    def test_multi_sample_path_dispersion(self):
+    def test_multi_sample_path_dispersion(self) -> None:
         """多样本时应计算 path_dispersion（通过 build_result_dict 传入 stacked）。"""
-
         from trade_krono_cli.prediction_distribution import build_result_dict
 
         # 模拟 5 条不同路径
@@ -91,7 +90,7 @@ class TestKronosRunnerParsePredDf:
                 [100.0, 101.5, 103.0],
                 [100.0, 99.5, 99.0],
                 [100.0, 100.0, 100.5],
-            ]
+            ],
         )
         result = build_result_dict(
             stacked.mean(axis=0),
@@ -127,7 +126,7 @@ class TestKronosRunnerPredDfToDict:
         )
         return KronosRunner(no_cache=True, sample_count=1, settings=settings)
 
-    def test_basic(self):
+    def test_basic(self) -> None:
         runner = self._make_runner()
         pred_df = pd.DataFrame(
             {
@@ -145,7 +144,7 @@ class TestKronosRunnerPredDfToDict:
         assert result["close"][0] == 101.0
         assert result["close"][1] == 102.0
 
-    def test_missing_columns_uses_defaults(self):
+    def test_missing_columns_uses_defaults(self) -> None:
         """缺失列应使用默认值 0。"""
         runner = self._make_runner()
         pred_df = pd.DataFrame({"close": [101.0, 102.0]})
@@ -174,7 +173,7 @@ class TestKronosRunnerApplyUncertainty:
         )
         return KronosRunner(no_cache=True, sample_count=1, settings=settings)
 
-    def test_applies_fields(self):
+    def test_applies_fields(self) -> None:
         runner = self._make_runner()
         res = MagicMock()
         res.prediction_uncertainty = None

@@ -1,5 +1,4 @@
-"""
-研究数据库 schema — 表结构定义、常量、SQL 验证。
+"""研究数据库 schema — 表结构定义、常量、SQL 验证。
 
 本模块不含任何运行时数据库逻辑，仅供 migrations.py 和 base.py 引用。
 """
@@ -26,7 +25,7 @@ RESEARCH_TABLES: frozenset[str] = frozenset(
         "data_snapshots",
         "walkforward_runs",
         "experiments",
-    }
+    },
 )
 
 
@@ -35,7 +34,8 @@ def validate_table_name(table: str, allowed: frozenset[str] | None = None) -> st
     if allowed is None:
         allowed = RESEARCH_TABLES
     if table not in allowed:
-        raise ValueError(f"Unauthorized table: {table}")
+        msg = f"Unauthorized table: {table}"
+        raise ValueError(msg)
     return table
 
 

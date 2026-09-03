@@ -1,5 +1,4 @@
-"""
-KronosForecastResult — 单只股票的 Kronos 预测结果数据类。
+"""KronosForecastResult — 单只股票的 Kronos 预测结果数据类。
 
 迁移自 kronos_runner.py（原行 81-164）。
 
@@ -9,14 +8,14 @@ KronosForecastResult — 单只股票的 Kronos 预测结果数据类。
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING
 
-from trade_krono_cli.prediction_distribution import PredictionDistribution
+if TYPE_CHECKING:
+    from trade_krono_cli.prediction_distribution import PredictionDistribution
 
 
 class KronosForecastResult:
-    """
-    单只股票的 Kronos 预测结果。
+    """单只股票的 Kronos 预测结果。
 
     Attributes
     ----------
@@ -36,25 +35,26 @@ class KronosForecastResult:
     error                 错误信息（预测失败时填充）
     elapsed_sec           预测耗时（秒）
     prediction_uncertainty 预测不确定性分布
+
     """
 
     __slots__ = (
-        "ticker",
+        "confidence_band",
+        "direction",
+        "elapsed_sec",
+        "error",
         "eval_date",
+        "expected_change_pct",
+        "forecast_dict",
         "horizon",
         "interval",
         "last_close",
-        "predicted_close_mean",
-        "predicted_close_final",
-        "expected_change_pct",
-        "direction",
-        "volatility_proxy",
-        "confidence_band",
-        "forecast_dict",
         "model_name",
-        "error",
-        "elapsed_sec",
+        "predicted_close_final",
+        "predicted_close_mean",
         "prediction_uncertainty",
+        "ticker",
+        "volatility_proxy",
     )
 
     def __init__(
@@ -63,18 +63,18 @@ class KronosForecastResult:
         eval_date: str,
         horizon: int,
         interval: str = "d",
-        last_close: Optional[float] = None,
-        predicted_close_mean: Optional[float] = None,
-        predicted_close_final: Optional[float] = None,
-        expected_change_pct: Optional[float] = None,
-        direction: Optional[str] = None,
-        volatility_proxy: Optional[float] = None,
-        confidence_band: Optional[dict] = None,
-        forecast_dict: Optional[dict] = None,
-        model_name: Optional[str] = None,
-        error: Optional[str] = None,
+        last_close: float | None = None,
+        predicted_close_mean: float | None = None,
+        predicted_close_final: float | None = None,
+        expected_change_pct: float | None = None,
+        direction: str | None = None,
+        volatility_proxy: float | None = None,
+        confidence_band: dict | None = None,
+        forecast_dict: dict | None = None,
+        model_name: str | None = None,
+        error: str | None = None,
         elapsed_sec: float = 0.0,
-        prediction_uncertainty: Optional[PredictionDistribution] = None,
+        prediction_uncertainty: PredictionDistribution | None = None,
     ) -> None:
         self.ticker = ticker
         self.eval_date = eval_date

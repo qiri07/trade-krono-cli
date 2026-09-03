@@ -1,5 +1,4 @@
-"""
-ResourcePool — 统一的并发资源管理器。
+"""ResourcePool — 统一的并发资源管理器。
 
 职责：
   · CPU 线程池   — TA 分析、数据预处理（CPU-bound）
@@ -36,9 +35,12 @@ import asyncio
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass(frozen=True)
@@ -63,7 +65,7 @@ class _AsyncSemaphoreContext:
 
     __slots__ = ("_sem",)
 
-    def __init__(self, sem: asyncio.Semaphore):
+    def __init__(self, sem: asyncio.Semaphore) -> None:
         self._sem = sem
 
     async def __aenter__(self):
@@ -76,8 +78,7 @@ class _AsyncSemaphoreContext:
 
 
 class ResourcePool:
-    """
-    统一并发资源管理器。
+    """统一并发资源管理器。
 
     用法：
         pool = ResourcePool()
@@ -97,13 +98,13 @@ class ResourcePool:
         pool.close()
     """
 
-    def __init__(self, config: Optional[PoolConfig] = None):
+    def __init__(self, config: PoolConfig | None = None) -> None:
         self._config = config or PoolConfig()
-        self._cpu_pool: Optional[ThreadPoolExecutor] = None
-        self._io_pool: Optional[ThreadPoolExecutor] = None
+        self._cpu_pool: ThreadPoolExecutor | None = None
+        self._io_pool: ThreadPoolExecutor | None = None
         # LLM / GPU 信号量（懒初始化，异步上下文使用）
-        self._llm_semaphore: Optional[asyncio.Semaphore] = None
-        self._gpu_semaphore: Optional[asyncio.Semaphore] = None
+        self._llm_semaphore: asyncio.Semaphore | None = None
+        self._gpu_semaphore: asyncio.Semaphore | None = None
         self._llm_lock = threading.Lock()
         self._gpu_lock = threading.Lock()
 
@@ -144,22 +145,22 @@ class ResourcePool:
         return self._gpu_semaphore
 
     def submit_cpu(self, fn: Callable, *args, **kwargs) -> Future:
-        """
-        提交 CPU-bound 任务（TA 分析、数据预处理）。
+        """提交 CPU-bound 任务（TA 分析、数据预处理）。
 
         Returns
         -------
         concurrent.futures.Future
+
         """
         return self.cpu.submit(fn, *args, **kwargs)
 
     def submit_io(self, fn: Callable, *args, **kwargs) -> Future:
-        """
-        提交 IO-bound 任务（网络请求、文件读写）。
+        """提交 IO-bound 任务（网络请求、文件读写）。
 
         Returns
         -------
         concurrent.futures.Future
+
         """
         return self.io.submit(fn, *args, **kwargs)
 
@@ -167,10 +168,9 @@ class ResourcePool:
         self,
         callables: list[Callable],
         *,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> list:
-        """
-        并行执行多个无参 callable，收集结果。
+        """并行执行多个无参 callable，收集结果。
 
         异常被捕获并转为 None 返回，不中断其他任务。
 
@@ -182,6 +182,7 @@ class ResourcePool:
         Returns
         -------
         list : 每个 callable 的结果（失败项为 None）
+
         """
         if not callables:
             return []
@@ -203,8 +204,7 @@ class ResourcePool:
         return results
 
     def llm(self):
-        """
-        LLM API 并发限流异步上下文管理器。
+        """LLM API 并发限流异步上下文管理器。
 
         在异步代码中使用：
             async with pool.llm():
@@ -213,8 +213,7 @@ class ResourcePool:
         return _AsyncSemaphoreContext(self._get_llm_semaphore())
 
     def gpu(self):
-        """
-        GPU 推理排队异步上下文管理器。
+        """GPU 推理排队异步上下文管理器。
 
         在异步代码中使用：
             async with pool.gpu():
@@ -244,7 +243,7 @@ class ResourcePool:
 
 # ── 模块级单例（向后兼容）──────────────────────────────────────────────────────
 
-_pool: Optional[ResourcePool] = None
+_pool: ResourcePool | None = None
 
 
 def get_pool() -> ResourcePool:

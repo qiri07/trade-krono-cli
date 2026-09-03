@@ -1,5 +1,4 @@
-"""
-Signal IC 评估模块。
+"""Signal IC 评估模块。
 
 计算预测信号与未来收益之间的信息系数（Information Coefficient）：
   - Spearman 秩相关 IC（Rank IC）—— 核心指标，衡量信号排序能力
@@ -13,11 +12,13 @@ Signal IC 评估模块。
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
 
-from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics
+if TYPE_CHECKING:
+    from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics
 
 # ═══════════════════════════════════════════════════════
 # IC 统计量
@@ -81,7 +82,7 @@ def _rank_transform(arr: np.ndarray) -> np.ndarray:
             [sorted_arr[0] == sorted_arr[1]] if n > 1 else [False],
             (sorted_arr[1:-1] == sorted_arr[:-2]) | (sorted_arr[1:-1] == sorted_arr[2:]),
             [sorted_arr[-1] == sorted_arr[-2]] if n > 1 else [False],
-        )
+        ),
     )
     i = 0
     while i < n:
@@ -106,8 +107,7 @@ def _compute_ic_for_signal(
     predictions: np.ndarray,
     actuals: np.ndarray,
 ) -> ICResult:
-    """
-    对单组 (prediction, actual) 计算 IC 统计量。
+    """对单组 (prediction, actual) 计算 IC 统计量。
 
     这是"截面" IC：在同一 eval_date 内，对所有股票按预测值排序，
     看与实际收益的相关性。
@@ -122,6 +122,7 @@ def _compute_ic_for_signal(
     Returns
     -------
     ICResult
+
     """
     mask = ~(np.isnan(predictions) | np.isnan(actuals))
     pred = predictions[mask]
@@ -150,12 +151,12 @@ def _compute_ic_for_signal(
 
 
 def compute_ic_aggregated(results: list[ICResult]) -> ICResult:
-    """
-    聚合多个 ICResult（通常来自多个 eval_date 的截面 IC）。
+    """聚合多个 ICResult（通常来自多个 eval_date 的截面 IC）。
 
     Returns
     -------
     聚合后的 ICResult，含跨日 IC 均值/标准差/ICIR。
+
     """
     if not results:
         return ICResult()
@@ -202,8 +203,7 @@ def compute_ic_metrics(
     h_records: list[EvalRecord],
     metrics: HorizonMetrics,
 ) -> int:
-    """
-    计算指定 horizon 下各信号的 IC / ICIR。
+    """计算指定 horizon 下各信号的 IC / ICIR。
 
     信号类型：
       1. composite_score → actual_return（综合评分 IC）
@@ -223,6 +223,7 @@ def compute_ic_metrics(
     Returns
     -------
     纳入 IC 计算的记录总数
+
     """
     if not h_records:
         return 0
@@ -241,7 +242,7 @@ def compute_ic_metrics(
     kronos_results: list[ICResult] = []
     ta_results: list[ICResult] = []
 
-    for eval_date, group in date_groups.items():
+    for group in date_groups.values():
         n = len(group)
         if n < 10:
             continue
@@ -258,11 +259,11 @@ def compute_ic_metrics(
         kronos_mask = [r.pred_return_pct is not None for r in group]
         if sum(kronos_mask) >= 10:
             kp = np.array(
-                [r.pred_return_pct or 0.0 for r, m in zip(group, kronos_mask) if m],
+                [r.pred_return_pct or 0.0 for r, m in zip(group, kronos_mask, strict=False) if m],
                 dtype=float,
             )
             ka = np.array(
-                [r.actual_return_pct for r, m in zip(group, kronos_mask) if m],
+                [r.actual_return_pct for r, m in zip(group, kronos_mask, strict=False) if m],
                 dtype=float,
             )
             kronos_results.append(_compute_ic_for_signal(kp, ka))
@@ -306,8 +307,7 @@ def compute_ic_metrics(
         metrics.rank_ic_ta_std = ta_agg.rank_ic_std
         metrics.rank_ic_ta_ir = ta_agg.rank_icir
 
-    total = sum(len(g) for g in date_groups.values())
-    return total
+    return sum(len(g) for g in date_groups.values())
 
 
 # ═══════════════════════════════════════════════════════

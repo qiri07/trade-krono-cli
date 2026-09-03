@@ -12,8 +12,7 @@ from __future__ import annotations
 
 
 def clear_all_globals() -> None:
-    """
-    清除所有模块级全局单例，重置懒加载标志。
+    """清除所有模块级全局单例，重置懒加载标志。
 
     被清除的状态：
       - config._settings        — get_settings() 下一次调用将重新初始化

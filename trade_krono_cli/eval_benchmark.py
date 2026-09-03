@@ -1,5 +1,4 @@
-"""
-Benchmark 与 Alpha 评估模块。
+"""Benchmark 与 Alpha 评估模块。
 
 职责：
   · 获取真实指数数据（CSI300 / CSI500 / CSI1000）作为基准
@@ -17,13 +16,15 @@ Benchmark 与 Alpha 评估模块。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
 
 from trade_krono_cli.data import fetch_kline
-from trade_krono_cli.eval_data import EvalRecord
+
+if TYPE_CHECKING:
+    from trade_krono_cli.eval_data import EvalRecord
 
 # ── 基准代码映射 ──────────────────────────────────────────────────────────────
 
@@ -69,13 +70,13 @@ def fetch_benchmark_kline(
     ticker: str,
     start_date: str,
     end_date: str,
-) -> Optional[list[tuple[str, float]]]:
-    """
-    拉取基准指数的 K 线数据。
+) -> list[tuple[str, float]] | None:
+    """拉取基准指数的 K 线数据。
 
     Returns
     -------
     list[(date_str, close_price)] 或 None
+
     """
     try:
         df = fetch_kline(ticker, start_date, end_date, frequency="d", use_cache=True)
@@ -101,10 +102,8 @@ def compute_benchmark_metrics(
     name: str,
     start_date: str,
     end_date: str,
-) -> Optional[BenchmarkResult]:
-    """
-    获取基准指数并计算完整绩效指标。
-    """
+) -> BenchmarkResult | None:
+    """获取基准指数并计算完整绩效指标。"""
     kline = fetch_benchmark_kline(ticker, start_date, end_date)
     if not kline or len(kline) < 2:
         return None
@@ -151,7 +150,7 @@ def compute_benchmark_metrics(
     max_dd = float(np.min(dd)) if len(dd) > 0 else 0.0
 
     # ── 权益曲线（百分比累计收益）───────────────────────────────────────
-    equity_curve = [(d, round((p / prices[0] - 1) * 100, 4)) for d, p in zip(dates, prices)]
+    equity_curve = [(d, round((p / prices[0] - 1) * 100, 4)) for d, p in zip(dates, prices, strict=False)]
 
     return BenchmarkResult(
         name=name,
@@ -175,13 +174,13 @@ def compute_portfolio_metrics(
     equity_curve: list[tuple[str, float]],
     trades: list[dict],
 ) -> dict:
-    """
-    计算完整的组合绩效指标。
+    """计算完整的组合绩效指标。
 
     Returns
     -------
     dict with: cagr, annual_return, volatility, sharpe, sortino,
                max_drawdown, calmar, win_rate, profit_factor, turnover
+
     """
     if not equity_curve or len(equity_curve) < 2:
         return {}
@@ -293,8 +292,7 @@ def compute_alpha(
     records: list[EvalRecord],
     date_range: tuple[str, str],
 ) -> dict[str, AlphaResult]:
-    """
-    计算策略相对于各基准的 Alpha。
+    """计算策略相对于各基准的 Alpha。
 
     Parameters
     ----------
@@ -308,6 +306,7 @@ def compute_alpha(
     Returns
     -------
     dict[benchmark_name, AlphaResult]
+
     """
     start_date, end_date = date_range
     if not records:
@@ -328,7 +327,7 @@ def compute_alpha(
     return results
 
 
-def get_best_alpha(results: dict[str, AlphaResult]) -> Optional[AlphaResult]:
+def get_best_alpha(results: dict[str, AlphaResult]) -> AlphaResult | None:
     """返回 Alpha 最大的基准对比结果。"""
     if not results:
         return None

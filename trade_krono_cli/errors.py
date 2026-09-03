@@ -1,5 +1,4 @@
-"""
-错误隔离 — ModuleError 及各模块的失败封装。
+"""错误隔离 — ModuleError 及各模块的失败封装。
 
 让单个模块（Kronos / TA / Risk）的失败不影响整个 pipeline 继续运行。
 
@@ -19,7 +18,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, TypeVar
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 
@@ -66,8 +65,7 @@ class ReportError(TradeKronoError):
 
 
 class ModuleError(TradeKronoError):
-    """
-    单个 pipeline 模块执行失败的封装异常。
+    """单个 pipeline 模块执行失败的封装异常。
 
     区别：
       - 普通 Exception : 表示不可恢复的错误，应中断流程
@@ -78,9 +76,9 @@ class ModuleError(TradeKronoError):
         self,
         module: str,
         message: str,
-        original_exception: Optional[Exception] = None,
-        context: Optional[dict[str, Any]] = None,
-    ):
+        original_exception: Exception | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> None:
         self.module = module
         self.message = message
         self.original_exception = original_exception
@@ -102,8 +100,7 @@ class ModuleError(TradeKronoError):
 
 @dataclass
 class ModuleResult:
-    """
-    模块执行结果的统一包装。
+    """模块执行结果的统一包装。
 
     用法：
         result = ModuleResult(success=True, data=..., error=None)
@@ -111,8 +108,8 @@ class ModuleResult:
     """
 
     success: bool
-    data: Optional[Any] = None
-    error: Optional[ModuleError] = None
+    data: Any | None = None
+    error: ModuleError | None = None
     elapsed_sec: float = 0.0
 
     def is_ok(self) -> bool:
@@ -130,7 +127,7 @@ class ModuleResult:
         return d
 
 
-def _summarize(data: Any) -> Any:
+def _summarize(data: Any) -> Any:  # noqa: ANN401 — 通用序列化辅助，输入类型动态（str / dict / list / object）
     """将数据转换为可序列化的摘要（避免大对象）。"""
     if isinstance(data, list):
         return f"[{len(data)} items]"
@@ -145,8 +142,7 @@ def safe_run(
     module: str = "unknown",
     **kwargs,
 ) -> ModuleResult:
-    """
-    安全执行函数，失败时封装为 ModuleResult(success=False)。
+    """安全执行函数，失败时封装为 ModuleResult(success=False)。
 
     Parameters
     ----------
@@ -157,6 +153,7 @@ def safe_run(
     Returns
     -------
     ModuleResult
+
     """
     import time
 

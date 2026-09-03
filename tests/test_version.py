@@ -13,7 +13,7 @@ from trade_krono_cli.version import (
 )
 
 
-def test_get_project_version():
+def test_get_project_version() -> None:
     v = get_project_version()
     assert isinstance(v, str)
     assert len(v) > 0
@@ -21,7 +21,7 @@ def test_get_project_version():
     assert "." in v or "dev" in v
 
 
-def test_generate_run_id_format():
+def test_generate_run_id_format() -> None:
     run_id = generate_run_id("2026-08-11")
     # 格式: YYYYMMDD-HHMMSS-NNN
     assert len(run_id) > 15
@@ -31,7 +31,7 @@ def test_generate_run_id_format():
     assert parts[2].isdigit()  # sequence part
 
 
-def test_generate_run_id_sequential():
+def test_generate_run_id_sequential() -> None:
     """同一天多次调用，序列号递增。"""
     from trade_krono_cli.version import reset_run_id_counter
 
@@ -44,7 +44,7 @@ def test_generate_run_id_sequential():
     assert seq2 == seq1 + 1
 
 
-def test_generate_run_id_different_dates():
+def test_generate_run_id_different_dates() -> None:
     """不同日期，序列号从 1 重新开始。"""
     from trade_krono_cli.version import reset_run_id_counter
 
@@ -58,27 +58,27 @@ def test_generate_run_id_different_dates():
     assert seq2 == 1
 
 
-def test_data_version():
+def test_data_version() -> None:
     v = get_data_version("sh.600519", "2026-08-11")
     assert v == "baostock-2026-08-11"
 
 
-def test_data_version_custom_source():
+def test_data_version_custom_source() -> None:
     v = get_data_version("sh.600519", "2026-08-11", source="tushare")
     assert v == "tushare-2026-08-11"
 
 
-def test_kronos_model_version():
+def test_kronos_model_version() -> None:
     v = get_kronos_model_version("kronos-base", "kronos-Tokenizer-base", "cpu")
-    assert "kronos-kronos-base-kronos-Tokenizer-base-cpu" == v
+    assert v == "kronos-kronos-base-kronos-Tokenizer-base-cpu"
 
 
-def test_llm_version():
+def test_llm_version() -> None:
     v = get_llm_version("deepseek", "deepseek-chat", "deepseek-chat")
     assert v == "deepseek/deepseek-chat+deepseek-chat"
 
 
-def test_ta_prompt_version():
+def test_ta_prompt_version() -> None:
     v = get_ta_prompt_version(
         max_debate_rounds=1,
         max_risk_discuss_rounds=1,
@@ -88,7 +88,7 @@ def test_ta_prompt_version():
     assert v == "ta-v1r1-chinese-json"
 
 
-def test_collect_model_versions():
+def test_collect_model_versions() -> None:
     versions = collect_model_versions(
         kronos_model="kronos-base",
         kronos_tokenizer="kronos-Tokenizer-base",
@@ -102,7 +102,7 @@ def test_collect_model_versions():
     assert versions["llm"] == "deepseek/deepseek-chat+deepseek-chat"
 
 
-def test_build_run_snapshot():
+def test_build_run_snapshot() -> None:
     """build_run_snapshot 生成完整的版本快照。"""
     from trade_krono_cli.version import reset_run_id_counter
 
@@ -140,7 +140,7 @@ def test_build_run_snapshot():
     assert len(snapshot["config_hash"]) == 16  # SHA256 前16位
 
 
-def test_compute_config_hash_excludes_keys():
+def test_compute_config_hash_excludes_keys() -> None:
     """配置哈希不应包含 API key。"""
 
     class MockSettings:

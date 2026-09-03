@@ -1,5 +1,4 @@
-"""
-评估报告生成与持久化。
+"""评估报告生成与持久化。
 
 负责：
   • 将 EvaluationSummary 写入 research DB
@@ -12,7 +11,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from typing import Optional
 
 from loguru import logger
 
@@ -22,7 +20,7 @@ from trade_krono_cli.eval_data import EvaluationSummary, HorizonMetrics
 def store_summary(
     summary: EvaluationSummary,
     db_path: str,
-    eval_date_range: Optional[str] = None,
+    eval_date_range: str | None = None,
 ) -> None:
     """将评估结果存储到 research database。"""
     conn = sqlite3.connect(db_path)
@@ -104,14 +102,14 @@ def store_summary(
         conn.close()
 
 
-def get_latest_evaluation(db_path: str) -> Optional[dict]:
+def get_latest_evaluation(db_path: str) -> dict | None:
     """获取最新的评估结果。"""
     try:
         conn = sqlite3.connect(db_path)
         try:
             row = conn.execute(
                 "SELECT id, eval_at, eval_date_range, n_records, summary_json "
-                "FROM evaluation_results ORDER BY eval_at DESC LIMIT 1"
+                "FROM evaluation_results ORDER BY eval_at DESC LIMIT 1",
             ).fetchone()
         finally:
             conn.close()
@@ -129,7 +127,7 @@ def get_latest_evaluation(db_path: str) -> Optional[dict]:
 
 
 def print_report(
-    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...] = (5, 10, 20)
+    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...] = (5, 10, 20),
 ) -> None:
     """打印评估报告到控制台。"""
     logger.info("")
@@ -147,7 +145,7 @@ def print_report(
 
 
 def _print_kronos_section(
-    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...]
+    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...],
 ) -> None:
     logger.info("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
     logger.info(f"│  样本数: {summary.kronos_n}                              │")
@@ -169,14 +167,14 @@ def _print_ta_section(summary: EvaluationSummary, horizons: list[int] | tuple[in
         avg_ret = m.ta_buy_avg_return if m else 0.0
         marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
         logger.info(
-            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │"
+            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │",
         )
     logger.info("└" + "─" * 58 + "┘")
     logger.info("")
 
 
 def _print_combined_section(
-    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...]
+    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...],
 ) -> None:
     logger.info("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
     logger.info(f"│  样本数: {summary.combined_buy_up_n}                          │")
@@ -186,14 +184,14 @@ def _print_combined_section(
         avg_ret = m.combined_buy_up_avg_return if m else 0.0
         marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
         logger.info(
-            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │"
+            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │",
         )
     logger.info("└" + "─" * 58 + "┘")
     logger.info("")
 
 
 def _print_high_conf_section(
-    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...]
+    summary: EvaluationSummary, horizons: list[int] | tuple[int, ...],
 ) -> None:
     logger.info("┌─ 高置信信号（综合分 ≥ 70）──────────────────────────┐")
     logger.info(f"│  样本数: {summary.high_conf_n}                              │")
@@ -203,7 +201,7 @@ def _print_high_conf_section(
         avg_ret = m.high_conf_avg_return if m else 0.0
         marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
         logger.info(
-            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │"
+            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │",
         )
     logger.info("└" + "─" * 58 + "┘")
     logger.info("")
@@ -215,11 +213,11 @@ def _print_constraints_section(summary: EvaluationSummary) -> None:
         logger.info(f"│  交易成本已扣减: {summary.cost_applied_n} 条记录                 │")
         if summary.entry_limit_up_blocked:
             logger.info(
-                f"│  🚫 买入日涨停拦截: {summary.entry_limit_up_blocked} 条                  │"
+                f"│  🚫 买入日涨停拦截: {summary.entry_limit_up_blocked} 条                  │",
             )
         if summary.exit_limit_down_blocked:
             logger.info(
-                f"│  🚫 退出日跌停拦截: {summary.exit_limit_down_blocked} 条                  │"
+                f"│  🚫 退出日跌停拦截: {summary.exit_limit_down_blocked} 条                  │",
             )
         logger.info("└" + "─" * 58 + "┘")
         logger.info("")

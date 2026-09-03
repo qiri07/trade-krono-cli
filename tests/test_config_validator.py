@@ -83,10 +83,10 @@ def _make_settings(**overrides) -> SimpleNamespace:
 # ── 默认配置应通过校验 ────────────────────────────────────────────────────────
 
 
-def test_default_settings_pass():
+def test_default_settings_pass() -> None:
     """使用默认值构造的 Settings 不应产生错误。"""
     s = _make_settings()
-    errors, warnings = validate_settings(s)
+    errors, _warnings = validate_settings(s)
     assert errors == [], f" Unexpected errors: {errors}"
 
 
@@ -94,7 +94,7 @@ def test_default_settings_pass():
 
 
 @pytest.mark.parametrize(
-    "field,value,error_sub",
+    ("field", "value", "error_sub"),
     [
         ("kronos_lookback", 5, "kronos_lookback"),
         ("kronos_pred_len", 0, "kronos_pred_len"),
@@ -122,10 +122,10 @@ def test_default_settings_pass():
         ("ta_cache_max_age_days", 400, "TA_CACHE_MAX_AGE_DAYS"),
     ],
 )
-def test_validation_errors(field, value, error_sub):
+def test_validation_errors(field, value, error_sub) -> None:
     """各非法字段应产生对应的错误消息。"""
     s = _make_settings(**{field: value})
-    errors, warnings = validate_settings(s)
+    errors, _warnings = validate_settings(s)
     assert any(error_sub in e for e in errors), (
         f"Expected error containing '{error_sub}', got: {errors}"
     )
@@ -134,7 +134,7 @@ def test_validation_errors(field, value, error_sub):
 # ── 警告项 ────────────────────────────────────────────────────────────────────
 
 
-def test_warning_for_missing_external_dir(tmp_path):
+def test_warning_for_missing_external_dir(tmp_path) -> None:
     """外部依赖目录不存在时应产生警告而非错误。"""
     s = _make_settings(
         tradingagents_root=tmp_path / "nonexistent_ta",
@@ -146,7 +146,7 @@ def test_warning_for_missing_external_dir(tmp_path):
     assert errors == []
 
 
-def test_warning_for_missing_api_key(monkeypatch):
+def test_warning_for_missing_api_key(monkeypatch) -> None:
     """未设置 API Key 时产生警告（非错误）。"""
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     s = _make_settings(llm_provider="deepseek")
@@ -158,19 +158,19 @@ def test_warning_for_missing_api_key(monkeypatch):
 # ── print_validation_report ──────────────────────────────────────────────────
 
 
-def test_print_validation_report_no_errors():
+def test_print_validation_report_no_errors() -> None:
     """无错误时应返回 True。"""
     assert print_validation_report([], []) is True
     assert print_validation_report([], ["some warning"]) is True
 
 
-def test_print_validation_report_with_errors():
+def test_print_validation_report_with_errors() -> None:
     """含错误时应返回 False 并打印消息。"""
     from loguru import logger
 
     captured: list[str] = []
 
-    def _capture(*args, **kwargs):
+    def _capture(*args, **kwargs) -> None:
         if args:
             captured.append(str(args[0]))
 
@@ -182,13 +182,13 @@ def test_print_validation_report_with_errors():
     assert "⚠️  some warning" in full
 
 
-def test_print_validation_report_warnings_only():
+def test_print_validation_report_warnings_only() -> None:
     """仅警告时也应打印警告消息并返回 True。"""
     from loguru import logger
 
     captured: list[str] = []
 
-    def _capture(*args, **kwargs):
+    def _capture(*args, **kwargs) -> None:
         if args:
             captured.append(str(args[0]))
 
@@ -199,7 +199,7 @@ def test_print_validation_report_warnings_only():
     assert "missing directory" in full
 
 
-def test_warning_ta_cache_fallback_mismatch():
+def test_warning_ta_cache_fallback_mismatch() -> None:
     """ta_cache_fallback_enabled=True 但 degrade_mode 不匹配时应产生警告。"""
     s = _make_settings(ta_cache_fallback_enabled=True, degrade_mode="strict")
     errors, warnings = validate_settings(s)

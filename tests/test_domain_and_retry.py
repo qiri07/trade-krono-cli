@@ -107,7 +107,7 @@ class TestInvestmentDecision:
 
     def test_decision_to_dict(self) -> None:
         d = InvestmentDecision(
-            ticker="sh.600519", eval_date="2026-09-01", signal=Signal.HOLD, confidence=50.0
+            ticker="sh.600519", eval_date="2026-09-01", signal=Signal.HOLD, confidence=50.0,
         )
         data = d.to_dict()
         assert data["ticker"] == "sh.600519"
@@ -115,7 +115,7 @@ class TestInvestmentDecision:
 
     def test_decision_with_empty_reasoning(self) -> None:
         d = InvestmentDecision(
-            ticker="sh.600519", eval_date="2026-09-01", signal=Signal.BUY, confidence=70.0
+            ticker="sh.600519", eval_date="2026-09-01", signal=Signal.BUY, confidence=70.0,
         )
         assert d.thesis == ""
         assert d.risks == []
@@ -181,7 +181,7 @@ class TestMarketSnapshot:
                 "low": 1785.0,
                 "volume": 1_000_000.0,
                 "prev_close": 1780.0,
-            }
+            },
         )
         assert s.date == "2026-09-01"
         assert s.close == 1800.0
@@ -209,7 +209,7 @@ class TestExperimentModel:
     def test_experiment_to_dict(self) -> None:
         hyp = Hypothesis(statement="test", prediction="UP", falsification="DOWN")
         exp = Experiment(
-            experiment_id="exp-001", experiment_type=ExperimentType.ALPHA, hypothesis=hyp
+            experiment_id="exp-001", experiment_type=ExperimentType.ALPHA, hypothesis=hyp,
         )
         d = exp.to_dict()
         assert d["experiment_id"] == "exp-001"
@@ -227,7 +227,7 @@ class TestExperimentModel:
 
     def test_hypothesis_check_pass(self) -> None:
         h = Hypothesis(statement="test", prediction="UP", falsification="DOWN", threshold=0.5)
-        passed, expl = h.check(0.7)
+        passed, _expl = h.check(0.7)
         assert passed is True
 
     def test_hypothesis_check_fail(self) -> None:
@@ -277,7 +277,7 @@ class TestErrorClassifier:
 
     def test_classify_network_error(self) -> None:
         err = NetworkError("connection refused")
-        category, desc = classify_error(err)
+        category, _desc = classify_error(err)
         assert category == "retriable"
 
     def test_classify_rate_limit(self) -> None:

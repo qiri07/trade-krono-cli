@@ -1,5 +1,4 @@
-"""
-ta_session — TradingAgents 模型资源管理。
+"""ta_session — TradingAgents 模型资源管理。
 
 职责边界（仅负责资源生命周期）：
   · LLM 密钥校验
@@ -11,7 +10,7 @@ ta_session — TradingAgents 模型资源管理。
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -19,8 +18,7 @@ from trade_krono_cli.ta_runner import TradingAgentsRunner
 
 
 class TASession:
-    """
-    TradingAgents 模型资源会话。
+    """TradingAgents 模型资源会话。
 
     负责：
       - _validate_provider  ：检查 LLM 密钥是否可用
@@ -35,16 +33,16 @@ class TASession:
     """
 
     # 类级别缓存，key = (llm_provider, max_debate_rounds, output_language)
-    _cache: dict[tuple, "TASession"] = {}
+    _cache: dict[tuple, TASession] = {}
 
     def __new__(cls, *args, **kwargs):
         # 跳过显式传入 runner 的测试场景（不命中缓存）
         if kwargs.get("runner") is not None:
             return super().__new__(cls)
         key = (
-            kwargs.get("llm_provider", None),
-            kwargs.get("max_debate_rounds", None),
-            kwargs.get("output_language", None),
+            kwargs.get("llm_provider"),
+            kwargs.get("max_debate_rounds"),
+            kwargs.get("output_language"),
         )
         if key in cls._cache:
             return cls._cache[key]
@@ -54,17 +52,17 @@ class TASession:
 
     def __init__(
         self,
-        llm_provider: Optional[str] = None,
-        runner: Optional[TradingAgentsRunner] = None,
+        llm_provider: str | None = None,
+        runner: TradingAgentsRunner | None = None,
         no_cache: bool = False,
-    ):
+    ) -> None:
         # 跳过 __new__ 缓存路径下的重复初始化
         if hasattr(self, "_init_done"):
             return
         self._init_done = True
         self._llm_provider = llm_provider
         self._runner = runner or TradingAgentsRunner(no_cache=no_cache)
-        self._adapter: Optional[Any] = None
+        self._adapter: Any | None = None
         self._initialized = False
 
     @classmethod
@@ -77,7 +75,7 @@ class TASession:
 
     @property
     def is_loaded(self) -> bool:
-        """adapter 是否已初始化。"""
+        """Adapter 是否已初始化。"""
         return self._adapter is not None
 
     @property
@@ -99,13 +97,16 @@ class TASession:
         vault = KeyVault()
         available = vault.available_providers()
         if not available:
-            raise RuntimeError(
+            msg = (
                 "❌ 未检测到任何 LLM API 密钥。请在 .env 中设置 "
                 "DEEPSEEK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY 之一"
             )
+            raise RuntimeError(
+                msg,
+            )
         if self._llm_provider and self._llm_provider not in available:
             logger.warning(
-                f"⚠️  选定 provider '{self._llm_provider}' 无可用密钥，回退到: {available[0]}"
+                f"⚠️  选定 provider '{self._llm_provider}' 无可用密钥，回退到: {available[0]}",
             )
 
     def _get_adapter(self) -> Any:

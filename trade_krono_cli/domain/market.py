@@ -1,5 +1,4 @@
-"""
-MarketSnapshot — 市场快照。
+"""MarketSnapshot — 市场快照。
 
 某只股票在某一时刻的完整市场状态，作为所有分析的输入事实。
 """
@@ -7,15 +6,13 @@ MarketSnapshot — 市场快照。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from trade_krono_cli.domain.stock import Stock
 
 
 @dataclass(frozen=True)
 class MarketSnapshot:
-    """
-    某只股票在某日的市场状态快照。
+    """某只股票在某日的市场状态快照。
 
     此对象是 immutable 的事实记录：一旦创建，不再变更。
     所有下游分析（TA/Kronos/Risk）都以此快照为输入依据。
@@ -35,6 +32,7 @@ class MarketSnapshot:
     limit_down_price  跌停价（可选）
     sector            所属行业（覆盖 Stock.industry，优先使用此处）
     extra             附加元数据（行业分类、指数权重等）
+
     """
 
     stock: Stock
@@ -45,9 +43,9 @@ class MarketSnapshot:
     low: float
     volume: float
     prev_close: float
-    turnover_rate: Optional[float] = None
-    limit_up_price: Optional[float] = None
-    limit_down_price: Optional[float] = None
+    turnover_rate: float | None = None
+    limit_up_price: float | None = None
+    limit_down_price: float | None = None
     sector: str = ""
     extra: dict = field(default_factory=dict)
 
@@ -88,7 +86,7 @@ class MarketSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "MarketSnapshot":
+    def from_dict(cls, data: dict) -> MarketSnapshot:
         stock_data = data.get("stock", {})
         stock = (
             Stock.from_dict(stock_data)

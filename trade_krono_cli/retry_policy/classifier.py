@@ -1,5 +1,4 @@
-"""
-retry_policy.classifier — 错误分类器。
+"""retry_policy.classifier — 错误分类器。
 
 将异常分类为 (category, description)，
 其中 category 为 "retriable" 或 "non_retriable"。
@@ -16,8 +15,7 @@ from trade_krono_cli.retry_policy.exceptions import (
 
 
 def classify_error(exc: Exception) -> tuple[str, str]:
-    """
-    将异常分类为 (category, description)。
+    """将异常分类为 (category, description)。
 
     Parameters
     ----------
@@ -29,6 +27,7 @@ def classify_error(exc: Exception) -> tuple[str, str]:
     (category, description)
       category   : "retriable" | "non_retriable"
       description: 人类可读的错误描述
+
     """
     # 已经是明确的分类错误
     if isinstance(exc, TradeKronoRetryableError):

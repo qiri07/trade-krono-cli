@@ -1,5 +1,4 @@
-"""
-Domain Model — A 股量化投研系统的核心领域对象。
+"""Domain Model — A 股量化投研系统的核心领域对象。
 
 领域分层（单向依赖，底部稳定、顶部灵活）：
 
@@ -95,38 +94,38 @@ from trade_krono_cli.domain.stock import Stock
 
 # ── 统一导出 ───────────────────────────────────────────────────────────────
 __all__ = [
-    # 枚举
-    "Signal",
+    "BacktestResult",
     "Direction",
+    # 评估
+    "EvalRecord",
+    "EvaluationSummary",
+    "Experiment",
     "ExperimentType",
-    # 实体
-    "Stock",
+    "HorizonMetrics",
+    # 实验
+    "Hypothesis",
+    # 决策
+    "InvestmentDecision",
+    "KronosForecastResult",
+    "KronosPrediction",
     # 市场
     "MarketSnapshot",
     # 预测
     "PredictionDistribution",
-    "TAAnalysis",
-    "KronosPrediction",
-    "KronosForecastResult",
-    # 信号
-    "SignalAssessment",
-    "SignalConflict",
     # 风险
     "RiskAssessment",
     "RiskFactor",
-    # 决策
-    "InvestmentDecision",
-    # 评估
-    "EvalRecord",
-    "HorizonMetrics",
-    "BacktestResult",
-    "EvaluationSummary",
-    # 实验
-    "Hypothesis",
-    "Experiment",
+    # 枚举
+    "Signal",
+    # 信号
+    "SignalAssessment",
+    "SignalConflict",
+    # 实体
+    "Stock",
+    "TAAnalysis",
     "build_alpha_experiment",
+    "build_eval_record",
+    "build_investment_decision",
     # 工厂
     "build_signal_assessment",
-    "build_investment_decision",
-    "build_eval_record",
 ]

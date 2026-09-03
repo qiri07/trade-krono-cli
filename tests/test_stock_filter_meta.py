@@ -1,5 +1,4 @@
-"""
-Tests for fetch_stock_meta in stock_filter.py — covers lines 386-449.
+"""Tests for fetch_stock_meta in stock_filter.py — covers lines 386-449.
 
 Uses sys.modules patching to mock the baostock import inside fetch_stock_meta.
 """
@@ -19,18 +18,18 @@ def _make_fake_bs_module(login_ok=True, performance_rows=None, industry_rows=Non
     fake_bs = ModuleType("baostock")
 
     class LoginResult:
-        def __init__(self, ok):
+        def __init__(self, ok) -> None:
             self.error_code = "0" if ok else "1"
             self.error_msg = "success" if ok else "login failed"
 
     def fake_login():
         return LoginResult(login_ok)
 
-    def fake_logout():
+    def fake_logout() -> None:
         pass
 
     class FakeRecordSet:
-        def __init__(self, rows):
+        def __init__(self, rows) -> None:
             self._rows = rows
             self._idx = 0
             self.error_code = "0"
@@ -77,8 +76,8 @@ def _swap_baostock(fake_bs):
 class TestFetchStockMetaImportError:
     """Test when baostock is not installed."""
 
-    def test_import_error_returns_stubs(self):
-        """baostock not installed → return stub StockMeta for each ticker."""
+    def test_import_error_returns_stubs(self) -> None:
+        """Baostock not installed → return stub StockMeta for each ticker."""
         # Since baostock is installed in this environment, we test the ImportError
         # path by patching the module object to raise AttributeError on access.
         # This simulates what would happen if baostock were unavailable.
@@ -89,7 +88,8 @@ class TestFetchStockMetaImportError:
 
         def fake_import(name, *args, **kwargs):
             if name == "baostock" or name.startswith("baostock."):
-                raise ImportError(f"No module named '{name}'")
+                msg = f"No module named '{name}'"
+                raise ImportError(msg)
             return real_import(name, *args, **kwargs)
 
         builtins.__import__ = fake_import
@@ -113,8 +113,8 @@ class TestFetchStockMetaImportError:
 class TestFetchStockMetaLoginFailure:
     """Test when baostock login fails."""
 
-    def test_login_failure_returns_stubs(self):
-        """baostock login fails → return stub StockMeta for each ticker."""
+    def test_login_failure_returns_stubs(self) -> None:
+        """Baostock login fails → return stub StockMeta for each ticker."""
         fake_bs = _make_fake_bs_module(login_ok=False)
         with _swap_baostock(fake_bs):
             result = fetch_stock_meta(["sh.600519"], "2026-08-11")
@@ -127,7 +127,7 @@ class TestFetchStockMetaLoginFailure:
 class TestFetchStockMetaSuccess:
     """Test successful metadata fetching."""
 
-    def test_full_metadata_fetch(self):
+    def test_full_metadata_fetch(self) -> None:
         """All queries succeed → StockMeta populated correctly."""
         performance_rows = [
             ["sh.600519", "2025-12-31", "28.5", "3.2", "0.85", "0.12"],
@@ -154,7 +154,7 @@ class TestFetchStockMetaSuccess:
             assert meta.pe_ttm == 28.5
             assert meta.pb == 3.2
 
-    def test_empty_performance_returns_stub_fields(self):
+    def test_empty_performance_returns_stub_fields(self) -> None:
         """Empty performance query → pe_ttm/pb remain None."""
         fake_bs = _make_fake_bs_module(login_ok=True, performance_rows=[])
 
@@ -164,7 +164,7 @@ class TestFetchStockMetaSuccess:
             assert meta.pe_ttm is None
             assert meta.pb is None
 
-    def test_performance_short_row_skipped(self):
+    def test_performance_short_row_skipped(self) -> None:
         """Performance row with < 3 fields → pe_ttm not set."""
         fake_bs = _make_fake_bs_module(
             login_ok=True,
@@ -176,7 +176,7 @@ class TestFetchStockMetaSuccess:
             meta = result["sh.600519"]
             assert meta.pe_ttm is None
 
-    def test_invalid_pe_value_skipped(self):
+    def test_invalid_pe_value_skipped(self) -> None:
         """Non-float pe_ttm value → skipped gracefully."""
         fake_bs = _make_fake_bs_module(
             login_ok=True,
@@ -189,7 +189,7 @@ class TestFetchStockMetaSuccess:
             assert meta.pe_ttm is None
             assert meta.pb == 3.2
 
-    def test_multiple_tickers(self):
+    def test_multiple_tickers(self) -> None:
         """Multiple tickers → all fetched independently."""
         perf_rows_1 = [["sh.600519", "2025-12-31", "28.5", "3.2"]]
         perf_rows_2 = [["sz.000858", "2025-12-31", "22.0", "4.1"]]
@@ -198,7 +198,7 @@ class TestFetchStockMetaSuccess:
             rows = perf_rows_1 if code == "sh.600519" else perf_rows_2
 
             class FakeRS:
-                def __init__(r, data):
+                def __init__(r, data) -> None:
                     r._rows = data
                     r._idx = 0
                     r.error_code = "0"
@@ -224,7 +224,7 @@ class TestFetchStockMetaSuccess:
             assert result["sh.600519"].pe_ttm == 28.5
             assert result["sz.000858"].pe_ttm == 22.0
 
-    def test_industry_empty_row(self):
+    def test_industry_empty_row(self) -> None:
         """Industry query returns empty row → industry stays None."""
         fake_bs = _make_fake_bs_module(login_ok=True, industry_rows=[])
 
@@ -232,7 +232,7 @@ class TestFetchStockMetaSuccess:
             result = fetch_stock_meta(["sh.600519"], "2026-08-11")
             assert result["sh.600519"].industry is None
 
-    def test_industry_short_row(self):
+    def test_industry_short_row(self) -> None:
         """Industry row with < 2 fields → industry_code set but industry None."""
         fake_bs = _make_fake_bs_module(
             login_ok=True,
@@ -245,7 +245,7 @@ class TestFetchStockMetaSuccess:
             assert meta.industry is None
             assert meta.industry_code == "B00801"
 
-    def test_basic_query_no_op_for_market_cap(self):
+    def test_basic_query_no_op_for_market_cap(self) -> None:
         """query_stock_basic results don't affect any fields (all remain None)."""
         fake_bs = _make_fake_bs_module(
             login_ok=True,

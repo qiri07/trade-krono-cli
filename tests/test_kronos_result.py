@@ -4,7 +4,7 @@
 class TestPredictionUncertainty:
     """PredictionUncertainty 序列化/反序列化测试。"""
 
-    def test_to_dict(self):
+    def test_to_dict(self) -> None:
         from trade_krono_cli.kronos_runner import PredictionUncertainty
 
         pu = PredictionUncertainty(
@@ -22,7 +22,7 @@ class TestPredictionUncertainty:
         assert d["confidence_score"] == 78.5
         assert d["sample_count_used"] == 5
 
-    def test_from_dict(self):
+    def test_from_dict(self) -> None:
         from trade_krono_cli.kronos_runner import PredictionUncertainty
 
         d = {
@@ -39,7 +39,7 @@ class TestPredictionUncertainty:
         assert pu.direction == "DOWN"
         assert pu.confidence_score == 55.0
 
-    def test_from_dict_ignores_extra_fields(self):
+    def test_from_dict_ignores_extra_fields(self) -> None:
         """多余字段应被忽略。"""
         from trade_krono_cli.kronos_runner import PredictionUncertainty
 
@@ -57,7 +57,7 @@ class TestPredictionUncertainty:
         assert pu.expected_return == 1.0
         assert not hasattr(pu, "extra_field") or pu.__dict__.get("extra_field") is None
 
-    def test_percentile_fields(self):
+    def test_percentile_fields(self) -> None:
         """PredictionDistribution 应包含 p10/p25/p50/p75/p90 分位数字段。"""
         from trade_krono_cli.kronos_runner import PredictionDistribution
 
@@ -81,7 +81,7 @@ class TestPredictionUncertainty:
         assert restored.p50 == 1800.0
         assert restored.p90 == 1900.0
 
-    def test_percentiles_default_to_none(self):
+    def test_percentiles_default_to_none(self) -> None:
         """未设置百分位时应为 None。"""
         from trade_krono_cli.kronos_runner import PredictionDistribution
 
@@ -94,7 +94,7 @@ class TestPredictionUncertainty:
 class TestKronosForecastResult:
     """KronosForecastResult 序列化测试。"""
 
-    def test_to_dict_with_uncertainty(self):
+    def test_to_dict_with_uncertainty(self) -> None:
         from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
 
         pu = PredictionUncertainty(expected_return=2.0, direction="UP", confidence_score=70.0)
@@ -111,7 +111,7 @@ class TestKronosForecastResult:
         assert d["expected_change_pct"] == 2.0
         assert d["prediction_uncertainty"]["confidence_score"] == 70.0
 
-    def test_to_dict_without_uncertainty(self):
+    def test_to_dict_without_uncertainty(self) -> None:
         from trade_krono_cli.kronos_runner import KronosForecastResult
 
         r = KronosForecastResult(

@@ -14,7 +14,7 @@ class AbnormalityConfig:
     kline_min_completeness: float = 0.85
     abnormality_risk_boost_enabled: bool = True
 
-    def merge(self, **overrides) -> "AbnormalityConfig":
+    def merge(self, **overrides) -> AbnormalityConfig:
         current = {k: getattr(self, k) for k in self.__dataclass_fields__}
         current.update(overrides)
         return AbnormalityConfig(**current)

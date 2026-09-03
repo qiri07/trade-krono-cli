@@ -22,19 +22,19 @@ from trade_krono_cli.trading_constraints import (
 
 
 class TestDetectExchange:
-    def test_sse(self):
+    def test_sse(self) -> None:
         assert detect_exchange("sh.600519") == "sse"
 
-    def test_szse_main(self):
+    def test_szse_main(self) -> None:
         assert detect_exchange("sz.000001") == "szse"
 
-    def test_szse_gem(self):
+    def test_szse_gem(self) -> None:
         assert detect_exchange("sz.300001") == "szse"
 
-    def test_szse_star(self):
+    def test_szse_star(self) -> None:
         assert detect_exchange("sh.688001") == "sse"
 
-    def test_unknown(self):
+    def test_unknown(self) -> None:
         with pytest.raises(ValueError):
             detect_exchange("xx.123456")
 
@@ -45,34 +45,34 @@ class TestDetectExchange:
 
 
 class TestComputeLimitPrices:
-    def test_sse_main_board(self):
+    def test_sse_main_board(self) -> None:
         """主板 ±10%。"""
         cfg = ConstraintConfig(enable_limit_check=True)
         up, down = compute_limit_prices(100.0, "sh.600519", config=cfg)
         assert up == 110.0
         assert down == 90.0
 
-    def test_szse_gem(self):
+    def test_szse_gem(self) -> None:
         """创业板/科创板 ±20%。"""
         cfg = ConstraintConfig(enable_limit_check=True)
         up, down = compute_limit_prices(100.0, "sz.300001", config=cfg)
         assert up == 120.0
         assert down == 80.0
 
-    def test_szse_star(self):
+    def test_szse_star(self) -> None:
         """科创板 ±20%。"""
         cfg = ConstraintConfig(enable_limit_check=True)
         up, down = compute_limit_prices(50.0, "sh.688001", config=cfg)
         assert up == 60.0
         assert down == 40.0
 
-    def test_disabled(self):
+    def test_disabled(self) -> None:
         cfg = ConstraintConfig(enable_limit_check=False)
         up, down = compute_limit_prices(100.0, config=cfg)
         assert up is None
         assert down is None
 
-    def test_zero_prev_close(self):
+    def test_zero_prev_close(self) -> None:
         cfg = ConstraintConfig(enable_limit_check=True)
         up, down = compute_limit_prices(0.0, config=cfg)
         assert up is None
@@ -85,34 +85,34 @@ class TestComputeLimitPrices:
 
 
 class TestCheckLimitStatus:
-    def test_normal_price(self):
+    def test_normal_price(self) -> None:
         """正常价格 → allowed=True。"""
         r = check_limit_status("sh.600519", current_price=105.0, prev_close=100.0)
         assert r.allowed is True
         assert r.reason is None
 
-    def test_limit_up(self):
+    def test_limit_up(self) -> None:
         """触及涨停 → allowed=False。"""
         r = check_limit_status("sh.600519", current_price=110.0, prev_close=100.0)
         assert r.allowed is False
         assert r.reason == "LIMIT_UP"
         assert r.limit_up_price == 110.0
 
-    def test_limit_down(self):
+    def test_limit_down(self) -> None:
         """触及跌停 → allowed=False。"""
         r = check_limit_status("sh.600519", current_price=90.0, prev_close=100.0)
         assert r.allowed is False
         assert r.reason == "LIMIT_DOWN"
         assert r.limit_down_price == 90.0
 
-    def test_gem_limit_up(self):
+    def test_gem_limit_up(self) -> None:
         """创业板涨停价不同（±20%）。"""
         r = check_limit_status("sz.300001", current_price=120.0, prev_close=100.0)
         assert r.allowed is False
         assert r.reason == "LIMIT_UP"
         assert r.limit_up_price == 120.0
 
-    def test_near_limit_up_tolerance(self):
+    def test_near_limit_up_tolerance(self) -> None:
         """允许 0.1% 浮点误差。"""
         r = check_limit_status("sh.600519", current_price=109.99, prev_close=100.0)
         assert r.allowed is False  # 109.99 >= 110 * 0.999 = 109.89
@@ -124,30 +124,30 @@ class TestCheckLimitStatus:
 
 
 class TestT1Tracker:
-    def test_can_sell_no_record(self):
+    def test_can_sell_no_record(self) -> None:
         tracker = T1Tracker()
         assert tracker.can_sell("sh.600519", "2026-08-12") is True
 
-    def test_can_sell_next_day(self):
+    def test_can_sell_next_day(self) -> None:
         tracker = T1Tracker()
         tracker.record_buy("sh.600519", "2026-08-11")
         assert tracker.can_sell("sh.600519", "2026-08-12") is True
 
-    def test_cannot_sell_same_day(self):
+    def test_cannot_sell_same_day(self) -> None:
         tracker = T1Tracker()
         tracker.record_buy("sh.600519", "2026-08-11")
         assert tracker.can_sell("sh.600519", "2026-08-11") is False
 
-    def test_locked_until(self):
+    def test_locked_until(self) -> None:
         tracker = T1Tracker()
         tracker.record_buy("sh.600519", "2026-08-11")
         assert tracker.locked_until("sh.600519") == date(2026, 8, 12)
 
-    def test_locked_until_no_record(self):
+    def test_locked_until_no_record(self) -> None:
         tracker = T1Tracker()
         assert tracker.locked_until("sh.600519") is None
 
-    def test_clear(self):
+    def test_clear(self) -> None:
         tracker = T1Tracker()
         tracker.record_buy("sh.600519", "2026-08-11")
         tracker.clear()
@@ -155,25 +155,25 @@ class TestT1Tracker:
 
 
 class TestEnforceT1:
-    def test_no_buy_record(self):
+    def test_no_buy_record(self) -> None:
         tracker = T1Tracker()
         r = enforce_t1("sh.600519", "2026-08-12", tracker)
         assert r.allowed is True
 
-    def test_t1_locked(self):
+    def test_t1_locked(self) -> None:
         tracker = T1Tracker()
         tracker.record_buy("sh.600519", "2026-08-11")
         r = enforce_t1("sh.600519", "2026-08-11", tracker)
         assert r.allowed is False
         assert "T1_LOCKED" in r.reason
 
-    def test_t1_unlocked_next_day(self):
+    def test_t1_unlocked_next_day(self) -> None:
         tracker = T1Tracker()
         tracker.record_buy("sh.600519", "2026-08-11")
         r = enforce_t1("sh.600519", "2026-08-12", tracker)
         assert r.allowed is True
 
-    def test_disabled(self):
+    def test_disabled(self) -> None:
         tracker = T1Tracker()
         tracker.record_buy("sh.600519", "2026-08-11")
         cfg = ConstraintConfig(enable_t1=False)
@@ -187,25 +187,25 @@ class TestEnforceT1:
 
 
 class TestComputeTransactionCost:
-    def test_buy_side(self):
+    def test_buy_side(self) -> None:
         """买入扣 8bps。"""
         cfg = ConstraintConfig(commission_bps=3.0, slippage_bps=5.0, stamp_duty_bps=1.0)
         result = compute_transaction_cost(5.0, side="buy", config=cfg)
         assert result == pytest.approx(4.92, abs=0.01)  # 5 - 0.08
 
-    def test_sell_side(self):
+    def test_sell_side(self) -> None:
         """卖出扣 9bps。"""
         cfg = ConstraintConfig(commission_bps=3.0, slippage_bps=5.0, stamp_duty_bps=1.0)
         result = compute_transaction_cost(5.0, side="sell", config=cfg)
         assert result == pytest.approx(4.91, abs=0.01)  # 5 - 0.09
 
-    def test_roundtrip(self):
+    def test_roundtrip(self) -> None:
         """双边共扣 17bps。"""
         cfg = ConstraintConfig(commission_bps=3.0, slippage_bps=5.0, stamp_duty_bps=1.0)
         result = compute_transaction_cost(5.0, side="roundtrip", config=cfg)
         assert result == pytest.approx(4.83, abs=0.01)  # 5 - 0.17
 
-    def test_disabled(self):
+    def test_disabled(self) -> None:
         cfg = ConstraintConfig(enable_cost_model=False)
         result = compute_transaction_cost(5.0, side="roundtrip", config=cfg)
         assert result == 5.0
@@ -217,7 +217,7 @@ class TestComputeTransactionCost:
 
 
 class TestCheckAllConstraints:
-    def test_all_pass(self):
+    def test_all_pass(self) -> None:
         """无约束问题时通过。"""
         r = check_all_constraints(
             "sh.600519",
@@ -228,7 +228,7 @@ class TestCheckAllConstraints:
         assert r.allowed is True
         assert r.reason is None
 
-    def test_limit_up_blocks(self):
+    def test_limit_up_blocks(self) -> None:
         r = check_all_constraints(
             "sh.600519",
             "2026-08-12",
@@ -238,7 +238,7 @@ class TestCheckAllConstraints:
         assert r.allowed is False
         assert r.reason == "LIMIT_UP"
 
-    def test_t1_blocks(self):
+    def test_t1_blocks(self) -> None:
         tracker = T1Tracker()
         tracker.record_buy("sh.600519", "2026-08-11")
         r = check_all_constraints(
@@ -251,7 +251,7 @@ class TestCheckAllConstraints:
         assert r.allowed is False
         assert "T1_LOCKED" in r.reason
 
-    def test_st_filter_disabled(self):
+    def test_st_filter_disabled(self) -> None:
         """ST 过滤未启用时不过滤。"""
         cfg = ConstraintConfig(enable_st_filter=False)
         r = check_all_constraints(
@@ -263,8 +263,8 @@ class TestCheckAllConstraints:
         )
         assert r.allowed is True
 
-    def test_check_st_status_no_baostock(self):
-        """baostock 未安装时不应崩溃，返回 False。"""
+    def test_check_st_status_no_baostock(self) -> None:
+        """Baostock 未安装时不应崩溃，返回 False。"""
         from unittest.mock import patch
 
         from trade_krono_cli.trading_constraints import check_st_status
@@ -280,7 +280,7 @@ class TestCheckAllConstraints:
 
 
 class TestFilterByConstraints:
-    def test_all_pass(self):
+    def test_all_pass(self) -> None:
         items = [
             {
                 "ticker": "sh.600519",
@@ -299,7 +299,7 @@ class TestFilterByConstraints:
         assert len(allowed) == 2
         assert len(rejected) == 0
 
-    def test_limit_up_filtered(self):
+    def test_limit_up_filtered(self) -> None:
         items = [
             {
                 "ticker": "sh.600519",
@@ -313,7 +313,7 @@ class TestFilterByConstraints:
         assert len(rejected) == 1
         assert rejected[0]["constraint_reason"] == "LIMIT_UP"
 
-    def test_mixed(self):
+    def test_mixed(self) -> None:
         items = [
             {
                 "ticker": "sh.600519",

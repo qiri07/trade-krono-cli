@@ -1,5 +1,4 @@
-"""
-stream_pipeline — 流式流水线调度器。
+"""stream_pipeline — 流式流水线调度器。
 
 核心思路：数据拉取（I/O）与模型推理（计算）重叠执行。
 传统模式：先拉取所有 K 线 → 再并行计算 TA+Kronos，总耗时 = T_fetch + T_compute
@@ -14,21 +13,23 @@ stream_pipeline — 流式流水线调度器。
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 
-import pandas as pd
 from loguru import logger
 
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
 from trade_krono_cli.ta_runner import StockAnalysisResult
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import pandas as pd
+
 
 class StreamPipeline:
-    """
-    流式投研流水线。
+    """流式投研流水线。
 
     与 QuantPipeline.run_parallel() 的区别：
     - 数据拉取与模型推理重叠执行，总耗时 ≈ max(T_fetch, T_compute)
@@ -37,10 +38,10 @@ class StreamPipeline:
 
     def __init__(
         self,
-        ta_runner: Any = None,
-        kronos_runner: Any = None,
+        ta_runner: Any = None,  # noqa: ANN401 — TA 运行器懒注入，类型在 __init__ 时确定
+        kronos_runner: Any = None,  # noqa: ANN401 — Kronos 运行器懒注入，类型在 __init__ 时确定
         no_cache: bool = False,
-        progress_cb: Optional[Callable[[str, int, int], None]] = None,
+        progress_cb: Callable[[str, int, int], None] | None = None,
         pred_len: int = 30,
     ) -> None:
         self.ta_runner = ta_runner
@@ -57,13 +58,13 @@ class StreamPipeline:
         adjustflag: str = "1",
         use_cache: bool = True,
     ) -> tuple[list[StockAnalysisResult], list[KronosForecastResult], dict[str, Any]]:
-        """
-        流式运行 TA + Kronos，数据拉取与计算重叠执行。
+        """流式运行 TA + Kronos，数据拉取与计算重叠执行。
 
         Returns
         -------
         (ta_results, kronos_results, kline_data)
             kline_data 供下游 merge_results 进行风险评分使用
+
         """
         t0 = time.time()
         n = len(tickers)
@@ -116,8 +117,8 @@ class StreamPipeline:
                     logger.error(f"❌ Kronos 预测异常 {tk}: {e}")
                     results.append(
                         KronosForecastResult(
-                            ticker=tk, eval_date=date, horizon=self._pred_len, error=str(e)
-                        )
+                            ticker=tk, eval_date=date, horizon=self._pred_len, error=str(e),
+                        ),
                     )
                 finally:
                     if self.progress_cb:
@@ -145,7 +146,7 @@ class StreamPipeline:
                         self.kronos_runner._pre_fetched[tk] = df  # type: ignore
                 logger.debug(
                     f"📦 注入 pre-fetched K 线: "
-                    f"{sum(1 for v in self.kronos_runner._pre_fetched.values() if v is not None)} 只"
+                    f"{sum(1 for v in self.kronos_runner._pre_fetched.values() if v is not None)} 只",
                 )
 
             ta_results = ta_fut.result()
@@ -155,7 +156,7 @@ class StreamPipeline:
         n_ta_ok = sum(1 for r in ta_results if r.error is None)
         n_kr_ok = sum(1 for r in kr_results if r.error is None)
         logger.info(
-            f"📊 流式流水线完成: TA {n_ta_ok}/{n} | Kronos {n_kr_ok}/{n} | 耗时 {elapsed:.1f}s"
+            f"📊 流式流水线完成: TA {n_ta_ok}/{n} | Kronos {n_kr_ok}/{n} | 耗时 {elapsed:.1f}s",
         )
 
         if self.progress_cb:
@@ -164,7 +165,7 @@ class StreamPipeline:
         return ta_results, kr_results, kline_data
 
     def _ta_analyze_one(
-        self, ticker: str, date: str, df: Optional[pd.DataFrame]
+        self, ticker: str, date: str, df: pd.DataFrame | None,
     ) -> StockAnalysisResult:
         """单只股票 TA 分析，优先使用预取数据。"""
         if self.ta_runner is None:
@@ -174,7 +175,7 @@ class StreamPipeline:
         return self.ta_runner.analyze_one(ticker, date)
 
     def _kronos_predict_one(
-        self, ticker: str, date: str, df: Optional[pd.DataFrame]
+        self, ticker: str, date: str, df: pd.DataFrame | None,
     ) -> KronosForecastResult:
         """单只股票 Kronos 预测，优先使用预取数据。"""
         if self.kronos_runner is None:

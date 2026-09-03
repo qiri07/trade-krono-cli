@@ -1,5 +1,4 @@
-"""
-数据源速度基准测试（只读，不修改任何代码）。
+"""数据源速度基准测试（只读，不修改任何代码）。
 
 测试内容：
   - 冷启动时间（首次初始化）
@@ -14,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -29,13 +28,13 @@ N_RUNS = 5  # 每个provider热调用次数
 @dataclass
 class BenchResult:
     provider: str
-    cold_time: Optional[float]  # 首次调用耗时（含初始化）
+    cold_time: float | None  # 首次调用耗时（含初始化）
     warm_times: list[float]
     errors: list[str]
     rows_returned: int = 0
 
 
-def _timing(fn, label: str) -> tuple[float, Optional[Exception], Any]:
+def _timing(fn, label: str) -> tuple[float, Exception | None, Any]:
     t0 = time.perf_counter()
     try:
         result = fn()
@@ -47,7 +46,7 @@ def _timing(fn, label: str) -> tuple[float, Optional[Exception], Any]:
 
 
 async def bench_provider(
-    factory: DataProviderFactory, name: str, ticker: str, start: str, end: str, n_runs: int
+    factory: DataProviderFactory, name: str, ticker: str, start: str, end: str, n_runs: int,
 ) -> BenchResult:
     result = BenchResult(provider=name, cold_time=None, warm_times=[], errors=[])
 
@@ -60,8 +59,7 @@ async def bench_provider(
 
     # 1. 冷启动
     def do_cold():
-        df = provider.fetch_kline(ticker, start, end)
-        return df
+        return provider.fetch_kline(ticker, start, end)
 
     dt, err, df = _timing(do_cold, f"{name} cold")
     if err:
@@ -79,8 +77,7 @@ async def bench_provider(
     for i in range(n_runs):
 
         def do_hot():
-            df = provider.fetch_kline(ticker, start, end)
-            return df
+            return provider.fetch_kline(ticker, start, end)
 
         dt, err, df = _timing(do_hot, f"{name} hot-{i}")
         if err:
@@ -95,7 +92,7 @@ async def bench_provider(
     return result
 
 
-async def main():
+async def main() -> None:
     logger.info("=" * 60)
     logger.info(f"数据源速度基准测试  ticker={TICKER}  {START}~{END}")
     logger.info(f"每源冷启动1次 + 热调用{N_RUNS}次，间隔200ms防封")
@@ -116,7 +113,7 @@ async def main():
     logger.info("基准测试结果汇总")
     logger.info("=" * 60)
     logger.info(
-        f"{'Provider':<14} {'冷启动(s)':<12} {'热调用均值(s)':<14} {'热调用最快(s)':<14} {'热调用最慢(s)':<14} {'错误数':<6} {'行数'}"
+        f"{'Provider':<14} {'冷启动(s)':<12} {'热调用均值(s)':<14} {'热调用最快(s)':<14} {'热调用最慢(s)':<14} {'错误数':<6} {'行数'}",
     )
     logger.info("-" * 90)
     for r in results:
@@ -135,7 +132,7 @@ async def main():
             f"{mn:<14.4f} "
             f"{mx:<14.4f} "
             f"{err_cnt:<6} "
-            f"{r.rows_returned}{flag}"
+            f"{r.rows_returned}{flag}",
         )
 
     logger.info("-" * 90)

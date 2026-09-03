@@ -1,6 +1,4 @@
-"""
-测试 research_db.migrations — Schema 迁移逻辑。
-"""
+"""测试 research_db.migrations — Schema 迁移逻辑。"""
 
 from __future__ import annotations
 
@@ -26,12 +24,12 @@ class TestMigrateSchema:
                 status TEXT,
                 created_at REAL
             )
-            """
+            """,
         )
         conn.commit()
         return conn
 
-    def test_adds_version_columns(self, tmp_path):
+    def test_adds_version_columns(self, tmp_path) -> None:
         """迁移应添加 version 相关列。"""
         conn = self._create_minimal_db(tmp_path)
         migrate_schema(conn)
@@ -44,7 +42,7 @@ class TestMigrateSchema:
         assert "run_id" in col_names
         assert "config_hash" in col_names
 
-    def test_idempotent_migration(self, tmp_path):
+    def test_idempotent_migration(self, tmp_path) -> None:
         """重复迁移不应报错。"""
         conn = self._create_minimal_db(tmp_path)
         migrate_schema(conn)
@@ -53,7 +51,7 @@ class TestMigrateSchema:
         migrate_schema(conn)
         conn.commit()
 
-    def test_no_op_when_columns_exist(self, tmp_path):
+    def test_no_op_when_columns_exist(self, tmp_path) -> None:
         """列已存在时迁移应跳过。"""
         conn = self._create_minimal_db(tmp_path)
         # 手动添加 version 列
@@ -71,7 +69,7 @@ class TestMigrateSchema:
         assert col_names.count("run_id") == 1
         assert col_names.count("config_hash") == 1
 
-    def test_non_jobs_table_unchanged(self, tmp_path):
+    def test_non_jobs_table_unchanged(self, tmp_path) -> None:
         """非 jobs 表不应受影响。"""
         conn = self._create_minimal_db(tmp_path)
         # 创建其他表

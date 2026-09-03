@@ -1,6 +1,4 @@
-"""
-研究数据库 — Stats、query_history、get_latest_signal_for_ticker。
-"""
+"""研究数据库 — Stats、query_history、get_latest_signal_for_ticker。"""
 
 from __future__ import annotations
 
@@ -83,14 +81,14 @@ class StatsMixin(ResearchDatabase):
         ]
 
     def get_latest_signal_for_ticker(self, ticker: str) -> dict | None:
-        """
-        获取某只股票在 signal_history 表中的最新生命周期记录。
+        """获取某只股票在 signal_history 表中的最新生命周期记录。
 
         Returns
         -------
         dict with keys: ticker, date, signal, confidence, composite_score,
             lifecycle_state, previous_state, transition_reason, job_id, run_id
             or None if no record exists.
+
         """
         with self._conn as conn:
             row = conn.execute(

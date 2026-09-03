@@ -25,21 +25,21 @@ class TestResearchAnalytics:
     """DuckDB 可用时的完整测试。"""
 
     @pytest.fixture(autouse=True)
-    def setup(self, tmp_path):
+    def setup(self, tmp_path) -> None:
         self.tmp = tmp_path
         self.db_path = tmp_path / "test_research.db"
         self.parquet_root = tmp_path / "data"
         clear_research_singleton()
         clear_analytics_singleton()
 
-    def test_create_analytics(self):
+    def test_create_analytics(self) -> None:
         """创建 Analytics 实例应成功。"""
         _research = ResearchDatabase(db_path=self.db_path)
         analytics = ResearchAnalytics(self.db_path, ParquetPaths(self.parquet_root))
         assert analytics.conn is not None
         analytics.close()
 
-    def test_list_jobs(self):
+    def test_list_jobs(self) -> None:
         """list_jobs 应返回 jobs 表数据。"""
         ResearchDatabase(db_path=self.db_path).create_job("2026-08-11", ["sh.600519"])
 
@@ -49,7 +49,7 @@ class TestResearchAnalytics:
         assert df.iloc[0]["date"] == "2026-08-11"
         analytics.close()
 
-    def test_get_signals_by_job(self):
+    def test_get_signals_by_job(self) -> None:
         """get_signals_by_job 应返回 signals 表数据。"""
         db = ResearchDatabase(db_path=self.db_path)
         job_id = db.create_job("2026-08-11", ["sh.600519", "sz.000858"])
@@ -93,7 +93,7 @@ class TestResearchAnalytics:
         assert df.iloc[0]["rank"] == 1
         analytics.close()
 
-    def test_cross_sectional_ic(self):
+    def test_cross_sectional_ic(self) -> None:
         """cross_sectional_ic 应计算 Spearman IC。"""
         db = ResearchDatabase(db_path=self.db_path)
         job_id = db.create_job("2026-08-11", ["sh.600519", "sz.000858", "sh.600036"])
@@ -184,10 +184,11 @@ class TestResearchAnalytics:
         assert df.iloc[0]["n_stocks"] == 3
         # 正相关：高评分 → 高收益
         ic = df.iloc[0]["spearman_ic"]
-        assert ic is not None and ic > 0
+        assert ic is not None
+        assert ic > 0
         analytics.close()
 
-    def test_query_features(self):
+    def test_query_features(self) -> None:
         """query_features 应读取 Parquet 特征文件。"""
         writer = ParquetWriter(ParquetPaths(self.parquet_root))
 
@@ -210,8 +211,8 @@ class TestResearchAnalytics:
         assert df.iloc[0]["signal"] == "BUY"
         analytics.close()
 
-    def test_describe_stats(self):
-        """describe 应返回各数据源的计数。"""
+    def test_describe_stats(self) -> None:
+        """Describe 应返回各数据源的计数。"""
         ResearchDatabase(db_path=self.db_path).create_job("2026-08-11", ["sh.600519"])
 
         analytics = ResearchAnalytics(self.db_path, ParquetPaths(self.parquet_root))
@@ -219,7 +220,7 @@ class TestResearchAnalytics:
         assert stats["jobs"] == 1
         analytics.close()
 
-    def test_close_twice_safe(self):
+    def test_close_twice_safe(self) -> None:
         """多次 close 不应报错。"""
         analytics = ResearchAnalytics(self.db_path, ParquetPaths(self.parquet_root))
         analytics.close()
@@ -232,29 +233,29 @@ class TestResearchAnalytics:
 
 
 class TestParquetPaths:
-    def test_feature_path_structure(self, tmp_path):
+    def test_feature_path_structure(self, tmp_path) -> None:
         paths = ParquetPaths(tmp_path / "data")
         p = paths.feature_path("sh.600519", "2026-08-11")
         assert p.suffix == ".parquet"
         assert "features" in str(p)
         assert "2026" in str(p)
         assert "08" in str(p)
-        assert "sh_600519_2026-08-11.parquet" == p.name
+        assert p.name == "sh_600519_2026-08-11.parquet"
 
-    def test_prediction_path_structure(self, tmp_path):
+    def test_prediction_path_structure(self, tmp_path) -> None:
         paths = ParquetPaths(tmp_path / "data")
         p = paths.prediction_path("sh.600519", "2026-08-11", 30)
-        assert "sh_600519_2026-08-11_30.parquet" == p.name
+        assert p.name == "sh_600519_2026-08-11_30.parquet"
 
-    def test_backtest_path_structure(self, tmp_path):
+    def test_backtest_path_structure(self, tmp_path) -> None:
         paths = ParquetPaths(tmp_path / "data")
         p = paths.backtest_path("job-abc-123")
         assert "sh_600519_2026-08-11_30.parquet" not in str(p)
-        assert "job-abc-123.parquet" == p.name
+        assert p.name == "job-abc-123.parquet"
 
 
 class TestParquetWriter:
-    def test_write_feature(self, tmp_path):
+    def test_write_feature(self, tmp_path) -> None:
         paths = ParquetPaths(tmp_path / "data")
         writer = ParquetWriter(paths)
         path = writer.write_feature(
@@ -274,7 +275,7 @@ class TestParquetWriter:
         assert len(df) == 1
         assert df.iloc[0]["signal"] == "BUY"
 
-    def test_write_prediction(self, tmp_path):
+    def test_write_prediction(self, tmp_path) -> None:
         paths = ParquetPaths(tmp_path / "data")
         writer = ParquetWriter(paths)
         path = writer.write_prediction(
@@ -295,7 +296,7 @@ class TestParquetWriter:
         assert len(df) == 1
         assert df.iloc[0]["direction"] == "UP"
 
-    def test_write_backtest(self, tmp_path):
+    def test_write_backtest(self, tmp_path) -> None:
         paths = ParquetPaths(tmp_path / "data")
         writer = ParquetWriter(paths)
         records = [
@@ -329,13 +330,13 @@ class TestParquetWriter:
 
 
 class TestDuckdbFallback:
-    def test_get_analytics_returns_none_when_no_duckdb(self):
+    def test_get_analytics_returns_none_when_no_duckdb(self) -> None:
         """DuckDB 不可用时 get_analytics 应返回 None。"""
         with patch("trade_krono_cli.analytics_db._HAS_DUCKDB", False):
             result = get_analytics()
             assert result is None
 
-    def test_research_analytics_raises_when_no_duckdb(self):
+    def test_research_analytics_raises_when_no_duckdb(self) -> None:
         """直接创建 ResearchAnalytics 时，无 DuckDB 应抛 RuntimeError。"""
         with patch("trade_krono_cli.analytics_db._HAS_DUCKDB", False):
             with pytest.raises(RuntimeError, match="DuckDB 未安装"):

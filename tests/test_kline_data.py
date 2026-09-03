@@ -8,16 +8,16 @@ from trade_krono_cli.data_providers.base import KlineData
 
 
 class TestKlineData:
-    def test_empty_kline(self):
+    def test_empty_kline(self) -> None:
         kd = KlineData()
         assert kd.is_empty
         assert kd.length == 0
 
-    def test_non_empty_kline(self, sample_kline_data):
+    def test_non_empty_kline(self, sample_kline_data) -> None:
         assert not sample_kline_data.is_empty
         assert sample_kline_data.length == 2
 
-    def test_to_dataframe(self, sample_kline_data):
+    def test_to_dataframe(self, sample_kline_data) -> None:
 
         df = sample_kline_data.to_dataframe()
         assert isinstance(df, pd.DataFrame)
@@ -32,14 +32,14 @@ class TestKlineData:
             "amount",
         ]
 
-    def test_from_dataframe(self, sample_kline_data):
+    def test_from_dataframe(self, sample_kline_data) -> None:
         df = sample_kline_data.to_dataframe()
         kd2 = KlineData.from_dataframe(df)
         assert kd2.length == 2
         assert kd2.close[0] == 101.0
         assert kd2.close[1] == 103.0
 
-    def test_from_dataframe_roundtrip(self, sample_kline_data):
+    def test_from_dataframe_roundtrip(self, sample_kline_data) -> None:
         df = sample_kline_data.to_dataframe()
         kd2 = KlineData.from_dataframe(df)
         assert kd2.open == sample_kline_data.open

@@ -1,10 +1,11 @@
 """Regression tests for bugs fixed in previous phases."""
+from typing import NoReturn
 
 
 class TestRegressionCacheStale:
     """Phase 1: cache key 包含 sample_count 回归测试。"""
 
-    def test_different_sample_count_different_cache_key(self):
+    def test_different_sample_count_different_cache_key(self) -> None:
         """不同 sample_count 应产生不同的缓存 key。"""
         import os
         import tempfile
@@ -21,8 +22,10 @@ class TestRegressionCacheStale:
 
             r1 = cache.get_kronos("sh.600519", "2026-08-12", 30, sample_count=1)
             r5 = cache.get_kronos("sh.600519", "2026-08-12", 30, sample_count=5)
-            assert r1 is not None and r1["data"] == "v1"
-            assert r5 is not None and r5["data"] == "v2"
+            assert r1 is not None
+            assert r1["data"] == "v1"
+            assert r5 is not None
+            assert r5["data"] == "v2"
         finally:
             os.unlink(path)
 
@@ -30,7 +33,7 @@ class TestRegressionCacheStale:
 class TestRegressionT1Constraint:
     """Phase 1: T+1 约束修复回归测试。"""
 
-    def test_t1_blocks_same_day_sell(self):
+    def test_t1_blocks_same_day_sell(self) -> None:
         """T+1 应阻止当日卖出已买入的股票。"""
         from trade_krono_cli.trading_constraints import T1Tracker, enforce_t1
 
@@ -40,7 +43,7 @@ class TestRegressionT1Constraint:
         assert r.allowed is False
         assert "T1" in r.reason
 
-    def test_t1_allows_next_day_sell(self):
+    def test_t1_allows_next_day_sell(self) -> None:
         """T+1 应在次日允许卖出。"""
         from trade_krono_cli.trading_constraints import T1Tracker, enforce_t1
 
@@ -53,7 +56,7 @@ class TestRegressionT1Constraint:
 class TestRegressionLimitPrices:
     """Phase 1: 涨跌停价格计算回归测试。"""
 
-    def test_star_market_uses_20_percent(self):
+    def test_star_market_uses_20_percent(self) -> None:
         """科创板（688）应使用 20% 涨跌停。"""
         from trade_krono_cli.constraints_config import ConstraintConfig
         from trade_krono_cli.trading_constraints import compute_limit_prices
@@ -63,7 +66,7 @@ class TestRegressionLimitPrices:
         assert up == 120.0
         assert down == 80.0
 
-    def test_gem_uses_20_percent(self):
+    def test_gem_uses_20_percent(self) -> None:
         """创业板（300）应使用 20% 涨跌停。"""
         from trade_krono_cli.constraints_config import ConstraintConfig
         from trade_krono_cli.trading_constraints import compute_limit_prices
@@ -77,7 +80,7 @@ class TestRegressionLimitPrices:
 class TestRegressionSampleCountDefault:
     """Phase 2: sample_count 默认值回归测试。"""
 
-    def test_default_is_five(self):
+    def test_default_is_five(self) -> None:
         from trade_krono_cli.config import get_settings
 
         s = get_settings()
@@ -87,25 +90,25 @@ class TestRegressionSampleCountDefault:
 class TestRegressionUncertaintyBonus:
     """Phase 2: 不确定性置信度映射回归测试。"""
 
-    def test_high_confidence_bonus(self):
+    def test_high_confidence_bonus(self) -> None:
         from trade_krono_cli.configs.schema import ScoringConfig
         from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
 
         assert _uncertainty_confidence_bonus({"confidence_score": 75.0}, ScoringConfig()) == 3.0
 
-    def test_medium_confidence_bonus(self):
+    def test_medium_confidence_bonus(self) -> None:
         from trade_krono_cli.configs.schema import ScoringConfig
         from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
 
         assert _uncertainty_confidence_bonus({"confidence_score": 60.0}, ScoringConfig()) == 1.0
 
-    def test_low_confidence_penalty(self):
+    def test_low_confidence_penalty(self) -> None:
         from trade_krono_cli.configs.schema import ScoringConfig
         from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
 
         assert _uncertainty_confidence_bonus({"confidence_score": 30.0}, ScoringConfig()) == -2.0
 
-    def test_none_returns_zero(self):
+    def test_none_returns_zero(self) -> None:
         from trade_krono_cli.configs.schema import ScoringConfig
         from trade_krono_cli.pipeline.merge import _uncertainty_confidence_bonus
 
@@ -115,7 +118,7 @@ class TestRegressionUncertaintyBonus:
 class TestRegressionPipelineConfig:
     """Phase 3: PipelineConfig 回归测试。"""
 
-    def test_to_dict_converts_tuple_to_list(self):
+    def test_to_dict_converts_tuple_to_list(self) -> None:
         from trade_krono_cli.pipeline_config import PipelineConfig
 
         cfg = PipelineConfig()
@@ -123,7 +126,7 @@ class TestRegressionPipelineConfig:
         # allowed_signals 是 tuple，应转为 list
         assert isinstance(d["allowed_signals"], list)
 
-    def test_yaml_roundtrip(self, tmp_path):
+    def test_yaml_roundtrip(self, tmp_path) -> None:
         from trade_krono_cli.pipeline_config import PipelineConfig
 
         cfg = PipelineConfig(sample_count=10, min_confidence=60.0)
@@ -137,7 +140,7 @@ class TestRegressionPipelineConfig:
 class TestRegressionLoggingJson:
     """Phase 3: JSON 结构化日志回归测试。"""
 
-    def test_json_sink_produces_valid_json(self):
+    def test_json_sink_produces_valid_json(self) -> None:
         import json
 
         from trade_krono_cli.logging_config import _JsonLogSink
@@ -153,7 +156,7 @@ class TestRegressionLoggingJson:
         assert parsed["message"] == "test"
         assert parsed["level"] == "INFO"
 
-    def test_setup_logger_creates_sink(self):
+    def test_setup_logger_creates_sink(self) -> None:
         from trade_krono_cli.logging_config import setup_logger
 
         # setup_logger 返回 None（它直接配置 loguru）
@@ -164,7 +167,7 @@ class TestRegressionLoggingJson:
 class TestRegressionModuleError:
     """Phase 3: ModuleError / safe_run 回归测试。"""
 
-    def test_safe_run_success(self):
+    def test_safe_run_success(self) -> None:
         from trade_krono_cli.errors import safe_run
 
         def good_fn(x):
@@ -175,11 +178,12 @@ class TestRegressionModuleError:
         assert result.data == 10
         assert result.error is None
 
-    def test_safe_run_catches_exception(self):
+    def test_safe_run_catches_exception(self) -> None:
         from trade_krono_cli.errors import safe_run
 
-        def bad_fn(x):
-            raise ValueError("bad input")
+        def bad_fn(x) -> NoReturn:
+            msg = "bad input"
+            raise ValueError(msg)
 
         result = safe_run(bad_fn, "x", module="test")
         assert result.success is False
@@ -190,11 +194,11 @@ class TestRegressionModuleError:
         assert isinstance(result.error, ModuleError)
         assert result.error.module == "test"
 
-    def test_module_error_context(self):
+    def test_module_error_context(self) -> None:
         from trade_krono_cli.errors import ModuleError
 
         e = ModuleError(
-            module="kronos", message="OOM", original_exception=RuntimeError("out of memory")
+            module="kronos", message="OOM", original_exception=RuntimeError("out of memory"),
         )
         assert e.module == "kronos"
         assert "kronos" in str(e)

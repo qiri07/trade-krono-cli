@@ -767,7 +767,7 @@ trade-krono-cli
 │       └── rules.py        # FilterRulesStage：用户自定义规则链
 ├── scripts/
 │   └── install.sh          # 一键安装脚本
-├── tests/                  # 测试套件（1411 项，mypy 零新增错误）
+├── tests/                  # 测试套件（2065 项，mypy 零新增错误）
 └── external/               # 外部项目配置（repos.yaml + repo.lock）
 ```
 
@@ -1452,7 +1452,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 - **新增 `.github/workflows/daily-run.yml`**：每日投研流水线，定时触发（UTC 07:30 = 北京时间 15:30，工作日）+ 手动触发（9 个可配置参数：股票代码、日期、置信度、信号过滤、全市场筛选、跳过 Kronos 等）
 - **新增 `.github/workflows/ci.yml`**：CI 矩阵（lint / type-check / test），pytest 覆盖率报告上传 Codecov
 - **新增 `scripts/_gh_summary.py`**：GitHub Actions 运行结果摘要脚本
-- **测试覆盖扩展**：1324 → **1411 项**（+87 新增）：
+- **测试覆盖扩展**：1411 → **2065 项**（+654 新增）：
   - `test_config_output.py` — `OutputConfig` 默认值、merge、roundtrip（6 项）
   - `test_config_abnormality.py` — `AbnormalityConfig` 默认值、校验、merge 边界（14 项）
   - `test_config_filters.py` — `FilterConfig` 全字段组合的 validate/merge（22 项）

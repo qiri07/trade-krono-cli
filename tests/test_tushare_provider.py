@@ -17,13 +17,13 @@ class TestTushareProvider:
 
         return TushareProvider()
 
-    def test_name(self, provider):
+    def test_name(self, provider) -> None:
         assert provider.name == "tushare"
         assert provider.supports_kline is True
         assert provider.supports_quote is True
         assert provider.supports_metadata is True
 
-    def test_fetch_kline_success(self, provider):
+    def test_fetch_kline_success(self, provider) -> None:
 
         mock_df = pd.DataFrame(
             {
@@ -34,7 +34,7 @@ class TestTushareProvider:
                 "close": [101.0, 103.0],
                 "vol": [1e6, 1.2e6],
                 "amount": [1e8, 1.2e8],
-            }
+            },
         )
         mock_ts = MagicMock()
         mock_ts.pro_bar.return_value = mock_df
@@ -45,7 +45,7 @@ class TestTushareProvider:
                 assert result is not None
                 assert result.length == 2
 
-    def test_fetch_metadata_success(self, provider):
+    def test_fetch_metadata_success(self, provider) -> None:
 
         mock_df = pd.DataFrame(
             {
@@ -54,7 +54,7 @@ class TestTushareProvider:
                 "industry": ["白酒"],
                 "list_date": ["1999-11-10"],
                 "delist_date": [None],
-            }
+            },
         )
         mock_ts = MagicMock()
         mock_ts.stock_basic.return_value = mock_df
@@ -67,7 +67,7 @@ class TestTushareProvider:
                 assert meta.ipo_date == "1999-11-10"
                 assert meta.is_st is False
 
-    def test_fetch_metadata_st_stock(self, provider):
+    def test_fetch_metadata_st_stock(self, provider) -> None:
 
         mock_df = pd.DataFrame(
             {
@@ -76,7 +76,7 @@ class TestTushareProvider:
                 "industry": ["机械"],
                 "list_date": ["20200101"],
                 "delist_date": [None],
-            }
+            },
         )
         mock_ts = MagicMock()
         mock_ts.stock_basic.return_value = mock_df
@@ -87,7 +87,7 @@ class TestTushareProvider:
                 assert meta is not None
                 assert meta.is_st is True
 
-    def test_health_check_success(self, provider):
+    def test_health_check_success(self, provider) -> None:
 
         mock_df = pd.DataFrame({"ts_code": ["600519.SH"]})
         mock_ts = MagicMock()
@@ -97,7 +97,7 @@ class TestTushareProvider:
             with patch.object(provider.__class__, "_ts", mock_ts):
                 assert provider.health_check() is True
 
-    def test_health_check_failure(self, provider):
+    def test_health_check_failure(self, provider) -> None:
         mock_ts = MagicMock()
         mock_ts.stock_basic.side_effect = Exception("fail")
 

@@ -1,5 +1,4 @@
-"""
-TradingAgents-Astock 封装层（业务逻辑层）。
+"""TradingAgents-Astock 封装层（业务逻辑层）。
 
 职责边界：
   · 股票分析调度（analyze_one / analyze_batch）
@@ -18,7 +17,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -40,6 +39,9 @@ from trade_krono_cli.security import (
 from trade_krono_cli.ta_decision import DecisionAdapter, InvestmentDecision, Signal
 from trade_krono_cli.version import compute_config_hash, get_ta_prompt_version
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 # 摘要截断长度
 SUMMARY_TRUNCATE_LEN = 500
 
@@ -49,7 +51,7 @@ _TRADINGAGENTS_IMPORTED = False
 
 def _ensure_tradingagents_import(settings) -> None:
     """将 TradingAgents-astock/agent-harness 加入 sys.path 并导入核心模块。
-    （已迁移至 adapters 层；此函数保留供旧测试兼容。）
+    （已迁移至 adapters 层；此函数保留供旧测试兼容。）.
     """
     global _TRADINGAGENTS_IMPORTED
     if _TRADINGAGENTS_IMPORTED:
@@ -95,22 +97,22 @@ class StockAnalysisResult:
 
     ticker: str
     date: str
-    signal: Optional[str] = None
-    confidence: Optional[float] = None
-    position_size: Optional[float] = None
-    reasoning: Optional[str] = None
+    signal: str | None = None
+    confidence: float | None = None
+    position_size: float | None = None
+    reasoning: str | None = None
     reports: dict[str, str] = field(default_factory=dict)
     # 完整原始报告（永不截断，用于 RAG / 回测 / Agent memory）
     reports_raw: dict[str, str] = field(default_factory=dict)
-    risk_assessment: Optional[str] = None
-    decision_raw: Optional[dict] = None
-    error: Optional[str] = None
+    risk_assessment: str | None = None
+    decision_raw: dict | None = None
+    error: str | None = None
     elapsed_sec: float = 0.0
 
     # 新增：标准化投资决断（由 DecisionAdapter 解析生成）
-    investment_decision: Optional[InvestmentDecision] = None
+    investment_decision: InvestmentDecision | None = None
     # 新增：TradingAgents 原始 final_state（供 Committee 使用）
-    final_state: Optional[dict] = field(default_factory=dict)
+    final_state: dict | None = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -141,8 +143,7 @@ class StockAnalysisResult:
 
 
 class TradingAgentsRunner:
-    """
-    生产级 TradingAgents 封装（业务逻辑层）。
+    """生产级 TradingAgents 封装（业务逻辑层）。
 
     特点：
     - 批量分析（失败隔离、进度回调）
@@ -155,19 +156,19 @@ class TradingAgentsRunner:
 
     def __init__(
         self,
-        session: Optional[Any] = None,
-        llm_provider: Optional[str] = None,
-        deep_think_llm: Optional[str] = None,
-        quick_think_llm: Optional[str] = None,
-        backend_url: Optional[str] = None,
-        max_debate_rounds: Optional[int] = None,
-        checkpoint_enabled: Optional[bool] = None,
+        session: Any | None = None,
+        llm_provider: str | None = None,
+        deep_think_llm: str | None = None,
+        quick_think_llm: str | None = None,
+        backend_url: str | None = None,
+        max_debate_rounds: int | None = None,
+        checkpoint_enabled: bool | None = None,
         output_language: str = "Chinese",
         safe_mode: bool = True,
         no_cache: bool = False,
-        settings: Optional[Settings] = None,
-        retry_policy: Optional[RetryPolicy] = None,
-    ):
+        settings: Settings | None = None,
+        retry_policy: RetryPolicy | None = None,
+    ) -> None:
         self._session = session
         self._settings = settings or get_settings()
         self._cache = None if no_cache else get_cache()
@@ -200,7 +201,7 @@ class TradingAgentsRunner:
         )
 
         logger.info(
-            f"🤖 TradingAgentsRunner 就绪 | provider={self.llm_provider} deep={self.deep_think_llm}"
+            f"🤖 TradingAgentsRunner 就绪 | provider={self.llm_provider} deep={self.deep_think_llm}",
         )
 
     # ── 资源访问（委托给 session）────────────────────────────────────────────
@@ -228,13 +229,16 @@ class TradingAgentsRunner:
         vault = KeyVault()
         available = vault.available_providers()
         if not available:
-            raise RuntimeError(
+            msg = (
                 "❌ 未检测到任何 LLM API 密钥。请在 .env 中设置 "
                 "DEEPSEEK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY 之一"
             )
+            raise RuntimeError(
+                msg,
+            )
         if self.llm_provider not in available:
             logger.warning(
-                f"⚠️  选定 provider '{self.llm_provider}' 无可用密钥，回退到: {available[0]}"
+                f"⚠️  选定 provider '{self.llm_provider}' 无可用密钥，回退到: {available[0]}",
             )
             self.llm_provider = available[0]
 
@@ -265,14 +269,14 @@ class TradingAgentsRunner:
         return cfg
 
     def _extract_reports(self, state: dict) -> tuple[dict[str, str], dict[str, str]]:
-        """
-        从 final_state 提取报告。
+        """从 final_state 提取报告。
 
         Returns
         -------
         (raw_reports, summary_reports)
           raw_reports   — 完整文本（永不截断）
           summary_reports — 每份报告前 500 字符（用于展示和缓存）
+
         """
         raw: dict[str, str] = {}
         summary: dict[str, str] = {}
@@ -286,9 +290,8 @@ class TradingAgentsRunner:
             summary[alias] = text[:SUMMARY_TRUNCATE_LEN]
         return raw, summary
 
-    def _extract_decision(self, final_state: dict) -> tuple[dict, Optional[InvestmentDecision]]:
-        """
-        从 final_state 提取决策。
+    def _extract_decision(self, final_state: dict) -> tuple[dict, InvestmentDecision | None]:
+        """从 final_state 提取决策。
 
         返回：(legacy_dict, investment_decision)
         legacy_dict 保持向后兼容，investment_decision 为结构化对象（可能为 None）。
@@ -324,8 +327,7 @@ class TradingAgentsRunner:
         return self._analyze_one_impl(ticker, date)
 
     def analyze_one(self, ticker: str, date: str) -> StockAnalysisResult:
-        """
-        TA 单只股票分析入口。
+        """TA 单只股票分析入口。
 
         通过 _analyze_one_retriable 调用，自动处理重试与失败记录。
         """
@@ -350,19 +352,18 @@ class TradingAgentsRunner:
                 # 缓存中 investment_decision 是 dict，需还原为对象
                 if isinstance(result.investment_decision, dict):
                     result.investment_decision = InvestmentDecision.from_dict(
-                        result.investment_decision
+                        result.investment_decision,
                     )
                 result.elapsed_sec = 0.0
                 return result
 
         # 使用智能重试执行分析
         try:
-            inner_result = self._analyze_one_retriable(ticker, date)  # type: ignore[call-arg,misc]
-            return inner_result  # type: ignore[return-value,misc]
+            return self._analyze_one_retriable(ticker, date)  # type: ignore[call-arg,misc,return-value]
         except Exception as e:
             # 重试耗尽，记录失败
             result.error = f"{type(e).__name__}: {e}"
-            category, desc = classify_error(e)
+            category, _desc = classify_error(e)
             store = get_failure_store()
             store.record(ticker, date, "ta", e)
             safe_msg = sanitize_for_log(str(e))
@@ -459,7 +460,7 @@ class TradingAgentsRunner:
         self,
         tickers: list[str],
         date: str,
-        progress_cb: Optional[Callable[[int, int, StockAnalysisResult], None]] = None,
+        progress_cb: Callable[[int, int, StockAnalysisResult], None] | None = None,
     ) -> list[StockAnalysisResult]:
         date = validate_date(date)
         tickers = [validate_ticker(t) for t in tickers]
@@ -491,10 +492,9 @@ class TradingAgentsRunner:
         self,
         results: list[StockAnalysisResult],
         date: str,
-        results_dir: Optional[Path] = None,
+        results_dir: Path | None = None,
     ) -> dict[str, str]:
-        """
-        将每只股票的完整原始报告写入磁盘。
+        """将每只股票的完整原始报告写入磁盘。
 
         路径格式：{results_dir}/raw/{date}/{ticker}.json
 
@@ -539,13 +539,13 @@ class TradingAgentsRunner:
     def load_raw_report(
         ticker: str,
         date: str,
-        results_dir: Optional[Path] = None,
-        settings: Optional[Settings] = None,
-    ) -> Optional[dict]:
+        results_dir: Path | None = None,
+        settings: Settings | None = None,
+    ) -> dict | None:
         """从磁盘加载某只股票的原始报告。"""
         rd = results_dir or (settings or get_settings()).results_dir
         path = rd / "raw" / date / f"{ticker}.json"
         if not path.exists():
             return None
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)

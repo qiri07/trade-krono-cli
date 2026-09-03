@@ -1,5 +1,4 @@
-"""
-SignalLifecycle — 信号生命周期管理器。
+"""SignalLifecycle — 信号生命周期管理器。
 
 每个股票的分析结果不是孤立的瞬态，而是一条随时间演化的状态链：
 
@@ -23,7 +22,6 @@ from __future__ import annotations
 import time
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Optional
 
 from loguru import logger
 
@@ -33,8 +31,7 @@ from loguru import logger
 
 
 class SignalLifecycleState(str, Enum):
-    """
-    信号生命周期状态。
+    """信号生命周期状态。
 
     CREATED   — 首次出现 BUY/HOLD 信号，投资逻辑建立
     ACTIVE    — 信号持续有效，置信度维持在合理水平
@@ -70,8 +67,7 @@ _STATE_LABELS: dict[SignalLifecycleState, str] = {
 
 @dataclass(frozen=True)
 class SignalRecord:
-    """
-    信号生命周期的一个快照点。
+    """信号生命周期的一个快照点。
 
     Attributes
     ----------
@@ -86,6 +82,7 @@ class SignalRecord:
     job_id              : 关联的研究作业 ID
     run_id              : 关联的运行 ID
     thesis_snapshot     : 本次投资论点摘要（截断）
+
     """
 
     ticker: str
@@ -94,7 +91,7 @@ class SignalRecord:
     confidence: float
     composite_score: float
     lifecycle_state: SignalLifecycleState
-    previous_state: Optional[str] = None
+    previous_state: str | None = None
     transition_reason: str = ""
     job_id: str = ""
     run_id: str = ""
@@ -106,7 +103,7 @@ class SignalRecord:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> "SignalRecord":
+    def from_dict(cls, data: dict) -> SignalRecord:
         state = data.get("lifecycle_state", "ACTIVE")
         if isinstance(state, str):
             state = SignalLifecycleState(state)
@@ -121,15 +118,14 @@ class SignalRecord:
 
 
 def _determine_next_state(
-    current_state: Optional[SignalLifecycleState],
+    current_state: SignalLifecycleState | None,
     current_confidence: float,
     new_signal: str,
     new_confidence: float,
     min_active_confidence: float = 55.0,
     weak_threshold: float = 60.0,
 ) -> tuple[SignalLifecycleState, str]:
-    """
-    根据当前状态 + 新分析结果，推断下一个生命周期状态。
+    """根据当前状态 + 新分析结果，推断下一个生命周期状态。
 
     规则：
       current = None (首次)
@@ -219,8 +215,7 @@ def _determine_next_state(
 
 
 class SignalLifecycle:
-    """
-    信号生命周期管理器。
+    """信号生命周期管理器。
 
     用法：
         lifecycle = SignalLifecycle(research_db)
@@ -262,8 +257,7 @@ class SignalLifecycle:
         min_active_confidence: float = 55.0,
         weak_threshold: float = 60.0,
     ) -> SignalRecord:
-        """
-        根据当前状态 + 新分析结果，计算生命周期状态并持久化。
+        """根据当前状态 + 新分析结果，计算生命周期状态并持久化。
 
         Parameters
         ----------
@@ -281,6 +275,7 @@ class SignalLifecycle:
         Returns
         -------
         SignalRecord : 本次更新的记录
+
         """
         current = self.get_current(ticker)
         prev_state = None
@@ -315,11 +310,11 @@ class SignalLifecycle:
         self._persist(record)
         logger.info(
             f"📡 信号生命周期 [{ticker}] {prev_state.value if prev_state else '—'} "
-            f"→ {new_state.value} | reason: {reason}"
+            f"→ {new_state.value} | reason: {reason}",
         )
         return record
 
-    def get_current(self, ticker: str) -> Optional[dict]:
+    def get_current(self, ticker: str) -> dict | None:
         """获取某只股票的最新信号记录（委托给 ResearchDatabase）。"""
         raw = self._db.get_latest_signal_for_ticker(ticker)
         if not raw:
@@ -342,10 +337,9 @@ class SignalLifecycle:
         self,
         ticker: str,
         limit: int = 20,
-        state_filter: Optional[str] = None,
+        state_filter: str | None = None,
     ) -> list[dict]:
-        """
-        查询某只股票的完整信号生命周期历史。
+        """查询某只股票的完整信号生命周期历史。
 
         Parameters
         ----------
@@ -356,6 +350,7 @@ class SignalLifecycle:
         Returns
         -------
         list[dict] : 按 date 降序排列
+
         """
         sql = """
             SELECT ticker, date, signal, confidence, composite_score,
@@ -399,11 +394,11 @@ class SignalLifecycle:
         history = self.get_history(ticker, limit=10)
         lines = [
             f"📡 {ticker} 信号生命周期",
-            f"  当前状态 : {current['lifecycle_state']} "
-            f"({_STATE_LABELS.get(SignalLifecycleState(current['lifecycle_state']), '')})",
+            (f"  当前状态 : {current['lifecycle_state']} "
+            f"({_STATE_LABELS.get(SignalLifecycleState(current['lifecycle_state']), '')})"),
             f"  最新日期 : {current['date']}",
-            f"  信号     : {current['signal']}  confidence={current['confidence']:.0f}  "
-            f"score={current['composite_score']:.1f}",
+            (f"  信号     : {current['signal']}  confidence={current['confidence']:.0f}  "
+            f"score={current['composite_score']:.1f}"),
             f"  迁移原因 : {current['transition_reason']}",
         ]
         if len(history) > 1:
@@ -412,7 +407,7 @@ class SignalLifecycle:
                 lines.append(
                     f"    {rec['date']}  {rec['signal']} "
                     f"conf={rec['confidence']:.0f} "
-                    f"→ {rec['lifecycle_state']} | {rec['transition_reason']}"
+                    f"→ {rec['lifecycle_state']} | {rec['transition_reason']}",
                 )
         return "\n".join(lines)
 
@@ -459,7 +454,7 @@ def build_signal_record(
     confidence: float,
     composite_score: float,
     lifecycle_state: SignalLifecycleState,
-    previous_state: Optional[str] = None,
+    previous_state: str | None = None,
     transition_reason: str = "",
     job_id: str = "",
     run_id: str = "",
@@ -482,7 +477,7 @@ def build_signal_record(
 
 
 def next_state(
-    current_state: Optional[SignalLifecycleState],
+    current_state: SignalLifecycleState | None,
     current_confidence: float,
     new_signal: str,
     new_confidence: float,

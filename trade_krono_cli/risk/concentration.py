@@ -1,5 +1,4 @@
-"""
-集中度风险模块 — Concentration Risk。
+"""集中度风险模块 — Concentration Risk。
 
 当前版本基于占位实现，未来可接入组合权重数据进行真实集中度计算。
 """
@@ -8,8 +7,7 @@ from __future__ import annotations
 
 
 def calc_concentration_risk(ta_result=None) -> float:
-    """
-    计算集中度风险分（0-100）。
+    """计算集中度风险分（0-100）。
 
     当前逻辑：
       - 暂不支持真实组合权重，返回默认中等风险（10 分）
@@ -23,6 +21,7 @@ def calc_concentration_risk(ta_result=None) -> float:
     Returns
     -------
     risk_score : 0-100
+
     """
     # TODO: 接入真实组合权重数据后替换此占位逻辑
     # 当前：无组合数据时返回默认值

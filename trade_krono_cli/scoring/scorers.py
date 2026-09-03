@@ -1,5 +1,4 @@
-"""
-scoring.scorers — 三种综合打分策略实现。
+"""scoring.scorers — 三种综合打分策略实现。
 
 策略列表：
   linear       : 加权线性组合（默认，与原 default_scorer 等价）
@@ -19,8 +18,6 @@ Risk Engine v2 集成：
 
 from __future__ import annotations
 
-from typing import Optional
-
 from trade_krono_cli.configs.scoring import ScoringConfig
 from trade_krono_cli.scoring.base import CompositeScorer
 
@@ -30,8 +27,7 @@ from trade_krono_cli.scoring.base import CompositeScorer
 
 
 class LinearScorer(CompositeScorer):
-    """
-    加权线性综合打分器（与原 default_scorer 等价）。
+    """加权线性综合打分器（与原 default_scorer 等价）。
 
     输出 ranking_score（0-100），作为辅助排序分使用。
     真正的决策依据应是 SignalAssessment.expected_value。
@@ -49,7 +45,7 @@ class LinearScorer(CompositeScorer):
 
     name = "linear"
 
-    def _score_impl(self, merged: dict, config: Optional[ScoringConfig] = None) -> float:
+    def _score_impl(self, merged: dict, config: ScoringConfig | None = None) -> float:
         s = config or ScoringConfig()
 
         raw_score = 0.0
@@ -101,8 +97,7 @@ class LinearScorer(CompositeScorer):
             raw_score -= risk_penalty
             components["risk_penalty"] = -risk_penalty
 
-        final = round(max(0, min(100, raw_score)), 2)
-        return final
+        return round(max(0, min(100, raw_score)), 2)
 
 
 # ═══════════════════════════════════════════════════════
@@ -111,8 +106,7 @@ class LinearScorer(CompositeScorer):
 
 
 class MultiplicativeScorer(CompositeScorer):
-    """
-    乘法衰减型打分器。
+    """乘法衰减型打分器。
 
     输出 ranking_score（0-100），作为辅助排序分使用。
     真正的决策依据应是 SignalAssessment.expected_value。
@@ -125,7 +119,7 @@ class MultiplicativeScorer(CompositeScorer):
 
     name = "multiplicative"
 
-    def _score_impl(self, merged: dict, config: Optional[ScoringConfig] = None) -> float:
+    def _score_impl(self, merged: dict, config: ScoringConfig | None = None) -> float:
         s = config or ScoringConfig()
 
         ta_conf = merged.get("ta_confidence") or 0
@@ -170,8 +164,7 @@ class MultiplicativeScorer(CompositeScorer):
 
 
 class RankBasedScorer(CompositeScorer):
-    """
-    百分位排名转换打分器。
+    """百分位排名转换打分器。
 
     输出 ranking_score（0-100），作为辅助排序分使用。
     真正的决策依据应是 SignalAssessment.expected_value。
@@ -183,7 +176,7 @@ class RankBasedScorer(CompositeScorer):
 
     name = "rank_based"
 
-    def _score_impl(self, merged: dict, config: Optional[ScoringConfig] = None) -> float:
+    def _score_impl(self, merged: dict, config: ScoringConfig | None = None) -> float:
         rank = merged.get("rank")
         if rank is None or rank <= 0:
             return LinearScorer()._score_impl(merged, config)

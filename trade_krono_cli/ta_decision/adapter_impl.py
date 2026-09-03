@@ -1,5 +1,4 @@
-"""
-DecisionAdapter — 从 LLM 输出解析结构化投资决定。
+"""DecisionAdapter — 从 LLM 输出解析结构化投资决定。
 
 从 trade_krono_cli.ta_decision 模块提取，避免循环依赖。
 模块级常量 (_RATING_MAP / _NEG_WORDS / THESIS_TRUNCATE_LEN) 已在 __init__.py 中定义，
@@ -8,24 +7,23 @@ DecisionAdapter — 从 LLM 输出解析结构化投资决定。
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
-from typing import Optional
 
 from loguru import logger
 
-from trade_krono_cli.ta_decision import (  # noqa: F401 (re-export for internal use)
+from trade_krono_cli.ta_decision import (
     _NEG_WORDS,
     _RATING_MAP,
     THESIS_TRUNCATE_LEN,
-    InvestmentDecision,  # noqa: F401 (used in type hints)
+    InvestmentDecision,
     Signal,
 )
 
 
 class DecisionAdapter:
-    """
-    将 TradingAgents 输出解析为结构化 InvestmentDecision。
+    """将 TradingAgents 输出解析为结构化 InvestmentDecision。
 
     解析优先级：
       1. JSON 结构化输出 → 直接映射字段
@@ -89,12 +87,10 @@ class DecisionAdapter:
     )
 
     def parse(self, decision_text: str) -> InvestmentDecision:
-        """
-        主入口：解析 LLM 输出 → InvestmentDecision。
+        """主入口：解析 LLM 输出 → InvestmentDecision。
 
         优先尝试 JSON 结构化解析，失败后回退到自由文本正则解析。
         """
-
         if not decision_text or not decision_text.strip():
             return InvestmentDecision.fallback()
 
@@ -108,7 +104,7 @@ class DecisionAdapter:
         logger.warning(
             f"[TA决策解析] JSON 结构化解析失败，回退到文本正则解析。"
             f"请检查 LLM prompt 是否要求返回标准 JSON 格式。\n"
-            f"  原始输出前200字: {decision_text_stripped[:200]!r}"
+            f"  原始输出前200字: {decision_text_stripped[:200]!r}",
         )
 
         # ── 1. Rating 结构化解析 ────────────────────────────────────────────
@@ -144,7 +140,7 @@ class DecisionAdapter:
         invalidations = self._extract_invalidations(decision_text)
         entry_zone = self._extract_price_range(decision_text, self._RE_ENTRY_ZONE, "entry_zone")
         target_price = self._extract_price_range(
-            decision_text, self._RE_TARGET_PRICE, "target_price"
+            decision_text, self._RE_TARGET_PRICE, "target_price",
         )
         stop_loss = self._extract_price_range(decision_text, self._RE_STOP_LOSS, "stop_loss")
         holding_period = self._extract_holding_period(decision_text)
@@ -171,9 +167,8 @@ class DecisionAdapter:
     # ── JSON 结构化解析 ─────────────────────────────────────────────────────
 
     @staticmethod
-    def _try_parse_json(text: str) -> Optional[InvestmentDecision]:
-        """
-        尝试将输入解析为 JSON 结构化决策。
+    def _try_parse_json(text: str) -> InvestmentDecision | None:
+        """尝试将输入解析为 JSON 结构化决策。
 
         支持的字段（全部可选）：
           signal, confidence, thesis, risks, expected_return, position_size,
@@ -182,7 +177,6 @@ class DecisionAdapter:
           valuation_score, fundamental_score, technical_score,
           sentiment_score, capital_flow_score, macro_score
         """
-
         try:
             data = json.loads(text)
         except (json.JSONDecodeError, TypeError):
@@ -191,7 +185,7 @@ class DecisionAdapter:
         if not isinstance(data, dict):
             logger.warning(
                 f"[TA决策解析] JSON 解析成功但非对象类型（{type(data).__name__}），"
-                f"回退到文本正则解析。"
+                f"回退到文本正则解析。",
             )
             return None
 
@@ -222,10 +216,7 @@ class DecisionAdapter:
 
         # ── thesis ──────────────────────────────────────────────────────────
         thesis = data.get("thesis", "")
-        if isinstance(thesis, str):
-            thesis = thesis.strip()[:THESIS_TRUNCATE_LEN]
-        else:
-            thesis = ""
+        thesis = thesis.strip()[:THESIS_TRUNCATE_LEN] if isinstance(thesis, str) else ""
 
         # ── risks ───────────────────────────────────────────────────────────
         risks_raw = data.get("risks")
@@ -305,7 +296,7 @@ class DecisionAdapter:
             catalysts = []
 
         # ── 多因子评分 ──────────────────────────────────────────────────────
-        def _parse_score(key: str, default: Optional[float] = None) -> Optional[float]:
+        def _parse_score(key: str, default: float | None = None) -> float | None:
             v = data.get(key)
             if v is not None:
                 try:
@@ -325,7 +316,7 @@ class DecisionAdapter:
         }
 
         logger.info(
-            f"[TA决策解析] JSON 结构化解析成功 | signal={signal.value} confidence={confidence}"
+            f"[TA决策解析] JSON 结构化解析成功 | signal={signal.value} confidence={confidence}",
         )
         return InvestmentDecision(
             signal=signal,
@@ -388,7 +379,7 @@ class DecisionAdapter:
                         risks.append(stripped)
         return risks
 
-    def _extract_expected_return(self, text: str, signal: Signal) -> Optional[float]:
+    def _extract_expected_return(self, text: str, signal: Signal) -> float | None:
         _FIN_RATIO_RE = re.compile(r"\b(pe|peg|pb|eps|roe|roa)\b", re.IGNORECASE)
         _FIN_RATIO_CN = frozenset({"股息率", "毛利率"})
         for line in text.split("\n"):
@@ -406,7 +397,7 @@ class DecisionAdapter:
                         return round(pct, 2)
         return None
 
-    def _extract_position_size(self, text: str) -> Optional[float]:
+    def _extract_position_size(self, text: str) -> float | None:
         m = self._RE_POS_SIZE.search(text)
         if m:
             try:
@@ -448,14 +439,14 @@ class DecisionAdapter:
         return result[:8]
 
     def _extract_price_range(
-        self, text: str, pattern: re.Pattern, key: str
-    ) -> Optional[list[float]]:
-        """
-        从文本中提取价格区间或单一价格。
+        self, text: str, pattern: re.Pattern, key: str,
+    ) -> list[float] | None:
+        """从文本中提取价格区间或单一价格。
 
         Returns
         -------
         [low, high] 或 [single, single] 或 None
+
         """
         m = pattern.search(text)
         if not m:
@@ -478,7 +469,7 @@ class DecisionAdapter:
                 pass
         return None
 
-    def _extract_holding_period(self, text: str) -> Optional[int]:
+    def _extract_holding_period(self, text: str) -> int | None:
         m = self._RE_HOLDING_PERIOD.search(text)
         if m:
             try:
@@ -503,9 +494,9 @@ class DecisionAdapter:
                         result.append(stripped)
         return result
 
-    def _extract_scores(self, text: str) -> dict[str, Optional[float]]:
+    def _extract_scores(self, text: str) -> dict[str, float | None]:
         """提取多因子评分。"""
-        score_map: dict[str, Optional[float]] = {
+        score_map: dict[str, float | None] = {
             "valuation_score": None,
             "fundamental_score": None,
             "technical_score": None,
@@ -524,10 +515,8 @@ class DecisionAdapter:
         for key, pat in _PATTERNS.items():
             m = re.search(pat, text, re.IGNORECASE)
             if m:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     score_map[key] = float(m.group(1))
-                except (ValueError, TypeError):
-                    pass
         return score_map
 
     # ── 兜底解析 ──────────────────────────────────────────────────────────

@@ -1,21 +1,21 @@
-"""
-研究数据库 base — ResearchDatabase 核心基础设施（连接、建表、迁移）。
-"""
+"""研究数据库 base — ResearchDatabase 核心基础设施（连接、建表、迁移）。"""
 
 from __future__ import annotations
 
 import sqlite3
 import threading
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.research_db.migrations import migrate_schema
 from trade_krono_cli.research_db.schema import CREATE_SCRIPT
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 class ResearchDatabase:
-    """
-    投研数据持久化层。
+    """投研数据持久化层。
 
     表结构见模块文档。
     """
@@ -31,7 +31,7 @@ class ResearchDatabase:
         "external_repos",
     )
 
-    def __init__(self, db_path: Path | None = None, settings: Settings | None = None):
+    def __init__(self, db_path: Path | None = None, settings: Settings | None = None) -> None:
         self._db_path = db_path or ((settings or get_settings()).cache_dir / "pipeline_cache.db")
         from trade_krono_cli.config import _validate_test_isolation
 

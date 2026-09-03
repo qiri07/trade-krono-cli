@@ -75,6 +75,16 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v5
 
+      - name: 设置 uv 环境（Python 3.12）
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+
+      - name: 安装依赖
+        run: uv sync --dev
+
       - name: 判断整体状态
         id: status
         run: |

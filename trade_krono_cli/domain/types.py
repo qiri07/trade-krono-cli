@@ -1,5 +1,4 @@
-"""
-Domain Types — 基础枚举和类型定义。
+"""Domain Types — 基础枚举和类型定义。
 
 独立于其他 domain 模块，避免循环导入。
 """
@@ -26,7 +25,7 @@ class Direction(str, Enum):
     FLAT = "FLAT"
 
     @classmethod
-    def from_str(cls, value: str | None) -> "Direction | None":
+    def from_str(cls, value: str | None) -> Direction | None:
         if value is None:
             return None
         try:
@@ -45,4 +44,4 @@ class ExperimentType(str, Enum):
     HYPOTHESIS = "hypothesis"
 
 
-__all__ = ["Signal", "Direction", "ExperimentType"]
+__all__ = ["Direction", "ExperimentType", "Signal"]

@@ -1,5 +1,4 @@
-"""
-Signal — 信号评估领域对象。
+"""Signal — 信号评估领域对象。
 
 SignalAssessment 是多源信号（TA + Kronos + Committee）的融合结果，
 并在此层计算 Expected Value（期望收益）。
@@ -8,7 +7,7 @@ SignalAssessment 是多源信号（TA + Kronos + Committee）的融合结果，
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from trade_krono_cli.domain.prediction import KronosPrediction, TAAnalysis
 from trade_krono_cli.domain.types import Direction
@@ -34,7 +33,7 @@ class SignalConflict:
             TA_vs_COMMITTEE,
             KRONOS_vs_COMMITTEE,
             ALL_CONFLICT,
-        }
+        },
     )
 
     @staticmethod
@@ -49,8 +48,7 @@ class SignalConflict:
 
 @dataclass(frozen=True)
 class SignalAssessment:
-    """
-    多源信号融合 + EV 计算的评估结果。
+    """多源信号融合 + EV 计算的评估结果。
 
     这是 pipeline 的核心中间对象：
       TAAnalysis + KronosPrediction + CommitteeResult
@@ -91,10 +89,10 @@ class SignalAssessment:
 
     ticker: str
     eval_date: str
-    ta: Optional[TAAnalysis] = None
-    kronos: Optional[KronosPrediction] = None
-    committee_rec: Optional[DomainSignal] = None
-    committee_confidence: Optional[float] = None
+    ta: TAAnalysis | None = None
+    kronos: KronosPrediction | None = None
+    committee_rec: DomainSignal | None = None
+    committee_confidence: float | None = None
     bull_case: str = ""
     bear_case: str = ""
 
@@ -104,20 +102,20 @@ class SignalAssessment:
     conflict: str = SignalConflict.NONE
 
     # EV 指标
-    prob_win: Optional[float] = None
-    prob_loss: Optional[float] = None
-    avg_win_return: Optional[float] = None
-    avg_loss_return: Optional[float] = None
-    expected_value: Optional[float] = None
-    risk_adjusted_ev: Optional[float] = None
+    prob_win: float | None = None
+    prob_loss: float | None = None
+    avg_win_return: float | None = None
+    avg_loss_return: float | None = None
+    expected_value: float | None = None
+    risk_adjusted_ev: float | None = None
     cost_bps: float = 17.0
 
     # 交易参数
-    position_size: Optional[float] = None
-    entry_zone: Optional[list[float]] = None
-    target_price: Optional[float] = None
-    stop_loss: Optional[float] = None
-    horizon: Optional[int] = None
+    position_size: float | None = None
+    entry_zone: list[float] | None = None
+    target_price: float | None = None
+    stop_loss: float | None = None
+    horizon: int | None = None
 
     # 综合论点
     thesis: str = ""
@@ -161,7 +159,7 @@ class SignalAssessment:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> "SignalAssessment":
+    def from_dict(cls, data: dict) -> SignalAssessment:
         ta_data = data.get("ta_analysis")
         ta = TAAnalysis.from_dict(ta_data) if ta_data else None
         kronos_data = data.get("kronos_prediction")
@@ -221,18 +219,18 @@ class SignalAssessment:
 
 
 def _compute_ev(
-    direction: Optional[Direction],
+    direction: Direction | None,
     expected_return: float,
-    p10: Optional[float],
-    p90: Optional[float],
+    p10: float | None,
+    p90: float | None,
     cost_bps: float,
 ) -> tuple[float | None, float | None, float | None, float | None, float | None, float | None]:
-    """
-    基于分位数计算 EV 指标。
+    """基于分位数计算 EV 指标。
 
     Returns
     -------
     (prob_win, prob_loss, avg_win_return, avg_loss_return, expected_value)
+
     """
     if expected_return is None:
         return None, None, None, None, None, None
@@ -262,9 +260,9 @@ def _compute_ev(
 
 
 def detect_conflict(
-    ta_signal: Optional[DomainSignal],
-    kronos_direction: Optional[Direction],
-    committee_rec: Optional[DomainSignal],
+    ta_signal: DomainSignal | None,
+    kronos_direction: Direction | None,
+    committee_rec: DomainSignal | None,
 ) -> str:
     """检测多源信号冲突。"""
     signals: list[tuple[str, DomainSignal]] = []
@@ -281,7 +279,7 @@ def detect_conflict(
     if len(signals) < 2:
         return SignalConflict.NONE
 
-    unique = set(s.value for _, s in signals)
+    unique = {s.value for _, s in signals}
     if len(unique) == 1:
         return SignalConflict.NONE
     if len(unique) == 2:

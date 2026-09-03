@@ -1,5 +1,4 @@
-"""
-data_providers.tonghuashun_provider — 同花顺（fuyao）金融数据 API Provider。
+"""data_providers.tonghuashun_provider — 同花顺（fuyao）金融数据 API Provider。
 
 基于 https://fuyao.aicubes.cn/ 的 REST API，通过 X-api-key 鉴权。
 支持：
@@ -17,7 +16,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import requests
 from loguru import logger
@@ -28,13 +27,13 @@ from trade_krono_cli.data_providers.base import (
     RealtimeQuote,
     StockMetadata,
 )
+from trade_krono_cli.utils import safe_float
 
 _BASE_URL = "https://fuyao.aicubes.cn"
 
 
 class TongHuaShunProvider(DataProvider):
-    """
-    同花顺金融数据 API Provider。
+    """同花顺金融数据 API Provider。
 
     依赖 HITHINK_FINANCE_API_KEY 环境变量（兼容 FUYAO_API_KEY）。
     支持 K 线、行情快照、元数据三种数据维度。
@@ -60,7 +59,8 @@ class TongHuaShunProvider(DataProvider):
             or os.getenv("FUYAO_API_KEY", "").strip()
         )
         if not key:
-            raise RuntimeError("HITHINK_FINANCE_API_KEY 未配置，请在 .env 中设置同花顺 API Key。")
+            msg = "HITHINK_FINANCE_API_KEY 未配置，请在 .env 中设置同花顺 API Key。"
+            raise RuntimeError(msg)
         cls._api_key = key
         cls._initialized = True
 
@@ -71,7 +71,7 @@ class TongHuaShunProvider(DataProvider):
         return {"X-api-key": TongHuaShunProvider._api_key}
 
     @staticmethod
-    def _get(path: str, params: dict[str, Any] | None = None) -> Optional[dict]:
+    def _get(path: str, params: dict[str, Any] | None = None) -> dict | None:
         """发送 GET 请求，返回 ApiResponse.data 或 None。"""
         try:
             url = f"{_BASE_URL}{path}"
@@ -103,18 +103,6 @@ class TongHuaShunProvider(DataProvider):
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         return int(dt.timestamp() * 1000)
 
-    @staticmethod
-    def _safe_float(value: Any) -> Optional[float]:
-        if value is None:
-            return None
-        try:
-            f = float(value)
-            if f != f or f == float("inf") or f == float("-inf"):
-                return None
-            return f
-        except (ValueError, TypeError):
-            return None
-
     # ── 核心接口实现 ──────────────────────────────────────────
 
     def fetch_kline(
@@ -124,9 +112,8 @@ class TongHuaShunProvider(DataProvider):
         end_date: str,
         frequency: str = "d",
         adjustflag: str = "1",
-    ) -> Optional[KlineData]:
-        """
-        拉取单只标的的历史日 K 线（前复权）。
+    ) -> KlineData | None:
+        """拉取单只标的的历史日 K 线（前复权）。
 
         Parameters
         ----------
@@ -144,6 +131,7 @@ class TongHuaShunProvider(DataProvider):
         Returns
         -------
         KlineData | None
+
         """
         try:
             self._ensure_init()
@@ -176,17 +164,17 @@ class TongHuaShunProvider(DataProvider):
             amount_list: list[float] = []
 
             for item in items:
-                ms = self._safe_float(item.get("date_ms"))
+                ms = safe_float(item.get("date_ms"))
                 if ms is None:
                     continue
                 timestamps.append(datetime.fromtimestamp(ms / 1000))
-                open_list.append(self._safe_float(item.get("open_price")) or 0.0)
-                high_list.append(self._safe_float(item.get("high_price")) or 0.0)
-                low_list.append(self._safe_float(item.get("low_price")) or 0.0)
-                close_list.append(self._safe_float(item.get("close_price")) or 0.0)
+                open_list.append(safe_float(item.get("open_price")) or 0.0)
+                high_list.append(safe_float(item.get("high_price")) or 0.0)
+                low_list.append(safe_float(item.get("low_price")) or 0.0)
+                close_list.append(safe_float(item.get("close_price")) or 0.0)
                 # volume 单位为股
-                volume_list.append(self._safe_float(item.get("volume")) or 0.0)
-                amount_list.append(self._safe_float(item.get("turnover")) or 0.0)
+                volume_list.append(safe_float(item.get("volume")) or 0.0)
+                amount_list.append(safe_float(item.get("turnover")) or 0.0)
 
             return KlineData(
                 timestamps=timestamps,
@@ -203,9 +191,8 @@ class TongHuaShunProvider(DataProvider):
             logger.debug(f"{self.name} K 线拉取异常 {ticker}: {str(e)[:200]}")
             return None
 
-    def fetch_quote(self, ticker: str) -> Optional[RealtimeQuote]:
-        """
-        获取单只标的的实时行情快照。
+    def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
+        """获取单只标的的实时行情快照。
 
         Parameters
         ----------
@@ -215,6 +202,7 @@ class TongHuaShunProvider(DataProvider):
         Returns
         -------
         RealtimeQuote | None
+
         """
         try:
             self._ensure_init()
@@ -234,7 +222,7 @@ class TongHuaShunProvider(DataProvider):
             item = items[0]
             return RealtimeQuote(
                 ticker=ticker,
-                price=self._safe_float(item.get("last_price")),
+                price=safe_float(item.get("last_price")),
                 source=self.name,
             )
         except RuntimeError:
@@ -243,9 +231,8 @@ class TongHuaShunProvider(DataProvider):
             logger.debug(f"{self.name} 行情拉取异常 {ticker}: {str(e)[:100]}")
             return None
 
-    def fetch_metadata(self, ticker: str) -> Optional[StockMetadata]:
-        """
-        获取股票基础元数据（名称、交易所）。
+    def fetch_metadata(self, ticker: str) -> StockMetadata | None:
+        """获取股票基础元数据（名称、交易所）。
         PE/PB/行业 等字段同花顺 API 不在此端点提供，返回 None。
 
         Parameters
@@ -256,6 +243,7 @@ class TongHuaShunProvider(DataProvider):
         Returns
         -------
         StockMetadata | None
+
         """
         try:
             self._ensure_init()
@@ -263,7 +251,7 @@ class TongHuaShunProvider(DataProvider):
             if not thscode:
                 return None
 
-            params = {"q": ticker.split(".")[-1], "limit": 1}
+            params = {"q": ticker.rsplit(".", maxsplit=1)[-1], "limit": 1}
             data = self._get("/api/meta/tickers/search", params)
             if data is None:
                 return None
@@ -301,14 +289,15 @@ class TongHuaShunProvider(DataProvider):
                 },
             )
             return data is not None and bool(data.get("item"))
-        except Exception:
+        except Exception as e:
+            logger.debug(f"tonghuashun health check 异常: {e}")
             return False
 
     # ── 内部转换 ──────────────────────────────────────────────
 
     @staticmethod
-    def _ticker_to_thscode(ticker: str) -> Optional[str]:
-        """sh.600519 → 600519.SH / sz.000858 → 000858.SZ / bj.920002 → 920002.BJ"""
+    def _ticker_to_thscode(ticker: str) -> str | None:
+        """sh.600519 → 600519.SH / sz.000858 → 000858.SZ / bj.920002 → 920002.BJ."""
         parts = ticker.split(".")
         if len(parts) != 2:
             return None
@@ -323,7 +312,7 @@ class TongHuaShunProvider(DataProvider):
 
     @staticmethod
     def _thscode_to_ticker(thscode: str) -> str:
-        """600519.SH → sh.600519 / 000858.SZ → sz.000858"""
+        """600519.SH → sh.600519 / 000858.SZ → sz.000858."""
         if "." not in thscode:
             return ""
         code, exchange = thscode.rsplit(".", 1)

@@ -1,4 +1,4 @@
-"""Entry point: python -m trade_krono_cli"""
+"""Entry point: python -m trade_krono_cli."""
 
 from __future__ import annotations
 

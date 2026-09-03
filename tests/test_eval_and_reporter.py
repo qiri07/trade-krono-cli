@@ -100,7 +100,7 @@ class TestComputeTaMetrics:
             ),
         ]
         metrics = HorizonMetrics()
-        ta_buy_n, ta_hold_n = compute_ta_metrics(records, metrics)
+        ta_buy_n, _ta_hold_n = compute_ta_metrics(records, metrics)
         assert ta_buy_n == 1
         assert metrics.ta_buy_win_rate == pytest.approx(100.0, abs=0.1)
 

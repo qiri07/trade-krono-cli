@@ -26,7 +26,7 @@ def cache_only():
 # ── Jobs ────────────────────────────────────────────────────────────────────
 
 
-def test_create_job(research_db):
+def test_create_job(research_db) -> None:
     job_id = research_db.create_job("2026-08-11", ["sh.600519", "sz.000858"])
     assert job_id is not None
     assert len(job_id) > 0
@@ -39,7 +39,7 @@ def test_create_job(research_db):
     assert set(job["tickers"]) == {"sh.600519", "sz.000858"}
 
 
-def test_complete_job(research_db):
+def test_complete_job(research_db) -> None:
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     research_db.complete_job(job_id, n_success=1, elapsed=12.5)
 
@@ -48,7 +48,7 @@ def test_complete_job(research_db):
     assert abs(job["elapsed"] - 12.5) < 0.01
 
 
-def test_list_jobs(research_db):
+def test_list_jobs(research_db) -> None:
     j1 = research_db.create_job("2026-08-10", ["sh.600519"])
     j2 = research_db.create_job("2026-08-11", ["sz.000858", "sh.600036"])
     jobs = research_db.list_jobs()
@@ -58,8 +58,8 @@ def test_list_jobs(research_db):
     assert jobs[1]["job_id"] == j1
 
 
-def test_list_jobs_limit(research_db):
-    for i in range(5):
+def test_list_jobs_limit(research_db) -> None:
+    for _i in range(5):
         research_db.create_job("2026-08-11", ["sh.600519"])
     jobs = research_db.list_jobs(limit=2)
     assert len(jobs) == 2
@@ -68,7 +68,7 @@ def test_list_jobs_limit(research_db):
 # ── TA Analysis ─────────────────────────────────────────────────────────────
 
 
-def test_insert_ta(research_db):
+def test_insert_ta(research_db) -> None:
     from trade_krono_cli.ta_decision import InvestmentDecision, Signal
     from trade_krono_cli.ta_runner import StockAnalysisResult
 
@@ -95,7 +95,7 @@ def test_insert_ta(research_db):
     assert records[0]["confidence"] == 85.0
 
 
-def test_insert_ta_with_error(research_db):
+def test_insert_ta_with_error(research_db) -> None:
     from trade_krono_cli.ta_runner import StockAnalysisResult
 
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
@@ -113,7 +113,7 @@ def test_insert_ta_with_error(research_db):
 # ── Kronos Forecast ─────────────────────────────────────────────────────────
 
 
-def test_insert_kronos(research_db):
+def test_insert_kronos(research_db) -> None:
     from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
 
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
@@ -142,7 +142,7 @@ def test_insert_kronos(research_db):
 # ── Signals ─────────────────────────────────────────────────────────────────
 
 
-def test_insert_signals(research_db):
+def test_insert_signals(research_db) -> None:
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     merged = [
         {
@@ -172,7 +172,7 @@ def test_insert_signals(research_db):
 # ── Decisions ───────────────────────────────────────────────────────────────
 
 
-def test_insert_decision(research_db):
+def test_insert_decision(research_db) -> None:
     from trade_krono_cli.ta_decision import InvestmentDecision, Signal
 
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
@@ -197,7 +197,7 @@ def test_insert_decision(research_db):
 # ── Raw Reports Index ───────────────────────────────────────────────────────
 
 
-def test_index_raw_report(research_db):
+def test_index_raw_report(research_db) -> None:
     import sqlite3
 
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
@@ -221,14 +221,14 @@ def test_index_raw_report(research_db):
 # ── Stats ───────────────────────────────────────────────────────────────────
 
 
-def test_stats_empty(research_db):
+def test_stats_empty(research_db) -> None:
     stats = research_db.stats()
     assert "research_jobs" in stats
     assert "research_ta_analysis" in stats
     assert stats["research_jobs"] == 0
 
 
-def test_stats_after_insert(research_db):
+def test_stats_after_insert(research_db) -> None:
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     research_db.complete_job(job_id, n_success=1, elapsed=5.0)
 
@@ -240,7 +240,7 @@ def test_stats_after_insert(research_db):
 # ── Query History ───────────────────────────────────────────────────────────
 
 
-def test_query_history(research_db):
+def test_query_history(research_db) -> None:
     # Create two jobs with signals
     j1 = research_db.create_job("2026-08-10", ["sh.600519"])
     research_db.insert_signals(
@@ -258,7 +258,7 @@ def test_query_history(research_db):
                 "uncertainty": None,
                 "ta_error": None,
                 "kronos_error": None,
-            }
+            },
         ],
     )
     research_db.complete_job(j1, n_success=1, elapsed=5.0)
@@ -279,7 +279,7 @@ def test_query_history(research_db):
                 "uncertainty": None,
                 "ta_error": None,
                 "kronos_error": None,
-            }
+            },
         ],
     )
     research_db.complete_job(j2, n_success=1, elapsed=6.0)
@@ -293,7 +293,7 @@ def test_query_history(research_db):
     assert records[1]["ta_signal"] == "BUY"
 
 
-def test_query_history_no_records(research_db):
+def test_query_history_no_records(research_db) -> None:
     records = research_db.query_history("sh.999999")
     assert records == []
 
@@ -301,7 +301,7 @@ def test_query_history_no_records(research_db):
 # ── Cache vs Research Separation ────────────────────────────────────────────
 
 
-def test_cache_and_research_are_separate(tmp_path):
+def test_cache_and_research_are_separate(tmp_path) -> None:
     """Cache 操作不影响 Research 表，反之亦然。"""
     cache = Cache(db_path=tmp_path / "cache.db")
     research = ResearchDatabase(db_path=tmp_path / "cache.db")
@@ -322,7 +322,7 @@ def test_cache_and_research_are_separate(tmp_path):
     assert job["n_tickers"] == 1
 
 
-def test_clear_cache_does_not_affect_research(tmp_path):
+def test_clear_cache_does_not_affect_research(tmp_path) -> None:
     """clear_all 后 research 数据仍在。"""
     db = tmp_path / "combined.db"
     cache = Cache(db_path=db)
@@ -363,7 +363,7 @@ class _MockSettings:
     checkpoint_enabled = True
 
 
-def test_create_job_with_version_snapshot(research_db):
+def test_create_job_with_version_snapshot(research_db) -> None:
     """create_job 传入 settings 应填充版本字段。"""
     reset_run_id_counter()
     job_id = research_db.create_job(
@@ -382,7 +382,7 @@ def test_create_job_with_version_snapshot(research_db):
     assert len(job["config_hash"]) == 16
 
 
-def test_get_run_snapshot(research_db):
+def test_get_run_snapshot(research_db) -> None:
     """get_run_snapshot 返回完整的版本快照。"""
     reset_run_id_counter()
     job_id = research_db.create_job(
@@ -399,7 +399,7 @@ def test_get_run_snapshot(research_db):
     assert "config_hash" in snapshot
 
 
-def test_list_jobs_includes_versions(research_db):
+def test_list_jobs_includes_versions(research_db) -> None:
     """list_jobs 应包含版本摘要。"""
     reset_run_id_counter()
     research_db.create_job("2026-08-11", ["sh.600519"], settings=_MockSettings())
@@ -414,7 +414,7 @@ def test_list_jobs_includes_versions(research_db):
         assert j["strategy_version"] is not None
 
 
-def test_schema_migration_old_db(tmp_path):
+def test_schema_migration_old_db(tmp_path) -> None:
     """从旧 schema（无版本列）自动迁移。"""
     db = tmp_path / "old.db"
 
@@ -505,7 +505,7 @@ def test_schema_migration_old_db(tmp_path):
 # ── Committee Deliberations ──────────────────────────────────────────────────
 
 
-def test_insert_committee_deliberation(research_db):
+def test_insert_committee_deliberation(research_db) -> None:
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
     research_db.insert_committee_deliberation(
         job_id=job_id,
@@ -526,7 +526,7 @@ def test_insert_committee_deliberation(research_db):
     assert result["agent_consensus"] == {"fundamental": "BUY"}
 
 
-def test_get_committee_for_ticker_miss(research_db):
+def test_get_committee_for_ticker_miss(research_db) -> None:
     result = research_db.get_committee_for_ticker("sh.600519")
     assert result is None
 
@@ -534,7 +534,7 @@ def test_get_committee_for_ticker_miss(research_db):
 # ── Stats Edge Cases ────────────────────────────────────────────────────────
 
 
-def test_stats_all_tables_empty(research_db):
+def test_stats_all_tables_empty(research_db) -> None:
     stats = research_db.stats()
     assert stats["research_jobs"] == 0
     assert stats["research_ta_analysis"] == 0
@@ -545,7 +545,7 @@ def test_stats_all_tables_empty(research_db):
 # ── Signal History ───────────────────────────────────────────────────────────
 
 
-def test_get_latest_signal_for_ticker(research_db):
+def test_get_latest_signal_for_ticker(research_db) -> None:
     j1 = research_db.create_job("2026-08-10", ["sh.600519"])
     j2 = research_db.create_job("2026-08-11", ["sh.600519"])
     # signal_history 由 signal_lifecycle 写入，测试直接插入
@@ -597,6 +597,6 @@ def test_get_latest_signal_for_ticker(research_db):
     assert latest["composite_score"] == 80.0
 
 
-def test_get_latest_signal_for_ticker_miss(research_db):
+def test_get_latest_signal_for_ticker_miss(research_db) -> None:
     result = research_db.get_latest_signal_for_ticker("sh.600519")
     assert result is None

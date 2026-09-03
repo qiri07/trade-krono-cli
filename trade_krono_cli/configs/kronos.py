@@ -18,7 +18,7 @@ class KronosConfig:
     top_p: float = 0.9
     use_cache: bool = True
 
-    def merge(self, **overrides) -> "KronosConfig":
+    def merge(self, **overrides) -> KronosConfig:
         current = {k: getattr(self, k) for k in self.__dataclass_fields__}
         current.update({k: v for k, v in overrides.items() if v is not None})
         return KronosConfig(**current)

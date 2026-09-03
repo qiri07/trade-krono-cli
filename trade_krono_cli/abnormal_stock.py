@@ -1,5 +1,4 @@
-"""
-abnormal_stock — 异常股票检测与标记模块。
+"""abnormal_stock — 异常股票检测与标记模块。
 
 职责：
   · 在流水线启动前批量预检股票状态（停牌 / ST / 退市 / 次新）
@@ -24,9 +23,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 from loguru import logger
+
+from trade_krono_cli.utils.st_cache import cached
 
 # ═══════════════════════════════════════════════════════
 # 枚举与数据结构
@@ -45,8 +45,7 @@ class StockAbnormality(str, Enum):
 
 @dataclass(frozen=True)
 class AbnormalityFlag:
-    """
-    单只股票的异常标记。
+    """单只股票的异常标记。
 
     Parameters
     ----------
@@ -57,6 +56,7 @@ class AbnormalityFlag:
         综合严重程度 0.0–1.0
     reason : str
         人工可读的原因说明
+
     """
 
     ticker: str
@@ -92,8 +92,7 @@ def check_kline_completeness(
     ticker: str,
     min_completeness: float = 0.85,
 ) -> tuple[bool, str]:
-    """
-    校验 K 线数据完整性。
+    """校验 K 线数据完整性。
 
     计算方式：
       1. 计算应有效率日期范围内的实际交易日数
@@ -114,6 +113,7 @@ def check_kline_completeness(
     (passed, reason)
       passed  — True 表示通过，False 表示未达标
       reason  — 详细说明
+
     """
     import pandas as pd
 
@@ -148,7 +148,7 @@ def check_kline_completeness(
     if completeness < min_completeness:
         reasons.append(
             f"完整率 {completeness:.1%} < {min_completeness:.0%}"
-            f"（{actual_days}/{expected_days} 日）"
+            f"（{actual_days}/{expected_days} 日）",
         )
     if gaps:
         reasons.append(f"发现 {len(gaps)} 个断点，共缺失 {gap_days} 个交易日")
@@ -169,10 +169,9 @@ def apply_abnormality_risk_boost(
     flags: list[str],
     enabled: bool = True,
     strategy: str = "fixed_boost",
-    params: Optional[dict] = None,
+    params: dict | None = None,
 ) -> float:
-    """
-    根据异常标记上调风险分。
+    """根据异常标记上调风险分。
 
     通过 RiskBoostStrategy Registry 分发，支持可插拔策略。
 
@@ -193,6 +192,7 @@ def apply_abnormality_risk_boost(
     -------
     float
         上调后的风险分（0-100）
+
     """
     if not enabled:
         return base_risk_score
@@ -211,7 +211,7 @@ def apply_abnormality_risk_boost(
         logger.info(
             f"📈 {boosted:.0f} 风险分上调: "
             f"{base_risk_score:.0f} + {total_boost:.0f} "
-            f"(strategy={strategy}, flags={flags})"
+            f"(strategy={strategy}, flags={flags})",
         )
     return boosted
 
@@ -223,18 +223,12 @@ def apply_abnormality_risk_boost(
 # baostock ST 股票名称模式（复用 trading_constraints 的约定）
 _ST_PATTERNS = re.compile(r"^(ST|\*ST|SST|N ST)", re.IGNORECASE)
 
-# 模块级缓存：{ticker: is_st_bool}
-_st_cache: dict[str, bool] = {}
 
-
+@cached(ttl=1800)
 def _check_st_status_cached(ticker: str) -> bool:
-    """
-    检查是否为 ST 标的（带模块级缓存）。
+    """检查是否为 ST 标的（带 TTL 缓存，避免重复网络请求）。
     使用 BaostockProvider 统一访问数据源。
     """
-    if ticker in _st_cache:
-        return _st_cache[ticker]
-
     try:
         from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
 
@@ -246,8 +240,6 @@ def _check_st_status_cached(ticker: str) -> bool:
     except Exception as e:
         logger.debug(f"ST 检测异常 {ticker}: {str(e)[:200]}")
         result = False
-
-    _st_cache[ticker] = result
     return result
 
 
@@ -256,8 +248,7 @@ def _check_suspended_via_kline(
     eval_date: str,
     max_gap_trading_days: int = 10,
 ) -> tuple[bool, str]:
-    """
-    通过 K 线新鲜度检测股票是否停牌。
+    """通过 K 线新鲜度检测股票是否停牌。
 
     Parameters
     ----------
@@ -268,6 +259,7 @@ def _check_suspended_via_kline(
     Returns
     -------
     (is_suspended, reason)
+
     """
     from trade_krono_cli.data import fetch_lookback
 
@@ -288,8 +280,7 @@ def _check_suspended_via_kline(
 
 
 def _check_delisted(ticker: str) -> bool:
-    """
-    检查股票是否已退市。
+    """检查股票是否已退市。
     使用 BaostockProvider 统一访问数据源。
     """
     try:
@@ -310,8 +301,7 @@ def _check_new_stock(
     eval_date: str,
     min_listing_days: int = 60,
 ) -> tuple[bool, str]:
-    """
-    检查是否为次新股（上市不足 min_listing_days 个交易日）。
+    """检查是否为次新股（上市不足 min_listing_days 个交易日）。
     使用 BaostockProvider 统一访问数据源。
     """
     try:
@@ -335,8 +325,7 @@ def precheck_stock_status(
     skip_suspended: bool = True,
     skip_new_stock: bool = True,
 ) -> dict[str, AbnormalityFlag]:
-    """
-    批量预检股票状态，返回每只股票的异常标记。
+    """批量预检股票状态，返回每只股票的异常标记。
 
     Parameters
     ----------
@@ -356,6 +345,7 @@ def precheck_stock_status(
     Returns
     -------
     dict[ticker, AbnormalityFlag]
+
     """
     from trade_krono_cli.security import validate_ticker
 
@@ -411,8 +401,7 @@ def precheck_stock_status(
 
 
 def _compute_severity(flags: list[StockAbnormality]) -> float:
-    """
-    根据异常标记列表计算综合严重程度 0.0–1.0。
+    """根据异常标记列表计算综合严重程度 0.0–1.0。
 
     多个异常取最大值（不累加，避免重复计分）。
     """

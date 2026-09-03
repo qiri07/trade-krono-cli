@@ -1,5 +1,4 @@
-"""
-Factory — 领域对象的工厂函数。
+"""Factory — 领域对象的工厂函数。
 
 提供从原始数据/旧对象构建领域对象的标准接口。
 Pipeline 应通过工厂函数创建领域对象，而非直接构造。
@@ -7,22 +6,24 @@ Pipeline 应通过工厂函数创建领域对象，而非直接构造。
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from trade_krono_cli.domain import Signal
 from trade_krono_cli.domain.decision import InvestmentDecision
 from trade_krono_cli.domain.evaluation import EvalRecord
-from trade_krono_cli.domain.prediction import (
-    KronosPrediction,
-    TAAnalysis,
-)
-from trade_krono_cli.domain.risk import RiskAssessment
 from trade_krono_cli.domain.signal import (
     SignalAssessment,
     _compute_ev,
     detect_conflict,
 )
 from trade_krono_cli.domain.types import Direction
+
+if TYPE_CHECKING:
+    from trade_krono_cli.domain.prediction import (
+        KronosPrediction,
+        TAAnalysis,
+    )
+    from trade_krono_cli.domain.risk import RiskAssessment
 
 # ═══════════════════════════════════════════════════════
 #  build_signal_assessment
@@ -33,16 +34,15 @@ def build_signal_assessment(
     ticker: str,
     eval_date: str,
     *,
-    ta: Optional[TAAnalysis] = None,
-    kronos: Optional[KronosPrediction] = None,
-    committee_rec: Optional[Signal] = None,
-    committee_confidence: Optional[float] = None,
+    ta: TAAnalysis | None = None,
+    kronos: KronosPrediction | None = None,
+    committee_rec: Signal | None = None,
+    committee_confidence: float | None = None,
     bull_case: str = "",
     bear_case: str = "",
     cost_bps: float = 17.0,
 ) -> SignalAssessment:
-    """
-    从 TA + Kronos + Committee 构建 SignalAssessment。
+    """从 TA + Kronos + Committee 构建 SignalAssessment。
 
     自动完成：
       1. 多源信号融合（多数表决）
@@ -122,19 +122,18 @@ def build_investment_decision(
     ticker: str,
     eval_date: str,
     signal_assessment: SignalAssessment,
-    risk_assessment: Optional[RiskAssessment] = None,
+    risk_assessment: RiskAssessment | None = None,
     *,
-    ranking_score: Optional[float] = None,
-    composite_score: Optional[float] = None,  # 向后兼容别名
+    ranking_score: float | None = None,
+    composite_score: float | None = None,  # 向后兼容别名
     job_id: str = "",
-    position_size: Optional[float] = None,
-    entry_zone: Optional[list[float]] = None,
-    target_price: Optional[float] = None,
-    stop_loss: Optional[float] = None,
-    horizon: Optional[int] = None,
+    position_size: float | None = None,
+    entry_zone: list[float] | None = None,
+    target_price: float | None = None,
+    stop_loss: float | None = None,
+    horizon: int | None = None,
 ) -> InvestmentDecision:
-    """
-    从 SignalAssessment + RiskAssessment 构建 InvestmentDecision。
+    """从 SignalAssessment + RiskAssessment 构建 InvestmentDecision。
 
     V0.3: 自动从 signal_assessment 传播 EV 指标到决策层。
     ranking_score 是辅助排序分（原 composite_score 降级）。
@@ -174,19 +173,19 @@ def build_eval_record(
     ticker: str,
     eval_date: str,
     horizon_days: int,
-    pred_direction: Optional[str],
-    pred_return_pct: Optional[float],
+    pred_direction: str | None,
+    pred_return_pct: float | None,
     actual_return_pct: float,
     *,
-    p10: Optional[float] = None,
-    p25: Optional[float] = None,
-    p50: Optional[float] = None,
-    p75: Optional[float] = None,
-    p90: Optional[float] = None,
-    ta_signal: Optional[str] = None,
-    ranking_score: Optional[float] = None,
-    composite_score: Optional[float] = None,  # 向后兼容别名
-    expected_value: Optional[float] = None,
+    p10: float | None = None,
+    p25: float | None = None,
+    p50: float | None = None,
+    p75: float | None = None,
+    p90: float | None = None,
+    ta_signal: str | None = None,
+    ranking_score: float | None = None,
+    composite_score: float | None = None,  # 向后兼容别名
+    expected_value: float | None = None,
     conflict: str = "",
 ) -> EvalRecord:
     """从预测和实际结果构建 EvalRecord。"""
@@ -227,8 +226,7 @@ def build_eval_record(
 def _majority_vote(
     votes: list[tuple[Signal, float, str]],
 ) -> tuple[Signal, float]:
-    """
-    多数表决：返回 (最终信号, 综合置信度)。
+    """多数表决：返回 (最终信号, 综合置信度)。
 
     规则：
       · 三方一致 → 直接采用，confidence = min of all

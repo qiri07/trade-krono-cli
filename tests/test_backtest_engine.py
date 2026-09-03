@@ -19,7 +19,7 @@ from trade_krono_cli.eval_data import EvalRecord, EvaluationSummary
 # ── 辅助函数测试 ──────────────────────────────────────────────────────────────
 
 
-def test_next_trading_day():
+def test_next_trading_day() -> None:
     """_next_trading_day 应在 kline_dates 中找最近的未来交易日。"""
     dates = ["2026-01-01", "2026-01-02", "2026-01-05", "2026-01-06"]
     assert _next_trading_day(datetime(2026, 1, 1), dates) == "2026-01-02"
@@ -28,12 +28,12 @@ def test_next_trading_day():
     assert _next_trading_day(datetime(2026, 1, 6), dates) is None
 
 
-def test_week_start():
+def test_week_start() -> None:
     assert _week_start(datetime(2026, 1, 5)) == datetime(2026, 1, 5)  # Monday
     assert _week_start(datetime(2026, 1, 6)) == datetime(2026, 1, 5)  # Tuesday
 
 
-def test_month_start():
+def test_month_start() -> None:
     assert _month_start(datetime(2026, 1, 15)) == datetime(2026, 1, 1)
     assert _month_start(datetime(2026, 3, 1)) == datetime(2026, 3, 1)
 
@@ -41,7 +41,7 @@ def test_month_start():
 # ── BacktestRecord / build_backtest_records ───────────────────────────────────
 
 
-def test_build_backtest_records_filters_horizon():
+def test_build_backtest_records_filters_horizon() -> None:
     """build_backtest_records 应按 horizon 筛选记录。"""
     records = [
         EvalRecord(
@@ -77,7 +77,7 @@ def test_build_backtest_records_filters_horizon():
     assert bt[0].signal == "BUY"
 
 
-def test_build_backtest_records_empty():
+def test_build_backtest_records_empty() -> None:
     records = []
     bt = build_backtest_records(records, horizon=5)
     assert bt == []
@@ -105,7 +105,7 @@ def _make_eval_records(n=5, horizon=5):
                 error_pct=1.0,
                 ta_signal="BUY" if i % 2 == 0 else "HOLD",
                 composite_score=70.0 + i * 2,
-            )
+            ),
         )
     return records
 
@@ -113,14 +113,14 @@ def _make_eval_records(n=5, horizon=5):
 class TestBacktestEngineBasic:
     """BacktestEngine 基本功能测试。"""
 
-    def test_empty_records(self):
+    def test_empty_records(self) -> None:
         engine = BacktestEngine()
         result = engine.run([])
         assert result.initial_capital == 1_000_000.0
         assert result.total_return_pct == 0.0
         assert result.n_trades == 0
 
-    def test_run_with_mock_prices(self, tmp_path):
+    def test_run_with_mock_prices(self, tmp_path) -> None:
         """使用 mock 价格运行回测，验证基本流程不崩溃。"""
         from trade_krono_cli.prediction_eval import PredictionEvaluator
         from trade_krono_cli.research_db import ResearchDatabase
@@ -147,10 +147,10 @@ class TestBacktestEngineBasic:
         evaluator.HORIZONS = [5]
 
         # mock 价格获取：entry=100, exit=105
-        def fake_get_close(ticker, date_str):
+        def fake_get_close(ticker, date_str) -> float | None:
             if "2026-01-01" in date_str:
                 return 100.0
-            elif "2026-01-06" in date_str:
+            if "2026-01-06" in date_str:
                 return 105.0
             return None
 
@@ -162,7 +162,7 @@ class TestBacktestEngineBasic:
         assert summary.backtest is not None
         assert summary.backtest.total_return_pct != 0.0 or summary.backtest.n_trades == 0
 
-    def test_metrics_computation(self):
+    def test_metrics_computation(self) -> None:
         """回测引擎应能计算完整绩效指标。"""
         engine = BacktestEngine(initial_capital=1_000_000.0)
 
@@ -188,7 +188,7 @@ class TestBacktestEngineBasic:
                 horizon_days=5,
                 pred_direction="UP",
                 actual_return_pct=5.0,
-            )
+            ),
         ]
 
         m = engine._compute_metrics(equity, trades, records)
@@ -199,19 +199,19 @@ class TestBacktestEngineBasic:
         assert m["n_trades"] == 2
         assert m["n_days"] == 5
 
-    def test_metrics_empty_curve(self):
+    def test_metrics_empty_curve(self) -> None:
         engine = BacktestEngine()
         m = engine._compute_metrics([], [], [])
         assert m == {}
 
-    def test_metrics_single_day(self):
+    def test_metrics_single_day(self) -> None:
         """单天 equity curve 不应崩溃，指标应为空。"""
         engine = BacktestEngine()
         equity = [("2026-01-01", 1_000_000.0)]
         m = engine._compute_metrics(equity, [], [])
         assert m == {}  # n_days < 2 直接返回空
 
-    def test_calmar_ratio_with_drawdown(self):
+    def test_calmar_ratio_with_drawdown(self) -> None:
         """有回撤时卡玛比率符号应与总收益一致。"""
         engine = BacktestEngine()
         # 先涨后跌但总收益为正：100 → 150 → 120
@@ -233,7 +233,7 @@ class TestBacktestEngineBasic:
 class TestMetricsComputation:
     """绩效指标计算的正确性验证。"""
 
-    def test_sharpe_positive_returns(self):
+    def test_sharpe_positive_returns(self) -> None:
         """正收益序列（有波动）→ 正夏普比率。"""
         engine = BacktestEngine()
         # 5 天，有波动的正收益
@@ -242,7 +242,7 @@ class TestMetricsComputation:
         m = engine._compute_metrics(equity, [], [])
         assert m["sharpe_ratio"] > 0
 
-    def test_sharpe_negative_returns(self):
+    def test_sharpe_negative_returns(self) -> None:
         """负收益序列 → 负夏普比率。"""
         engine = BacktestEngine()
         values = [1_000_000, 990_000, 995_000, 980_000, 970_000]
@@ -250,7 +250,7 @@ class TestMetricsComputation:
         m = engine._compute_metrics(equity, [], [])
         assert m["sharpe_ratio"] < 0
 
-    def test_max_drawdown_calculation(self):
+    def test_max_drawdown_calculation(self) -> None:
         """正确计算最大回撤。"""
         engine = BacktestEngine()
         # 先涨后跌：100 → 120 → 90
@@ -262,7 +262,7 @@ class TestMetricsComputation:
         m = engine._compute_metrics(equity, [], [])
         assert m["max_drawdown_pct"] == pytest.approx(-25.0, abs=1.0)
 
-    def test_calmar_ratio(self):
+    def test_calmar_ratio(self) -> None:
         """卡玛比率 = 年化收益 / |最大回撤|（有回撤时为正）。"""
         engine = BacktestEngine()
         # 先涨后回撤：100 → 130 → 110
@@ -274,7 +274,7 @@ class TestMetricsComputation:
         m = engine._compute_metrics(equity, [], [])
         assert m["calmar_ratio"] > 0
 
-    def test_win_loss_ratio(self):
+    def test_win_loss_ratio(self) -> None:
         """盈亏比 = 平均盈利 / 平均亏损。"""
         engine = BacktestEngine()
         # 至少 2 天才能计算指标
@@ -289,7 +289,7 @@ class TestMetricsComputation:
         assert m["n_losses"] == 1
         assert m["profit_factor"] == pytest.approx(3000.0 / 500.0, abs=0.1)
 
-    def test_annualized_return(self):
+    def test_annualized_return(self) -> None:
         """年化收益率不应出现荒谬数值。"""
         engine = BacktestEngine()
         # 500 天，总收益 ~10%
@@ -302,7 +302,7 @@ class TestMetricsComputation:
         assert 5.0 < m["annualized_return_pct"] < 10.0  # ~10%/年复利
         assert m["total_return_pct"] == pytest.approx(10.0, abs=1.0)
 
-    def test_distribution_stats(self):
+    def test_distribution_stats(self) -> None:
         """收益分布统计（偏度、峰度、极值）应合理。"""
         engine = BacktestEngine()
         import numpy as np
@@ -324,11 +324,11 @@ class TestMetricsComputation:
 class TestBenchmarkReturns:
     """基准收益计算测试。"""
 
-    def test_empty_records(self):
+    def test_empty_records(self) -> None:
         result = compute_benchmark_returns([], {})
         assert result == {}
 
-    def test_single_ticker(self):
+    def test_single_ticker(self) -> None:
         """单只股票等权组合应产生基准曲线。"""
         records = [
             BacktestRecord(
@@ -355,7 +355,7 @@ class TestBenchmarkReturns:
         result = compute_benchmark_returns(records, {})
         assert len(result) >= 2
         # 第一天 cum_ret = 0（基准起始）
-        assert list(result.values())[0] == 0.0
+        assert next(iter(result.values())) == 0.0
 
 
 # ── 端到端集成测试 ────────────────────────────────────────────────────────────
@@ -364,7 +364,7 @@ class TestBenchmarkReturns:
 class TestEndToEnd:
     """端到端回测集成测试。"""
 
-    def test_evaluate_with_backtest_flag(self, tmp_path):
+    def test_evaluate_with_backtest_flag(self, tmp_path) -> None:
         """evaluate(backtest=True) 应返回带 backtest 结果的 summary。"""
         from trade_krono_cli.prediction_eval import PredictionEvaluator
         from trade_krono_cli.research_db import ResearchDatabase
@@ -390,10 +390,10 @@ class TestEndToEnd:
         evaluator._research = research
         evaluator.HORIZONS = [5]
 
-        def fake_get_close(ticker, date_str):
+        def fake_get_close(ticker, date_str) -> float | None:
             if "2026-01-01" in date_str:
                 return 100.0
-            elif "2026-01-06" in date_str:
+            if "2026-01-06" in date_str:
                 return 105.0
             return None
 
@@ -404,7 +404,7 @@ class TestEndToEnd:
         assert summary.backtest is not None
         assert isinstance(summary.backtest.total_return_pct, float)
 
-    def test_evaluate_without_backtest_flag(self, tmp_path):
+    def test_evaluate_without_backtest_flag(self, tmp_path) -> None:
         """默认 backtest=False 时，summary.backtest 应为 None。"""
         from trade_krono_cli.prediction_eval import PredictionEvaluator
         from trade_krono_cli.research_db import ResearchDatabase
@@ -431,7 +431,7 @@ class TestEndToEnd:
         summary = evaluator.evaluate(store=False, backtest=False)
         assert summary.backtest is None
 
-    def test_run_evaluation_with_backtest_cli(self, caplog):
+    def test_run_evaluation_with_backtest_cli(self, caplog) -> None:
         """run_evaluation(backtest=True) 应打印回测报告。"""
         from loguru import logger
 
@@ -439,7 +439,7 @@ class TestEndToEnd:
 
         captured_lines: list[str] = []
 
-        def capture_info(*args, **kwargs):
+        def capture_info(*args, **kwargs) -> None:
             if args:
                 captured_lines.append(str(args[0]))
 
@@ -467,9 +467,8 @@ class TestEndToEnd:
             fake_eval.evaluate.return_value = fake_summary
             fake_eval.print_report = MagicMock()
             with patch(
-                "trade_krono_cli.prediction_eval.PredictionEvaluator", return_value=fake_eval
-            ):
-                with patch.object(logger, "info", capture_info):
-                    run_evaluation(backtest=True)
+                "trade_krono_cli.prediction_eval.PredictionEvaluator", return_value=fake_eval,
+            ), patch.object(logger, "info", capture_info):
+                run_evaluation(backtest=True)
             full_output = "\n".join(captured_lines)
             assert "回测" in full_output or "总收益率" in full_output

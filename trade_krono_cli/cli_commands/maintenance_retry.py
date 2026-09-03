@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import typer
 from rich.console import Console
 
 from trade_krono_cli.cli_commands.core import _build_retry_overrides, _load_env
+
+if TYPE_CHECKING:
+    from trade_krono_cli.retry_policy.store import FailureRecord
 
 console = Console()
 
 
 def retry_failed(
     date: str = typer.Option(
-        ..., "--date", "-d", help="要重跑的日期 YYYY-MM-DD（默认最新有失败的日期）"
+        ..., "--date", "-d", help="要重跑的日期 YYYY-MM-DD（默认最新有失败的日期）",
     ),
     module: str = typer.Option(
         None,
@@ -39,8 +44,7 @@ def retry_failed(
         rich_help_panel="重试策略",
     ),
 ) -> None:
-    """
-    重跑指定日期中失败或不完整的股票。
+    """重跑指定日期中失败或不完整的股票。
 
     行为：
       1. 读取 failure_store.json，筛选出指定日期的失败记录
@@ -75,7 +79,7 @@ def retry_failed(
     fails = store.list_fails(date=date, module=module)
     if not fails:
         console.print(
-            f"[yellow]⚠️  日期 {date}{f' (module={module})' if module else ''} 无失败记录[/yellow]"
+            f"[yellow]⚠️  日期 {date}{f' (module={module})' if module else ''} 无失败记录[/yellow]",
         )
         return
 
@@ -86,12 +90,12 @@ def retry_failed(
     console.print(
         f"[bold green]🔄 重跑失败股票[/bold green] "
         f"date={date} module={module or 'all'} "
-        f"({len(failed_tickers)} 只: {retriable} 可重试 / {non_retriable} 不可重试)"
+        f"({len(failed_tickers)} 只: {retriable} 可重试 / {non_retriable} 不可重试)",
     )
 
     # 构建重试策略
     retry_overrides = _build_retry_overrides(
-        max_retries=max_retries, base_delay=base_delay, no_jitter=no_jitter
+        max_retries=max_retries, base_delay=base_delay, no_jitter=no_jitter,
     )
     cfg = (
         PipelineConfig.default(settings).override(**retry_overrides)
@@ -132,7 +136,6 @@ def retry_failed(
 
     # 更新失败记录：成功的移除，仍失败的更新 attempt_count
     # 先构建原始记录的 ticker → record 映射（O(n)）
-    from trade_krono_cli.retry_policy.store import FailureRecord
 
     orig_map: dict[str, FailureRecord] = {r.ticker: r for r in fails}
     store.clear_for_date(date, module=module)

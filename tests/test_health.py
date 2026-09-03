@@ -16,7 +16,7 @@ from trade_krono_cli.health import (
 # ── check_llm_api ────────────────────────────────────────────────────────────
 
 
-def test_check_llm_api_structure():
+def test_check_llm_api_structure() -> None:
     """返回 HealthResult，名称正确，detail 非空。"""
     result = check_llm_api()
     assert isinstance(result, HealthResult)
@@ -24,7 +24,7 @@ def test_check_llm_api_structure():
     assert len(result.detail) > 0
 
 
-def test_check_llm_api_no_keys(monkeypatch):
+def test_check_llm_api_no_keys(monkeypatch) -> None:
     """无任何 API Key 时应标记为失败且提示未配置。"""
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -39,14 +39,14 @@ def test_check_llm_api_no_keys(monkeypatch):
 # ── check_kronos_import ──────────────────────────────────────────────────────
 
 
-def test_check_kronos_import_structure():
+def test_check_kronos_import_structure() -> None:
     """应返回正确的 HealthResult 名称，不崩溃。"""
     result = check_kronos_import()
     assert isinstance(result, HealthResult)
     assert result.name == "Kronos"
 
 
-def test_check_kronos_import_missing():
+def test_check_kronos_import_missing() -> None:
     """不可导入时应返回失败。"""
     with patch(
         "trade_krono_cli.adapters.KronosAdapterImpl",
@@ -59,7 +59,7 @@ def test_check_kronos_import_missing():
 # ── check_database ────────────────────────────────────────────────────────────
 
 
-def test_check_database_ok(tmp_path):
+def test_check_database_ok(tmp_path) -> None:
     """正常数据库应通过。"""
     db = tmp_path / "test.db"
     sqlite3 = __import__("sqlite3")
@@ -76,14 +76,14 @@ def test_check_database_ok(tmp_path):
 # ── check_disk_space ──────────────────────────────────────────────────────────
 
 
-def test_check_disk_space_ok(tmp_path):
+def test_check_disk_space_ok(tmp_path) -> None:
     """正常目录应通过（空间充足）。"""
     result = check_disk_space(tmp_path, min_gb=0.0001)  # 极低阈值
     assert result.ok is True
     assert "可用" in result.detail
 
 
-def test_check_disk_space_low(monkeypatch):
+def test_check_disk_space_low(monkeypatch) -> None:
     """磁盘空间不足时应返回失败。"""
     _orig_statvfs = __import__("os").statvfs
 
@@ -102,7 +102,7 @@ def test_check_disk_space_low(monkeypatch):
 # ── health_summary ────────────────────────────────────────────────────────────
 
 
-def test_health_summary_returns_results():
+def test_health_summary_returns_results() -> None:
     """health_summary 应返回至少 4 项检查。"""
     from trade_krono_cli.config import get_settings
 
@@ -118,7 +118,7 @@ def test_health_summary_returns_results():
 # ── print_health_report ───────────────────────────────────────────────────────
 
 
-def test_print_health_report_all_ok(capsys):
+def test_print_health_report_all_ok(capsys) -> None:
     """全部通过时返回 True 并打印 OK。"""
     results = [
         HealthResult("A", True, "OK"),
@@ -130,7 +130,7 @@ def test_print_health_report_all_ok(capsys):
     assert "全部通过" in captured.out
 
 
-def test_print_health_report_has_failure(capsys):
+def test_print_health_report_has_failure(capsys) -> None:
     """存在失败时返回 False。"""
     results = [
         HealthResult("A", True, "OK"),

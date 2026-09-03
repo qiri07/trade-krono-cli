@@ -1,5 +1,4 @@
-"""
-tests/test_degradation.py — 优雅降级机制测试。
+"""tests/test_degradation.py — 优雅降级机制测试。
 
 覆盖场景：
   1. merge_results 在 strict 模式下无 degradation_mode 标记
@@ -117,8 +116,8 @@ def _make_merged_item(
 
 
 class TestMergeStrictMode:
-    def test_strict_no_degradation_flag(self):
-        """strict 模式下，TA 成功 + Kronos 成功 → degradation_mode=None"""
+    def test_strict_no_degradation_flag(self) -> None:
+        """Strict 模式下，TA 成功 + Kronos 成功 → degradation_mode=None."""
         ta = _make_ta_result("600519", signal="BUY", confidence=75.0)
         kr = _make_kronos_result("600519", direction="UP", expected_change_pct=3.5)
         merged = merge_results([ta], [kr], degrade_mode="strict")
@@ -127,8 +126,8 @@ class TestMergeStrictMode:
         assert merged[0]["ta_signal"] == "BUY"
         assert merged[0]["kronos_direction"] == "UP"
 
-    def test_strict_ta_failed_no_kronos(self):
-        """strict 模式：TA 失败、Kronos 不存在 → 仍然合并（但 degra=None）"""
+    def test_strict_ta_failed_no_kronos(self) -> None:
+        """Strict 模式：TA 失败、Kronos 不存在 → 仍然合并（但 degra=None）."""
         ta = _make_ta_result("600519", signal="BUY", confidence=75.0, error="LLM unavailable")
         merged = merge_results([ta], [], degrade_mode="strict")
         assert len(merged) == 1
@@ -143,8 +142,8 @@ class TestMergeStrictMode:
 
 
 class TestMergeTaOnlyDegradation:
-    def test_kronos_failed_ta_success(self):
-        """Kronos 失败、TA 成功 → degradation_mode=kronos_degraded"""
+    def test_kronos_failed_ta_success(self) -> None:
+        """Kronos 失败、TA 成功 → degradation_mode=kronos_degraded."""
         ta = _make_ta_result("600519", signal="BUY", confidence=75.0)
         kr = _make_kronos_result("600519", error="Model load failed")
         merged = merge_results([ta], [kr], degrade_mode="ta_only_on_kronos_fail")
@@ -153,23 +152,23 @@ class TestMergeTaOnlyDegradation:
         assert merged[0]["ta_signal"] == "BUY"
         assert merged[0]["kronos_direction"] is None
 
-    def test_both_success_no_degradation(self):
-        """两者都成功 → 无降级标记"""
+    def test_both_success_no_degradation(self) -> None:
+        """两者都成功 → 无降级标记."""
         ta = _make_ta_result("600519", signal="BUY", confidence=75.0)
         kr = _make_kronos_result("600519", direction="UP", expected_change_pct=3.5)
         merged = merge_results([ta], [kr], degrade_mode="ta_only_on_kronos_fail")
         assert merged[0]["degradation_mode"] is None
 
-    def test_kronos_missing_ta_success(self):
-        """Kronos 完全缺失（空列表）、TA 成功 → degradation_mode=kronos_degraded"""
+    def test_kronos_missing_ta_success(self) -> None:
+        """Kronos 完全缺失（空列表）、TA 成功 → degradation_mode=kronos_degraded."""
         ta = _make_ta_result("600519", signal="HOLD", confidence=60.0)
         merged = merge_results([ta], [], degrade_mode="ta_only_on_kronos_fail")
         assert len(merged) == 1
         assert merged[0]["degradation_mode"] == "kronos_degraded"
         assert merged[0]["ta_signal"] == "HOLD"
 
-    def test_multiple_stocks_mixed(self):
-        """多只股票混合场景：部分成功、部分降级"""
+    def test_multiple_stocks_mixed(self) -> None:
+        """多只股票混合场景：部分成功、部分降级."""
         ta1 = _make_ta_result("600519", signal="BUY", confidence=80.0)
         ta2 = _make_ta_result("000858", signal="HOLD", confidence=55.0)
         kr1 = _make_kronos_result("600519", direction="UP", expected_change_pct=4.0)
@@ -187,38 +186,38 @@ class TestMergeTaOnlyDegradation:
 
 
 class TestJsonReport:
-    def test_save_json_includes_degradation_mode(self, tmp_path):
-        """save_json_report 应包含 degradation_mode 字段"""
+    def test_save_json_includes_degradation_mode(self, tmp_path) -> None:
+        """save_json_report 应包含 degradation_mode 字段."""
         item = _make_merged_item(
             ticker="600519",
             degradation_mode="kronos_degraded",
         )
         path = str(tmp_path / "report.json")
         save_json_report([item], path)
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         assert data.get("project") == "trade-krono-cli"
         results = data["results"]
         assert len(results) == 1
         assert results[0]["degradation_mode"] == "kronos_degraded"
 
-    def test_save_json_none_degradation_mode(self, tmp_path):
-        """degradation_mode=None 时 JSON 仍包含该字段（值为 null）"""
+    def test_save_json_none_degradation_mode(self, tmp_path) -> None:
+        """degradation_mode=None 时 JSON 仍包含该字段（值为 null）."""
         item = _make_merged_item(degradation_mode=None)
         path = str(tmp_path / "report.json")
         save_json_report([item], path)
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         results = data["results"]
         assert results[0]["degradation_mode"] is None
 
-    def test_save_json_missing_degradation_field(self, tmp_path):
-        """旧格式结果（无 degradation_mode 键）自动补全为 None"""
+    def test_save_json_missing_degradation_field(self, tmp_path) -> None:
+        """旧格式结果（无 degradation_mode 键）自动补全为 None."""
         item = _make_merged_item()
         del item["degradation_mode"]
         path = str(tmp_path / "report.json")
         save_json_report([item], path)
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         results = data["results"]
         assert results[0]["degradation_mode"] is None
@@ -230,21 +229,21 @@ class TestJsonReport:
 
 
 class TestHtmlReport:
-    def test_html_kronos_degraded_badge(self, tmp_path):
+    def test_html_kronos_degraded_badge(self, tmp_path) -> None:
         item = _make_merged_item(ticker="600519", degradation_mode="kronos_degraded")
         path = str(tmp_path / "report.html")
         save_html_report([item], path, date="2026-01-15")
         html = (tmp_path / "report.html").read_text(encoding="utf-8")
         assert "TA-only" in html
 
-    def test_html_cache_fallback_badge(self, tmp_path):
+    def test_html_cache_fallback_badge(self, tmp_path) -> None:
         item = _make_merged_item(ticker="000858", degradation_mode="ta_cache_fallback")
         path = str(tmp_path / "report.html")
         save_html_report([item], path, date="2026-01-15")
         html = (tmp_path / "report.html").read_text(encoding="utf-8")
         assert "缓存TA" in html
 
-    def test_html_no_badge_when_none(self, tmp_path):
+    def test_html_no_badge_when_none(self, tmp_path) -> None:
         item = _make_merged_item(ticker="600036", degradation_mode=None)
         path = str(tmp_path / "report.html")
         save_html_report([item], path, date="2026-01-15")
@@ -259,7 +258,7 @@ class TestHtmlReport:
 
 
 class TestConsoleOutput:
-    def test_table_shows_degradation_column(self, capsys):
+    def test_table_shows_degradation_column(self, capsys) -> None:
         items = [
             _make_merged_item(ticker="600519", degradation_mode="kronos_degraded"),
             _make_merged_item(ticker="000858", degradation_mode=None),
@@ -269,13 +268,13 @@ class TestConsoleOutput:
         assert "降级" in captured.out
         assert "⚠" in captured.out  # 降级标记符号不会截断
 
-    def test_summary_shows_degradation_stats(self, capsys):
+    def test_summary_shows_degradation_stats(self, capsys) -> None:
         items = [
             _make_merged_item(
-                ticker="600519", degradation_mode="kronos_degraded", composite_score=80.0
+                ticker="600519", degradation_mode="kronos_degraded", composite_score=80.0,
             ),
             _make_merged_item(
-                ticker="000858", degradation_mode="ta_cache_fallback", composite_score=60.0
+                ticker="000858", degradation_mode="ta_cache_fallback", composite_score=60.0,
             ),
         ]
         print_results_summary(items, date="2026-01-15")
@@ -283,7 +282,7 @@ class TestConsoleOutput:
         assert "Kronos 不可用" in captured.out or "TA-only" in captured.out
         assert "缓存" in captured.out or "缓存TA" in captured.out
 
-    def test_summary_no_degradation(self, capsys):
+    def test_summary_no_degradation(self, capsys) -> None:
         items = [_make_merged_item(composite_score=85.0)]
         print_results_summary(items, date="2026-01-15")
         captured = capsys.readouterr()
@@ -297,18 +296,18 @@ class TestConsoleOutput:
 
 
 class TestPipelineConfigDegradation:
-    def test_default_degrade_mode(self):
+    def test_default_degrade_mode(self) -> None:
         cfg = PipelineConfig.default()
         assert cfg.degrade_mode == "strict"
         assert cfg.ta_cache_fallback_enabled is False
         assert cfg.ta_cache_max_age_days == 7
 
-    def test_override_degrade_mode(self):
+    def test_override_degrade_mode(self) -> None:
         cfg = PipelineConfig.default().override(degrade_mode="ta_only_on_kronos_fail")
         assert cfg.degrade_mode == "ta_only_on_kronos_fail"
         assert cfg.ta_cache_fallback_enabled is False
 
-    def test_override_ta_cache_fallback(self):
+    def test_override_ta_cache_fallback(self) -> None:
         cfg = PipelineConfig.default().override(
             degrade_mode="ta_cache_fallback",
             ta_cache_fallback_enabled=True,
@@ -318,7 +317,7 @@ class TestPipelineConfigDegradation:
         assert cfg.ta_cache_fallback_enabled is True
         assert cfg.ta_cache_max_age_days == 14
 
-    def test_from_dict_roundtrip(self):
+    def test_from_dict_roundtrip(self) -> None:
         data = {
             "degrade_mode": "ta_only_on_kronos_fail",
             "ta_cache_fallback_enabled": True,
@@ -329,7 +328,7 @@ class TestPipelineConfigDegradation:
         assert cfg.ta_cache_fallback_enabled is True
         assert cfg.ta_cache_max_age_days == 30
 
-    def test_to_dict_contains_degradation(self):
+    def test_to_dict_contains_degradation(self) -> None:
         cfg = PipelineConfig.default().override(
             degrade_mode="ta_cache_fallback",
             ta_cache_fallback_enabled=True,
@@ -351,32 +350,32 @@ class TestValidatorDegradation:
 
         return make_mock_settings(**overrides)
 
-    def test_valid_degrade_mode_strict(self):
+    def test_valid_degrade_mode_strict(self) -> None:
         s = self._make_settings()
         errs, _ = validate_settings(s)
         assert not any("DEGRADE_MODE" in e for e in errs)
 
-    def test_valid_degrade_mode_ta_only(self):
+    def test_valid_degrade_mode_ta_only(self) -> None:
         s = self._make_settings(degrade_mode="ta_only_on_kronos_fail")
         errs, _ = validate_settings(s)
         assert not any("DEGRADE_MODE" in e for e in errs)
 
-    def test_valid_degrade_mode_cache_fallback(self):
+    def test_valid_degrade_mode_cache_fallback(self) -> None:
         s = self._make_settings(degrade_mode="ta_cache_fallback")
         errs, _ = validate_settings(s)
         assert not any("DEGRADE_MODE" in e for e in errs)
 
-    def test_invalid_degrade_mode_error(self):
+    def test_invalid_degrade_mode_error(self) -> None:
         s = self._make_settings(degrade_mode="invalid_xyz")
         errs, _ = validate_settings(s)
         assert any("DEGRADE_MODE" in e for e in errs)
 
-    def test_ta_cache_max_age_too_low(self):
+    def test_ta_cache_max_age_too_low(self) -> None:
         s = self._make_settings(ta_cache_max_age_days=0)
         errs, _ = validate_settings(s)
         assert any("TA_CACHE_MAX_AGE_DAYS" in e for e in errs)
 
-    def test_ta_cache_max_age_too_high(self):
+    def test_ta_cache_max_age_too_high(self) -> None:
         s = self._make_settings(ta_cache_max_age_days=400)
         errs, _ = validate_settings(s)
         assert any("TA_CACHE_MAX_AGE_DAYS" in e for e in errs)
@@ -410,14 +409,14 @@ class TestResearchDbLatestTA:
         ta.investment_decision = None  # 避免 json.dumps 报错
         return ta
 
-    def test_returns_latest_successful_ta(self, research_db):
+    def test_returns_latest_successful_ta(self, research_db) -> None:
         """返回最近一次成功的 TA 分析记录。"""
         job_old = research_db.create_job("2026-01-14", ["600519", "000858"])
         job_new = research_db.create_job("2026-01-15", ["600519"])
         # 第一次作业：600519 成功，000858 失败（不影响目标查询）
         research_db.insert_ta(job_old, self._make_ta_mock("600519", "BUY", 70.0, "old thesis"))
         research_db.insert_ta(
-            job_old, self._make_ta_mock("000858", "SELL", 30.0, "", error="some error")
+            job_old, self._make_ta_mock("000858", "SELL", 30.0, "", error="some error"),
         )
         # 第二次作业：600519 再次成功（最新的 run_at）
         research_db.insert_ta(job_new, self._make_ta_mock("600519", "HOLD", 55.0, "new thesis"))
@@ -428,21 +427,21 @@ class TestResearchDbLatestTA:
         assert result["confidence"] == 55.0
         assert result["thesis"] == "new thesis"
 
-    def test_returns_none_when_no_record(self, research_db):
+    def test_returns_none_when_no_record(self, research_db) -> None:
         result = research_db.get_latest_ta_for_ticker("999999", max_age_days=7)
         assert result is None
 
-    def test_returns_none_when_all_failed(self, research_db):
-        """全部记录均有 error → 返回 None"""
+    def test_returns_none_when_all_failed(self, research_db) -> None:
+        """全部记录均有 error → 返回 None."""
         job_id = research_db.create_job("2026-01-15", ["600519"])
         research_db.insert_ta(
-            job_id, self._make_ta_mock("600519", "SELL", 30.0, "", error="LLM error")
+            job_id, self._make_ta_mock("600519", "SELL", 30.0, "", error="LLM error"),
         )
         result = research_db.get_latest_ta_for_ticker("600519", max_age_days=7)
         assert result is None
 
-    def test_expired_record_not_returned(self, research_db):
-        """过期记录（超出 max_age_days）不应被返回"""
+    def test_expired_record_not_returned(self, research_db) -> None:
+        """过期记录（超出 max_age_days）不应被返回."""
         import time as _time
 
         old_time = _time.time() - 30 * 86400
@@ -464,9 +463,8 @@ class TestResearchDbLatestTA:
 
 
 class TestOrchestratorCacheFallback:
-    def test_cache_fallback_logic_patches_ta_error(self):
-        """mock 验证：TA 失败时从数据库回退缓存结果"""
-
+    def test_cache_fallback_logic_patches_ta_error(self) -> None:
+        """Mock 验证：TA 失败时从数据库回退缓存结果."""
         mock_research = MagicMock()
         mock_research.get_latest_ta_for_ticker.return_value = {
             "ticker": "600519",
@@ -486,7 +484,7 @@ class TestOrchestratorCacheFallback:
         ta_result_failed.reasoning = None
 
         with patch(
-            "trade_krono_cli.pipeline.pipeline_core.get_research", return_value=mock_research
+            "trade_krono_cli.pipeline.pipeline_core.get_research", return_value=mock_research,
         ):
             # 模拟 orchestrator 中 ta_cache_fallback 的核心逻辑片段
             cfg = SimpleNamespace(
@@ -514,8 +512,8 @@ class TestOrchestratorCacheFallback:
             assert ta_result_failed.confidence == 72.0
             assert ta_result_failed.error is None
 
-    def test_no_fallback_when_degrade_mode_strict(self):
-        """strict 模式不应触发缓存回退逻辑"""
+    def test_no_fallback_when_degrade_mode_strict(self) -> None:
+        """Strict 模式不应触发缓存回退逻辑."""
         cfg = SimpleNamespace(
             degrade_mode="strict",
             ta_cache_fallback_enabled=False,
@@ -523,8 +521,8 @@ class TestOrchestratorCacheFallback:
         )
         assert cfg.degrade_mode != "ta_cache_fallback" or not cfg.ta_cache_fallback_enabled
 
-    def test_no_fallback_when_disabled(self):
-        """ta_cache_fallback_enabled=False 时不应回退"""
+    def test_no_fallback_when_disabled(self) -> None:
+        """ta_cache_fallback_enabled=False 时不应回退."""
         cfg = SimpleNamespace(
             degrade_mode="ta_cache_fallback",
             ta_cache_fallback_enabled=False,

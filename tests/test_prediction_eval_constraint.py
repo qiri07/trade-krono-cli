@@ -15,58 +15,58 @@ from trade_krono_cli.prediction_eval import (
 class TestIsPriceAtLimit:
     """测试涨跌停价格检测。"""
 
-    def test_limit_up_detection(self):
+    def test_limit_up_detection(self) -> None:
         """涨停价 = prev_close * 1.10，price >= 涨停价 × 0.999 则拦截。"""
         assert _is_price_at_limit("sh.600519", 110.0, 100.0, "up") is True
         assert _is_price_at_limit("sh.600519", 109.99, 100.0, "up") is True  # 容差
         assert _is_price_at_limit("sh.600519", 109.88, 100.0, "up") is False  # 低于容差
 
-    def test_limit_down_detection(self):
+    def test_limit_down_detection(self) -> None:
         """跌停价 = prev_close * 0.90，price / limit_down <= 1.001 则拦截。"""
         assert _is_price_at_limit("sh.600519", 90.0, 100.0, "down") is True
         assert _is_price_at_limit("sh.600519", 90.05, 100.0, "down") is True  # 容差内
         assert _is_price_at_limit("sh.600519", 90.20, 100.0, "down") is False  # 超出容差
 
-    def test_gem_limit(self):
+    def test_gem_limit(self) -> None:
         """创业板 ±20%。"""
         assert _is_price_at_limit("sz.300001", 120.0, 100.0, "up") is True
         assert _is_price_at_limit("sz.300001", 80.0, 100.0, "down") is True
 
-    def test_no_prev_close(self):
+    def test_no_prev_close(self) -> None:
         """prev_close 为 None 时不过滤。"""
         assert _is_price_at_limit("sh.600519", 110.0, None, "up") is False
         assert _is_price_at_limit("sh.600519", 110.0, 0, "up") is False
 
-    def test_disabled_limit_check(self):
-        """disable limit check 时不拦截。"""
+    def test_disabled_limit_check(self) -> None:
+        """Disable limit check 时不拦截。"""
         from trade_krono_cli.constraints_config import ConstraintConfig
 
         cfg = ConstraintConfig(enable_limit_check=False)
         from trade_krono_cli.trading_constraints import compute_limit_prices
 
-        up, down = compute_limit_prices(100.0, "sh.600519", config=cfg)
+        up, _down = compute_limit_prices(100.0, "sh.600519", config=cfg)
         assert up is None  # 禁用时返回 None
 
 
 class TestApplyRoundtripCost:
     """测试交易成本扣减。"""
 
-    def test_cost_deducted(self):
+    def test_cost_deducted(self) -> None:
         """17bps 成本应从收益中扣减。"""
         result = _apply_roundtrip_cost(5.0)
         assert result == pytest.approx(4.83, abs=0.01)
 
-    def test_zero_return(self):
+    def test_zero_return(self) -> None:
         assert _apply_roundtrip_cost(0.0) == pytest.approx(-0.17, abs=0.01)
 
-    def test_custom_bps(self):
+    def test_custom_bps(self) -> None:
         assert _apply_roundtrip_cost(3.0, cost_bps=10.0) == pytest.approx(2.9, abs=0.01)
 
 
 class TestEvalRecordWithConstraints:
     """测试新增的约束字段。"""
 
-    def test_record_with_constraints(self):
+    def test_record_with_constraints(self) -> None:
         r = EvalRecord(
             ticker="sh.600519",
             eval_date="2026-01-01",
@@ -87,7 +87,7 @@ class TestEvalRecordWithConstraints:
         assert r.entry_blocked_limit_up is False
         assert r.exit_blocked_limit_down is False
 
-    def test_summary_tracks_constraints(self):
+    def test_summary_tracks_constraints(self) -> None:
         s = EvaluationSummary()
         s.entry_limit_up_blocked = 3
         s.exit_limit_down_blocked = 1
@@ -99,7 +99,7 @@ class TestEvalRecordWithConstraints:
 class TestEvaluateConstraintAware:
     """测试 evaluate() 对约束的处理逻辑。"""
 
-    def test_limit_up_entry_skipped(self, tmp_path):
+    def test_limit_up_entry_skipped(self, tmp_path) -> None:
         """买入日涨停 → 该记录被跳过，不计入 eval_records。"""
         from trade_krono_cli.prediction_eval import PredictionEvaluator
         from trade_krono_cli.research_db import ResearchDatabase
@@ -138,21 +138,21 @@ class TestEvaluateConstraintAware:
                     "close": [100.0, 110.0],
                     "volume": [1000.0, 5000.0],
                     "amount": [100000.0, 550000.0],
-                }
+                },
             )
 
         _call_idx = [0]
 
-        def fake_get_close(ticker, date_str):
+        def fake_get_close(ticker, date_str) -> float | None:
             if "2026-01-01" in date_str:
                 return 110.0  # 涨停价
-            elif "2026-01-06" in date_str:
+            if "2026-01-06" in date_str:
                 return 108.0  # 退出日正常
             return None
 
         with patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline):
             with patch(
-                "trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close
+                "trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close,
             ):
                 summary = evaluator.evaluate(store=False)
 
@@ -161,7 +161,7 @@ class TestEvaluateConstraintAware:
         assert summary.entry_limit_up_blocked == 1
         assert summary.exit_limit_down_blocked == 0
 
-    def test_cost_deducted_in_return(self, tmp_path):
+    def test_cost_deducted_in_return(self, tmp_path) -> None:
         """正常信号应扣减 17bps 交易成本。"""
         from trade_krono_cli.prediction_eval import PredictionEvaluator
         from trade_krono_cli.research_db import ResearchDatabase
@@ -189,11 +189,11 @@ class TestEvaluateConstraintAware:
         entry_called = [False]
         exit_called = [False]
 
-        def fake_get_close(ticker, date_str):
+        def fake_get_close(ticker, date_str) -> float | None:
             if "2026-01-01" in date_str:
                 entry_called[0] = True
                 return 100.0
-            elif "2026-01-06" in date_str:
+            if "2026-01-06" in date_str:
                 exit_called[0] = True
                 return 105.0
             return None
@@ -211,12 +211,12 @@ class TestEvaluateConstraintAware:
                     "close": [100.0, 100.0, 105.0],
                     "volume": [1000.0, 1000.0, 1000.0],
                     "amount": [100000.0, 100000.0, 105000.0],
-                }
+                },
             )
 
         with patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline):
             with patch(
-                "trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close
+                "trade_krono_cli.prediction_eval._get_close_price", side_effect=fake_get_close,
             ):
                 summary = evaluator.evaluate(store=False)
 

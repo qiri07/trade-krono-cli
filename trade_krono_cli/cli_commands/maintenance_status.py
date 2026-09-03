@@ -66,7 +66,7 @@ def status() -> None:
                     f"  • [{j['date']}] job={j['job_id']}"
                     f"{run_id_str}{dv_str}{ch_str} "
                     f"n={j['n_tickers']} ok={j['n_success']} "
-                    f"t={j['elapsed']:.1f}s"
+                    f"t={j['elapsed']:.1f}s",
                 )
     except Exception as e:
         console.print(f"[dim]研究数据库统计不可用: {e}[/dim]")

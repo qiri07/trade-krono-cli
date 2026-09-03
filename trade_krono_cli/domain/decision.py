@@ -1,5 +1,4 @@
-"""
-Decision — 投资决策领域对象。
+"""Decision — 投资决策领域对象。
 
 InvestmentDecision 是 pipeline 的终点：融合 SignalAssessment + RiskAssessment，
 产出最终的交易决策。
@@ -13,7 +12,7 @@ InvestmentDecision 是 pipeline 的终点：融合 SignalAssessment + RiskAssess
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from trade_krono_cli.domain.risk import RiskAssessment
 from trade_krono_cli.domain.signal import SignalAssessment
@@ -22,8 +21,7 @@ from trade_krono_cli.domain.types import Signal
 
 @dataclass(frozen=True)
 class InvestmentDecision:
-    """
-    最终投资决策（V0.3 语义升级）。
+    """最终投资决策（V0.3 语义升级）。
 
     决策层级的核心指标（按金融意义重要性排序）：
       1. expected_value     — EV（%），P(win)×Gain − P(loss)×Loss − cost
@@ -70,20 +68,20 @@ class InvestmentDecision:
     confidence: float
 
     # ── Expected Value（核心金融指标）─────────────────────────────────────
-    expected_value: Optional[float] = None
-    prob_win: Optional[float] = None
-    risk_adjusted_ev: Optional[float] = None
+    expected_value: float | None = None
+    prob_win: float | None = None
+    risk_adjusted_ev: float | None = None
 
     # 来源引用
-    signal_assessment: Optional[SignalAssessment] = None
-    risk_assessment: Optional[RiskAssessment] = None
+    signal_assessment: SignalAssessment | None = None
+    risk_assessment: RiskAssessment | None = None
 
     # 交易执行
-    position_size: Optional[float] = None
-    entry_zone: Optional[list[float]] = None
-    target_price: Optional[float] = None
-    stop_loss: Optional[float] = None
-    horizon: Optional[int] = None
+    position_size: float | None = None
+    entry_zone: list[float] | None = None
+    target_price: float | None = None
+    stop_loss: float | None = None
+    horizon: int | None = None
 
     # 论点与风险
     thesis: str = ""
@@ -91,7 +89,7 @@ class InvestmentDecision:
     invalidations: list[str] = field(default_factory=list)
 
     # 元数据（辅助排序，金融意义次于 EV 指标）
-    ranking_score: Optional[float] = None
+    ranking_score: float | None = None
     job_id: str = ""
 
     # ── 序列化 ──────────────────────────────────────────────────────────
@@ -127,7 +125,7 @@ class InvestmentDecision:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> "InvestmentDecision":
+    def from_dict(cls, data: dict) -> InvestmentDecision:
         sa_data = data.get("signal_assessment")
         sa = SignalAssessment.from_dict(sa_data) if sa_data else None
         ra_data = data.get("risk_assessment")
@@ -169,8 +167,8 @@ class InvestmentDecision:
 
     @classmethod
     def fallback(
-        cls, ticker: str, eval_date: str, signal: Signal = Signal.HOLD, confidence: float = 50.0
-    ) -> "InvestmentDecision":
+        cls, ticker: str, eval_date: str, signal: Signal = Signal.HOLD, confidence: float = 50.0,
+    ) -> InvestmentDecision:
         return cls(
             ticker=ticker,
             eval_date=eval_date,

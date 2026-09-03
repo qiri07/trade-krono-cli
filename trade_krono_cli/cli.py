@@ -1,5 +1,4 @@
-"""
-trade-krono-cli CLI 入口 — Typer 实现。
+"""trade-krono-cli CLI 入口 — Typer 实现。
 
 支持的命令：
   run           一键运行（TA + Kronos 并行）
@@ -46,6 +45,7 @@ app.add_typer(repo_app, name="repo")
 from trade_krono_cli.cli_commands import (  # noqa: E402
     clear_cache,
     eval_prediction,
+    export_daily_pv,
     history,
     kronos,
     rank_providers,
@@ -79,6 +79,7 @@ app.command()(history)
 app.command()(eval_prediction)
 app.command()(retry_failed)
 app.command()(rank_providers)
+app.command()(export_daily_pv)
 
 
 # ═══════════════════════════════════════════════════════

@@ -1,5 +1,4 @@
-"""
-ta_decision — TradingAgents 决策标准化适配器。
+"""ta_decision — TradingAgents 决策标准化适配器。
 
 LLM 输出（结构化 JSON 或自由文本）→ DecisionAdapter → 结构化 InvestmentDecision
 
@@ -13,12 +12,11 @@ LLM 输出（结构化 JSON 或自由文本）→ DecisionAdapter → 结构化 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Optional
 
 # ── Signal：来自领域层，消除重复定义 ──────────────────────────────────────
-from trade_krono_cli.domain.types import Signal  # noqa: F401
+from trade_krono_cli.domain.types import Signal
 
-__all__ = ("Signal", "InvestmentDecision", "DecisionAdapter")
+__all__ = ("DecisionAdapter", "InvestmentDecision", "Signal")
 
 
 # Truncation length for thesis/summary extraction
@@ -50,7 +48,7 @@ _NEG_WORDS = frozenset(
         "NON",
         "UNLIKELY",
         "NEGATIVE",
-    }
+    },
 )
 
 
@@ -61,8 +59,7 @@ _NEG_WORDS = frozenset(
 
 @dataclass
 class InvestmentDecision:
-    """
-    TradingAgents 决策的标准化结构。
+    """TradingAgents 决策的标准化结构。
 
     基础字段
     ──────────────────────────────────────────────────────
@@ -102,9 +99,9 @@ class InvestmentDecision:
     # 基础字段
     signal: Signal
     confidence: float
-    expected_return: Optional[float] = None
-    position_size: Optional[float] = None
-    horizon: Optional[int] = None
+    expected_return: float | None = None
+    position_size: float | None = None
+    horizon: int | None = None
 
     # 投资框架
     thesis: str = ""
@@ -112,18 +109,18 @@ class InvestmentDecision:
     invalidations: list[str] = field(default_factory=list)
 
     # 交易执行
-    entry_zone: Optional[list[float]] = None
-    target_price: Optional[float] = None
-    stop_loss: Optional[float] = None
-    expected_holding_period: Optional[int] = None
+    entry_zone: list[float] | None = None
+    target_price: float | None = None
+    stop_loss: float | None = None
+    expected_holding_period: int | None = None
 
     # 多因子评分
-    valuation_score: Optional[float] = None
-    fundamental_score: Optional[float] = None
-    technical_score: Optional[float] = None
-    sentiment_score: Optional[float] = None
-    capital_flow_score: Optional[float] = None
-    macro_score: Optional[float] = None
+    valuation_score: float | None = None
+    fundamental_score: float | None = None
+    technical_score: float | None = None
+    sentiment_score: float | None = None
+    capital_flow_score: float | None = None
+    macro_score: float | None = None
 
     # 催化剂
     catalysts: list[str] = field(default_factory=list)
@@ -134,7 +131,7 @@ class InvestmentDecision:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> "InvestmentDecision":
+    def from_dict(cls, data: dict) -> InvestmentDecision:
         """从 dict 反序列化，将 signal 字符串还原为 Signal 枚举。"""
         signal_str = data.get("signal", "HOLD")
         if isinstance(signal_str, str):
@@ -151,8 +148,8 @@ class InvestmentDecision:
 
     @classmethod
     def fallback(
-        cls, signal: Signal = Signal.HOLD, confidence: float = 50.0
-    ) -> "InvestmentDecision":
+        cls, signal: Signal = Signal.HOLD, confidence: float = 50.0,
+    ) -> InvestmentDecision:
         return cls(signal=signal, confidence=confidence)
 
 
@@ -160,6 +157,6 @@ class InvestmentDecision:
 # DecisionAdapter — 从 adapter_impl 导入
 # ═══════════════════════════════════════════════════════
 
-from trade_krono_cli.ta_decision.adapter_impl import DecisionAdapter  # noqa: E402, F401
+from trade_krono_cli.ta_decision.adapter_impl import DecisionAdapter  # noqa: E402
 
-__all__ = ("Signal", "InvestmentDecision", "DecisionAdapter")
+__all__ = ("DecisionAdapter", "InvestmentDecision", "Signal")

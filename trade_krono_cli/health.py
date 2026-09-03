@@ -1,5 +1,4 @@
-"""
-健康检查 — 轻量级系统诊断，不触发重负载操作（不加载模型、不发 API 请求）。
+"""健康检查 — 轻量级系统诊断，不触发重负载操作（不加载模型、不发 API 请求）。
 
 每个 check_* 函数返回 HealthResult，包含状态和描述信息。
 health_summary() 汇总所有检查并打印报告。
@@ -10,9 +9,14 @@ from __future__ import annotations
 import os
 import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from trade_krono_cli.config import Settings
+from loguru import logger
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from trade_krono_cli.config import Settings
 
 
 @dataclass
@@ -28,8 +32,7 @@ class HealthResult:
 
 
 def check_llm_api() -> HealthResult:
-    """
-    检查 LLM API Key 可用性。
+    """检查 LLM API Key 可用性。
 
     仅验证环境变量存在，不发起网络请求。
     已配置的 provider 用 ✅，缺失的用 ⚠️，无配置用 ❌。
@@ -58,8 +61,7 @@ def check_llm_api() -> HealthResult:
 
 
 def check_kronos_import() -> HealthResult:
-    """
-    检查 Kronos 依赖是否可导入（轻量：仅 import，不加载模型）。
+    """检查 Kronos 依赖是否可导入（轻量：仅 import，不加载模型）。
 
     验证适配器能否加载，以及 torch 是否可用（可选）。
     """
@@ -88,8 +90,7 @@ def check_kronos_import() -> HealthResult:
 
 
 def check_database(db_path: Path) -> HealthResult:
-    """
-    检查 Research 数据库连接是否正常。
+    """检查 Research 数据库连接是否正常。
 
     执行 PRAGMA integrity_check + SELECT 1，失败则返回错误。
     """
@@ -104,8 +105,7 @@ def check_database(db_path: Path) -> HealthResult:
 
 
 def check_disk_space(path: Path, min_gb: float = 0.5) -> HealthResult:
-    """
-    检查磁盘剩余空间是否充足（默认至少 0.5 GB）。
+    """检查磁盘剩余空间是否充足（默认至少 0.5 GB）。
 
     检查 path 所在文件系统的可用空间。
     """
@@ -134,13 +134,13 @@ def check_disk_space(path: Path, min_gb: float = 0.5) -> HealthResult:
 def health_summary(
     settings: Settings,
 ) -> list[HealthResult]:
-    """
-    运行所有健康检查，按顺序返回结果列表。
+    """运行所有健康检查，按顺序返回结果列表。
 
     Parameters
     ----------
     settings : Settings
         当前全局配置，用于获取数据库路径和缓存目录。
+
     """
     # 延迟导入避免循环依赖
     from trade_krono_cli.research_db import get_research
@@ -153,7 +153,8 @@ def health_summary(
     try:
         research = get_research()
         db_path = research._db_path
-    except Exception:
+    except Exception as e:
+        logger.debug(f"获取 ResearchDatabase 路径失败，使用默认路径: {e}")
         db_path = settings.cache_dir / "pipeline_cache.db"
     results.append(check_database(db_path))
 
@@ -164,8 +165,7 @@ def health_summary(
 
 
 def print_health_report(results: list[HealthResult]) -> bool:
-    """
-    打印健康检查报告到控制台，返回是否有失败项。
+    """打印健康检查报告到控制台，返回是否有失败项。
 
     格式：
       🔍 健康检查

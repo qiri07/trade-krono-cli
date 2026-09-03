@@ -1,5 +1,4 @@
-"""
-Risk Models — 风险量化模型。
+"""Risk Models — 风险量化模型。
 
 提供：
   VaR (Value at Risk)           历史模拟法，给定置信水平的最大损失
@@ -32,10 +31,12 @@ Risk Models — 风险量化模型。
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 # ═══════════════════════════════════════════════════════
 # 共享权重 — 同时驱动总风险分加权和预期收益调整
@@ -75,8 +76,7 @@ def historical_var(
     returns: np.ndarray | list[float],
     confidence: float = 0.95,
 ) -> float:
-    """
-    历史模拟法 VaR。
+    """历史模拟法 VaR。
 
     Parameters
     ----------
@@ -86,6 +86,7 @@ def historical_var(
     Returns
     -------
     float : VaR（负值表示损失，如 -2.3 表示 95% 分位损失 2.3%）
+
     """
     arr = np.asarray(returns, dtype=float)
     if len(arr) < 20:
@@ -99,8 +100,7 @@ def conditional_var(
     returns: np.ndarray | list[float],
     confidence: float = 0.95,
 ) -> float:
-    """
-    CVaR（Expected Shortfall）— VaR 以下的平均损失。
+    """CVaR（Expected Shortfall）— VaR 以下的平均损失。
 
     Parameters
     ----------
@@ -110,6 +110,7 @@ def conditional_var(
     Returns
     -------
     float : CVaR（负值）
+
     """
     arr = np.asarray(returns, dtype=float)
     if len(arr) < 20:
@@ -142,8 +143,7 @@ def beta(
     stock_returns: np.ndarray | list[float],
     market_returns: np.ndarray | list[float] | None = None,
 ) -> float:
-    """
-    计算股票相对市场的 Beta。
+    """计算股票相对市场的 Beta。
 
     若无市场数据，返回 1.0（默认值）。
 
@@ -155,6 +155,7 @@ def beta(
     Returns
     -------
     float : Beta 值（>1 高系统风险，<1 低系统风险）
+
     """
     stock = np.asarray(stock_returns, dtype=float)
     if len(stock) < 30:
@@ -192,8 +193,7 @@ def sharpe_ratio(
     returns: np.ndarray | list[float],
     risk_free: float = 0.02 / 252,
 ) -> float:
-    """
-    年化夏普比率。
+    """年化夏普比率。
 
     Parameters
     ----------
@@ -203,6 +203,7 @@ def sharpe_ratio(
     Returns
     -------
     float : 年化夏普比率
+
     """
     arr = np.asarray(returns, dtype=float)
     if len(arr) < 20:
@@ -221,10 +222,9 @@ def sharpe_ratio(
 
 def expected_return_adjustment(
     risk_metrics: dict,
-    weights: Optional[dict] = None,
+    weights: dict | None = None,
 ) -> float:
-    """
-    根据多维风险指标计算预期收益调整因子。
+    """根据多维风险指标计算预期收益调整因子。
 
     公式：
       adj = exp( - Σ w_i × score_i )
@@ -249,6 +249,7 @@ def expected_return_adjustment(
     Returns
     -------
     float : 预期收益调整因子（∈ [-0.25, 0]）
+
     """
     w = {**RISK_NORMALIZATION_WEIGHTS, **(weights or {})}
     total_w = sum(w.values())
@@ -260,15 +261,15 @@ def expected_return_adjustment(
             return 0.5  # 中性
         if key == "var_95":
             return max(0.0, min(1.0, (-raw / 10.0)))
-        elif key == "cvar_95":
+        if key == "cvar_95":
             return max(0.0, min(1.0, (-raw / 15.0)))
-        elif key == "beta":
+        if key == "beta":
             return max(0.0, min(1.0, (raw - 0.5) / 1.5))
-        elif key == "annualized_vol":
+        if key == "annualized_vol":
             return max(0.0, min(1.0, raw / 60.0))
-        elif key == "max_drawdown":
+        if key == "max_drawdown":
             return max(0.0, min(1.0, (-raw / 30.0)))
-        elif key in (
+        if key in (
             "liquidity_score",
             "gap_risk",
             "event_risk",
@@ -289,10 +290,9 @@ def expected_return_adjustment(
 def adjust_expected_return(
     raw_return: float,
     risk_metrics: dict,
-    weights: Optional[dict] = None,
+    weights: dict | None = None,
 ) -> float:
-    """
-    对原始预期收益率施加风险调整。
+    """对原始预期收益率施加风险调整。
 
     Parameters
     ----------
@@ -303,6 +303,7 @@ def adjust_expected_return(
     Returns
     -------
     float : 风险调整后的预期收益率（%）
+
     """
     adj = expected_return_adjustment(risk_metrics, weights=weights)
     return round(raw_return * (1.0 + adj), 4)
@@ -319,8 +320,7 @@ def gap_risk_score(
     low: pd.Series,
     min_gap_pct: float = 3.0,
 ) -> float:
-    """
-    计算缺口风险分（0-100）。
+    """计算缺口风险分（0-100）。
 
     逻辑：统计历史 N 日内出现跳空缺口（Gap > threshold）的频率，
     频率越高 → 风险分越高。
@@ -335,6 +335,7 @@ def gap_risk_score(
     Returns
     -------
     float : 缺口风险分 0-100
+
     """
     if len(close) < 30:
         return 50.0
@@ -360,8 +361,7 @@ def event_risk_score(
     short_window: int = 10,
     long_window: int = 60,
 ) -> float:
-    """
-    计算事件风险分（0-100）。
+    """计算事件风险分（0-100）。
 
     逻辑：比较短期波动率和长期波动率的比值，
     短/长 >> 1 表示近期波动异常加剧（事件驱动）。
@@ -375,6 +375,7 @@ def event_risk_score(
     Returns
     -------
     float : 事件风险分 0-100
+
     """
     if len(close) < long_window:
         return 50.0
@@ -400,12 +401,11 @@ def event_risk_score(
 
 
 def valuation_risk_score(
-    pe_ttm: Optional[float],
-    pb: Optional[float],
-    market_cap_billion: Optional[float] = None,
+    pe_ttm: float | None,
+    pb: float | None,
+    market_cap_billion: float | None = None,
 ) -> float:
-    """
-    计算估值风险分（0-100）。
+    """计算估值风险分（0-100）。
 
     逻辑：PE/PB 过高 → 估值风险高；市值过小 → 流动性/估值双高风险。
 
@@ -418,6 +418,7 @@ def valuation_risk_score(
     Returns
     -------
     float : 估值风险分 0-100
+
     """
     components: list[tuple[str, float, float]] = []
 

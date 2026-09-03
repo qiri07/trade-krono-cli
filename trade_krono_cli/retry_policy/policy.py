@@ -1,14 +1,13 @@
-"""
-retry_policy.policy — RetryPolicy 配置 + 智能重试装饰器。
-"""
+"""retry_policy.policy — RetryPolicy 配置 + 智能重试装饰器。"""
 
 from __future__ import annotations
 
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Optional, TypeVar, Union
+from typing import Any, TypeVar
 
 from loguru import logger
 
@@ -23,8 +22,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 @dataclass
 class RetryPolicy:
-    """
-    重试策略配置。
+    """重试策略配置。
 
     Attributes
     ----------
@@ -34,6 +32,7 @@ class RetryPolicy:
     rate_limit_backoff : 限流时是否启用自适应退避（解析 Retry-After 头）
     rate_limit_max_wait: 限流自适应退避上限（秒）
     skip_non_retriable : 是否跳过不可重试错误（默认 True，非 retriable 直接抛）
+
     """
 
     max_attempts: int = 3
@@ -44,17 +43,16 @@ class RetryPolicy:
     skip_non_retriable: bool = True
 
     # 各错误类型的覆盖配置（可选）
-    network_attempts: Optional[int] = None
-    network_delay: Optional[float] = None
-    rate_limit_attempts: Optional[int] = None
-    rate_limit_delay: Optional[float] = None
+    network_attempts: int | None = None
+    network_delay: float | None = None
+    rate_limit_attempts: int | None = None
+    rate_limit_delay: float | None = None
 
 
 def smart_retry(
-    policy: Optional[Union[RetryPolicy, F]] = None,
-) -> Union[Callable[[F], F], F]:
-    """
-    智能重试装饰器：根据错误类型差异化退避。
+    policy: RetryPolicy | F | None = None,
+) -> Callable[[F], F] | F:
+    """智能重试装饰器：根据错误类型差异化退避。
 
     支持两种用法：
       @smart_retry                     # 使用默认策略
@@ -84,8 +82,8 @@ def _make_smart_retry_decorator(fn: F, policy: RetryPolicy) -> F:
     """内部：创建带有指定策略的重试装饰器。"""
 
     @wraps(fn)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        last_exc: Optional[Exception] = None
+    def wrapper(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401 — 通用重试装饰器，被装饰函数类型动态
+        last_exc: Exception | None = None
 
         for attempt in range(1, policy.max_attempts + 1):
             try:
@@ -105,7 +103,7 @@ def _make_smart_retry_decorator(fn: F, policy: RetryPolicy) -> F:
                 if attempt >= policy.max_attempts:
                     logger.error(
                         f"❌ [{fn.__name__}] "
-                        f"第 {attempt}/{policy.max_attempts} 次尝试仍失败 [{category}]: {desc}"
+                        f"第 {attempt}/{policy.max_attempts} 次尝试仍失败 [{category}]: {desc}",
                     )
                     break
 
@@ -113,7 +111,7 @@ def _make_smart_retry_decorator(fn: F, policy: RetryPolicy) -> F:
                 logger.warning(
                     f"⚠️  [{fn.__name__}] "
                     f"第 {attempt}/{policy.max_attempts} 次失败 [{category}]，"
-                    f"{delay:.1f}s 后重试... ({desc[:80]})"
+                    f"{delay:.1f}s 后重试... ({desc[:80]})",
                 )
                 time.sleep(delay)
 
@@ -123,8 +121,7 @@ def _make_smart_retry_decorator(fn: F, policy: RetryPolicy) -> F:
 
 
 def _compute_delay(exc: Exception, attempt: int, policy: RetryPolicy) -> float:
-    """
-    根据异常类型和策略计算退避时间。
+    """根据异常类型和策略计算退避时间。
 
     - RateLimitError：优先使用 Retry-After 头（若配置了自适应退避）
     - 其他 retriable：指数退避 + 可选抖动

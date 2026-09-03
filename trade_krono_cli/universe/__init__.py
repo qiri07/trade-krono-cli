@@ -1,5 +1,4 @@
-"""
-Universe Engine — A 股市场范围发现与分层过滤。
+"""Universe Engine — A 股市场范围发现与分层过滤。
 
 职责：
   · 从全市场 A 股中，通过多阶段过滤产生可进入 TA/Kronos 的股票池

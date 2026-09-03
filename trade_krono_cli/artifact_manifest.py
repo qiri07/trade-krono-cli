@@ -1,5 +1,4 @@
-"""
-artifact_manifest — 实验可复现性清单（Experiment Artifact Manifest）。
+"""artifact_manifest — 实验可复现性清单（Experiment Artifact Manifest）。
 
 将"这次分析用了什么"从散落的多个字段合并成一个结构化的、可序列化、
 可比较的 artifact manifest。每个 experiment 有唯一 ID，对应一份完整清单。
@@ -31,7 +30,6 @@ import subprocess
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from loguru import logger
 
@@ -48,7 +46,7 @@ from trade_krono_cli.version import (
 # ════════════════════════════════════════════════════════════════════════════
 
 
-def _git_sha(repo_path: Path) -> tuple[Optional[str], Optional[str]]:
+def _git_sha(repo_path: Path) -> tuple[str | None, str | None]:
     """返回 (full_sha, short_sha)；路径不存在或非 git repo 时返回 (None, None)。"""
     if not (repo_path / ".git").exists():
         return None, None
@@ -111,7 +109,8 @@ def _git_dirty(repo_path: Path) -> bool:
             "",
         )
         return bool(out.strip()) if rc == 0 else False
-    except Exception:
+    except Exception as e:
+        logger.debug(f"git 脏检测失败: {e}")
         return False
 
 
@@ -139,10 +138,10 @@ class ModelArtifact:
     device: str = "cpu"
     sample_count: int = 5
     pred_len: int = 30
-    torch_version: Optional[str] = None
+    torch_version: str | None = None
     cuda_available: bool = False
-    cuda_version: Optional[str] = None
-    gpu_model: Optional[str] = None
+    cuda_version: str | None = None
+    gpu_model: str | None = None
 
     @property
     def version_tag(self) -> str:
@@ -156,7 +155,7 @@ class LlmArtifact:
     provider: str = "deepseek"
     deep_think_model: str = "deepseek-chat"
     quick_think_model: str = "deepseek-chat"
-    backend_url: Optional[str] = None
+    backend_url: str | None = None
 
     @property
     def version_tag(self) -> str:
@@ -168,7 +167,7 @@ class DataArtifact:
     """数据版本。"""
 
     source: str = "baostock"
-    latest_date: Optional[str] = None
+    latest_date: str | None = None
     """数据源中最新一条 K 线的日期（用于标识数据新鲜度）。"""
 
 
@@ -217,14 +216,14 @@ class EnvironmentArtifact:
         if not self.hostname:
             try:
                 object.__setattr__(self, "hostname", platform.node() or "")
-            except Exception:
+            except Exception as e:
+                logger.debug(f"获取主机名失败，使用空字符串: {e}")
                 object.__setattr__(self, "hostname", "")
 
 
 @dataclass(frozen=True)
 class ArtifactManifest:
-    """
-    完整实验可复现性清单。
+    """完整实验可复现性清单。
 
     所有字段均为 frozen dataclass，可直接作为 dict 序列化或用于计算 hash。
     experiment_id = sha256(json.dumps(manifest.to_dict(), sort_keys=True))
@@ -242,8 +241,7 @@ class ArtifactManifest:
         return asdict(self)
 
     def experiment_id(self) -> str:
-        """
-        基于完整 manifest 计算唯一实验 ID。
+        """基于完整 manifest 计算唯一实验 ID。
 
         相同的 manifest → 相同的 experiment_id（跨机器、跨时间稳定）。
         """
@@ -285,7 +283,7 @@ def _build_model_artifact(settings: Settings) -> ModelArtifact:
     """收集 Kronos 模型信息。"""
     torch_ver, cuda_avail, cuda_ver, gpu_model = None, False, None, None
     try:
-        import torch  # noqa: F401 — 仅用于查询版本
+        import torch
 
         torch_ver = torch.__version__
         cuda_avail = torch.cuda.is_available()
@@ -321,7 +319,7 @@ def _build_llm_artifact(settings: Settings) -> LlmArtifact:
 def _build_data_artifact(settings: Settings) -> DataArtifact:
     """从数据源工厂获取最新数据日期。"""
     source = settings.data_provider
-    latest_date: Optional[str] = None
+    latest_date: str | None = None
     try:
         from trade_krono_cli.data_providers import get_data_factory
 
@@ -356,11 +354,10 @@ def _build_strategy_artifact(settings: Settings) -> StrategyArtifact:
 
 
 def build_manifest(
-    settings: Optional[Settings] = None,
-    project_root: Optional[Path] = None,
+    settings: Settings | None = None,
+    project_root: Path | None = None,
 ) -> ArtifactManifest:
-    """
-    构建完整的 ArtifactManifest。
+    """构建完整的 ArtifactManifest。
 
     Parameters
     ----------
@@ -370,6 +367,7 @@ def build_manifest(
     Returns
     -------
     ArtifactManifest
+
     """
     s = settings or get_settings()
     root = project_root or s.project_root
@@ -393,18 +391,18 @@ def build_manifest(
 _ARTIFACT_LOCK_FILENAME = "artifact.lock"
 
 
-def _artifact_lock_path(project_root: Optional[Path] = None) -> Path:
+def _artifact_lock_path(project_root: Path | None = None) -> Path:
     root = project_root or Path(__file__).resolve().parent.parent
     return root / "external" / _ARTIFACT_LOCK_FILENAME
 
 
-def load_artifact_lock(project_root: Optional[Path] = None) -> list[dict]:
+def load_artifact_lock(project_root: Path | None = None) -> list[dict]:
     """加载 artifact.lock，返回条目列表（旧格式兼容）。"""
     lock_path = _artifact_lock_path(project_root)
     if not lock_path.exists():
         return []
     try:
-        with open(lock_path, "r", encoding="utf-8") as f:
+        with open(lock_path, encoding="utf-8") as f:
             data = json.load(f)
         # 支持两种格式：数组 或 {"entries": [...]}
         if isinstance(data, list):
@@ -417,9 +415,8 @@ def load_artifact_lock(project_root: Optional[Path] = None) -> list[dict]:
 
 def save_artifact_lock(
     entries: list[dict],
-    project_root: Optional[Path] = None,
+    project_root: Path | None = None,
 ) -> Path:
-    """保存 artifact.lock（追加模式：先 load，append，再 save）。"""
     """保存 artifact.lock（追加模式：先 load，append，再 save）。"""
     lock_path = _artifact_lock_path(project_root)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -433,17 +430,17 @@ def save_artifact_lock(
 
 def append_artifact(
     manifest: ArtifactManifest,
-    experiment_id: Optional[str] = None,
-    run_id: Optional[str] = None,
-    job_id: Optional[str] = None,
-    project_root: Optional[Path] = None,
+    experiment_id: str | None = None,
+    run_id: str | None = None,
+    job_id: str | None = None,
+    project_root: Path | None = None,
 ) -> dict:
-    """
-    将一次实验的 artifact 追加到 artifact.lock。
+    """将一次实验的 artifact 追加到 artifact.lock。
 
     Returns
     -------
     dict : 写入的条目（含 experiment_id）
+
     """
     eid = experiment_id or manifest.experiment_id()
     entry = {
@@ -458,7 +455,7 @@ def append_artifact(
     return entry
 
 
-def lookup_experiment(experiment_id: str, project_root: Optional[Path] = None) -> Optional[dict]:
+def lookup_experiment(experiment_id: str, project_root: Path | None = None) -> dict | None:
     """按 experiment_id 查找历史记录。"""
     for entry in load_artifact_lock(project_root):
         if entry.get("experiment_id") == experiment_id:
@@ -471,7 +468,7 @@ def lookup_experiment(experiment_id: str, project_root: Optional[Path] = None) -
 # ════════════════════════════════════════════════════════════════════════════
 
 
-def describe(manifest: Optional[ArtifactManifest] = None) -> str:
+def describe(manifest: ArtifactManifest | None = None) -> str:
     """返回人类可读的 manifest 摘要。"""
     m = manifest or build_manifest()
     lines = [
@@ -507,7 +504,7 @@ def describe(manifest: Optional[ArtifactManifest] = None) -> str:
     return "\n".join(lines)
 
 
-def print_manifest(manifest: Optional[ArtifactManifest] = None) -> None:
+def print_manifest(manifest: ArtifactManifest | None = None) -> None:
     """将 manifest 摘要以 INFO 级别打印到日志。"""
     from loguru import logger
 

@@ -11,7 +11,7 @@ def _make_abnormality_flag(ticker: str):
     return AbnormalityFlag(ticker=ticker, flags=[], severity=0.0, reason="")
 
 
-def test_pipeline_run_parallel():
+def test_pipeline_run_parallel() -> None:
     """测试并行流水线（mock TA 和 Kronos）。"""
     from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
     from trade_krono_cli.pipeline import QuantPipeline
@@ -85,7 +85,7 @@ def test_pipeline_run_parallel():
     assert Path("/tmp/test_merged.json").exists()
 
 
-def test_pipeline_ta_only():
+def test_pipeline_ta_only() -> None:
     """测试仅 TA 模式。"""
     from trade_krono_cli.pipeline import QuantPipeline
     from trade_krono_cli.ta_runner import StockAnalysisResult
@@ -107,7 +107,7 @@ def test_pipeline_ta_only():
     assert merged[0].signal == "BUY"
 
 
-def test_pipeline_kronos_only():
+def test_pipeline_kronos_only() -> None:
     """测试仅 Kronos 模式。"""
     from trade_krono_cli.kronos_runner import KronosForecastResult
     from trade_krono_cli.pipeline import QuantPipeline
@@ -135,7 +135,7 @@ def test_pipeline_kronos_only():
     assert results[0].direction == "UP"
 
 
-def test_pipeline_with_errors():
+def test_pipeline_with_errors() -> None:
     """测试容错性：单只股票失败不影响整体。"""
     from trade_krono_cli.kronos_runner import KronosForecastResult
     from trade_krono_cli.pipeline import QuantPipeline

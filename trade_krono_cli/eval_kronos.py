@@ -1,24 +1,26 @@
-"""
-Kronos 方向准确率评估。
+"""Kronos 方向准确率评估。
 
 负责统计各 horizon 下 Kronos 预测方向（UP/DOWN/FLAT）与实际方向的一致性。
 """
 
 from __future__ import annotations
 
-from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics
 
 
 def compute_kronos_accuracy(
     h_records: list[EvalRecord],
     metrics: HorizonMetrics,
 ) -> int:
-    """
-    计算 Kronos 方向准确率并更新 metrics。
+    """计算 Kronos 方向准确率并更新 metrics。
 
     Returns
     -------
     纳入统计的记录数（pred_direction 不为 None 的记录数）
+
     """
     kronos_records = [r for r in h_records if r.pred_direction is not None]
     if not kronos_records:

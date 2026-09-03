@@ -33,14 +33,14 @@ def _make_dirs_not_git(tmp_path: Path, name: str) -> Path:
 
 
 class TestConfigIO:
-    def test_load_empty_config_returns_empty_dict(self, tmp_path):
+    def test_load_empty_config_returns_empty_dict(self, tmp_path) -> None:
         """配置文件不存在时返回空 dict。"""
         from trade_krono_cli.external import load_config
 
         result = load_config(tmp_path)
         assert result == {}
 
-    def test_load_valid_yaml(self, tmp_path):
+    def test_load_valid_yaml(self, tmp_path) -> None:
         """有效 YAML 配置应正确解析。"""
         from trade_krono_cli.external import load_config, save_config
 
@@ -58,7 +58,7 @@ class TestConfigIO:
                     "url": "https://github.com/shiyu-coder/Kronos",
                     "commit": "def456",
                 },
-            }
+            },
         }
         save_config(cfg["repos"], tmp_path)
         loaded = load_config(tmp_path)
@@ -67,7 +67,7 @@ class TestConfigIO:
         assert loaded["tradingagents"]["commit"] is None
         assert loaded["kronos"]["commit"] == "def456"
 
-    def test_save_and_load_roundtrip(self, tmp_path):
+    def test_save_and_load_roundtrip(self, tmp_path) -> None:
         """保存再加载应得到相同结果。"""
         from trade_krono_cli.external import load_config, save_config
 
@@ -84,14 +84,14 @@ class TestConfigIO:
         loaded = load_config(tmp_path)
         assert loaded == original
 
-    def test_missing_optional_fields_fallback(self, tmp_path):
+    def test_missing_optional_fields_fallback(self, tmp_path) -> None:
         """YAML 中缺少可选字段时使用默认值。"""
         from trade_krono_cli.external import load_config, save_config
 
         cfg = {
             "repos": {
                 "minimal": {"path": "ext/minimal"},
-            }
+            },
         }
         save_config(cfg["repos"], tmp_path)
         loaded = load_config(tmp_path)
@@ -106,7 +106,7 @@ class TestConfigIO:
 
 
 class TestGetRepos:
-    def test_fallback_from_settings(self, tmp_path):
+    def test_fallback_from_settings(self, tmp_path) -> None:
         """无 YAML 时从 Settings 获取默认路径。"""
         from trade_krono_cli.external import get_repos
 
@@ -124,7 +124,7 @@ class TestGetRepos:
 
 
 class TestStatus:
-    def test_path_not_exists(self, tmp_path):
+    def test_path_not_exists(self, tmp_path) -> None:
         """路径不存在时 status 应报告错误。"""
         from trade_krono_cli.external import ExternalRepo, _get_git_status
 
@@ -138,7 +138,7 @@ class TestStatus:
         assert not st.path_exists
         assert st.error == "路径不存在"
 
-    def test_not_git_repo(self, tmp_path):
+    def test_not_git_repo(self, tmp_path) -> None:
         """非 git 目录应报告错误。"""
         from trade_krono_cli.external import ExternalRepo, _get_git_status
 
@@ -155,7 +155,7 @@ class TestStatus:
         assert not st.is_git_repo
         assert "git repo" in st.error
 
-    def test_valid_git_repo(self, tmp_path):
+    def test_valid_git_repo(self, tmp_path) -> None:
         """有效 git repo 应返回正确状态。"""
         from trade_krono_cli.external import ExternalRepo, _get_git_status
 
@@ -196,8 +196,8 @@ class TestStatus:
 
 
 class TestPin:
-    def test_pin_creates_config(self, tmp_path):
-        """pin 操作应创建或更新 repos.yaml。"""
+    def test_pin_creates_config(self, tmp_path) -> None:
+        """Pin 操作应创建或更新 repos.yaml。"""
         from trade_krono_cli.external import load_config, pin, save_config
 
         # 先保存一个基础配置（路径可以不存在，pin 内部会验证 commit）
@@ -207,7 +207,7 @@ class TestPin:
                 "branch": "main",
                 "url": "https://github.com/simonlin1212/TradingAgents-astock",
                 "commit": None,
-            }
+            },
         }
         save_config(cfg, tmp_path)
 
@@ -219,8 +219,8 @@ class TestPin:
         loaded = load_config(tmp_path)
         assert loaded["tradingagents"]["commit"] == "newcommit123"
 
-    def test_pin_invalid_repo_raises(self, tmp_path):
-        """pin 不存在的 repo 应抛出 ValueError。"""
+    def test_pin_invalid_repo_raises(self, tmp_path) -> None:
+        """Pin 不存在的 repo 应抛出 ValueError。"""
         from trade_krono_cli.external import pin, save_config
 
         save_config(
@@ -230,7 +230,7 @@ class TestPin:
                     "branch": "main",
                     "url": "",
                     "commit": None,
-                }
+                },
             },
             tmp_path,
         )
@@ -245,7 +245,7 @@ class TestPin:
 
 
 class TestGetReproInfo:
-    def test_returns_repo_info(self, tmp_path):
+    def test_returns_repo_info(self, tmp_path) -> None:
         """应返回各 repo 的复现信息。"""
         from trade_krono_cli.external import get_repro_info, save_config
 
@@ -280,14 +280,14 @@ class TestGetReproInfo:
 
 
 class TestLockFile:
-    def test_load_empty_lock_returns_empty_dict(self, tmp_path):
-        """lock 文件不存在时返回空 dict。"""
+    def test_load_empty_lock_returns_empty_dict(self, tmp_path) -> None:
+        """Lock 文件不存在时返回空 dict。"""
         from trade_krono_cli.external import load_lock
 
         result = load_lock(tmp_path)
         assert result == {}
 
-    def test_save_and_load_roundtrip(self, tmp_path):
+    def test_save_and_load_roundtrip(self, tmp_path) -> None:
         """保存再加载 lock 文件应保持一致。"""
         from trade_krono_cli.external import load_lock, save_lock
 
@@ -315,7 +315,7 @@ class TestLockFile:
         assert loaded["repos"]["tradingagents"]["commit"] == "aaa111"
         assert loaded["repos"]["kronos"]["dirty"] is True
 
-    def test_get_locked_commit(self, tmp_path):
+    def test_get_locked_commit(self, tmp_path) -> None:
         """get_locked_commit 应从 lock 文件返回正确值。"""
         from trade_krono_cli.external import get_locked_commit, save_lock
 
@@ -323,7 +323,7 @@ class TestLockFile:
         assert get_locked_commit("ta", tmp_path) == "locked_sha_123"
         assert get_locked_commit("missing", tmp_path) is None
 
-    def test_update_lock(self, tmp_path):
+    def test_update_lock(self, tmp_path) -> None:
         """update_lock 应写入正确的 commit 信息。"""
         from trade_krono_cli.external import load_lock, update_lock
 
@@ -334,7 +334,7 @@ class TestLockFile:
         assert lock["repos"]["kronos"]["branch"] == "main"
         assert lock["generated_at"] is not None
 
-    def test_status_detects_lock_mismatch(self, tmp_path):
+    def test_status_detects_lock_mismatch(self, tmp_path) -> None:
         """当前 commit 与 lock 不一致时应标记 lock_mismatch。"""
         from trade_krono_cli.external import ExternalRepo, _get_git_status, save_lock
 
@@ -352,7 +352,7 @@ class TestLockFile:
                         "commit_short": "abc123def456",
                         "branch": "main",
                         "dirty": False,
-                    }
+                    },
                 },
             },
             tmp_path,
@@ -386,7 +386,7 @@ class TestLockFile:
 # ── Doctor Issues ─────────────────────────────────────────────────────────────
 
 
-def test_doctor_path_not_exists(tmp_path):
+def test_doctor_path_not_exists(tmp_path) -> None:
     """路径不存在时 doctor 应报告问题。"""
     from trade_krono_cli.external import doctor, save_config
 
@@ -397,7 +397,7 @@ def test_doctor_path_not_exists(tmp_path):
                 "branch": "main",
                 "url": "",
                 "commit": None,
-            }
+            },
         },
         tmp_path,
     )
@@ -405,7 +405,7 @@ def test_doctor_path_not_exists(tmp_path):
     assert any("路径不存在" in i for i in issues)
 
 
-def test_doctor_not_git_repo(tmp_path):
+def test_doctor_not_git_repo(tmp_path) -> None:
     """非 git 目录应报告问题。"""
     from trade_krono_cli.external import doctor, save_config
 
@@ -418,7 +418,7 @@ def test_doctor_not_git_repo(tmp_path):
                 "branch": "main",
                 "url": "",
                 "commit": None,
-            }
+            },
         },
         tmp_path,
     )
@@ -426,7 +426,7 @@ def test_doctor_not_git_repo(tmp_path):
     assert any("不是 git repo" in i for i in issues)
 
 
-def test_doctor_clean_repo_no_issues(tmp_path):
+def test_doctor_clean_repo_no_issues(tmp_path) -> None:
     """干净的有效 git repo 不应报告问题。"""
     from trade_krono_cli.external import doctor, save_config
 
@@ -438,7 +438,7 @@ def test_doctor_clean_repo_no_issues(tmp_path):
                 "branch": "main",
                 "url": "",
                 "commit": None,
-            }
+            },
         },
         tmp_path,
     )

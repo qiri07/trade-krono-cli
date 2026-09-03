@@ -1,5 +1,4 @@
-"""
-retry_policy.exceptions — 错误分级定义。
+"""retry_policy.exceptions — 错误分级定义。
 
 异常层次：
   TradeKronoRetryableError    可重试错误（网络/限流/5xx）
@@ -7,8 +6,6 @@ retry_policy.exceptions — 错误分级定义。
 """
 
 from __future__ import annotations
-
-from typing import Optional
 
 
 class TradeKronoRetryableError(Exception):
@@ -37,13 +34,14 @@ class RateLimitError(TradeKronoRetryableError):
     ----------
     retry_after : float | None
         服务端建议的等待秒数（来自 Retry-After 头），None 表示未提供。
+
     """
 
     def __init__(
         self,
         message: str,
-        retry_after: Optional[float] = None,
-        response_headers: Optional[dict[str, str]] = None,
+        retry_after: float | None = None,
+        response_headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.retry_after = retry_after
@@ -53,7 +51,7 @@ class RateLimitError(TradeKronoRetryableError):
 class Server5xxError(TradeKronoRetryableError):
     """服务端 5xx 错误（非客户端责任）。"""
 
-    def __init__(self, message: str, status_code: Optional[int] = None) -> None:
+    def __init__(self, message: str, status_code: int | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
 

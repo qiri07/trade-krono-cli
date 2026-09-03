@@ -1,5 +1,4 @@
-"""
-data_providers — 多数据源抽象层。
+"""data_providers — 多数据源抽象层。
 
 提供统一的 DataProvider 接口，支持 baostock / akshare / mootdx / tushare
 四种 A 股数据源，并内置主备降级机制。
@@ -16,8 +15,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING
+
+from loguru import logger
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 # ═══════════════════════════════════════════════════════
 # 标准化数据模型
@@ -26,8 +29,7 @@ from typing import Optional
 
 @dataclass
 class KlineData:
-    """
-    标准化的 K 线数据。
+    """标准化的 K 线数据。
 
     所有 Provider 返回此格式，上层无需关心数据来源。
     None 字段表示该 Provider 不支持此维度。
@@ -62,11 +64,11 @@ class KlineData:
                 "close": self.close,
                 "volume": self.volume,
                 "amount": self.amount,
-            }
+            },
         ).reset_index(drop=True)
 
     @classmethod
-    def from_dataframe(cls, df) -> "KlineData":
+    def from_dataframe(cls, df) -> KlineData:
         """从 DataFrame 构造 KlineData。"""
         import pandas as pd
 
@@ -84,36 +86,34 @@ class KlineData:
 
 @dataclass
 class RealtimeQuote:
-    """
-    实时行情快照。
+    """实时行情快照。
 
     字段均可为 None（数据不可用时）。
     """
 
     ticker: str = ""
-    price: Optional[float] = None  # 当前价（元）
-    pe: Optional[float] = None  # 市盈率（动态）
-    pb: Optional[float] = None  # 市净率
-    market_cap: Optional[float] = None  # 总市值（亿元）
-    turnover: Optional[float] = None  # 换手率（%）
+    price: float | None = None  # 当前价（元）
+    pe: float | None = None  # 市盈率（动态）
+    pb: float | None = None  # 市净率
+    market_cap: float | None = None  # 总市值（亿元）
+    turnover: float | None = None  # 换手率（%）
     source: str = ""  # 数据来源标识
 
 
 @dataclass
 class StockMetadata:
-    """
-    股票基础元数据。
+    """股票基础元数据。
 
     用于过滤、风险评分等场景。
     """
 
     ticker: str = ""
-    industry: Optional[str] = None  # 行业名称（如 "银行"）
-    industry_code: Optional[str] = None  # 行业代码
-    pe_ttm: Optional[float] = None  # 市盈率 TTM
-    pb: Optional[float] = None  # 市净率
-    ipo_date: Optional[str] = None  # 上市日期 YYYY-MM-DD
-    out_date: Optional[str] = None  # 退市日期 YYYY-MM-DD
+    industry: str | None = None  # 行业名称（如 "银行"）
+    industry_code: str | None = None  # 行业代码
+    pe_ttm: float | None = None  # 市盈率 TTM
+    pb: float | None = None  # 市净率
+    ipo_date: str | None = None  # 上市日期 YYYY-MM-DD
+    out_date: str | None = None  # 退市日期 YYYY-MM-DD
     is_st: bool = False  # 是否 ST 标的
     source: str = ""  # 数据来源标识
 
@@ -124,8 +124,7 @@ class StockMetadata:
 
 
 class DataProvider(ABC):
-    """
-    数据源抽象基类。
+    """数据源抽象基类。
 
     所有具体 Provider 必须实现以下方法：
       - fetch_kline()       : 拉取 K 线数据
@@ -157,9 +156,8 @@ class DataProvider(ABC):
         end_date: str,
         frequency: str = "d",
         adjustflag: str = "1",
-    ) -> Optional[KlineData]:
-        """
-        拉取 K 线数据。
+    ) -> KlineData | None:
+        """拉取 K 线数据。
 
         Parameters
         ----------
@@ -172,34 +170,34 @@ class DataProvider(ABC):
         Returns
         -------
         KlineData 或 None（失败时）
+
         """
         ...
 
     @abstractmethod
-    def fetch_quote(self, ticker: str) -> Optional[RealtimeQuote]:
-        """
-        获取实时行情快照。
+    def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
+        """获取实时行情快照。
 
         Returns
         -------
         RealtimeQuote 或 None
+
         """
         ...
 
     @abstractmethod
-    def fetch_metadata(self, ticker: str) -> Optional[StockMetadata]:
-        """
-        获取股票基础元数据（行业、PE/PB、上市/退市日期、ST 状态）。
+    def fetch_metadata(self, ticker: str) -> StockMetadata | None:
+        """获取股票基础元数据（行业、PE/PB、上市/退市日期、ST 状态）。
 
         Returns
         -------
         StockMetadata 或 None
+
         """
         ...
 
     def health_check(self) -> bool:
-        """
-        检查数据源是否可用。
+        """检查数据源是否可用。
 
         默认实现：尝试获取自身基本信息，成功则可用。
         子类应覆盖以提供更精确的健康检查。
@@ -207,7 +205,8 @@ class DataProvider(ABC):
         try:
             result = self.fetch_metadata("sh.600519")
             return result is not None
-        except Exception:
+        except Exception as e:
+            logger.debug(f"base provider health check 异常: {e}")
             return False
 
     # ── 便捷方法 ─────────────────────────────────────────────
@@ -219,9 +218,8 @@ class DataProvider(ABC):
         end_date: str,
         frequency: str = "d",
         adjustflag: str = "1",
-    ) -> Optional[Any]:
-        """
-        拉取 K 线并直接返回 DataFrame（便捷方法）。
+    ) -> Any | None:
+        """拉取 K 线并直接返回 DataFrame（便捷方法）。
 
         等价于 fetch_kline() + KlineData.to_dataframe()。
         """

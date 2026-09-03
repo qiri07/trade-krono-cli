@@ -59,13 +59,13 @@ def _make_mock_provider(success: bool = True, latency_ms: float = 50.0) -> Magic
 class TestBenchResult:
     """_BenchResult dataclass 测试。"""
 
-    def test_create_result(self):
+    def test_create_result(self) -> None:
         result = _BenchResult(name="baostock", latency_ms=42.0, success=True)
         assert result.name == "baostock"
         assert result.latency_ms == 42.0
         assert result.success is True
 
-    def test_frozen_cannot_modify(self):
+    def test_frozen_cannot_modify(self) -> None:
         result = _BenchResult(name="test", latency_ms=1.0, success=True)
         with pytest.raises(AttributeError):
             result.name = "other"
@@ -74,18 +74,18 @@ class TestBenchResult:
 class TestGetCachedRankedChain:
     """_get_cached_ranked_chain 缓存读取测试。"""
 
-    def test_cache_miss_returns_none(self):
+    def test_cache_miss_returns_none(self) -> None:
         factory = DataProviderFactory()
         assert factory._get_cached_ranked_chain("sh") is None
 
-    def test_cache_hit_returns_chain(self):
+    def test_cache_hit_returns_chain(self) -> None:
         factory = DataProviderFactory()
         factory._write_ranked_chain("sh", ["baostock", "akshare"])
         result = factory._get_cached_ranked_chain("sh")
         assert result is not None
         assert result[0] == ["baostock", "akshare"]
 
-    def test_expired_cache_returns_none(self):
+    def test_expired_cache_returns_none(self) -> None:
         factory = DataProviderFactory()
         # 手动写入过期缓存
         with factory._rank_lock:
@@ -96,7 +96,7 @@ class TestGetCachedRankedChain:
 class TestBenchAll:
     """bench_all 并发 benchmark 测试。"""
 
-    def test_empty_providers_returns_empty(self):
+    def test_empty_providers_returns_empty(self) -> None:
         """没有可用 provider 时返回空列表。"""
         factory = DataProviderFactory(primary="akshare", fallbacks=[])
         # 没有任何 provider 可初始化
@@ -104,7 +104,7 @@ class TestBenchAll:
             results = factory.bench_all()
         assert results == []
 
-    def test_sorted_by_latency(self):
+    def test_sorted_by_latency(self) -> None:
         """结果按延迟升序排列。"""
         factory = DataProviderFactory()
         # 完全 mock available_providers 和 _benchmark_provider
@@ -122,7 +122,7 @@ class TestBenchAll:
         assert len(results) == 3
         assert [r.name for r in results] == ["p1", "p2", "p3"]
 
-    def test_failed_providers_sorted_last(self):
+    def test_failed_providers_sorted_last(self) -> None:
         """失败的 provider 排在末尾。"""
         factory = DataProviderFactory()
         with patch.object(factory, "available_providers", return_value=["fast", "broken", "slow"]):
@@ -145,14 +145,14 @@ class TestBenchAll:
 class TestGetRankedChainForTicker:
     """get_ranked_chain_for_ticker 缓存和 benchmark 测试。"""
 
-    def test_cache_hit_returns_cached(self):
+    def test_cache_hit_returns_cached(self) -> None:
         """缓存命中时不重新 benchmark。"""
         factory = DataProviderFactory()
         factory._write_ranked_chain("sh", ["baostock", "akshare"])
         result = factory.get_ranked_chain_for_ticker("sh.600519")
         assert result == ["baostock", "akshare"]
 
-    def test_different_ticker_type_independent(self):
+    def test_different_ticker_type_independent(self) -> None:
         """不同 ticker 类型（sh/sz）缓存独立。"""
         factory = DataProviderFactory(primary="akshare", fallbacks=["baostock"])
         factory._write_ranked_chain("sh", ["baostock", "akshare"])
@@ -175,20 +175,20 @@ class TestGetRankedChainForTicker:
 class TestProviderChainForTicker:
     """_provider_chain_for_ticker 合并逻辑测试。"""
 
-    def test_bj_ticker_forces_tonghuashun_first(self):
+    def test_bj_ticker_forces_tonghuashun_first(self) -> None:
         """北交所 ticker 强制 tonghuashun 置顶。"""
         chain = DataProviderFactory._provider_chain_for_ticker("bj.920001")
         assert chain[0] == "tonghuashun"
 
-    def test_sh_ticker_uses_benchmark_cache(self):
-        """sh ticker 使用缓存的 benchmark 结果。"""
+    def test_sh_ticker_uses_benchmark_cache(self) -> None:
+        """Sh ticker 使用缓存的 benchmark 结果。"""
         factory = DataProviderFactory()
         factory._write_ranked_chain("sh", ["akshare", "baostock", "mootdx"])
         chain = DataProviderFactory._provider_chain_for_ticker("sh.600519")
         # akshare 应排在 baostock 前面
         assert chain.index("akshare") < chain.index("baostock")
 
-    def test_sh_ticker_fallback_to_fixed_order_when_no_cache(self):
+    def test_sh_ticker_fallback_to_fixed_order_when_no_cache(self) -> None:
         """无缓存时回退到固定顺序。"""
         # 确保缓存为空
         DataProviderFactory._rank_cache.clear()
@@ -197,7 +197,7 @@ class TestProviderChainForTicker:
         assert chain[0] == "baostock"
         assert chain[1] == "akshare"
 
-    def test_cached_result_filtered_to_base_chain(self):
+    def test_cached_result_filtered_to_base_chain(self) -> None:
         """缓存中的 provider 若不在 base_chain 中则被过滤掉。"""
         factory = DataProviderFactory(primary="akshare", fallbacks=["baostock"])
         # 写入一个包含 tonghuashun 的缓存（但 base_chain 不含 tonghuashun）
@@ -214,9 +214,36 @@ class TestProviderChainForTicker:
 class TestResetDataFactory:
     """reset_data_factory 清理 benchmark 缓存测试。"""
 
-    def test_clears_rank_cache(self):
+    def test_clears_rank_cache(self) -> None:
         factory = DataProviderFactory()
         factory._write_ranked_chain("sh", ["baostock"])
         reset_data_factory()
         # 缓存应被清空
         assert "sh" not in DataProviderFactory._rank_cache
+
+
+class TestInvalidateRankCache:
+    """invalidate_rank_cache 方法测试。"""
+
+    def test_removes_cached_chain(self) -> None:
+        factory = DataProviderFactory()
+        factory._write_ranked_chain("sh", ["baostock", "akshare"])
+        assert factory._get_cached_ranked_chain("sh") is not None
+        factory.invalidate_rank_cache("sh")
+        assert factory._get_cached_ranked_chain("sh") is None
+
+    def test_noop_on_missing_key(self) -> None:
+        """清除不存在的 key 不报错。"""
+        factory = DataProviderFactory()
+        factory.invalidate_rank_cache("nonexistent")  # 不应抛出异常
+
+    def test_only_clears_requested_type(self) -> None:
+        """只清除指定的 ticker 类型，不影响其他类型。"""
+        factory = DataProviderFactory()
+        factory._write_ranked_chain("sh", ["baostock"])
+        factory._write_ranked_chain("sz", ["akshare"])
+        factory.invalidate_rank_cache("sh")
+        assert factory._get_cached_ranked_chain("sh") is None
+        cached_sz = factory._get_cached_ranked_chain("sz")
+        assert cached_sz is not None
+        assert cached_sz[0] == ["akshare"]

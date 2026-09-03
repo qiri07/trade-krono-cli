@@ -1,5 +1,4 @@
-"""
-CLI 命令实现 — 各命令的业务逻辑（向后兼容薄包装）。
+"""CLI 命令实现 — 各命令的业务逻辑（向后兼容薄包装）。
 
 本文件已被 trade_krono_cli/cli_commands/ 包替代。
 为保持旧 import 路径兼容，此处仅重新导出所有公开 API。
@@ -7,7 +6,7 @@ CLI 命令实现 — 各命令的业务逻辑（向后兼容薄包装）。
 
 from __future__ import annotations
 
-from trade_krono_cli.cli_commands.core import (  # noqa: F401
+from trade_krono_cli.cli_commands.core import (
     _build_degrade_overrides,
     _load_env,
     _load_tickers,
@@ -16,7 +15,7 @@ from trade_krono_cli.cli_commands.core import (  # noqa: F401
     run,
     ta,
 )
-from trade_krono_cli.cli_commands.maintenance import (  # noqa: F401
+from trade_krono_cli.cli_commands.maintenance import (
     clear_cache,
     eval_prediction,
     history,
@@ -24,7 +23,7 @@ from trade_krono_cli.cli_commands.maintenance import (  # noqa: F401
     status,
     warm_cache,
 )
-from trade_krono_cli.cli_commands.repo import (  # noqa: F401
+from trade_krono_cli.cli_commands.repo import (
     repo_doctor,
     repo_pin,
     repo_status,
@@ -36,17 +35,17 @@ __all__ = [
     "_load_env",
     "_load_tickers",
     "_sanitize_path",
-    "run",
-    "ta",
-    "kronos",
-    "repo_status",
-    "repo_doctor",
-    "repo_update",
-    "repo_pin",
-    "status",
     "clear_cache",
-    "warm_cache",
-    "history",
     "eval_prediction",
+    "history",
+    "kronos",
+    "repo_doctor",
+    "repo_pin",
+    "repo_status",
+    "repo_update",
     "retry_failed",
+    "run",
+    "status",
+    "ta",
+    "warm_cache",
 ]

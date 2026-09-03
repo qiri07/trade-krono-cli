@@ -1,5 +1,4 @@
-"""
-配置统一入口。
+"""配置统一入口。
 
 所有子配置模块从 trade_krono_cli.configs.* 导入，
 旧路径 trade_krono_cli.configs.schema 通过兼容性层保留。
@@ -33,22 +32,22 @@ from trade_krono_cli.configs.ta import TAConfig
 from trade_krono_cli.configs.trading import ConstraintConfig
 
 __all__ = [
+    "AbnormalityConfig",
+    "ConstraintConfig",
+    "DegradationConfig",
+    "DrawdownThresholds",
+    "FilterConfig",
     "KronosConfig",
-    "TAConfig",
-    "ScoringConfig",
-    "ScoringStrategyConfig",
+    "LiquidityThresholds",
+    "LoggingConfig",
+    "MarketRegimeThresholds",
+    "OutputConfig",
+    "RetryConfig",
     "RiskBoostStrategyConfig",
     "RiskConfig",
     "RiskWeights",
+    "ScoringConfig",
+    "ScoringStrategyConfig",
+    "TAConfig",
     "VolatilityThresholds",
-    "DrawdownThresholds",
-    "LiquidityThresholds",
-    "MarketRegimeThresholds",
-    "FilterConfig",
-    "AbnormalityConfig",
-    "ConstraintConfig",
-    "OutputConfig",
-    "LoggingConfig",
-    "RetryConfig",
-    "DegradationConfig",
 ]

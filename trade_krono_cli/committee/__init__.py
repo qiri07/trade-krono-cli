@@ -1,5 +1,4 @@
-"""
-InvestmentCommittee — AI 投资委员会核心审议逻辑。
+"""InvestmentCommittee — AI 投资委员会核心审议逻辑。
 
 从 tradingagents 的 final_state 中提取结构化报告，
 通过启发式或 LLM 路径生成 Bull/Bear Case 和最终推荐。
@@ -9,14 +8,14 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
 # 向后兼容：直接重新导出（保持 trade_krono_cli.committee.AgentType 可用）
 from trade_krono_cli.committee.types import (
     AgentReport,
-    AgentType,  # noqa: F401
+    AgentType,
     InvestmentCommitteeResult,
     StockCommitteeInput,
     extract_agent_reports,
@@ -28,8 +27,7 @@ from trade_krono_cli.committee.types import (
 
 
 class InvestmentCommittee:
-    """
-    AI 投资委员会。
+    """AI 投资委员会。
 
     接收多 Agent 报告 + Kronos 预测，综合审议后输出：
       - Bull Case / Bear Case 结构化论点
@@ -44,10 +42,10 @@ class InvestmentCommittee:
 
     def __init__(
         self,
-        llm_provider: Optional[str] = None,
-        llm_api_key: Optional[str] = None,
-        llm_base_url: Optional[str] = None,
-    ):
+        llm_provider: str | None = None,
+        llm_api_key: str | None = None,
+        llm_base_url: str | None = None,
+    ) -> None:
         self._llm_provider = llm_provider
         self._llm_api_key = llm_api_key
         self._llm_base_url = llm_base_url
@@ -55,10 +53,9 @@ class InvestmentCommittee:
     def deliberate(
         self,
         input_data: StockCommitteeInput,
-        llm_client: Optional[Any] = None,
+        llm_client: Any | None = None,
     ) -> InvestmentCommitteeResult:
-        """
-        执行委员会审议。
+        """执行委员会审议。
 
         Parameters
         ----------
@@ -68,13 +65,14 @@ class InvestmentCommittee:
         Returns
         -------
         InvestmentCommitteeResult
+
         """
         ticker = input_data.ticker
         consensus = self._compute_consensus(input_data)
 
         if llm_client is not None:
             bull_case, bear_case, recommendation, confidence, reasoning = self._llm_deliberate(
-                input_data, llm_client, consensus
+                input_data, llm_client, consensus,
             )
         else:
             bull_case, bear_case, recommendation, confidence, reasoning = (
@@ -104,12 +102,12 @@ class InvestmentCommittee:
     def _compute_consensus(
         input_data: StockCommitteeInput,
     ) -> dict[str, int]:
-        """
-        统计各 Agent 的信号分布。
+        """统计各 Agent 的信号分布。
 
         Returns
         -------
         dict : {"BUY": n, "HOLD": m, "SELL": k}
+
         """
         consensus: dict[str, int] = {"BUY": 0, "OVERWEIGHT": 0, "HOLD": 0, "SELL": 0}
 
@@ -143,8 +141,7 @@ class InvestmentCommittee:
         input_data: StockCommitteeInput,
         consensus: dict[str, int],
     ) -> tuple[str, str, str, float, str]:
-        """
-        启发式审议（无需 LLM 调用）。
+        """启发式审议（无需 LLM 调用）。
         基于 Agent 报告内容和共识分布综合判断。
         """
         ticker = input_data.ticker
@@ -167,12 +164,12 @@ class InvestmentCommittee:
         if input_data.kronos_direction == "UP":
             bull_points.append(
                 f"【Kronos】量化模型预测上涨 {input_data.kronos_change_pct:.1f}% "
-                f"(conf={input_data.kronos_confidence:.0f})"
+                f"(conf={input_data.kronos_confidence:.0f})",
             )
         elif input_data.kronos_direction == "DOWN":
             bear_points.append(
                 f"【Kronos】量化模型预测下跌 {abs(float(input_data.kronos_change_pct or 0)):.1f}% "
-                f"(conf={input_data.kronos_confidence:.0f})"
+                f"(conf={input_data.kronos_confidence:.0f})",
             )
 
         bull_case = "\n".join(bull_points) if bull_points else "无明显看多论点"
@@ -238,11 +235,10 @@ class InvestmentCommittee:
     def _llm_deliberate(
         self,
         input_data: StockCommitteeInput,
-        llm_client: Any,
+        llm_client: Any,  # noqa: ANN401 — 支持多种 LLM 客户端实现（OpenAI / Anthropic / 自定义）
         consensus: dict[str, int],
     ) -> tuple[str, str, str, float, str]:
-        """
-        LLM 增强审议路径。
+        """LLM 增强审议路径。
 
         将结构化报告 + 共识分布发送给 LLM，生成更精细的 Bull/Bear Case 和最终推荐。
         构建 prompt → 调用 LLM → 解析 JSON 输出。失败时降级到启发式路径。
@@ -286,13 +282,14 @@ class InvestmentCommittee:
         )
 
     @staticmethod
-    def _call_llm(llm_client: Any, prompt: str) -> str:
+    def _call_llm(llm_client: Any, prompt: str) -> str:  # noqa: ANN401 — LLM 客户端接口多态，支持多种实现
         """调用 LLM 并返回文本响应。支持多种客户端接口。"""
         if hasattr(llm_client, "generate"):
             return llm_client.generate(prompt)
         if hasattr(llm_client, "chat"):
             return llm_client.chat(prompt)
-        raise RuntimeError("llm_client 不支持 generate() 或 chat() 方法")
+        msg = "llm_client 不支持 generate() 或 chat() 方法"
+        raise RuntimeError(msg)
 
     @staticmethod
     def _parse_llm_response(
@@ -309,11 +306,13 @@ class InvestmentCommittee:
             if match:
                 result = json.loads(match.group(0))
             else:
-                raise ValueError(f"无法解析 LLM 响应: {response_text[:200]}")
+                msg = f"无法解析 LLM 响应: {response_text[:200]}"
+                raise ValueError(msg)
 
         for key in ("bull_case", "bear_case", "recommendation", "confidence", "reasoning"):
             if key not in result:
-                raise ValueError(f"LLM 响应缺少字段: {key}")
+                msg = f"LLM 响应缺少字段: {key}"
+                raise ValueError(msg)
         return result
 
 
@@ -326,10 +325,10 @@ def build_committee_input(
     ticker: str,
     date: str,
     final_state: dict,
-    kronos_result: Optional[dict] = None,
-    ta_signal: Optional[str] = None,
-    ta_confidence: Optional[float] = None,
-    composite_score: Optional[float] = None,
+    kronos_result: dict | None = None,
+    ta_signal: str | None = None,
+    ta_confidence: float | None = None,
+    composite_score: float | None = None,
 ) -> StockCommitteeInput:
     """工厂函数：从 TradingAgents final_state + 外部数据构建委员会输入。"""
     agent_reports = extract_agent_reports(final_state, ticker)
@@ -381,11 +380,11 @@ def describe_committee(result: InvestmentCommitteeResult) -> str:
 
 
 __all__ = (
+    "AgentReport",
+    "AgentType",
     "InvestmentCommittee",
     "InvestmentCommitteeResult",
     "StockCommitteeInput",
-    "AgentType",
-    "AgentReport",
     "build_committee_input",
     "describe_committee",
 )

@@ -1,22 +1,23 @@
-"""
-市场环境风险模块 — Market Regime Risk。
+"""市场环境风险模块 — Market Regime Risk。
 
 计算基于趋势动量的市场环境风险分，映射为 0-100 风险分。
 """
 
 from __future__ import annotations
 
-import pandas as pd
+from typing import TYPE_CHECKING
 
 from trade_krono_cli.configs.risk import MarketRegimeThresholds
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def calc_market_regime_risk(
     close: pd.Series,
-    thresholds: "MarketRegimeThresholds | None" = None,
+    thresholds: MarketRegimeThresholds | None = None,
 ) -> float:
-    """
-    计算市场环境风险分。
+    """计算市场环境风险分。
 
     逻辑：
       1. 计算 20 日动量（短期涨跌）
@@ -31,6 +32,7 @@ def calc_market_regime_risk(
     Returns
     -------
     risk_score : 0-100，越高越危险
+
     """
     th = thresholds or MarketRegimeThresholds()
 

@@ -1,5 +1,4 @@
-"""
-Stock Filter — 股票过滤规则引擎。
+"""Stock Filter — 股票过滤规则引擎。
 
 职责：
   · 多条件规则链（置信度 / 信号 / 市值 / 行业 / PE / PB / 风险分 / 成交量）
@@ -19,10 +18,10 @@ Stock Filter — 股票过滤规则引擎。
 
 from __future__ import annotations
 
+import contextlib
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 from loguru import logger
 
@@ -65,21 +64,21 @@ class FilterRule:
 class MinValueRule(FilterRule):
     """字段值 >= value。"""
 
-    def __init__(self, field: str, value: float, label: str = ""):
+    def __init__(self, field: str, value: float, label: str = "") -> None:
         super().__init__(field=field, op=FilterOp.MIN, value=value, label=label or f">={value}")
 
 
 class MaxValueRule(FilterRule):
     """字段值 <= value。"""
 
-    def __init__(self, field: str, value: float, label: str = ""):
+    def __init__(self, field: str, value: float, label: str = "") -> None:
         super().__init__(field=field, op=FilterOp.MAX, value=value, label=label or f"<={value}")
 
 
 class RangeRule(FilterRule):
     """字段值在 [low, high] 范围内。"""
 
-    def __init__(self, field: str, low: float, high: float, label: str = ""):
+    def __init__(self, field: str, low: float, high: float, label: str = "") -> None:
         super().__init__(
             field=field,
             op=FilterOp.RANGE,
@@ -91,16 +90,16 @@ class RangeRule(FilterRule):
 class InSetRule(FilterRule):
     """字段值在集合中（白名单）。"""
 
-    def __init__(self, field: str, values: set, label: str = ""):
+    def __init__(self, field: str, values: set, label: str = "") -> None:
         super().__init__(
-            field=field, op=FilterOp.IN, value=frozenset(values), label=label or f"IN {values}"
+            field=field, op=FilterOp.IN, value=frozenset(values), label=label or f"IN {values}",
         )
 
 
 class NotInSetRule(FilterRule):
     """字段值不在集合中（黑名单）。"""
 
-    def __init__(self, field: str, values: set, label: str = ""):
+    def __init__(self, field: str, values: set, label: str = "") -> None:
         super().__init__(
             field=field,
             op=FilterOp.NOT_IN,
@@ -112,16 +111,16 @@ class NotInSetRule(FilterRule):
 class ContainsRule(FilterRule):
     """字段包含指定子串。"""
 
-    def __init__(self, field: str, substr: str, label: str = ""):
+    def __init__(self, field: str, substr: str, label: str = "") -> None:
         super().__init__(
-            field=field, op=FilterOp.CONTAINS, value=substr, label=label or f"contains '{substr}'"
+            field=field, op=FilterOp.CONTAINS, value=substr, label=label or f"contains '{substr}'",
         )
 
 
 class MatchRule(FilterRule):
     """字段匹配正则表达式。"""
 
-    def __init__(self, field: str, pattern: str, label: str = ""):
+    def __init__(self, field: str, pattern: str, label: str = "") -> None:
         super().__init__(
             field=field,
             op=FilterOp.MATCH,
@@ -135,28 +134,27 @@ class MatchRule(FilterRule):
 
 @dataclass
 class StockMeta:
-    """
-    股票过滤所需的全部元数据字段。
+    """股票过滤所需的全部元数据字段。
 
     所有字段均可选（None 表示该字段未获取到数据，跳过对应规则的过滤检查）。
     """
 
     # TA / Kronos 产物
-    signal: Optional[str] = None  # BUY / HOLD / SELL
-    confidence: Optional[float] = None  # 置信度 0–100
-    risk_score: Optional[float] = None  # 风险分 0–1
+    signal: str | None = None  # BUY / HOLD / SELL
+    confidence: float | None = None  # 置信度 0–100
+    risk_score: float | None = None  # 风险分 0–1
 
     # 基本面（来自 baostock / 外部数据源）
-    pe_ttm: Optional[float] = None  # 市盈率（TTM）
-    pb: Optional[float] = None  # 市净率
-    market_cap_billion: Optional[float] = None  # 总市值（亿元）
-    volume_ratio: Optional[float] = None  # 量比（当日成交量 / 5日均量）
-    turnover_rate: Optional[float] = None  # 换手率（%）
+    pe_ttm: float | None = None  # 市盈率（TTM）
+    pb: float | None = None  # 市净率
+    market_cap_billion: float | None = None  # 总市值（亿元）
+    volume_ratio: float | None = None  # 量比（当日成交量 / 5日均量）
+    turnover_rate: float | None = None  # 换手率（%）
 
     # 行业 / 概念
-    industry: Optional[str] = None  # 行业名称（如 "银行"、"食品饮料"）
-    industry_code: Optional[str] = None  # 行业代码（如 "B61"）
-    concept: Optional[str] = None  # 概念板块名称
+    industry: str | None = None  # 行业名称（如 "银行"、"食品饮料"）
+    industry_code: str | None = None  # 行业代码（如 "B61"）
+    concept: str | None = None  # 概念板块名称
 
     # 其他
     is_st: bool = False  # 是否 ST 标的
@@ -171,8 +169,7 @@ class StockMeta:
 
 
 class StockFilter:
-    """
-    股票过滤引擎。
+    """股票过滤引擎。
 
     按规则链顺序逐一检查，任一规则不通过即被过滤。
     None 字段不参与相关规则的匹配（视为通过）。
@@ -181,28 +178,29 @@ class StockFilter:
     ----------
     rules : list[FilterRule]
         过滤规则列表，按优先级顺序排列。
+
     """
 
-    def __init__(self, rules: list[FilterRule] | None = None):
+    def __init__(self, rules: list[FilterRule] | None = None) -> None:
         self.rules: list[FilterRule] = rules or []
 
     # ── 主入口 ─────────────────────────────────────────────────────────────
 
     def apply(self, meta: StockMeta) -> bool:
-        """
-        对单只股票的元数据应用所有过滤规则。
+        """对单只股票的元数据应用所有过滤规则。
 
         Returns
         -------
         True  = 通过所有规则（保留）
         False = 任一规则未通过（过滤）
+
         """
         for rule in self.rules:
             try:
                 if not self._check_rule(meta, rule):
                     logger.debug(
                         f"🚫 {meta.ticker} 被过滤: {rule.label}"
-                        f" (field={rule.field}, value={meta.__dict__.get(rule.field)})"
+                        f" (field={rule.field}, value={meta.__dict__.get(rule.field)})",
                     )
                     return False
             except Exception as e:
@@ -210,12 +208,12 @@ class StockFilter:
         return True
 
     def apply_batch(self, metas: list[StockMeta]) -> tuple[list[StockMeta], list[StockMeta]]:
-        """
-        批量过滤。
+        """批量过滤。
 
         Returns
         -------
         (passed, rejected)
+
         """
         passed: list[StockMeta] = []
         rejected: list[StockMeta] = []
@@ -243,23 +241,22 @@ class StockFilter:
 
         if op == FilterOp.MIN:
             return float(actual) >= float(val)  # type: ignore[operator,arg-type]
-        elif op == FilterOp.MAX:
+        if op == FilterOp.MAX:
             return float(actual) <= float(val)  # type: ignore[operator,arg-type]
-        elif op == FilterOp.RANGE:
+        if op == FilterOp.RANGE:
             low = val[0]  # type: ignore[index]
             high = val[1]  # type: ignore[index]
             fv = float(actual)
             return float(low) <= fv <= float(high)  # type: ignore[operator,arg-type]
-        elif op == FilterOp.IN:
+        if op == FilterOp.IN:
             return str(actual) in val  # type: ignore[operator]
-        elif op == FilterOp.NOT_IN:
+        if op == FilterOp.NOT_IN:
             return str(actual) not in val  # type: ignore[operator]
-        elif op == FilterOp.CONTAINS:
+        if op == FilterOp.CONTAINS:
             return val in str(actual)  # type: ignore[operator]
-        elif op == FilterOp.MATCH:
+        if op == FilterOp.MATCH:
             return bool(val.search(str(actual)))  # type: ignore[attr-defined]
-        else:
-            return True  # 未知操作符：不拦截
+        return True  # 未知操作符：不拦截
 
     # ── 便捷工厂方法 ───────────────────────────────────────────────────────
 
@@ -277,9 +274,8 @@ class StockFilter:
         min_volume_ratio: float | None = None,
         min_turnover_rate: float | None = None,
         exclude_st: bool = True,
-    ) -> "StockFilter":
-        """
-        从配置参数构建 StockFilter。
+    ) -> StockFilter:
+        """从配置参数构建 StockFilter。
 
         所有参数均为可选；None 表示不添加对应规则。
         """
@@ -287,10 +283,10 @@ class StockFilter:
 
         # ── 置信度 / 信号（基础过滤）────────────────────────────────────
         rules.append(
-            MinValueRule("confidence", min_confidence, label=f"confidence >= {min_confidence}")
+            MinValueRule("confidence", min_confidence, label=f"confidence >= {min_confidence}"),
         )
         rules.append(
-            InSetRule("signal", set(allowed_signals), label=f"signal IN {allowed_signals}")
+            InSetRule("signal", set(allowed_signals), label=f"signal IN {allowed_signals}"),
         )
 
         # ── ST 过滤 ─────────────────────────────────────────────────────
@@ -301,15 +297,15 @@ class StockFilter:
         if market_cap_range:
             low, high = market_cap_range
             rules.append(
-                RangeRule("market_cap_billion", low, high, label=f"market_cap [{low}, {high}]亿")
+                RangeRule("market_cap_billion", low, high, label=f"market_cap [{low}, {high}]亿"),
             )
 
         # ── 行业白名单：使用 IN 操作符，与 StockMeta.industry 精确匹配 ─
         if industry_whitelist:
             rules.append(
                 InSetRule(
-                    "industry", set(industry_whitelist), label=f"industry IN {industry_whitelist}"
-                )
+                    "industry", set(industry_whitelist), label=f"industry IN {industry_whitelist}",
+                ),
             )
 
         if industry_blacklist:
@@ -318,35 +314,35 @@ class StockFilter:
                     "industry",
                     set(industry_blacklist),
                     label=f"industry NOT IN {industry_blacklist}",
-                )
+                ),
             )
 
         # ── PE / PB 范围 ────────────────────────────────────────────────
         if pe_range:
             rules.append(
                 RangeRule(
-                    "pe_ttm", pe_range[0], pe_range[1], label=f"PE [{pe_range[0]}, {pe_range[1]}]"
-                )
+                    "pe_ttm", pe_range[0], pe_range[1], label=f"PE [{pe_range[0]}, {pe_range[1]}]",
+                ),
             )
         if pb_range:
             rules.append(
                 RangeRule(
-                    "pb", pb_range[0], pb_range[1], label=f"PB [{pb_range[0]}, {pb_range[1]}]"
-                )
+                    "pb", pb_range[0], pb_range[1], label=f"PB [{pb_range[0]}, {pb_range[1]}]",
+                ),
             )
 
         # ── 风险分上限 ──────────────────────────────────────────────────
         if max_risk_score is not None:
             rules.append(
-                MaxValueRule("risk_score", max_risk_score, label=f"risk_score <= {max_risk_score}")
+                MaxValueRule("risk_score", max_risk_score, label=f"risk_score <= {max_risk_score}"),
             )
 
         # ── 成交量 / 换手率 ─────────────────────────────────────────────
         if min_volume_ratio is not None:
             rules.append(
                 MinValueRule(
-                    "volume_ratio", min_volume_ratio, label=f"volume_ratio >= {min_volume_ratio}"
-                )
+                    "volume_ratio", min_volume_ratio, label=f"volume_ratio >= {min_volume_ratio}",
+                ),
             )
         if min_turnover_rate is not None:
             rules.append(
@@ -354,7 +350,7 @@ class StockFilter:
                     "turnover_rate",
                     min_turnover_rate,
                     label=f"turnover_rate >= {min_turnover_rate}%",
-                )
+                ),
             )
 
         return cls(rules=rules)
@@ -367,8 +363,7 @@ def fetch_stock_meta(
     tickers: list[str],
     date: str,
 ) -> dict[str, StockMeta]:
-    """
-    批量获取股票的过滤元数据（PE / PB / 行业 / 市值）。
+    """批量获取股票的过滤元数据（PE / PB / 行业 / 市值）。
 
     Parameters
     ----------
@@ -381,6 +376,7 @@ def fetch_stock_meta(
     -------
     dict[ticker, StockMeta]
         ticker → StockMeta 映射，缺失字段为 None
+
     """
     # 懒加载 baostock，避免无环境时直接报错
     try:
@@ -422,15 +418,11 @@ def fetch_stock_meta(
                     # baostock performance 字段顺序：
                     # 0=code, 1=report_date, 2=pe_ttm, 3=pb, ...
                     if len(row) > 2 and row[2]:
-                        try:
+                        with contextlib.suppress(ValueError, TypeError):
                             meta.pe_ttm = float(row[2])
-                        except (ValueError, TypeError):
-                            pass
                     if len(row) > 3 and row[3]:
-                        try:
+                        with contextlib.suppress(ValueError, TypeError):
                             meta.pb = float(row[3])
-                        except (ValueError, TypeError):
-                            pass
 
             # ── 市值（query_stock_basic，部分版本支持）──────────────────
             rs_basic = bs.query_stock_basic(code=ticker)
@@ -439,7 +431,6 @@ def fetch_stock_meta(
                     row = rs_basic.get_row_data()
                     # row: [code, code_name, ipoDate, outDate, ...]
                     # 市值字段不在 basic 中，需从行情接口获取
-                    pass
 
             metas[ticker] = meta
 

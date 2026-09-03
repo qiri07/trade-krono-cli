@@ -1,9 +1,10 @@
-"""
-Edge-case tests for retry_policy — covers lines 171, 197, 291-292, 338,
+"""Edge-case tests for retry_policy — covers lines 171, 197, 291-292, 338,
 405-406, 596, 600, 604, 608, 612, 624-626.
 """
 
 from __future__ import annotations
+
+from typing import NoReturn
 
 import pytest
 
@@ -37,65 +38,65 @@ from trade_krono_cli.retry_policy import (
 class TestClassifyErrorEdges:
     """Edge cases in classify_error not covered by main test file."""
 
-    def test_data_validation_failure_msg(self):
+    def test_data_validation_failure_msg(self) -> None:
         """Messages containing 'data validation' or '数据格式' classified correctly."""
         exc = RuntimeError("data validation failed for date")
         cat, desc = classify_error(exc)
         assert cat == "non_retriable"
         assert "数据验证" in desc
 
-    def test_future_data_msg(self):
+    def test_future_data_msg(self) -> None:
         """'未来数据' in message → non_retriable."""
         exc = RuntimeError("未来数据不可用")
         cat, _ = classify_error(exc)
         assert cat == "non_retriable"
 
-    def test_invalid_date_msg(self):
+    def test_invalid_date_msg(self) -> None:
         """'invalid date' in message → non_retriable."""
-        cat, _ = classify_error("invalid date")  # type: ignore[arg-type]
+        _cat, _ = classify_error("invalid date")  # type: ignore[arg-type]
         # This tests the keyword matching for 'invalid date'
         exc = RuntimeError("invalid date provided")
         cat2, _ = classify_error(exc)
         assert cat2 == "non_retriable"
 
-    def test_unknown_error_defaults_to_non_retriable(self):
+    def test_unknown_error_defaults_to_non_retriable(self) -> None:
         """Unknown exception types default to non_retriable (line 197/200)."""
         exc = Exception("some completely unknown error")
         cat, desc = classify_error(exc)
         assert cat == "non_retriable"
         assert "未知错误" in desc
 
-    def test_too_many_requests_msg(self):
+    def test_too_many_requests_msg(self) -> None:
         """'too many request' (singular) triggers rate limit."""
         exc = RuntimeError("too many request from server")
         cat, _ = classify_error(exc)
         assert cat == "retriable"
 
-    def test_network_keyword_in_message(self):
+    def test_network_keyword_in_message(self) -> None:
         """Chinese '网络' keyword triggers retriable."""
         exc = RuntimeError("网络连接中断")
         cat, _ = classify_error(exc)
         assert cat == "retriable"
 
-    def test_timeout_keyword_in_message(self):
+    def test_timeout_keyword_in_message(self) -> None:
         """'超时' Chinese keyword triggers retriable."""
         exc = RuntimeError("请求超时")
         cat, _ = classify_error(exc)
         assert cat == "retriable"
 
-    def test_403_forbidden(self):
+    def test_403_forbidden(self) -> None:
         """'forbidden' keyword → non_retriable."""
         exc = RuntimeError("403 forbidden")
         cat, _ = classify_error(exc)
         assert cat == "non_retriable"
 
-    def test_502_status_in_message(self):
+    def test_502_status_in_message(self) -> None:
         """502 in message → retriable."""
         exc = RuntimeError("got 502 from upstream")
         cat, _ = classify_error(exc)
         assert cat == "retriable"
 
-    def test_504_status_in_message(self):
+    def test_504_status_in_message(self) -> None:
         """504 in message → retriable."""
         exc = RuntimeError("gateway timeout 504")
         cat, _ = classify_error(exc)
@@ -110,7 +111,7 @@ class TestClassifyErrorEdges:
 class TestSmartRetrySkipNonRetriable:
     """Test skip_non_retriable=True path in smart_retry (lines 291-292)."""
 
-    def test_skip_non_retriable_does_not_retry(self):
+    def test_skip_non_retriable_does_not_retry(self) -> None:
         """skip_non_retriable=True: non-retriable errors raise immediately without logging warning."""
         policy = RetryPolicy(
             max_attempts=5,
@@ -121,15 +122,16 @@ class TestSmartRetrySkipNonRetriable:
         call_count = [0]
 
         @smart_retry(policy)
-        def fn():
+        def fn() -> NoReturn:
             call_count[0] += 1
-            raise DataNotFoundError("stock not found")
+            msg = "stock not found"
+            raise DataNotFoundError(msg)
 
         with pytest.raises(DataNotFoundError):
             fn()
         assert call_count[0] == 1  # only one call, no retry
 
-    def test_skip_non_retriable_auth_error(self):
+    def test_skip_non_retriable_auth_error(self) -> None:
         """AuthError is non_retriable and should not be retried."""
         policy = RetryPolicy(
             max_attempts=5,
@@ -139,15 +141,17 @@ class TestSmartRetrySkipNonRetriable:
         )
 
         @smart_retry(policy)
-        def fn():
-            raise AuthError("token expired")
+        def fn() -> NoReturn:
+            msg = "token expired"
+            raise AuthError(msg)
 
         with pytest.raises(AuthError):
             fn()
 
-    def test_skip_non_retriable_false_allows_retry_on_non_retriable_class(self):
+    def test_skip_non_retriable_false_allows_retry_on_non_retriable_class(self) -> None:
         """skip_non_retriable=False: explicit non-retryable classes still raise immediately
-        because they inherit from TradeKronoNonRetryableError."""
+        because they inherit from TradeKronoNonRetryableError.
+        """
         policy = RetryPolicy(
             max_attempts=5,
             base_delay=0.01,
@@ -156,8 +160,9 @@ class TestSmartRetrySkipNonRetriable:
         )
 
         @smart_retry(policy)
-        def fn():
-            raise ParameterError("bad input")
+        def fn() -> NoReturn:
+            msg = "bad input"
+            raise ParameterError(msg)
 
         with pytest.raises(ParameterError):
             fn()
@@ -171,43 +176,43 @@ class TestSmartRetrySkipNonRetriable:
 class TestMakeErrorConstructors:
     """Test all make_* error factory functions (lines 596-626)."""
 
-    def test_make_network_error(self):
+    def test_make_network_error(self) -> None:
         err = make_network_error("connection refused")
         assert isinstance(err, NetworkError)
         assert str(err) == "connection refused"
 
-    def test_make_timeout_error(self):
+    def test_make_timeout_error(self) -> None:
         err = make_timeout_error("request timed out")
         assert isinstance(err, RetryTimeoutError)
         assert str(err) == "request timed out"
 
-    def test_make_data_not_found(self):
+    def test_make_data_not_found(self) -> None:
         err = make_data_not_found("stock delisted")
         assert isinstance(err, DataNotFoundError)
         assert str(err) == "stock delisted"
 
-    def test_make_auth_error(self):
+    def test_make_auth_error(self) -> None:
         err = make_auth_error("invalid token")
         assert isinstance(err, AuthError)
         assert str(err) == "invalid token"
 
-    def test_make_parameter_error(self):
+    def test_make_parameter_error(self) -> None:
         err = make_parameter_error("missing ticker")
         assert isinstance(err, ParameterError)
         assert str(err) == "missing ticker"
 
-    def test_make_rate_limit_with_empty_headers(self):
+    def test_make_rate_limit_with_empty_headers(self) -> None:
         err = make_rate_limit_error("429", headers={})
         assert isinstance(err, RateLimitError)
         assert err.retry_after is None
         assert err.response_headers == {}
 
-    def test_make_rate_limit_with_none_headers(self):
+    def test_make_rate_limit_with_none_headers(self) -> None:
         err = make_rate_limit_error("429")
         assert isinstance(err, RateLimitError)
         assert err.response_headers == {}
 
-    def test_make_rate_limit_retry_after_priority(self):
+    def test_make_rate_limit_retry_after_priority(self) -> None:
         """Retry-After header takes priority over X-RateLimit-Reset."""
         err = make_rate_limit_error(
             "429",
@@ -215,7 +220,7 @@ class TestMakeErrorConstructors:
         )
         assert err.retry_after == 10.0
 
-    def test_make_rate_limit_case_insensitive_header_keys(self):
+    def test_make_rate_limit_case_insensitive_header_keys(self) -> None:
         """Header lookup is case-insensitive for Retry-After."""
         err = make_rate_limit_error("429", headers={"retry-after": "20"})
         assert err.retry_after == 20.0
@@ -237,7 +242,7 @@ class TestFailureStoreEdges:
         yield s
         clear_failure_store_singleton()
 
-    def test_save_unlocked_writes_file(self, store, tmp_path):
+    def test_save_unlocked_writes_file(self, store, tmp_path) -> None:
         """_save_unlocked writes valid JSON to disk."""
         store.record("sh.600519", "2026-01-15", "ta", NetworkError("timeout"))
         # Force write via public record (which calls _save)
@@ -249,7 +254,7 @@ class TestFailureStoreEdges:
         assert len(records) == 1
         assert records[0]["ticker"] == "sh.600519"
 
-    def test_load_corrupt_json_restores_empty(self, tmp_path):
+    def test_load_corrupt_json_restores_empty(self, tmp_path) -> None:
         """Corrupt JSON file → _load sets empty records."""
         p = tmp_path / "corrupt.json"
         p.write_text("{ invalid json !!!", encoding="utf-8")
@@ -257,7 +262,7 @@ class TestFailureStoreEdges:
         assert s.list_fails() == []
         clear_failure_store_singleton()
 
-    def test_load_non_utf8_file(self, tmp_path):
+    def test_load_non_utf8_file(self, tmp_path) -> None:
         """Non-UTF8 file → _load should handle gracefully."""
         p = tmp_path / "binary.json"
         p.write_bytes(b"\x80\x81\x82")
@@ -278,22 +283,22 @@ class TestFailureStoreEdges:
 class TestClassifyErrorChinese:
     """classify_error with Chinese-language messages."""
 
-    def test_chinese_auth_message(self):
+    def test_chinese_auth_message(self) -> None:
         exc = RuntimeError("认证失败，权限不足")
         cat, _ = classify_error(exc)
         assert cat == "non_retriable"
 
-    def test_chinese_rate_limit(self):
+    def test_chinese_rate_limit(self) -> None:
         exc = RuntimeError("请求过于频繁，限流")
         cat, _ = classify_error(exc)
         assert cat == "retriable"
 
-    def test_chinese_network(self):
+    def test_chinese_network(self) -> None:
         exc = RuntimeError("网络连接超时")
         cat, _ = classify_error(exc)
         assert cat == "retriable"
 
-    def test_chinese_data_missing(self):
+    def test_chinese_data_missing(self) -> None:
         exc = RuntimeError("数据不足，无法分析")
         cat, _ = classify_error(exc)
         assert cat == "non_retriable"

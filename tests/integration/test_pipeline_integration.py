@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 class TestPipelineOrchestrator:
     """QuantPipeline 集成测试（mock TA + Kronos）。"""
 
-    def test_run_parallel_full_flow(self):
+    def test_run_parallel_full_flow(self) -> None:
         """完整并行流程：TA + Kronos → merge → score → save。"""
         from trade_krono_cli.kronos_runner import KronosForecastResult, PredictionUncertainty
         from trade_krono_cli.pipeline import QuantPipeline
@@ -16,7 +16,7 @@ class TestPipelineOrchestrator:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
             ),
         ]
 
@@ -55,7 +55,7 @@ class TestPipelineOrchestrator:
         assert "composite_score" in merged[0]
         assert "rank" in merged[0]
 
-    def test_run_ta_only(self):
+    def test_run_ta_only(self) -> None:
         """仅 TA 模式。"""
         from trade_krono_cli.pipeline import QuantPipeline
         from trade_krono_cli.ta_runner import StockAnalysisResult
@@ -63,7 +63,7 @@ class TestPipelineOrchestrator:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=85.0
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=85.0,
             ),
         ]
 
@@ -72,7 +72,7 @@ class TestPipelineOrchestrator:
         assert len(results) == 1
         assert results[0].signal == "BUY"
 
-    def test_run_kronos_only(self):
+    def test_run_kronos_only(self) -> None:
         """仅 Kronos 模式。"""
         from trade_krono_cli.kronos_runner import KronosForecastResult
         from trade_krono_cli.pipeline import QuantPipeline
@@ -96,7 +96,7 @@ class TestPipelineOrchestrator:
         assert len(results) == 1
         assert results[0].direction == "UP"
 
-    def test_kronos_thread_exception_handled(self):
+    def test_kronos_thread_exception_handled(self) -> None:
         """Kronos 线程异常不应中断 TA 结果。"""
         from trade_krono_cli.pipeline import QuantPipeline
         from trade_krono_cli.ta_runner import StockAnalysisResult
@@ -104,7 +104,7 @@ class TestPipelineOrchestrator:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
             ),
         ]
         mock_kr = MagicMock()
@@ -115,7 +115,7 @@ class TestPipelineOrchestrator:
         assert len(merged) >= 1
         assert merged[0]["ta_signal"] == "BUY"
 
-    def test_filter_pool_reduces_results(self):
+    def test_filter_pool_reduces_results(self) -> None:
         """filter_pool 应正确过滤低置信度股票。"""
         from trade_krono_cli.pipeline import QuantPipeline
         from trade_krono_cli.ta_runner import StockAnalysisResult
@@ -123,13 +123,13 @@ class TestPipelineOrchestrator:
         mock_ta = MagicMock()
         mock_ta.analyze_batch.return_value = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
             ),
             StockAnalysisResult(
-                ticker="sz.000858", date="2026-08-12", signal="BUY", confidence=40.0
+                ticker="sz.000858", date="2026-08-12", signal="BUY", confidence=40.0,
             ),
             StockAnalysisResult(
-                ticker="sh.600036", date="2026-08-12", signal="SELL", confidence=90.0
+                ticker="sh.600036", date="2026-08-12", signal="SELL", confidence=90.0,
             ),
         ]
         mock_kr = MagicMock()
@@ -142,7 +142,7 @@ class TestPipelineOrchestrator:
         assert "sz.000858" not in tickers
         assert "sh.600036" not in tickers
 
-    def test_empty_tickers(self):
+    def test_empty_tickers(self) -> None:
         """空 ticker 列表应返回空结果。"""
         from trade_krono_cli.pipeline import QuantPipeline
 
@@ -159,7 +159,7 @@ class TestPipelineOrchestrator:
 class TestScorer:
     """pipeline scorer 测试（通过 default_scorer 直接验证）。"""
 
-    def test_default_scorer_ranking(self):
+    def test_default_scorer_ranking(self) -> None:
         """高 TA 置信度应排在负收益股票之前。"""
         from trade_krono_cli.pipeline.merge import default_scorer
 
@@ -184,7 +184,7 @@ class TestScorer:
             },
         ]
         # 按分数降序排列
-        ranked = sorted(items, key=lambda x: default_scorer(x), reverse=True)
+        ranked = sorted(items, key=default_scorer, reverse=True)
         # A 分数: 0.4*60 + 0.3*51 + 0.1*10 = 24+15.3+1 = 40.3
         # B 分数: 0.4*80 + 0.3*53 + 0.1*10 = 32+15.9+1 = 48.9
         # C 分数: 0.4*90 + 0.3*48 + 0.1*(-10) = 36+14.4-1 = 49.4
@@ -193,9 +193,8 @@ class TestScorer:
         assert ranked[1]["ticker"] == "B"
         assert ranked[2]["ticker"] == "A"
 
-    def test_custom_scorer(self):
+    def test_custom_scorer(self) -> None:
         """自定义打分函数可覆盖默认逻辑。"""
-
         items = [{"ticker": "A", "score": 10}, {"ticker": "B", "score": 20}]
 
         def custom_scorer(item):
@@ -209,7 +208,7 @@ class TestScorer:
 class TestReporter:
     """pipeline reporter 测试。"""
 
-    def test_save_json_report(self, tmp_path):
+    def test_save_json_report(self, tmp_path) -> None:
         from trade_krono_cli.pipeline.reporter import save_json_report
 
         merged = [
@@ -229,7 +228,7 @@ class TestReporter:
         assert len(data["results"]) == 1
         assert data["results"][0]["ticker"] == "sh.600519"
 
-    def test_save_html_report(self, tmp_path):
+    def test_save_html_report(self, tmp_path) -> None:
         from trade_krono_cli.pipeline.reporter import save_html_report
 
         merged = [
@@ -240,7 +239,7 @@ class TestReporter:
         assert result == path
         assert Path(path).exists()
 
-    def test_print_results_table_no_error(self):
+    def test_print_results_table_no_error(self) -> None:
         """print_results_table 不应抛异常。"""
         from trade_krono_cli.pipeline.reporter import print_results_table
 
@@ -249,7 +248,7 @@ class TestReporter:
         ]
         print_results_table(merged)
 
-    def test_print_results_summary_no_error(self):
+    def test_print_results_summary_no_error(self) -> None:
         """print_results_summary 不应抛异常。"""
         from trade_krono_cli.pipeline.reporter import print_results_summary
 
@@ -262,7 +261,7 @@ class TestReporter:
 class TestDataFetcher:
     """pipeline data_fetcher 测试。"""
 
-    def test_fetch_stock_quote_returns_dict(self):
+    def test_fetch_stock_quote_returns_dict(self) -> None:
         from trade_krono_cli.pipeline.data_fetcher import fetch_stock_quote
 
         result = fetch_stock_quote("sh.600519")

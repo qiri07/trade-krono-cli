@@ -1,24 +1,26 @@
-"""
-TA 信号胜率评估。
+"""TA 信号胜率评估。
 
 负责统计 TA BUY / HOLD 信号的胜率和平均收益。
 """
 
 from __future__ import annotations
 
-from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from trade_krono_cli.eval_data import EvalRecord, HorizonMetrics
 
 
 def compute_ta_metrics(
     h_records: list[EvalRecord],
     metrics: HorizonMetrics,
 ) -> tuple[int, int]:
-    """
-    计算 TA BUY 胜率和 HOLD 平均收益，更新 metrics。
+    """计算 TA BUY 胜率和 HOLD 平均收益，更新 metrics。
 
     Returns
     -------
     (ta_buy_n, ta_hold_n)
+
     """
     buy_records = [r for r in h_records if r.ta_signal == "BUY"]
     ta_buy_n = 0

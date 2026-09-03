@@ -1,5 +1,4 @@
-"""
-pipeline.reporter — 报告输出（JSON / HTML / 控制台表格）。
+"""pipeline.reporter — 报告输出（JSON / HTML / 控制台表格）。
 
 原 trade_krono_cli.report 收敛至此。
 所有函数以 _report 后缀命名，保持与 orchestrator 的调用一致；
@@ -14,7 +13,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from loguru import logger
 from rich.console import Console
@@ -28,7 +26,7 @@ console = Console()
 # ═══════════════════════════════════════════════════════
 
 
-def _degradation_badge(dmg: Optional[str]) -> tuple[str, str]:
+def _degradation_badge(dmg: str | None) -> tuple[str, str]:
     """返回 (html_badge, rich_console_str) 降级标记。"""
     if dmg == "kronos_degraded":
         return (
@@ -245,7 +243,7 @@ def print_results_summary(merged: list[dict], date: str) -> None:
         console.print(
             f"[bold green]🥇 trade-krono-cli 最佳推荐: {best['ticker']} "
             f"(TA={best.get('ta_signal')}  Kronos={best.get('kronos_direction')} "
-            f"综合分={best.get('ranking_score') or best.get('composite_score')}{ev_str}{pw_str}{cs_str}){dmg_note}[/bold green]"
+            f"综合分={best.get('ranking_score') or best.get('composite_score')}{ev_str}{pw_str}{cs_str}){dmg_note}[/bold green]",
         )
 
     buys = [m for m in merged if m.get("ta_signal") == "BUY"]
@@ -260,7 +258,7 @@ def print_results_summary(merged: list[dict], date: str) -> None:
             ev_str = f" EV={ev:+.3f}%" if ev is not None else ""
             console.print(
                 f"   • {m['ticker']}: 置信度={m.get('ta_confidence')} "
-                f"Kronos预期={m.get('kronos_change_pct') or 0:.2f}%{ev_str}{cs_str}"
+                f"Kronos预期={m.get('kronos_change_pct') or 0:.2f}%{ev_str}{cs_str}",
             )
     if overweight:
         console.print(f"[dim green]💚 OVERWEIGHT 信号: {len(overweight)} 只[/dim green]")
@@ -269,7 +267,7 @@ def print_results_summary(merged: list[dict], date: str) -> None:
             ev_str = f" EV={ev:+.3f}%" if ev is not None else ""
             console.print(
                 f"   • {m['ticker']}: 置信度={m.get('ta_confidence')} "
-                f"Kronos预期={m.get('kronos_change_pct') or 0:.2f}%{ev_str}"
+                f"Kronos预期={m.get('kronos_change_pct') or 0:.2f}%{ev_str}",
             )
 
     console.print()

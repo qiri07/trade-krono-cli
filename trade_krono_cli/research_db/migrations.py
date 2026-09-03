@@ -1,6 +1,4 @@
-"""
-研究数据库 schema 迁移 — 向后兼容的动态列添加。
-"""
+"""研究数据库 schema 迁移 — 向后兼容的动态列添加。"""
 
 from __future__ import annotations
 
@@ -23,8 +21,7 @@ VERSION_COLS: tuple[str, ...] = (
 
 
 def migrate_schema(conn: sqlite3.Connection) -> None:
-    """
-    向后兼容：为已有表动态添加新版本列。
+    """向后兼容：为已有表动态添加新版本列。
     不破坏任何现有数据。
     """
     info = conn.execute("PRAGMA table_info(jobs)").fetchall()
@@ -81,7 +78,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE signals ADD COLUMN ranking_score REAL")
             # 将 composite_score 复制到 ranking_score
             conn.execute(
-                "UPDATE signals SET ranking_score = composite_score WHERE ranking_score IS NULL"
+                "UPDATE signals SET ranking_score = composite_score WHERE ranking_score IS NULL",
             )
             logger.debug("📐 Schema 迁移: signals.ranking_score")
         except sqlite3.OperationalError:

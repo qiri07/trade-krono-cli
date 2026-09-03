@@ -1,5 +1,4 @@
-"""
-scoring — 评分与风险引擎插件系统。
+"""scoring — 评分与风险引擎插件系统。
 
 提供可插拔的打分策略和风险加分策略，
 支持通过配置切换不同策略，便于快速实验和 A/B 评估。
@@ -49,25 +48,25 @@ from trade_krono_cli.scoring.scorers import (
 )
 
 __all__ = [
+    "BoostResult",
     # ABC
     "CompositeScorer",
-    "RiskBoostStrategy",
-    "RatingMapper",
-    "ScoreResult",
-    "BoostResult",
-    # Registry
-    "ScorerRegistry",
-    "RiskBoostRegistry",
-    "get_scorer_registry",
-    "get_risk_boost_registry",
-    "reset_scoring_registries",
+    "DiminishingBoostBooster",
+    # Risk Boosters
+    "FixedBoostBooster",
     # Scorers
     "LinearScorer",
     "MultiplicativeScorer",
     "RankBasedScorer",
-    # Risk Boosters
-    "FixedBoostBooster",
+    "RatingMapper",
+    "RiskBoostRegistry",
+    "RiskBoostStrategy",
     "ScaledBoostBooster",
-    "DiminishingBoostBooster",
+    "ScoreResult",
+    # Registry
+    "ScorerRegistry",
     "apply_abnormality_risk_boost",
+    "get_risk_boost_registry",
+    "get_scorer_registry",
+    "reset_scoring_registries",
 ]

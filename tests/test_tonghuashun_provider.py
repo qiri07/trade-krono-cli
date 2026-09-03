@@ -1,6 +1,4 @@
-"""
-tests/test_tonghuashun_provider.py — 同花顺数据源单元测试。
-"""
+"""tests/test_tonghuashun_provider.py — 同花顺数据源单元测试。"""
 
 from __future__ import annotations
 
@@ -10,6 +8,7 @@ import pytest
 
 from trade_krono_cli.data_providers.base import KlineData, RealtimeQuote, StockMetadata
 from trade_krono_cli.data_providers.tonghuashun_provider import TongHuaShunProvider
+from trade_krono_cli.utils import safe_float
 
 # ═══════════════════════════════════════════════════════
 # Fixtures
@@ -44,14 +43,14 @@ def api_key(monkeypatch: pytest.MonkeyPatch) -> str:
 
 
 def test_init_raises_without_api_key(
-    provider: TongHuaShunProvider, monkeypatch: pytest.MonkeyPatch
-):
+    provider: TongHuaShunProvider, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("HITHINK_FINANCE_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="HITHINK_FINANCE_API_KEY"):
         provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-29")
 
 
-def test_health_check_success(provider: TongHuaShunProvider, api_key: str):
+def test_health_check_success(provider: TongHuaShunProvider, api_key: str) -> None:
     mock_response = {
         "code": 0,
         "message": "success",
@@ -63,14 +62,14 @@ def test_health_check_success(provider: TongHuaShunProvider, api_key: str):
         assert provider.health_check() is True
 
 
-def test_health_check_failure(provider: TongHuaShunProvider, api_key: str):
+def test_health_check_failure(provider: TongHuaShunProvider, api_key: str) -> None:
     with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
         mock_get.return_value.json.return_value = {"code": 2001, "message": "unauthorized"}
         mock_get.return_value.raise_for_status.return_value = None
         assert provider.health_check() is False
 
 
-def test_health_check_exception(provider: TongHuaShunProvider, api_key: str):
+def test_health_check_exception(provider: TongHuaShunProvider, api_key: str) -> None:
     with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
         mock_get.side_effect = Exception("network error")
         assert provider.health_check() is False
@@ -81,7 +80,7 @@ def test_health_check_exception(provider: TongHuaShunProvider, api_key: str):
 # ═══════════════════════════════════════════════════════
 
 
-def test_fetch_kline_success(provider: TongHuaShunProvider, api_key: str):
+def test_fetch_kline_success(provider: TongHuaShunProvider, api_key: str) -> None:
     mock_response = {
         "code": 0,
         "message": "success",
@@ -96,7 +95,7 @@ def test_fetch_kline_success(provider: TongHuaShunProvider, api_key: str):
                     "close_price": 1610.0,
                     "volume": 3000000,
                     "turnover": 5000000000.0,
-                }
+                },
             ],
         },
     }
@@ -113,7 +112,7 @@ def test_fetch_kline_success(provider: TongHuaShunProvider, api_key: str):
     assert result.amount[0] == 5000000000.0
 
 
-def test_fetch_kline_empty_response(provider: TongHuaShunProvider, api_key: str):
+def test_fetch_kline_empty_response(provider: TongHuaShunProvider, api_key: str) -> None:
     mock_response = {"code": 0, "message": "success", "data": {"item": []}}
     with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
@@ -122,7 +121,7 @@ def test_fetch_kline_empty_response(provider: TongHuaShunProvider, api_key: str)
     assert result is None
 
 
-def test_fetch_kline_api_error(provider: TongHuaShunProvider, api_key: str):
+def test_fetch_kline_api_error(provider: TongHuaShunProvider, api_key: str) -> None:
     mock_response = {"code": 3001, "message": "not found"}
     with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
@@ -131,7 +130,7 @@ def test_fetch_kline_api_error(provider: TongHuaShunProvider, api_key: str):
     assert result is None
 
 
-def test_fetch_kline_http_error(provider: TongHuaShunProvider, api_key: str):
+def test_fetch_kline_http_error(provider: TongHuaShunProvider, api_key: str) -> None:
     import requests
 
     with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
@@ -145,7 +144,7 @@ def test_fetch_kline_http_error(provider: TongHuaShunProvider, api_key: str):
 # ═══════════════════════════════════════════════════════
 
 
-def test_fetch_quote_success(provider: TongHuaShunProvider, api_key: str):
+def test_fetch_quote_success(provider: TongHuaShunProvider, api_key: str) -> None:
     mock_response = {
         "code": 0,
         "message": "success",
@@ -159,7 +158,7 @@ def test_fetch_quote_success(provider: TongHuaShunProvider, api_key: str):
                     "last_price": 1277.8,
                     "volume": 3098875,
                     "turnover": 3937375200,
-                }
+                },
             ],
         },
     }
@@ -174,7 +173,7 @@ def test_fetch_quote_success(provider: TongHuaShunProvider, api_key: str):
     assert result.source == "tonghuashun"
 
 
-def test_fetch_quote_empty(provider: TongHuaShunProvider, api_key: str):
+def test_fetch_quote_empty(provider: TongHuaShunProvider, api_key: str) -> None:
     mock_response = {"code": 0, "message": "success", "data": {"item": []}}
     with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
@@ -188,7 +187,7 @@ def test_fetch_quote_empty(provider: TongHuaShunProvider, api_key: str):
 # ═══════════════════════════════════════════════════════
 
 
-def test_fetch_metadata_success(provider: TongHuaShunProvider, api_key: str):
+def test_fetch_metadata_success(provider: TongHuaShunProvider, api_key: str) -> None:
     mock_response = {
         "code": 0,
         "message": "success",
@@ -202,7 +201,7 @@ def test_fetch_metadata_success(provider: TongHuaShunProvider, api_key: str):
                     "exchange": "SH",
                     "asset_type": "a-share",
                     "currency": "CNY",
-                }
+                },
             ],
         },
     }
@@ -223,7 +222,7 @@ def test_fetch_metadata_success(provider: TongHuaShunProvider, api_key: str):
 
 
 @pytest.mark.parametrize(
-    "ticker,expected",
+    ("ticker", "expected"),
     [
         ("sh.600519", "600519.SH"),
         ("sz.000858", "000858.SZ"),
@@ -232,12 +231,12 @@ def test_fetch_metadata_success(provider: TongHuaShunProvider, api_key: str):
         ("", None),
     ],
 )
-def test_ticker_to_thscode(ticker: str, expected: str | None):
+def test_ticker_to_thscode(ticker: str, expected: str | None) -> None:
     assert TongHuaShunProvider._ticker_to_thscode(ticker) == expected
 
 
 @pytest.mark.parametrize(
-    "thscode,expected",
+    ("thscode", "expected"),
     [
         ("600519.SH", "sh.600519"),
         ("000858.SZ", "sz.000858"),
@@ -245,24 +244,24 @@ def test_ticker_to_thscode(ticker: str, expected: str | None):
         ("invalid", ""),
     ],
 )
-def test_thscode_to_ticker(thscode: str, expected: str):
+def test_thscode_to_ticker(thscode: str, expected: str) -> None:
     assert TongHuaShunProvider._thscode_to_ticker(thscode) == expected
 
 
-def test_date_to_ms():
+def test_date_to_ms() -> None:
     ms = TongHuaShunProvider._date_to_ms("2026-08-29")
     assert ms > 0
     assert isinstance(ms, int)
 
 
-def test_safe_float_none():
-    assert TongHuaShunProvider._safe_float(None) is None
+def test_safe_float_none() -> None:
+    assert safe_float(None) is None
 
 
-def test_safe_float_valid():
-    assert TongHuaShunProvider._safe_float(123.45) == 123.45
+def test_safe_float_valid() -> None:
+    assert safe_float(123.45) == 123.45
 
 
-def test_safe_float_invalid():
-    assert TongHuaShunProvider._safe_float("abc") is None
-    assert TongHuaShunProvider._safe_float(float("nan")) is None
+def test_safe_float_invalid() -> None:
+    assert safe_float("abc") is None
+    assert safe_float(float("nan")) is None

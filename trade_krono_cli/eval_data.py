@@ -1,5 +1,4 @@
-"""
-预测评估数据层 — 价格获取 + 数据类。
+"""预测评估数据层 — 价格获取 + 数据类。
 
 职责：
   • 从 baostock 拉取实际收盘价
@@ -12,7 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional
 
 import pandas as pd
 from loguru import logger
@@ -43,7 +41,7 @@ def _resolve_fetch_kline(custom=None):
 # ═══════════════════════════════════════════════════════
 
 
-def get_close_price(ticker: str, date_str: str, _fetch_kline=None) -> Optional[float]:
+def get_close_price(ticker: str, date_str: str, _fetch_kline=None) -> float | None:
     """获取指定日期的收盘价（支持精确日期和最近交易日）。"""
     try:
         ticker = validate_ticker(ticker)
@@ -70,13 +68,14 @@ def get_kline_window(
     start_date: str,
     end_date: str,
     _fetch_kline=None,
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """拉取指定区间的 K 线，失败时返回 None。
 
     Parameters
     ----------
     _fetch_kline : callable, optional
         注入自定义 fetch_kline，供测试使用。
+
     """
     fetcher = _resolve_fetch_kline(_fetch_kline)
     try:
@@ -111,6 +110,7 @@ def is_price_at_limit(
     Returns
     -------
     True 表示触及对应方向的涨停/跌停
+
     """
     if prev_close is None or prev_close <= 0:
         return False
@@ -119,8 +119,7 @@ def is_price_at_limit(
         return False
     if direction == "up":
         return price >= limit_up * 0.999
-    else:
-        return limit_down is not None and price / limit_down <= 1.001
+    return limit_down is not None and price / limit_down <= 1.001
 
 
 def apply_roundtrip_cost(gross_return_pct: float, cost_bps: float = 17.0) -> float:
@@ -140,21 +139,21 @@ class EvalRecord:
     ticker: str
     eval_date: str
     horizon_days: int
-    pred_direction: Optional[str]  # UP / DOWN / FLAT
-    pred_return_pct: Optional[float]
+    pred_direction: str | None  # UP / DOWN / FLAT
+    pred_return_pct: float | None
     actual_return_pct: float
     actual_direction: str  # UP / DOWN / FLAT
     is_direction_correct: bool  # 方向是否预测正确
     error_pct: float  # 预测误差 = 预测 - 实际
     # ── 分布分位数（来自 PredictionDistribution，可选）──────────────────
-    p10: Optional[float] = None
-    p25: Optional[float] = None
-    p50: Optional[float] = None
-    p75: Optional[float] = None
-    p90: Optional[float] = None
+    p10: float | None = None
+    p25: float | None = None
+    p50: float | None = None
+    p75: float | None = None
+    p90: float | None = None
     # 附加上下文（用于分组统计）
-    ta_signal: Optional[str] = None
-    composite_score: Optional[float] = None
+    ta_signal: str | None = None
+    composite_score: float | None = None
     # ── 交易约束标记（由约束感知评估写入）──────────────────────
     entry_blocked_limit_up: bool = False  # 买入日涨停，实际无法建仓
     exit_blocked_limit_down: bool = False  # 退出日跌停，实际无法平仓
@@ -221,7 +220,7 @@ class BacktestResult:
     records: list = field(default_factory=list)  # 回测使用的 BacktestRecord 列表
 
     @staticmethod
-    def empty() -> "BacktestResult":
+    def empty() -> BacktestResult:
         return BacktestResult()
 
 
@@ -243,7 +242,7 @@ class EvaluationSummary:
     horizons: dict[int, HorizonMetrics] = field(default_factory=dict)
     records: list[EvalRecord] = field(default_factory=list)
     # ── 回测结果 ────────────────────────────────────────────────────────────
-    backtest: Optional[BacktestResult] = None
+    backtest: BacktestResult | None = None
     # ── 基准对比 ────────────────────────────────────────────────────────────
     benchmark_cum_return_pct: float = 0.0
     excess_return_pct: float = 0.0

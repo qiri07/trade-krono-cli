@@ -8,6 +8,10 @@
 
 set -euo pipefail
 
+# 确保 cron 环境能找到 uv 和其他工具
+export PATH="/home/onai/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PYTHONIOENCODING="utf-8"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 LOG_DIR="$PROJECT_ROOT/outputs/logs"

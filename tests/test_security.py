@@ -1,5 +1,7 @@
 """测试安全工具。"""
 
+from typing import NoReturn
+
 import pytest
 
 from trade_krono_cli.security import (
@@ -12,7 +14,7 @@ from trade_krono_cli.security import (
 )
 
 
-def test_validate_ticker_formats():
+def test_validate_ticker_formats() -> None:
     assert validate_ticker("600519") == "sh.600519"
     assert validate_ticker("sh.600519") == "sh.600519"
     assert validate_ticker("000858") == "sz.000858"
@@ -22,7 +24,7 @@ def test_validate_ticker_formats():
     assert validate_ticker("688981") == "sh.688981"
 
 
-def test_validate_ticker_invalid():
+def test_validate_ticker_invalid() -> None:
     with pytest.raises(ValueError):
         validate_ticker("abc")
     with pytest.raises(ValueError):
@@ -31,12 +33,12 @@ def test_validate_ticker_invalid():
         validate_ticker("")
 
 
-def test_validate_date():
+def test_validate_date() -> None:
     assert validate_date("2026-08-11") == "2026-08-11"
     assert validate_date("  2026-08-11  ") == "2026-08-11"
 
 
-def test_validate_date_invalid():
+def test_validate_date_invalid() -> None:
     with pytest.raises(ValueError):
         validate_date("2026/08/11")
     with pytest.raises(ValueError):
@@ -45,7 +47,7 @@ def test_validate_date_invalid():
         validate_date("")
 
 
-def test_ticker_hash():
+def test_ticker_hash() -> None:
     h1 = ticker_hash("sh.600519")
     h2 = ticker_hash("sh.600519")
     h3 = ticker_hash("sz.000858")
@@ -54,7 +56,7 @@ def test_ticker_hash():
     assert len(h1) == 12
 
 
-def test_token_bucket():
+def test_token_bucket() -> None:
     bucket = TokenBucket(rate=10.0, capacity=5.0)
     for _ in range(5):
         bucket.acquire()  # 应该不阻塞
@@ -67,15 +69,16 @@ def test_token_bucket():
     assert elapsed >= 0.05  # 至少等待 50ms
 
 
-def test_retry_success():
+def test_retry_success() -> None:
     call_count = 0
 
     @retry(max_attempts=3, base_delay=0.01)
-    def flaky_fn():
+    def flaky_fn() -> str:
         nonlocal call_count
         call_count += 1
         if call_count < 3:
-            raise ValueError("temporary error")
+            msg = "temporary error"
+            raise ValueError(msg)
         return "success"
 
     result = flaky_fn()
@@ -83,16 +86,17 @@ def test_retry_success():
     assert call_count == 3
 
 
-def test_retry_exhausted():
+def test_retry_exhausted() -> None:
     @retry(max_attempts=2, base_delay=0.01)
-    def always_fails():
-        raise ValueError("permanent error")
+    def always_fails() -> NoReturn:
+        msg = "permanent error"
+        raise ValueError(msg)
 
     with pytest.raises(ValueError, match="permanent error"):
         always_fails()
 
 
-def test_key_vault():
+def test_key_vault() -> None:
     vault = KeyVault()
     result = vault.validate()
     assert isinstance(result, dict)
@@ -100,14 +104,14 @@ def test_key_vault():
     assert len(result) > 0
 
 
-def test_sanitize_for_log_no_secrets():
+def test_sanitize_for_log_no_secrets() -> None:
     from trade_krono_cli.security import sanitize_for_log
 
     assert sanitize_for_log("some normal message") == "some normal message"
     assert sanitize_for_log("no secrets here") == "no secrets here"
 
 
-def test_sanitize_for_log_redacts_sk_key():
+def test_sanitize_for_log_redacts_sk_key() -> None:
     from trade_krono_cli.security import sanitize_for_log
 
     msg = "Error: sk-abc123def456ghi789jkl012mno345pqr678stu failed"
@@ -119,7 +123,7 @@ def test_sanitize_for_log_redacts_sk_key():
     assert "failed" in result
 
 
-def test_sanitize_for_log_redacts_bearer():
+def test_sanitize_for_log_redacts_bearer() -> None:
     from trade_krono_cli.security import sanitize_for_log
 
     msg = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test"
@@ -128,7 +132,7 @@ def test_sanitize_for_log_redacts_bearer():
     assert "[REDACTED_KEY]" in result
 
 
-def test_sanitize_for_log_redacts_anthropic_key():
+def test_sanitize_for_log_redacts_anthropic_key() -> None:
     """Anthropic sk-ant-* 格式的密钥也应被脱敏。"""
     from trade_krono_cli.security import sanitize_for_log
 
@@ -139,7 +143,7 @@ def test_sanitize_for_log_redacts_anthropic_key():
     assert "Error connecting with" in result
 
 
-def test_ensure_import_path():
+def test_ensure_import_path() -> None:
     import sys
     from pathlib import Path
 

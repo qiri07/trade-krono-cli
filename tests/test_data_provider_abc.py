@@ -13,24 +13,24 @@ from trade_krono_cli.data_providers.base import (
 
 
 class TestDataProviderABC:
-    def test_cannot_instantiate(self):
+    def test_cannot_instantiate(self) -> None:
         with pytest.raises(TypeError):
             DataProvider()
 
-    def test_subclass_must_implement_fetch_kline(self):
+    def test_subclass_must_implement_fetch_kline(self) -> None:
         class Partial(DataProvider):
             name = "partial"
 
-            def fetch_quote(self, ticker):
+            def fetch_quote(self, ticker) -> None:
                 return None
 
-            def fetch_metadata(self, ticker):
+            def fetch_metadata(self, ticker) -> None:
                 return None
 
         with pytest.raises(TypeError):
             Partial()
 
-    def test_subclass_must_implement_all_methods(self):
+    def test_subclass_must_implement_all_methods(self) -> None:
         class Concrete(DataProvider):
             name = "concrete"
 

@@ -1,5 +1,4 @@
-"""
-预测分布量化模块。
+"""预测分布量化模块。
 
 封装 Kronos 预测结果的不确定性计算逻辑，与 runner 解耦，便于测试和维护。
 
@@ -29,7 +28,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Optional
 
 import numpy as np
 
@@ -40,8 +38,7 @@ import numpy as np
 
 @dataclass
 class PredictionDistribution:
-    """
-    Kronos 预测结果的概率分布描述。
+    """Kronos 预测结果的概率分布描述。
 
     字段语义：
       expected_return    预期收益率（%），= (final_close - last_close) / last_close * 100
@@ -60,26 +57,26 @@ class PredictionDistribution:
     """
 
     # ── 摘要字段 ───────────────────────────────────────────────────────────
-    expected_return: Optional[float] = None
-    direction: Optional[str] = None
-    direction_score: Optional[float] = None
-    volatility: Optional[float] = None
-    path_dispersion: Optional[float] = None
-    confidence_score: Optional[float] = None
+    expected_return: float | None = None
+    direction: str | None = None
+    direction_score: float | None = None
+    volatility: float | None = None
+    path_dispersion: float | None = None
+    confidence_score: float | None = None
     sample_count_used: int = 1
 
     # ── 分位数字段（多样本时填充）─────────────────────────────────────────
-    p10: Optional[float] = None
-    p25: Optional[float] = None
-    p50: Optional[float] = None
-    p75: Optional[float] = None
-    p90: Optional[float] = None
+    p10: float | None = None
+    p25: float | None = None
+    p50: float | None = None
+    p75: float | None = None
+    p90: float | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "PredictionDistribution":
+    def from_dict(cls, data: dict) -> PredictionDistribution:
         """从 dict 反序列化。"""
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
@@ -94,8 +91,7 @@ def _compute_percentiles(
     n_samples: int,
     last_close: float,
 ) -> tuple[float, float, float, float, float]:
-    """
-    从路径矩阵计算最终价的百分位。
+    """从路径矩阵计算最终价的百分位。
 
     多样本：从各样本的最终价计算 p10/p25/p50/p75/p90。
     单样本：退化为 [last_close, last_close, final, last_close, last_close]。
@@ -103,6 +99,7 @@ def _compute_percentiles(
     Returns
     -------
     (p10, p25, p50, p75, p90)
+
     """
     if n_samples <= 1 or len(stacked) <= 1:
         final = float(stacked[-1, -1])
@@ -122,8 +119,7 @@ def compute_single_sample(
     closes: np.ndarray,
     last_close: float,
 ) -> tuple[float, str, float, float | None, float, float, tuple]:
-    """
-    对单条预测路径计算分布指标。
+    """对单条预测路径计算分布指标。
 
     Parameters
     ----------
@@ -136,6 +132,7 @@ def compute_single_sample(
     -------
     (change_pct, direction, vol, path_dispersion, direction_score, confidence_score, percentiles)
       percentiles = (p10, p25, p50, p75, p90) 单样本时退化为 (final, final, final, final, final)
+
     """
     closes_f = closes.astype(float)
     final_close = float(closes_f[-1])
@@ -173,8 +170,7 @@ def compute_multi_sample(
     stacked: np.ndarray,
     last_close: float,
 ) -> tuple[float, str, float, float, float, float, tuple]:
-    """
-    对多样本预测（N 条路径取均值）计算分布指标。
+    """对多样本预测（N 条路径取均值）计算分布指标。
 
     Parameters
     ----------
@@ -188,6 +184,7 @@ def compute_multi_sample(
     Returns
     -------
     (change_pct, direction, vol, path_dispersion, direction_score, confidence_score, percentiles)
+
     """
     final_close = float(avg_close[-1])
     change_pct = (final_close - last_close) / last_close * 100.0
@@ -225,14 +222,13 @@ def build_distribution(
     change_pct: float,
     direction: str,
     vol: float,
-    path_dispersion: Optional[float],
+    path_dispersion: float | None,
     direction_score: float,
     confidence_score: float,
     sample_count: int,
     percentiles: tuple[float, float, float, float, float],
 ) -> PredictionDistribution:
-    """
-    根据已计算的分布指标构建 PredictionDistribution 对象。
+    """根据已计算的分布指标构建 PredictionDistribution 对象。
 
     Parameters
     ----------
@@ -244,6 +240,7 @@ def build_distribution(
     confidence_score : 综合不确定性评分 0-100
     sample_count     : 实际使用的样本数
     percentiles      : (p10, p25, p50, p75, p90) 最终价分位数
+
     """
     p10, p25, p50, p75, p90 = percentiles
     return PredictionDistribution(
@@ -265,11 +262,10 @@ def build_distribution(
 def build_result_dict(
     closes: np.ndarray,
     last_close: float,
-    stacked: Optional[np.ndarray] = None,
+    stacked: np.ndarray | None = None,
     sample_count: int = 1,
 ) -> dict:
-    """
-    从预测路径构建完整结果 dict（含百分位和 distribution）。
+    """从预测路径构建完整结果 dict（含百分位和 distribution）。
 
     Parameters
     ----------
@@ -277,6 +273,7 @@ def build_result_dict(
     last_close : 历史最后一个收盘价
     stacked    : 原始路径矩阵 N×pred_len（多样本时传入，用于计算百分位）
     sample_count : 样本数
+
     """
     closes_f = closes.astype(float)
     final_close = float(closes_f[-1])

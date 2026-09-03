@@ -18,7 +18,7 @@ class TestKronosSession:
         mock_runner._settings_obj.kronos_pred_len = 30
         return mock_runner
 
-    def test_default_init_creates_runner(self):
+    def test_default_init_creates_runner(self) -> None:
         """默认初始化创建 KronosRunner。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -29,7 +29,7 @@ class TestKronosSession:
             MockRunner.assert_called_once()
             assert session.runner is mock_runner
 
-    def test_is_loaded_false_by_default(self):
+    def test_is_loaded_false_by_default(self) -> None:
         """默认状态下模型未加载。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -37,7 +37,7 @@ class TestKronosSession:
             session = KronosSession()
             assert session.is_loaded is False
 
-    def test_ensure_loaded_triggers_load(self):
+    def test_ensure_loaded_triggers_load(self) -> None:
         """ensure_loaded 触发模型加载（首次）。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -47,7 +47,7 @@ class TestKronosSession:
             session.ensure_loaded()
             mock_load.assert_called_once()
 
-    def test_ensure_loaded_noop_when_already_loaded(self):
+    def test_ensure_loaded_noop_when_already_loaded(self) -> None:
         """已加载时 ensure_loaded 是 no-op。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -59,7 +59,7 @@ class TestKronosSession:
             session.ensure_loaded()  # 第二次调用
             mock_load.assert_not_called()
 
-    def test_resolve_device_cpu(self):
+    def test_resolve_device_cpu(self) -> None:
         """CPU 设备应直接返回 cpu。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -67,7 +67,7 @@ class TestKronosSession:
             session = KronosSession(device="cpu")
         assert session._resolve_device() == "cpu"
 
-    def test_resolve_device_cuda_no_torch(self):
+    def test_resolve_device_cuda_no_torch(self) -> None:
         """无 torch 时 cuda 回退到 cpu。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -77,7 +77,7 @@ class TestKronosSession:
             result = session._resolve_device()
         assert result == "cpu"
 
-    def test_resolve_device_cuda_available(self):
+    def test_resolve_device_cuda_available(self) -> None:
         """torch.cuda.is_available() 为 True 时返回 cuda 设备。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -89,7 +89,7 @@ class TestKronosSession:
             result = session._resolve_device()
         assert result == "cuda:0"
 
-    def test_get_adapter_lazy_loads(self):
+    def test_get_adapter_lazy_loads(self) -> None:
         """_get_adapter 懒加载适配器。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -105,8 +105,8 @@ class TestKronosSession:
             assert adapter2 is adapter
             assert MockAdapter.call_count == 1
 
-    def test_unload_clears_state(self):
-        """unload 应清除所有内部状态。"""
+    def test_unload_clears_state(self) -> None:
+        """Unload 应清除所有内部状态。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
         with patch("trade_krono_cli.models.kronos_session.KronosRunner"):
@@ -119,7 +119,7 @@ class TestKronosSession:
         assert session._kronos_adapter is None
         assert session._loaded is False
 
-    def test_predict_batch_delegates_to_runner(self):
+    def test_predict_batch_delegates_to_runner(self) -> None:
         """预测批量方法委托给 runner（通过 session.runner）。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -140,7 +140,7 @@ class TestTASession:
 
         return MagicMock(spec=TradingAgentsRunner)
 
-    def test_default_init_creates_runner(self):
+    def test_default_init_creates_runner(self) -> None:
         """默认初始化创建 TradingAgentsRunner。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -151,7 +151,7 @@ class TestTASession:
             MockRunner.assert_called_once()
             assert session.runner is mock_runner
 
-    def test_is_loaded_false_by_default(self):
+    def test_is_loaded_false_by_default(self) -> None:
         """默认状态下 adapter 未初始化。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -159,7 +159,7 @@ class TestTASession:
             session = TASession()
             assert session.is_loaded is False
 
-    def test_ensure_loaded_calls_get_adapter(self):
+    def test_ensure_loaded_calls_get_adapter(self) -> None:
         """ensure_loaded 触发 adapter 初始化。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -169,7 +169,7 @@ class TestTASession:
             session.ensure_loaded()
             mock_get.assert_called_once()
 
-    def test_ensure_loaded_noop_when_already_loaded(self):
+    def test_ensure_loaded_noop_when_already_loaded(self) -> None:
         """已初始化时 ensure_loaded 是 no-op。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -181,7 +181,7 @@ class TestTASession:
             session.ensure_loaded()  # 第二次调用
             assert mock_get.call_count == 0
 
-    def test_validate_provider_no_keys_raises(self):
+    def test_validate_provider_no_keys_raises(self) -> None:
         """无 LLM 密钥时应抛出 RuntimeError。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -194,7 +194,7 @@ class TestTASession:
             with pytest.raises(RuntimeError, match="未检测到任何 LLM API 密钥"):
                 session._validate_provider()
 
-    def test_validate_provider_with_keys_passes(self):
+    def test_validate_provider_with_keys_passes(self) -> None:
         """有密钥时应正常通过。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -206,7 +206,7 @@ class TestTASession:
             mock_vault_cls.return_value = mock_vault
             session._validate_provider()
 
-    def test_get_adapter_lazy_loads(self):
+    def test_get_adapter_lazy_loads(self) -> None:
         """_get_adapter 懒加载 adapter。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -227,8 +227,8 @@ class TestTASession:
         assert adapter2 is adapter
         assert mock_runner._make_adapter.call_count == 1
 
-    def test_unload_clears_state(self):
-        """unload 应清除所有内部状态。"""
+    def test_unload_clears_state(self) -> None:
+        """Unload 应清除所有内部状态。"""
         from trade_krono_cli.models.ta_session import TASession
 
         with patch("trade_krono_cli.models.ta_session.TradingAgentsRunner"):
@@ -239,7 +239,7 @@ class TestTASession:
         assert session._adapter is None
         assert session._initialized is False
 
-    def test_analyze_batch_delegates_to_runner(self):
+    def test_analyze_batch_delegates_to_runner(self) -> None:
         """analyze_batch 委托给 runner（通过 session.runner）。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -262,7 +262,7 @@ class TestKronosSessionSingleton:
             return_value=MagicMock(),
         )
 
-    def test_same_config_reuses_instance(self):
+    def test_same_config_reuses_instance(self) -> None:
         """相同配置的多次构造应返回同一实例。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -273,7 +273,7 @@ class TestKronosSessionSingleton:
         # 清理
         KronosSession.clear_cache()
 
-    def test_different_config_creates_new_instance(self):
+    def test_different_config_creates_new_instance(self) -> None:
         """不同 device 应创建新实例。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -283,7 +283,7 @@ class TestKronosSessionSingleton:
         assert s1 is not s2
         KronosSession.clear_cache()
 
-    def test_explicit_runner_skips_cache(self):
+    def test_explicit_runner_skips_cache(self) -> None:
         """显式传入 runner 时应跳过缓存，每次创建新实例。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -294,7 +294,7 @@ class TestKronosSessionSingleton:
         assert s1 is not s2
         KronosSession.clear_cache()
 
-    def test_clear_cache_resets_state(self):
+    def test_clear_cache_resets_state(self) -> None:
         """clear_cache 后相同配置应创建新实例。"""
         from trade_krono_cli.models.kronos_session import KronosSession
 
@@ -317,7 +317,7 @@ class TestTASessionSingleton:
             return_value=MagicMock(),
         )
 
-    def test_same_config_reuses_instance(self):
+    def test_same_config_reuses_instance(self) -> None:
         """相同配置的多次构造应返回同一实例。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -327,7 +327,7 @@ class TestTASessionSingleton:
         assert s1 is s2
         TASession.clear_cache()
 
-    def test_different_provider_creates_new_instance(self):
+    def test_different_provider_creates_new_instance(self) -> None:
         """不同 provider 应创建新实例。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -337,7 +337,7 @@ class TestTASessionSingleton:
         assert s1 is not s2
         TASession.clear_cache()
 
-    def test_explicit_runner_skips_cache(self):
+    def test_explicit_runner_skips_cache(self) -> None:
         """显式传入 runner 时应跳过缓存，每次创建新实例。"""
         from trade_krono_cli.models.ta_session import TASession
 
@@ -348,7 +348,7 @@ class TestTASessionSingleton:
         assert s1 is not s2
         TASession.clear_cache()
 
-    def test_clear_cache_resets_state(self):
+    def test_clear_cache_resets_state(self) -> None:
         """clear_cache 后相同配置应创建新实例。"""
         from trade_krono_cli.models.ta_session import TASession
 

@@ -1,5 +1,4 @@
-"""
-Analytics 引擎 — DuckDB + Parquet 分析层。
+"""Analytics 引擎 — DuckDB + Parquet 分析层。
 
 职责：
   · 对 Parquet 文件执行大规模分析查询（横截面 IC、回测聚合、因子分析）
@@ -20,13 +19,14 @@ DuckDB 未安装时自动降级为 SQLite 直接查询（向后兼容）。
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from loguru import logger
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from trade_krono_cli.config import Settings
 
 # ── 可选 DuckDB 导入 ───────────────────────────────────────────────────────────
@@ -45,8 +45,9 @@ def _duckdb_available() -> bool:
 
 def _ensure_duckdb() -> None:
     if not _HAS_DUCKDB:
+        msg = "DuckDB 未安装，无法使用 Analytics 引擎。\n请运行: pip install duckdb 或 uv add duckdb"
         raise RuntimeError(
-            "DuckDB 未安装，无法使用 Analytics 引擎。\n请运行: pip install duckdb 或 uv add duckdb"
+            msg,
         )
 
 
@@ -58,7 +59,7 @@ def _ensure_duckdb() -> None:
 class ParquetPaths:
     """管理 Parquet 数据文件的目录结构。"""
 
-    def __init__(self, data_root: Path):
+    def __init__(self, data_root: Path) -> None:
         self.data_root = data_root
         self.features_dir = data_root / "features"
         self.predictions_dir = data_root / "predictions"
@@ -67,7 +68,7 @@ class ParquetPaths:
             d.mkdir(parents=True, exist_ok=True)
 
     def feature_path(self, ticker: str, date: str) -> Path:
-        """data/features/{year}/{month}/{ticker}_{date}.parquet"""
+        """data/features/{year}/{month}/{ticker}_{date}.parquet."""
         safe = ticker.replace(".", "_")
         from datetime import datetime
 
@@ -77,7 +78,7 @@ class ParquetPaths:
         return p / f"{safe}_{date}.parquet"
 
     def prediction_path(self, ticker: str, date: str, pred_len: int) -> Path:
-        """data/predictions/{year}/{month}/{ticker}_{date}_{predlen}.parquet"""
+        """data/predictions/{year}/{month}/{ticker}_{date}_{predlen}.parquet."""
         safe = ticker.replace(".", "_")
         from datetime import datetime
 
@@ -87,7 +88,7 @@ class ParquetPaths:
         return p / f"{safe}_{date}_{pred_len}.parquet"
 
     def backtest_path(self, job_id: str) -> Path:
-        """data/backtest/{job_id}.parquet"""
+        """data/backtest/{job_id}.parquet."""
         p = self.backtest_dir
         p.mkdir(parents=True, exist_ok=True)
         return p / f"{job_id}.parquet"
@@ -101,7 +102,7 @@ class ParquetPaths:
 class ParquetWriter:
     """将分析结果写入 Parquet 文件。"""
 
-    def __init__(self, paths: ParquetPaths):
+    def __init__(self, paths: ParquetPaths) -> None:
         self.paths = paths
 
     def write_feature(
@@ -151,7 +152,7 @@ class ParquetWriter:
                     "exit_date",
                     "return_pct",
                     "horizon",
-                ]
+                ],
             )
         df.to_parquet(path, engine="pyarrow", index=False)
         logger.debug(f"📦 回测 Parquet 已写入: {path} ({len(records)} 条)")
@@ -164,8 +165,7 @@ class ParquetWriter:
 
 
 class ResearchAnalytics:
-    """
-    DuckDB 分析引擎。
+    """DuckDB 分析引擎。
 
     连接方式：
       - sqlite_scan -> 读取 Research DB 的 jobs / signals / decisions / ta_analysis
@@ -187,13 +187,13 @@ class ResearchAnalytics:
         self,
         db_path: Path,
         parquet_paths: ParquetPaths,
-        settings: Optional["Settings"] = None,
-    ):
+        settings: Settings | None = None,
+    ) -> None:
         if not _duckdb_available():
             _ensure_duckdb()
         self._db_path = db_path
         self._paths = parquet_paths
-        self._conn: Optional[duckdb.DuckDBPyConnection] = None
+        self._conn: duckdb.DuckDBPyConnection | None = None
         self._register_tables()
 
     def _register_tables(self) -> None:
@@ -216,7 +216,7 @@ class ResearchAnalytics:
             try:
                 con.execute(
                     f"CREATE VIEW IF NOT EXISTS v_{table} AS "
-                    f"SELECT * FROM sqlite_scan('{self._db_path}', '{table}')"
+                    f"SELECT * FROM sqlite_scan('{self._db_path}', '{table}')",
                 )
             except Exception as e:
                 logger.debug(f"⚠️  DuckDB 注册表 {table} 失败: {e}")
@@ -226,7 +226,7 @@ class ResearchAnalytics:
             try:
                 con.execute(
                     f"CREATE VIEW IF NOT EXISTS v_features AS "
-                    f"SELECT * FROM read_parquet('{self._paths.features_dir}/**/*.parquet')"
+                    f"SELECT * FROM read_parquet('{self._paths.features_dir}/**/*.parquet')",
                 )
             except Exception as e:
                 logger.debug(f"⚠️  DuckDB 注册 features 视图失败: {e}")
@@ -236,7 +236,7 @@ class ResearchAnalytics:
             try:
                 con.execute(
                     f"CREATE VIEW IF NOT EXISTS v_predictions AS "
-                    f"SELECT * FROM read_parquet('{self._paths.predictions_dir}/**/*.parquet')"
+                    f"SELECT * FROM read_parquet('{self._paths.predictions_dir}/**/*.parquet')",
                 )
             except Exception as e:
                 logger.debug(f"⚠️  DuckDB 注册 predictions 视图失败: {e}")
@@ -246,27 +246,27 @@ class ResearchAnalytics:
             try:
                 con.execute(
                     f"CREATE VIEW IF NOT EXISTS v_backtest AS "
-                    f"SELECT * FROM read_parquet('{self._paths.backtest_dir}/**/*.parquet')"
+                    f"SELECT * FROM read_parquet('{self._paths.backtest_dir}/**/*.parquet')",
                 )
             except Exception as e:
                 logger.debug(f"⚠️  DuckDB 注册 backtest 视图失败: {e}")
 
         self._conn = con
 
-    def query(self, sql: str, params: Optional[tuple] = None) -> pd.DataFrame:
+    def query(self, sql: str, params: tuple | None = None) -> pd.DataFrame:
         """执行 SQL 查询，返回 Pandas DataFrame。"""
         _ensure_duckdb()
         assert self._conn is not None
         return self._conn.execute(sql, params).fetchdf()
 
-    def query_one(self, sql: str, params: Optional[tuple] = None):
+    def query_one(self, sql: str, params: tuple | None = None):
         """执行单值查询。"""
         _ensure_duckdb()
         assert self._conn is not None
         return self._conn.execute(sql, params).fetchone()
 
     @property
-    def conn(self) -> Optional[duckdb.DuckDBPyConnection]:
+    def conn(self) -> duckdb.DuckDBPyConnection | None:
         return self._conn
 
     def close(self) -> None:
@@ -324,18 +324,18 @@ class ResearchAnalytics:
 
     def query_features(
         self,
-        tickers: Optional[list[str]] = None,
-        date_gte: Optional[str] = None,
-        signal_in: Optional[set[str]] = None,
+        tickers: list[str] | None = None,
+        date_gte: str | None = None,
+        signal_in: set[str] | None = None,
     ) -> pd.DataFrame:
-        """
-        查询 Parquet 特征文件，支持过滤。
+        """查询 Parquet 特征文件，支持过滤。
 
         Parameters
         ----------
         tickers    : 股票代码列表（可选）
         date_gte   : 起始日期（可选）
         signal_in  : 信号值集合（可选，如 {"BUY", "HOLD"}）
+
         """
         conditions = []
         params = []
@@ -359,7 +359,7 @@ class ResearchAnalytics:
 
     def query_backtest(
         self,
-        job_id: Optional[str] = None,
+        job_id: str | None = None,
     ) -> pd.DataFrame:
         """查询 Parquet 回测结果文件。"""
         sql = "SELECT * FROM v_backtest"
@@ -374,14 +374,14 @@ class ResearchAnalytics:
         score_col: str = "composite_score",
         return_col: str = "actual_return_pct",
     ) -> pd.DataFrame:
-        """
-        计算某作业的横截面 IC（Spearman 秩相关）。
+        """计算某作业的横截面 IC（Spearman 秩相关）。
 
         Parameters
         ----------
         job_id     : 作业 ID
         score_col  : 预测分数列名
         return_col : 实际收益列名
+
         """
         # 注意：DuckDB 的 CORR 是 Pearson，Spearman 需用 rank 包装
         sql_spearman = f"""
@@ -404,8 +404,8 @@ class ResearchAnalytics:
                         "spearman_ic": None,
                         "pearson_ic": None,
                         "n_stocks": 0,
-                    }
-                ]
+                    },
+                ],
             )
         return result
 
@@ -415,8 +415,7 @@ class ResearchAnalytics:
         score_col: str = "composite_score",
         return_col: str = "actual_return_pct",
     ) -> pd.DataFrame:
-        """
-        跨多作业进行因子回归分析（IC 时间序列）。
+        """跨多作业进行因子回归分析（IC 时间序列）。
 
         返回每个 job_id 的 IC 和 ICIR。
         """
@@ -460,7 +459,8 @@ class ResearchAnalytics:
                     continue
                 row = self.query_one(f"SELECT COUNT(*) FROM {view}")
                 stats[name] = row[0] if row else 0
-            except Exception:
+            except Exception as e:
+                logger.debug(f"⚠️  统计表查询失败 {name}: {e}")
                 stats[name] = 0
         return stats
 
@@ -469,16 +469,15 @@ class ResearchAnalytics:
 #  模块级工厂函数
 # ══════════════════════════════════════════════════════════════════════════════
 
-_analytics: Optional[ResearchAnalytics] = None
+_analytics: ResearchAnalytics | None = None
 
 
 def get_analytics(
-    db_path: Optional[Path] = None,
-    parquet_root: Optional[Path] = None,
-    settings: Optional["Settings"] = None,
-) -> Optional[ResearchAnalytics]:
-    """
-    获取全局 Analytics 实例。
+    db_path: Path | None = None,
+    parquet_root: Path | None = None,
+    settings: Settings | None = None,
+) -> ResearchAnalytics | None:
+    """获取全局 Analytics 实例。
     如果 DuckDB 不可用，返回 None（调用方应降级到 SQLite）。
     """
     global _analytics

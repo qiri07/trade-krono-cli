@@ -1,5 +1,4 @@
-"""
-Experiment — 实验与假设检验领域对象。
+"""Experiment — 实验与假设检验领域对象。
 
 Experiment 记录一次假设检验的完整生命周期：
   注册 → 运行 → 评估 → 验证 → 归档
@@ -11,7 +10,6 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Optional
 
 from trade_krono_cli.domain.types import ExperimentType
 
@@ -22,8 +20,7 @@ from trade_krono_cli.domain.types import ExperimentType
 
 @dataclass(frozen=True)
 class Hypothesis:
-    """
-    一个可被回测证伪的科学假设。
+    """一个可被回测证伪的科学假设。
 
     Fields
     ------
@@ -71,7 +68,7 @@ class Hypothesis:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Hypothesis":
+    def from_dict(cls, data: dict) -> Hypothesis:
         return cls(
             statement=data["statement"],
             prediction=data["prediction"],
@@ -89,8 +86,7 @@ class Hypothesis:
 
 @dataclass(frozen=True)
 class Experiment:
-    """
-    一次完整的假设检验实验记录。
+    """一次完整的假设检验实验记录。
 
     Fields
     ------
@@ -113,10 +109,10 @@ class Experiment:
     hypothesis: Hypothesis
     description: str = ""
     config: dict = field(default_factory=dict)
-    data_snapshot_id: Optional[str] = None
+    data_snapshot_id: str | None = None
     run_ids: list[str] = field(default_factory=list)
     result_summary: dict = field(default_factory=dict)
-    passed: Optional[bool] = None
+    passed: bool | None = None
     notes: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -157,7 +153,7 @@ class Experiment:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Experiment":
+    def from_dict(cls, data: dict) -> Experiment:
         hyp_data = data.get("hypothesis", {})
         hyp = (
             Hypothesis.from_dict(hyp_data)
@@ -192,11 +188,10 @@ def build_alpha_experiment(
     prediction_metric: str = "win_rate",
     prediction_threshold: float = 55.0,
     description: str = "",
-    config: Optional[dict] = None,
-    data_snapshot_id: Optional[str] = None,
+    config: dict | None = None,
+    data_snapshot_id: str | None = None,
 ) -> Experiment:
-    """
-    快速构建一个 Alpha 假设实验。
+    """快速构建一个 Alpha 假设实验。
 
     示例：
         exp = build_alpha_experiment(

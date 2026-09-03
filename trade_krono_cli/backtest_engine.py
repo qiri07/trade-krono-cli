@@ -1,5 +1,4 @@
-"""
-回测引擎 — A 股风格的历史信号回测。
+"""回测引擎 — A 股风格的历史信号回测。
 
 职责：
   · 从 EvalRecord 重建交易日序列，模拟仓位管理
@@ -13,7 +12,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional
 
 import numpy as np
 
@@ -37,7 +35,7 @@ class CloseLog:
 # ── 交易日辅助 ────────────────────────────────────────────────────────────────
 
 
-def _next_trading_day(d: datetime, kline_dates: list[str]) -> Optional[str]:
+def _next_trading_day(d: datetime, kline_dates: list[str]) -> str | None:
     """在 kline_dates 中找 d 之后最近的一个交易日。"""
     ds = d.strftime("%Y-%m-%d")
     for dd in kline_dates:
@@ -75,8 +73,7 @@ class _Position:
 
 @dataclass
 class BacktestEngine:
-    """
-    基于 EvalRecord 列表的 A 股风格回测引擎。
+    """基于 EvalRecord 列表的 A 股风格回测引擎。
 
     模式
     ----
@@ -98,8 +95,8 @@ class BacktestEngine:
         min_trade_size: int = 100,
         rebal_mode: str = "fixed_horizon",
         fixed_horizon: int = 5,
-        config: Optional[ConstraintConfig] = None,
-    ):
+        config: ConstraintConfig | None = None,
+    ) -> None:
         self.initial_capital = initial_capital
         self.max_position_pct = max_position_pct
         self.min_trade_size = min_trade_size
@@ -109,9 +106,8 @@ class BacktestEngine:
 
     # ── 主入口 ──────────────────────────────────────────────────────────────
 
-    def run(self, records: list["BacktestRecord"]) -> BacktestResult:
-        """
-        运行回测。
+    def run(self, records: list[BacktestRecord]) -> BacktestResult:
+        """运行回测。
 
         Parameters
         ----------
@@ -122,6 +118,7 @@ class BacktestEngine:
         Returns
         -------
         BacktestResult
+
         """
         if not records:
             return BacktestResult.empty()
@@ -237,7 +234,7 @@ class BacktestEngine:
                         "price": entry_price,
                         "shares": shares,
                         "cost_bps": cost_bps,
-                    }
+                    },
                 )
 
             # ── 3. 更新 prev_close，记录权益 ───────────────────────────────
@@ -280,14 +277,14 @@ class BacktestEngine:
     # ── 价格获取 ─────────────────────────────────────────────────────────────
 
     def _get_entry_price(
-        self, ticker: str, date: str, prev_close_map: dict[str, float]
-    ) -> Optional[float]:
+        self, ticker: str, date: str, prev_close_map: dict[str, float],
+    ) -> float | None:
         """简化：使用 prev_close_map 中的最新收盘价作为近似入场价。"""
         return prev_close_map.get(ticker)
 
     def _get_exit_price(
-        self, ticker: str, date: str, prev_close_map: dict[str, float]
-    ) -> Optional[float]:
+        self, ticker: str, date: str, prev_close_map: dict[str, float],
+    ) -> float | None:
         """简化：使用 prev_close_map 中该日的前一日收盘作为退出价。"""
         # 这里用 prev_close_map 本身作为近似（需要调用方维护）
         # 实际实现中应由 fetcher 提供
@@ -308,7 +305,7 @@ class BacktestEngine:
         date: str,
         ticker: str,
         prev_close_map: dict[str, float],
-    ) -> "CloseLog":
+    ) -> CloseLog:
         """平仓，返回成交明细。"""
         prev_close = prev_close_map.get(ticker)
         blocked_reason = ""
@@ -346,7 +343,7 @@ class BacktestEngine:
         self,
         equity_curve: list[tuple[str, float]],
         trades: list[dict],
-        records: list["BacktestRecord"],
+        records: list[BacktestRecord],
     ) -> dict:
         """计算完整的回测绩效指标。"""
         if not equity_curve:
@@ -454,17 +451,17 @@ class BacktestEngine:
 
 
 def compute_benchmark_returns(
-    records: list["BacktestRecord"],
-    records_map: dict[str, list["BacktestRecord"]],
+    records: list[BacktestRecord],
+    records_map: dict[str, list[BacktestRecord]],
 ) -> dict[str, list[float]]:
-    """
-    计算基准（等权买入并持有）的累积收益率序列。
+    """计算基准（等权买入并持有）的累积收益率序列。
 
     由于没有真实基准数据源，使用所有 tickers 的等权组合收益率作为 proxy。
 
     Returns
     -------
     {date: cumulative_return_pct}
+
     """
     if not records:
         return {}
@@ -498,7 +495,7 @@ def compute_benchmark_returns(
         else:
             cum_ret.append(cum_ret[-1])
 
-    return {d: round(float(r) * 100, 4) for d, r in zip(all_dates, cum_ret)}  # type: ignore[arg-type]
+    return {d: round(float(r) * 100, 4) for d, r in zip(all_dates, cum_ret, strict=False)}  # type: ignore[arg-type]
 
 
 def compute_excess_curve(
@@ -506,7 +503,7 @@ def compute_excess_curve(
     benchmark_curve: dict[str, float],
 ) -> list[tuple[str, float]]:
     """计算策略 vs 基准的超额收益累计曲线。"""
-    bench_map = {d: v for d, v in benchmark_curve.items()}
+    bench_map = dict(benchmark_curve.items())
     excess: list[tuple[str, float]] = []
     cum_excess = 0.0
     for day, strategy_val in strategy_curve:
@@ -525,20 +522,19 @@ class BacktestRecord:
 
     ticker: str
     date: str
-    signal: Optional[str]  # "BUY" / "HOLD" / "SELL"
-    entry_price: Optional[float]
-    exit_price: Optional[float]
+    signal: str | None  # "BUY" / "HOLD" / "SELL"
+    entry_price: float | None
+    exit_price: float | None
     horizon_days: int
-    pred_direction: Optional[str]
-    actual_return_pct: Optional[float]
+    pred_direction: str | None
+    actual_return_pct: float | None
 
 
 def build_backtest_records(
     eval_records: list,  # EvalRecord from PredictionEvaluator
     horizon: int = 5,
 ) -> list[BacktestRecord]:
-    """
-    将 EvalRecord 列表转换为 BacktestRecord 列表。
+    """将 EvalRecord 列表转换为 BacktestRecord 列表。
 
     筛选出指定 horizon 的记录，按 ticker + date 排序，供 BacktestEngine 使用。
     """
@@ -555,6 +551,6 @@ def build_backtest_records(
                 horizon_days=horizon,
                 pred_direction=r.pred_direction,
                 actual_return_pct=r.actual_return_pct,
-            )
+            ),
         )
     return records

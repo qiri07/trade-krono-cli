@@ -32,37 +32,37 @@ def lifecycle(research_db):
 class TestDetermineNextState:
     """测试状态迁移规则。"""
 
-    def test_first_buy_creates(self):
+    def test_first_buy_creates(self) -> None:
         state, reason = _determine_next_state(None, 0.0, "BUY", 80.0)
         assert state == SignalLifecycleState.CREATED
         assert "首次" in reason
 
-    def test_first_hold_becomes_active(self):
-        state, reason = _determine_next_state(None, 0.0, "HOLD", 60.0)
+    def test_first_hold_becomes_active(self) -> None:
+        state, _reason = _determine_next_state(None, 0.0, "HOLD", 60.0)
         assert state == SignalLifecycleState.ACTIVE
 
-    def test_first_sell_becomes_closed(self):
-        state, reason = _determine_next_state(None, 0.0, "SELL", 90.0)
+    def test_first_sell_becomes_closed(self) -> None:
+        state, _reason = _determine_next_state(None, 0.0, "SELL", 90.0)
         assert state == SignalLifecycleState.CLOSED
 
-    def test_buy_high_conf_from_active_becomes_updated(self):
-        state, reason = _determine_next_state(SignalLifecycleState.ACTIVE, 70.0, "BUY", 82.0)
+    def test_buy_high_conf_from_active_becomes_updated(self) -> None:
+        state, _reason = _determine_next_state(SignalLifecycleState.ACTIVE, 70.0, "BUY", 82.0)
         assert state == SignalLifecycleState.UPDATED
 
-    def test_buy_low_conf_from_active_becomes_weakened(self):
-        state, reason = _determine_next_state(SignalLifecycleState.ACTIVE, 80.0, "BUY", 50.0)
+    def test_buy_low_conf_from_active_becomes_weakened(self) -> None:
+        state, _reason = _determine_next_state(SignalLifecycleState.ACTIVE, 80.0, "BUY", 50.0)
         assert state == SignalLifecycleState.WEAKENED
 
-    def test_buy_recover_from_weakened(self):
+    def test_buy_recover_from_weakened(self) -> None:
         state, reason = _determine_next_state(SignalLifecycleState.WEAKENED, 40.0, "BUY", 75.0)
         assert state == SignalLifecycleState.UPDATED
         assert "恢复" in reason
 
-    def test_hold_invalidates_buy(self):
-        state, reason = _determine_next_state(SignalLifecycleState.ACTIVE, 80.0, "HOLD", 60.0)
+    def test_hold_invalidates_buy(self) -> None:
+        state, _reason = _determine_next_state(SignalLifecycleState.ACTIVE, 80.0, "HOLD", 60.0)
         assert state == SignalLifecycleState.INVALIDATED
 
-    def test_sell_invalidates_any_active(self):
+    def test_sell_invalidates_any_active(self) -> None:
         for s in (
             SignalLifecycleState.ACTIVE,
             SignalLifecycleState.UPDATED,
@@ -72,26 +72,26 @@ class TestDetermineNextState:
             state, _ = _determine_next_state(s, 70.0, "SELL", 50.0)
             assert state == SignalLifecycleState.INVALIDATED
 
-    def test_invalidated_stays_invalidated_on_hold(self):
+    def test_invalidated_stays_invalidated_on_hold(self) -> None:
         state, reason = _determine_next_state(SignalLifecycleState.INVALIDATED, 30.0, "HOLD", 55.0)
         assert state == SignalLifecycleState.INVALIDATED
         assert "终态" in reason
 
-    def test_closed_stays_closed_on_sell(self):
-        state, reason = _determine_next_state(SignalLifecycleState.CLOSED, 20.0, "SELL", 90.0)
+    def test_closed_stays_closed_on_sell(self) -> None:
+        state, _reason = _determine_next_state(SignalLifecycleState.CLOSED, 20.0, "SELL", 90.0)
         assert state == SignalLifecycleState.CLOSED
 
-    def test_reactivated_after_invalidated_with_strong_buy(self):
+    def test_reactivated_after_invalidated_with_strong_buy(self) -> None:
         state, reason = _determine_next_state(SignalLifecycleState.INVALIDATED, 30.0, "BUY", 80.0)
         assert state == SignalLifecycleState.CREATED
         assert "重建" in reason
 
-    def test_reactivated_after_closed_with_strong_buy(self):
-        state, reason = _determine_next_state(SignalLifecycleState.CLOSED, 10.0, "BUY", 85.0)
+    def test_reactivated_after_closed_with_strong_buy(self) -> None:
+        state, _reason = _determine_next_state(SignalLifecycleState.CLOSED, 10.0, "BUY", 85.0)
         assert state == SignalLifecycleState.CREATED
 
-    def test_weakened_continues_weakened_when_low(self):
-        state, reason = _determine_next_state(SignalLifecycleState.WEAKENED, 45.0, "BUY", 40.0)
+    def test_weakened_continues_weakened_when_low(self) -> None:
+        state, _reason = _determine_next_state(SignalLifecycleState.WEAKENED, 45.0, "BUY", 40.0)
         assert state == SignalLifecycleState.WEAKENED
 
 
@@ -101,7 +101,7 @@ class TestDetermineNextState:
 class TestSignalLifecycle:
     """测试 SignalLifecycle 完整生命周期流程。"""
 
-    def test_create_first_signal(self, lifecycle):
+    def test_create_first_signal(self, lifecycle) -> None:
         record = lifecycle.update(
             ticker="sh.600519",
             date="2026-08-01",
@@ -117,7 +117,7 @@ class TestSignalLifecycle:
         assert record.signal == "BUY"
         assert record.confidence == 80.0
 
-    def test_update_high_conf_promotes_to_updated(self, lifecycle):
+    def test_update_high_conf_promotes_to_updated(self, lifecycle) -> None:
         lifecycle.update(
             ticker="sh.600519",
             date="2026-08-01",
@@ -138,7 +138,7 @@ class TestSignalLifecycle:
         )
         assert record.lifecycle_state == SignalLifecycleState.UPDATED
 
-    def test_hold_invalidates_buy(self, lifecycle):
+    def test_hold_invalidates_buy(self, lifecycle) -> None:
         lifecycle.update(
             ticker="sh.600519",
             date="2026-08-01",
@@ -160,7 +160,7 @@ class TestSignalLifecycle:
         assert record.lifecycle_state == SignalLifecycleState.INVALIDATED
         assert "BUY→HOLD" in record.transition_reason
 
-    def test_sell_invalidates_buy(self, lifecycle):
+    def test_sell_invalidates_buy(self, lifecycle) -> None:
         lifecycle.update(
             ticker="sh.600519",
             date="2026-08-01",
@@ -181,7 +181,7 @@ class TestSignalLifecycle:
         )
         assert record.lifecycle_state == SignalLifecycleState.INVALIDATED
 
-    def test_low_confidence_becomes_weakened(self, lifecycle):
+    def test_low_confidence_becomes_weakened(self, lifecycle) -> None:
         lifecycle.update(
             ticker="sh.600519",
             date="2026-08-01",
@@ -202,10 +202,10 @@ class TestSignalLifecycle:
         )
         assert record.lifecycle_state == SignalLifecycleState.WEAKENED
 
-    def test_get_current_returns_none_for_new_ticker(self, lifecycle):
+    def test_get_current_returns_none_for_new_ticker(self, lifecycle) -> None:
         assert lifecycle.get_current("sh.999999") is None
 
-    def test_get_current_returns_latest_record(self, lifecycle):
+    def test_get_current_returns_latest_record(self, lifecycle) -> None:
         lifecycle.update(
             ticker="sh.600519",
             date="2026-08-01",
@@ -221,13 +221,13 @@ class TestSignalLifecycle:
         assert current["confidence"] == 80.0
         assert current["lifecycle_state"] == "CREATED"
 
-    def test_get_history_returns_all_records(self, lifecycle):
+    def test_get_history_returns_all_records(self, lifecycle) -> None:
         for i, (date, sig, conf) in enumerate(
             [
                 ("2026-08-01", "BUY", 80.0),
                 ("2026-08-05", "BUY", 82.0),
                 ("2026-08-10", "HOLD", 61.0),
-            ]
+            ],
         ):
             lifecycle.update(
                 ticker="sh.600519",
@@ -245,7 +245,7 @@ class TestSignalLifecycle:
         assert history[1]["date"] == "2026-08-05"
         assert history[2]["date"] == "2026-08-01"
 
-    def test_get_history_with_state_filter(self, lifecycle):
+    def test_get_history_with_state_filter(self, lifecycle) -> None:
         lifecycle.update(
             ticker="sh.600519",
             date="2026-08-01",
@@ -268,7 +268,7 @@ class TestSignalLifecycle:
         assert len(invalidated) == 1
         assert invalidated[0]["lifecycle_state"] == "INVALIDATED"
 
-    def test_describe_returns_readble_output(self, lifecycle):
+    def test_describe_returns_readble_output(self, lifecycle) -> None:
         lifecycle.update(
             ticker="sh.600519",
             date="2026-08-01",
@@ -282,11 +282,11 @@ class TestSignalLifecycle:
         assert "sh.600519" in desc
         assert "CREATED" in desc
 
-    def test_describe_no_history(self, lifecycle):
+    def test_describe_no_history(self, lifecycle) -> None:
         desc = lifecycle.describe("sh.999999")
         assert "暂无信号历史" in desc
 
-    def test_reactivated_after_invalidated(self, lifecycle):
+    def test_reactivated_after_invalidated(self, lifecycle) -> None:
         # Phase 1: create
         lifecycle.update(
             ticker="sz.000858",
@@ -320,7 +320,7 @@ class TestSignalLifecycle:
         assert record.lifecycle_state == SignalLifecycleState.CREATED
         assert record.previous_state == "INVALIDATED"
 
-    def test_persistence_across_instances(self, tmp_path):
+    def test_persistence_across_instances(self, tmp_path) -> None:
         """同一 DB 的两个生命周期实例应共享数据。"""
         db = ResearchDatabase(db_path=tmp_path / "sig.db")
         lc1 = SignalLifecycle(db)
@@ -347,7 +347,7 @@ class TestSignalLifecycle:
 class TestSignalRecord:
     """测试 SignalRecord 数据类。"""
 
-    def test_to_dict_and_from_dict_roundtrip(self):
+    def test_to_dict_and_from_dict_roundtrip(self) -> None:
         rec = build_signal_record(
             ticker="sh.600519",
             date="2026-08-01",
@@ -368,7 +368,7 @@ class TestSignalRecord:
         assert restored.lifecycle_state == SignalLifecycleState.CREATED
         assert restored.signal == "BUY"
 
-    def test_thesis_snapshot_truncated(self):
+    def test_thesis_snapshot_truncated(self) -> None:
         long_thesis = "x" * 500
         rec = build_signal_record(
             ticker="sh.600519",
@@ -388,11 +388,11 @@ class TestSignalRecord:
 class TestModuleFunctions:
     """测试模块级便捷函数。"""
 
-    def test_next_state_convenience(self):
-        state, reason = next_state(None, 0.0, "BUY", 80.0)
+    def test_next_state_convenience(self) -> None:
+        state, _reason = next_state(None, 0.0, "BUY", 80.0)
         assert state == SignalLifecycleState.CREATED
 
-    def test_build_signal_record_factory(self):
+    def test_build_signal_record_factory(self) -> None:
         rec = build_signal_record(
             ticker="sh.600519",
             date="2026-08-01",
@@ -411,11 +411,11 @@ class TestModuleFunctions:
 class TestResearchDbSignalHistory:
     """测试 research_db signal_history 表的 CRUD。"""
 
-    def test_get_latest_signal_for_ticker_empty(self, research_db):
+    def test_get_latest_signal_for_ticker_empty(self, research_db) -> None:
         result = research_db.get_latest_signal_for_ticker("sh.999999")
         assert result is None
 
-    def test_get_latest_signal_for_ticker_after_insert(self, lifecycle):
+    def test_get_latest_signal_for_ticker_after_insert(self, lifecycle) -> None:
         lifecycle.update(
             ticker="sh.600519",
             date="2026-08-01",
@@ -431,7 +431,7 @@ class TestResearchDbSignalHistory:
         assert result["signal"] == "BUY"
         assert result["lifecycle_state"] == "CREATED"
 
-    def test_stats_includes_signal_history(self, research_db):
+    def test_stats_includes_signal_history(self, research_db) -> None:
         stats = research_db.stats()
         assert "research_signal_history" in stats
         assert stats["research_signal_history"] == 0

@@ -1,5 +1,4 @@
-"""
-PipelineConfig — 流水线配置（复合对象）。
+"""PipelineConfig — 流水线配置（复合对象）。
 
 所有业务子配置集中在 trade_krono_cli.configs.* 模块中：
 
@@ -33,7 +32,9 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
+from loguru import logger
 
 from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.configs.abnormality import AbnormalityConfig
@@ -60,8 +61,7 @@ from trade_krono_cli.utils.parser_helpers import (
 
 
 class PipelineConfig:
-    """
-    流水线配置（复合对象）。
+    """流水线配置（复合对象）。
 
     用法：
         cfg = PipelineConfig.default()
@@ -73,66 +73,66 @@ class PipelineConfig:
     def __init__(
         self,
         *,
-        kronos: Optional[KronosConfig] = None,
-        ta: Optional[TAConfig] = None,
-        scoring: Optional[ScoringConfig] = None,
-        scoring_strategy: Optional[ScoringStrategyConfig] = None,
-        risk_boost_strategy: Optional[RiskBoostStrategyConfig] = None,
-        risk: Optional[RiskConfig] = None,
-        filters: Optional[FilterConfig] = None,
-        abnormality: Optional[AbnormalityConfig] = None,
-        trading: Optional[ConstraintConfig] = None,
-        output: Optional[OutputConfig] = None,
-        logging: Optional[LoggingConfig] = None,
-        retry: Optional[RetryConfig] = None,
-        degradation: Optional[DegradationConfig] = None,
+        kronos: KronosConfig | None = None,
+        ta: TAConfig | None = None,
+        scoring: ScoringConfig | None = None,
+        scoring_strategy: ScoringStrategyConfig | None = None,
+        risk_boost_strategy: RiskBoostStrategyConfig | None = None,
+        risk: RiskConfig | None = None,
+        filters: FilterConfig | None = None,
+        abnormality: AbnormalityConfig | None = None,
+        trading: ConstraintConfig | None = None,
+        output: OutputConfig | None = None,
+        logging: LoggingConfig | None = None,
+        retry: RetryConfig | None = None,
+        degradation: DegradationConfig | None = None,
         # 向后兼容：扁平字段（优先级高于子配置默认值）
-        sample_count: Optional[int] = None,
-        pred_len: Optional[int] = None,
-        lookback: Optional[int] = None,
-        model_name: Optional[str] = None,
-        device: Optional[str] = None,
-        T: Optional[float] = None,
-        top_p: Optional[float] = None,
-        use_cache: Optional[bool] = None,
-        llm_provider: Optional[str] = None,
-        deep_think_llm: Optional[str] = None,
-        quick_think_llm: Optional[str] = None,
-        max_debate_rounds: Optional[int] = None,
-        output_language: Optional[str] = None,
-        min_confidence: Optional[float] = None,
-        allowed_signals: Optional[tuple[str, ...]] = None,
-        market_cap_range: Optional[tuple[float, float]] = None,
-        industry_whitelist: Optional[list[str]] = None,
-        industry_blacklist: Optional[list[str]] = None,
-        pe_range: Optional[tuple[float, float]] = None,
-        pb_range: Optional[tuple[float, float]] = None,
-        max_risk_score: Optional[float] = None,
-        min_volume_ratio: Optional[float] = None,
-        min_turnover_rate: Optional[float] = None,
-        exclude_st: Optional[bool] = None,
-        exclude_low_price: Optional[bool] = None,
-        low_price_threshold: Optional[float] = None,
-        min_pb: Optional[float] = None,
-        skip_new_stock: Optional[bool] = None,
-        new_stock_min_days: Optional[int] = None,
-        kline_min_completeness: Optional[float] = None,
-        abnormality_risk_boost_enabled: Optional[bool] = None,
-        output_dir: Optional[Path] = None,
-        json_path: Optional[str] = None,
-        html_path: Optional[str] = None,
-        log_level: Optional[str] = None,
-        log_json: Optional[bool] = None,
-        retry_max_attempts: Optional[int] = None,
-        retry_base_delay: Optional[float] = None,
-        retry_jitter: Optional[bool] = None,
-        retry_rate_limit_backoff: Optional[bool] = None,
-        retry_rate_limit_max_wait: Optional[float] = None,
-        degrade_mode: Optional[str] = None,
-        ta_cache_fallback_enabled: Optional[bool] = None,
-        ta_cache_max_age_days: Optional[int] = None,
-        universe_source: Optional[str] = None,
-    ):
+        sample_count: int | None = None,
+        pred_len: int | None = None,
+        lookback: int | None = None,
+        model_name: str | None = None,
+        device: str | None = None,
+        T: float | None = None,
+        top_p: float | None = None,
+        use_cache: bool | None = None,
+        llm_provider: str | None = None,
+        deep_think_llm: str | None = None,
+        quick_think_llm: str | None = None,
+        max_debate_rounds: int | None = None,
+        output_language: str | None = None,
+        min_confidence: float | None = None,
+        allowed_signals: tuple[str, ...] | None = None,
+        market_cap_range: tuple[float, float] | None = None,
+        industry_whitelist: list[str] | None = None,
+        industry_blacklist: list[str] | None = None,
+        pe_range: tuple[float, float] | None = None,
+        pb_range: tuple[float, float] | None = None,
+        max_risk_score: float | None = None,
+        min_volume_ratio: float | None = None,
+        min_turnover_rate: float | None = None,
+        exclude_st: bool | None = None,
+        exclude_low_price: bool | None = None,
+        low_price_threshold: float | None = None,
+        min_pb: float | None = None,
+        skip_new_stock: bool | None = None,
+        new_stock_min_days: int | None = None,
+        kline_min_completeness: float | None = None,
+        abnormality_risk_boost_enabled: bool | None = None,
+        output_dir: Path | None = None,
+        json_path: str | None = None,
+        html_path: str | None = None,
+        log_level: str | None = None,
+        log_json: bool | None = None,
+        retry_max_attempts: int | None = None,
+        retry_base_delay: float | None = None,
+        retry_jitter: bool | None = None,
+        retry_rate_limit_backoff: bool | None = None,
+        retry_rate_limit_max_wait: float | None = None,
+        degrade_mode: str | None = None,
+        ta_cache_fallback_enabled: bool | None = None,
+        ta_cache_max_age_days: int | None = None,
+        universe_source: str | None = None,
+    ) -> None:
         # 构建各子配置（优先用显式参数，其次用扁平字段覆盖，最后用默认值）
         self.kronos = self._merge_sub(
             KronosConfig(),
@@ -170,7 +170,7 @@ class PipelineConfig:
         self.scoring = self._merge_sub(ScoringConfig(), scoring, {})
         self.scoring_strategy = self._merge_sub(ScoringStrategyConfig(), scoring_strategy, {})
         self.risk_boost_strategy = self._merge_sub(
-            RiskBoostStrategyConfig(), risk_boost_strategy, {}
+            RiskBoostStrategyConfig(), risk_boost_strategy, {},
         )
         self.risk = self._merge_sub(RiskConfig(), risk, {})
         self.filters = self._merge_sub(
@@ -291,7 +291,7 @@ class PipelineConfig:
         return default
 
     @classmethod
-    def default(cls, settings: Optional[Settings] = None) -> "PipelineConfig":
+    def default(cls, settings: Settings | None = None) -> PipelineConfig:
         s = settings or get_settings()
         return cls(
             kronos=KronosConfig(
@@ -302,7 +302,7 @@ class PipelineConfig:
                 device=s.kronos_device,
                 T=s.kronos_T,
                 top_p=s.kronos_top_p,
-                use_cache=not s.kronos_sample_count == 0,
+                use_cache=s.kronos_sample_count != 0,
             ),
             ta=TAConfig(
                 llm_provider=s.llm_provider,
@@ -355,9 +355,8 @@ class PipelineConfig:
             output=OutputConfig(output_dir=s.results_dir.parent),
         )
 
-    def override(self, **kwargs) -> "PipelineConfig":
-        """
-        返回新 PipelineConfig，支持扁平和嵌套覆盖。
+    def override(self, **kwargs) -> PipelineConfig:
+        """返回新 PipelineConfig，支持扁平和嵌套覆盖。
 
         扁平覆盖（向后兼容）：
             override(sample_count=10, min_confidence=40.0)
@@ -473,7 +472,7 @@ class PipelineConfig:
     def to_dict(self) -> dict:
         """序列化为扁平 dict（含嵌套子配置）。"""
 
-        def _to_plain(obj: Any) -> Any:
+        def _to_plain(obj: Any) -> Any:  # noqa: ANN401 — 递归序列化，输入类型未知（dataclass / BaseModel / 原生类型）
             if isinstance(obj, Path):
                 return str(obj)
             if isinstance(obj, tuple):
@@ -552,7 +551,7 @@ class PipelineConfig:
         return result
 
     @classmethod
-    def from_dict(cls, data: dict) -> "PipelineConfig":
+    def from_dict(cls, data: dict) -> PipelineConfig:
         """从扁平 dict 反序列化。"""
         copy = dict(data)
         # 提取已知的子配置 key
@@ -581,35 +580,37 @@ class PipelineConfig:
         return cls(**dict(flat_data), **dict(sub_data))  # type: ignore[arg-type]
 
     @classmethod
-    def load(cls, path: str | Path) -> "PipelineConfig":
+    def load(cls, path: str | Path) -> PipelineConfig:
         p = Path(path)
         suffix = p.suffix.lower()
         if suffix in (".yaml", ".yml"):
             return cls._load_yaml(p)
-        elif suffix == ".json":
+        if suffix == ".json":
             return cls._load_json(p)
-        else:
-            try:
-                return cls._load_json(p)
-            except Exception:
-                return cls._load_yaml(p)
+        try:
+            return cls._load_json(p)
+        except Exception as e:
+            logger.debug(f"⚠️  JSON 解析失败，尝试 YAML: {e}")
+            return cls._load_yaml(p)
 
     @classmethod
-    def _load_json(cls, path: Path) -> "PipelineConfig":
-        with open(path, "r", encoding="utf-8") as f:
+    def _load_json(cls, path: Path) -> PipelineConfig:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return cls.from_dict(data)
 
     @classmethod
-    def _load_yaml(cls, path: Path) -> "PipelineConfig":
+    def _load_yaml(cls, path: Path) -> PipelineConfig:
         try:
             import yaml
         except ImportError:
-            raise ImportError("加载 YAML 配置需要 pyyaml 包：pip install pyyaml")
-        with open(path, "r", encoding="utf-8") as f:
+            msg = "加载 YAML 配置需要 pyyaml 包：pip install pyyaml"
+            raise ImportError(msg)
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         if not isinstance(data, dict):
-            raise ValueError(f"YAML 配置应为对象，得到 {type(data).__name__}")
+            msg = f"YAML 配置应为对象，得到 {type(data).__name__}"
+            raise ValueError(msg)
         return cls.from_dict(data)
 
     def save(self, path: str | Path) -> None:
@@ -681,7 +682,8 @@ class PipelineConfig:
         if name in _DELEGATES:
             container, attr = _DELEGATES[name]
             return getattr(getattr(self, container), attr)
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        msg = f"'{type(self).__name__}' object has no attribute '{name}'"
+        raise AttributeError(msg)
 
     def validate(self) -> tuple[list[str], list[str]]:
         """校验所有子配置，返回 (errors, warnings)。"""
@@ -710,6 +712,6 @@ class PipelineConfig:
             warnings.append(
                 f"TA_CACHE_FALLBACK_ENABLED=true 但 DEGRADE_MODE="
                 f"{self.degradation.degrade_mode}，"
-                f"TA 缓存回退仅在 degrade_mode=ta_cache_fallback 时生效"
+                f"TA 缓存回退仅在 degrade_mode=ta_cache_fallback 时生效",
             )
         return errors, warnings

@@ -1,6 +1,4 @@
-"""
-测试 research_db.snapshots — Data Snapshots 表读写。
-"""
+"""测试 research_db.snapshots — Data Snapshots 表读写。"""
 
 from __future__ import annotations
 
@@ -20,7 +18,7 @@ class TestSnapshotsMixin:
         db_path = tmp_path / "research.db"
         return ResearchDatabase(db_path=db_path)
 
-    def test_insert_and_get_snapshot(self, db: ResearchDatabase, tmp_path):
+    def test_insert_and_get_snapshot(self, db: ResearchDatabase, tmp_path) -> None:
         """插入并读取快照。"""
         snapshot_id = "snap_001"
         db.insert_data_snapshot(
@@ -39,12 +37,12 @@ class TestSnapshotsMixin:
         assert result["description"] == "测试快照"
         assert result["created_at"] > 0
 
-    def test_get_missing_snapshot(self, db: ResearchDatabase):
+    def test_get_missing_snapshot(self, db: ResearchDatabase) -> None:
         """不存在的快照应返回 None。"""
         result = db.get_data_snapshot("non_existent")
         assert result is None
 
-    def test_insert_overwrites_existing(self, db: ResearchDatabase):
+    def test_insert_overwrites_existing(self, db: ResearchDatabase) -> None:
         """相同 snapshot_id 插入应覆盖旧数据。"""
         snapshot_id = "snap_001"
         db.insert_data_snapshot(
@@ -66,7 +64,7 @@ class TestSnapshotsMixin:
         assert result["cut_date"] == "2026-08-13"
         assert result["description"] == "更新版"
 
-    def test_insert_empty_sources(self, db: ResearchDatabase):
+    def test_insert_empty_sources(self, db: ResearchDatabase) -> None:
         """空 sources 列表应正常存储。"""
         db.insert_data_snapshot(
             snapshot_id="snap_empty",
@@ -78,7 +76,7 @@ class TestSnapshotsMixin:
         assert result is not None
         assert result["sources"] == []
 
-    def test_insert_with_unicode_description(self, db: ResearchDatabase):
+    def test_insert_with_unicode_description(self, db: ResearchDatabase) -> None:
         """中文描述应正确存储和读取。"""
         db.insert_data_snapshot(
             snapshot_id="snap_cn",

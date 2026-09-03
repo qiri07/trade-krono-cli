@@ -88,14 +88,17 @@ def pytest_configure(config: object) -> None:
 
 
 def pytest_sessionstart(session: object) -> None:  # type: ignore[no-redef]
-    """session 启动时校验隔离状态，若 env var 未设置则立即失败。"""
+    """Session 启动时校验隔离状态，若 env var 未设置则立即失败。"""
     _session = session  # type: ignore[assignment]
     cache_dir = os.getenv("TRADING_KRONO_CACHE_DIR")
     if not cache_dir:
         _session.config.exitstatus = 1  # type: ignore[attr-defined]
-        raise RuntimeError(
+        msg = (
             "⛔ 测试环境隔离失败：TRADING_KRONO_CACHE_DIR 环境变量未设置。\n"
             "请检查 tests/conftest.py 的 pytest_configure 是否正确执行。"
+        )
+        raise RuntimeError(
+            msg,
         )
     import trade_krono_cli.config as _cfg
 
@@ -104,8 +107,9 @@ def pytest_sessionstart(session: object) -> None:  # type: ignore[no-redef]
     expected = Path(cache_dir).resolve()
     if not actual.startswith(str(expected)):
         _session.config.exitstatus = 1  # type: ignore[attr-defined]
+        msg = f"⛔ 测试环境隔离失败：cache_dir 不匹配！\n  期望前缀：{expected}\n  实际路径：{actual}"
         raise RuntimeError(
-            f"⛔ 测试环境隔离失败：cache_dir 不匹配！\n  期望前缀：{expected}\n  实际路径：{actual}"
+            msg,
         )
 
 

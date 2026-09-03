@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""
-同花顺巴菲特六闸门筛选器 — 并行加速版（curl 子进程，彻底避免连接池卡死）
+"""同花顺巴菲特六闸门筛选器 — 并行加速版（curl 子进程，彻底避免连接池卡死）
 闸门规则：
   ① 便宜：PE_TTM < 16 且 PB < 3
   ② 好生意：ROE > 15% 且 扣非ROE > 12%
   ③ 财务稳健：资产负债率 < 50%
   ④ 利润是真：经营现金流净额 > 0
   ⑤ 能持续：3年净利CAGR > 0
-  ⑥ 安全边际：个股无 PE 历史分位接口，标注为未知
+  ⑥ 安全边际：个股无 PE 历史分位接口，标注为未知.
 """
 
 from __future__ import annotations
@@ -20,7 +19,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 from urllib.parse import urlencode
 
 from trade_krono_cli.utils import add_ticker_prefix
@@ -32,7 +30,7 @@ _BASE = "https://fuyao.aicubes.cn"
 _CONCURRENCY = 8
 
 
-def _safe_float(v) -> Optional[float]:
+def _safe_float(v) -> float | None:
     if v is None:
         return None
     try:
@@ -82,7 +80,7 @@ def _api_get(path: str, params: dict | None = None, timeout: int = 8) -> dict | 
 
 
 def get_all_stocks() -> list[dict]:
-    """分页获取全部 A 股列表"""
+    """分页获取全部 A 股列表."""
     all_stocks: list[dict] = []
     offset = 0
     limit = 5000
@@ -106,13 +104,13 @@ def get_all_stocks() -> list[dict]:
 
 
 def batch_valuations(thscodes: list[str]) -> dict[str, dict]:
-    """批量获取估值快照（每批50只，顺序执行避免过多并发）"""
+    """批量获取估值快照（每批50只，顺序执行避免过多并发）."""
     result: dict[str, dict] = {}
-    total_batches = (len(thscodes) + 49) // 50
+    (len(thscodes) + 49) // 50
     for idx, i in enumerate(range(0, len(thscodes), 50)):
         batch = thscodes[i : i + 50]
         data = _api_get(
-            "/api/a-share/valuations/snapshot", {"thscodes": ",".join(batch)}, timeout=15
+            "/api/a-share/valuations/snapshot", {"thscodes": ",".join(batch)}, timeout=15,
         )
         if data and data.get("code") == 0:
             for item in data.get("data", {}).get("item", []):
@@ -122,16 +120,16 @@ def batch_valuations(thscodes: list[str]) -> dict[str, dict]:
                     "name": item.get("name", ""),
                 }
         if (idx + 1) % 10 == 0:
-            print(f"   估值批次进度: {idx + 1}/{total_batches} ({len(result)} 只)", flush=True)
+            pass
         time.sleep(0.02)
     return result
 
 
 def _fetch_financials(thscode: str, report: str) -> dict[str, float | None]:
-    """获取单只股票单期财务指标"""
+    """获取单只股票单期财务指标."""
     result: dict[str, float | None] = {"roe": None, "roe_excl": None, "debt_ratio": None}
     data = _api_get(
-        "/api/a-share/financials/indicators", {"thscode": thscode, "report": report}, timeout=8
+        "/api/a-share/financials/indicators", {"thscode": thscode, "report": report}, timeout=8,
     )
     if not data or data.get("code") != 0:
         return result
@@ -149,7 +147,7 @@ def _fetch_financials(thscode: str, report: str) -> dict[str, float | None]:
 
 
 def _fetch_income(thscode: str) -> list[dict]:
-    """获取最近4年年报净利润"""
+    """获取最近4年年报净利润."""
     data = _api_get(
         "/api/a-share/financials/income-statements",
         {"thscode": thscode, "period": "annual", "limit": 4},
@@ -160,8 +158,8 @@ def _fetch_income(thscode: str) -> list[dict]:
     return data.get("data", {}).get("item", [])
 
 
-def _fetch_cfo(thscode: str) -> Optional[float]:
-    """获取最新一期经营现金流净额"""
+def _fetch_cfo(thscode: str) -> float | None:
+    """获取最新一期经营现金流净额."""
     data = _api_get(
         "/api/a-share/financials/cash-flow-statements",
         {"thscode": thscode, "period": "annual", "limit": 1},
@@ -265,7 +263,8 @@ def screen_one(
         profits = [p for p in profits if p is not None and p > 0]
         if len(profits) >= 2:
             latest, earliest = profits[-1], profits[0]
-            assert isinstance(latest, float) and isinstance(earliest, float)
+            assert isinstance(latest, float)
+            assert isinstance(earliest, float)
             years = max(len(profits) - 1, 1)
             cagr = ((latest / earliest) ** (1 / years) - 1) * 100
     if cagr is None or cagr <= 0:
@@ -317,7 +316,7 @@ def screen_one(
 
 
 def process_one_stock(s: dict, vals: dict) -> StockMetrics:
-    """处理单只股票：获取财务数据 + 筛选"""
+    """处理单只股票：获取财务数据 + 筛选."""
     thscode = s["thscode"]
     name = s["name"]
     val = vals.get(thscode, {})
@@ -349,20 +348,13 @@ def process_one_stock(s: dict, vals: dict) -> StockMetrics:
 
 
 def main() -> None:
-    print(
-        f"🔍 巴菲特六闸门筛选（同花顺 API 版·curl并行）— {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    )
-    print("=" * 85)
 
     if not _API_KEY:
-        print("❌ 未找到 HITHINK_FINANCE_API_KEY / FUYAO_API_KEY")
         sys.exit(1)
 
     # 1. 获取全量 A 股列表
-    print("📋 获取 A 股列表...")
     stocks = get_all_stocks()
     if not stocks:
-        print("❌ 无法获取股票列表")
         sys.exit(1)
 
     filtered: list[dict] = []
@@ -375,17 +367,12 @@ def main() -> None:
             continue
         filtered.append(s)
 
-    print(f"   共 {len(stocks)} 只，过滤后 {len(filtered)} 只（排除ST/新股/指数）\n")
 
     # 2. 批量获取估值快照
     thscodes = [s["thscode"] for s in filtered]
-    print("📊 批量获取估值快照（PE/PB）...")
     vals = batch_valuations(thscodes)
-    print(f"   获取到 {len(vals)} 只估值数据\n")
-    print("   ✅ 估值数据获取完成\n", flush=True)
 
     # 3. 并行筛选
-    print(f"🔎 逐只执行六闸门筛选（并发={_CONCURRENCY}）...\n")
     results_pass: list[StockMetrics] = []
     results_fail: list[StockMetrics] = []
     skipped_no_val: list[str] = []
@@ -403,19 +390,13 @@ def main() -> None:
             done_count += 1
             try:
                 m = future.result()
-            except Exception as e:
+            except Exception:
                 s = futures[future]
-                print(f"  ❌ {s.get('thscode', '?')}: 处理异常 {e}")
                 continue
 
             if m.gate_fail == "" or (m.gate_fail and m.gate_fail.startswith("⑥")):
                 if m.ticker:
                     results_pass.append(m)
-                    print(
-                        f"  ✅ {m.ticker} {m.name}: PE={m.pe_ttm:.1f} PB={m.pb:.2f} "
-                        f"ROE={m.roe:.1f}% 扣非ROE={m.roe_excl:.1f}% "
-                        f"负债率={m.debt_ratio:.1f}% CAGR={m.cagr_3y:.1f}%"
-                    )
                 else:
                     skipped_no_val.append(m.thscode)
             else:
@@ -424,36 +405,15 @@ def main() -> None:
             if done_count % 500 == 0:
                 elapsed = time.time() - start_time
                 rate = done_count / elapsed if elapsed > 0 else 0
-                eta = (total - done_count) / rate if rate > 0 else 0
-                print(
-                    f"  进度: {done_count}/{total} ({done_count * 100 // total}%) "
-                    f"{'=' * (done_count * 30 // total)}{' ' * (30 - done_count * 30 // total)} "
-                    f"通过:{len(results_pass)} 失败:{len(results_fail)} "
-                    f"速度:{rate:.1f}只/秒 ETA:{eta / 60:.1f}分钟"
-                )
+                (total - done_count) / rate if rate > 0 else 0
 
     elapsed = time.time() - start_time
-    print(f"\n{'=' * 85}")
-    print(
-        f"  巴菲特六闸门筛选结果 — {datetime.now().strftime('%Y-%m-%d %H:%M')} | 耗时: {elapsed / 60:.1f}分钟"
-    )
-    print(f"{'=' * 85}")
-    print("  ⚠️  注：闸门⑥（PE历史分位）同花顺 API 仅支持指数，个股无法验证，已标注")
 
     if results_pass:
-        print(f"\n  ✅ 通过五闸门（①~⑤）的股票共 {len(results_pass)} 只：\n")
-        print(
-            f"  {'代码':<8} {'名称':<10} {'PE_TTM':>7} {'PB':>6} {'ROE%':>7} "
-            f"{'扣非ROE%':>8} {'负债率%':>7} {'CAGR%':>7}"
-        )
-        print(f"  {'-' * 8} {'-' * 10} {'-' * 7} {'-' * 6} {'-' * 7} {'-' * 8} {'-' * 7} {'-' * 7}")
         for r in sorted(results_pass, key=lambda x: (x.pe_ttm or 999, -(x.roe or 0))):
-            print(
-                f"  {r.ticker:<8} {r.name:<10} {r.pe_ttm:>7.1f} {r.pb:>6.2f} "
-                f"{r.roe:>7.1f} {r.roe_excl:>8.1f} {r.debt_ratio:>7.1f} {r.cagr_3y:>7.1f}"
-            )
+            pass
     else:
-        print("\n  没有股票通过全部五闸门前筛")
+        pass
 
     fail_gates: dict[str, int] = {}
     for r in results_fail:
@@ -462,13 +422,9 @@ def main() -> None:
             fail_gates[g] = fail_gates.get(g, 0) + 1
 
     if fail_gates:
-        print(f"\n  📊 失败分布（共 {len(results_fail)} 只）：")
         for gate, count in sorted(fail_gates.items(), key=lambda x: -x[1]):
-            print(f"    {gate}: {count} 只")
+            pass
 
-    print(f"\n  无估值数据跳过: {len(skipped_no_val)} 只")
-    print(f"  总计: {len(filtered)} 只 | 通过五闸门: {len(results_pass)} 只")
-    print(f"{'=' * 85}")
 
     # 4. 写入结果文件
     date_str = datetime.now().strftime("%Y%m%d")
@@ -479,27 +435,26 @@ def main() -> None:
         f.write(f"通过五闸门（①~⑤）的股票共 {len(results_pass)} 只\n\n")
         f.write(
             f"  {'代码':<8} {'名称':<10} {'PE_TTM':>7} {'PB':>6} {'ROE%':>7} "
-            f"{'扣非ROE%':>8} {'负债率%':>7} {'CAGR%':>7}\n"
+            f"{'扣非ROE%':>8} {'负债率%':>7} {'CAGR%':>7}\n",
         )
         f.write(
-            f"  {'-' * 8} {'-' * 10} {'-' * 7} {'-' * 6} {'-' * 7} {'-' * 8} {'-' * 7} {'-' * 7}\n"
+            f"  {'-' * 8} {'-' * 10} {'-' * 7} {'-' * 6} {'-' * 7} {'-' * 8} {'-' * 7} {'-' * 7}\n",
         )
         for r in sorted(results_pass, key=lambda x: (x.pe_ttm or 999, -(x.roe or 0))):
             f.write(
                 f"  {r.ticker:<8} {r.name:<10} {r.pe_ttm:>7.1f} {r.pb:>6.2f} "
-                f"{r.roe:>7.1f} {r.roe_excl:>8.1f} {r.debt_ratio:>7.1f} {r.cagr_3y:>7.1f}\n"
+                f"{r.roe:>7.1f} {r.roe_excl:>8.1f} {r.debt_ratio:>7.1f} {r.cagr_3y:>7.1f}\n",
             )
         f.write(f"\n失败分布（共 {len(results_fail)} 只）：\n")
         for gate, count in sorted(fail_gates.items(), key=lambda x: -x[1]):
             f.write(f"  {gate}: {count} 只\n")
         f.write("\n注：闸门⑥（PE历史分位）同花顺 API 仅支持指数，个股无法验证。\n")
 
-    print(f"\n  💾 结果已保存至: {out_path}")
 
     # 5. 输出股票代码列表（供后续流水线使用）
     ticker_list = [add_ticker_prefix(r.ticker) for r in results_pass]
     if ticker_list:
-        print(f"\n  📋 通过筛选的股票代码: {','.join(ticker_list)}")
+        pass
 
 
 if __name__ == "__main__":

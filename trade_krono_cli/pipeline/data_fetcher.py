@@ -1,16 +1,19 @@
-"""
-data_fetcher — K 线数据获取封装。
+"""data_fetcher — K 线数据获取封装。
 
 从 baostock 拉取 K 线，支持缓存和复权因子配置。
 """
 
 from __future__ import annotations
 
-import pandas as pd
+from typing import TYPE_CHECKING
+
 from loguru import logger
 
 from trade_krono_cli.data import fetch_lookback, fetch_realtime_quote
 from trade_krono_cli.errors import DataError
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def fetch_stock_data(
@@ -20,8 +23,7 @@ def fetch_stock_data(
     adjustflag: str = "1",
     use_cache: bool = True,
 ) -> pd.DataFrame:
-    """
-    获取单只股票的 K 线数据。
+    """获取单只股票的 K 线数据。
 
     Parameters
     ----------
@@ -34,6 +36,7 @@ def fetch_stock_data(
     Returns
     -------
     DataFrame with columns: timestamps, open, high, low, close, volume, amount
+
     """
     df = fetch_lookback(
         ticker,
@@ -50,12 +53,12 @@ def fetch_stock_data(
 def fetch_stock_quote(
     ticker: str,
 ) -> dict:
-    """
-    获取实时估值数据（腾讯财经）。
+    """获取实时估值数据（腾讯财经）。
 
     Returns
     -------
     {price, pe, pb, market_cap, turnover} 或 {}
+
     """
     return fetch_realtime_quote(ticker)
 
@@ -67,12 +70,12 @@ def prepare_kline_batch(
     adjustflag: str = "1",
     use_cache: bool = True,
 ) -> dict[str, pd.DataFrame]:
-    """
-    批量准备 K 线数据。
+    """批量准备 K 线数据。
 
     Returns
     -------
     {ticker: kline_df} 字典
+
     """
     result = {}
     for tk in tickers:

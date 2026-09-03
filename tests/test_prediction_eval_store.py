@@ -8,7 +8,7 @@ from trade_krono_cli.prediction_eval import (
 )
 
 
-def test_store_summary_writes_to_db(tmp_path):
+def test_store_summary_writes_to_db(tmp_path) -> None:
     """_store_summary 应能写入 evaluation_results 表而不崩溃。"""
     import sqlite3
 
@@ -21,7 +21,7 @@ def test_store_summary_writes_to_db(tmp_path):
 
     # 构造有数据的 summary
     records = []
-    for i in range(3):
+    for _i in range(3):
         records.append(
             EvalRecord(
                 ticker="sh.600519",
@@ -35,7 +35,7 @@ def test_store_summary_writes_to_db(tmp_path):
                 error_pct=0.5,
                 ta_signal="BUY",
                 composite_score=80.0,
-            )
+            ),
         )
     summary = evaluator._compute_summary(records)
 
@@ -45,7 +45,7 @@ def test_store_summary_writes_to_db(tmp_path):
     # 验证记录已写入
     with sqlite3.connect(db) as conn:
         row = conn.execute(
-            "SELECT n_records, kronos_acc_5d, ta_buy_wr_5d FROM evaluation_results"
+            "SELECT n_records, kronos_acc_5d, ta_buy_wr_5d FROM evaluation_results",
         ).fetchone()
     assert row is not None
     assert row[0] == 3
@@ -53,7 +53,7 @@ def test_store_summary_writes_to_db(tmp_path):
     assert row[2] == pytest.approx(100.0, abs=0.1)
 
 
-def test_evaluate_store_true_paths_through_store_summary(tmp_path):
+def test_evaluate_store_true_paths_through_store_summary(tmp_path) -> None:
     """evaluate(store=True) 完整路径不应崩溃。"""
     from trade_krono_cli.research_db import ResearchDatabase
 
@@ -85,7 +85,7 @@ def test_evaluate_store_true_paths_through_store_summary(tmp_path):
     assert isinstance(summary, type(evaluator._compute_summary([])))
 
 
-def test_get_latest_evaluation_no_table(tmp_path):
+def test_get_latest_evaluation_no_table(tmp_path) -> None:
     """数据库中没有 evaluation_results 表时，返回 None。"""
     from trade_krono_cli.research_db import ResearchDatabase
 
@@ -98,7 +98,7 @@ def test_get_latest_evaluation_no_table(tmp_path):
     assert result is None
 
 
-def test_get_latest_evaluation_with_data(tmp_path):
+def test_get_latest_evaluation_with_data(tmp_path) -> None:
     """数据库中有评估结果时，应返回正确数据。"""
     import sqlite3
 

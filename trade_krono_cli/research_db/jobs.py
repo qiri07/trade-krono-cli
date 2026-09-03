@@ -1,18 +1,19 @@
-"""
-研究数据库 — Jobs 表 CRUD。
-"""
+"""研究数据库 — Jobs 表 CRUD。"""
 
 from __future__ import annotations
 
 import json
 import time
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from loguru import logger
 
-from trade_krono_cli.config import Settings
 from trade_krono_cli.research_db.base import ResearchDatabase
 from trade_krono_cli.version import build_run_snapshot
+
+if TYPE_CHECKING:
+    from trade_krono_cli.config import Settings
 
 
 class JobMixin(ResearchDatabase):
@@ -25,14 +26,14 @@ class JobMixin(ResearchDatabase):
         settings: Settings | None = None,
         notes: str | None = None,
     ) -> str:
-        """
-        创建新分析作业，返回 job_id。
+        """创建新分析作业，返回 job_id。
 
         Parameters
         ----------
         settings : Settings 对象（可选）
             传入后自动填充 run_id / data_version / model_versions /
             prompt_version / strategy_version / config_hash
+
         """
         job_id = str(uuid4())[:12]
         run_at = time.time()
@@ -72,7 +73,7 @@ class JobMixin(ResearchDatabase):
 
         logger.info(
             f"📋 研究作业创建: job={job_id} run_id={snapshot.get('run_id')} "
-            f"date={date} n={len(tickers)}"
+            f"date={date} n={len(tickers)}",
         )
         return job_id
 

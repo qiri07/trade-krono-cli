@@ -8,14 +8,14 @@ from trade_krono_cli.kronos_runner import KronosRunner
 class TestKronosSampleCount:
     """验证 sample_count 参数传递与缓存 key 行为。"""
 
-    def test_default_sample_count_in_settings(self):
+    def test_default_sample_count_in_settings(self) -> None:
         """Settings 默认 sample_count 应为 5。"""
         from trade_krono_cli.config import get_settings
 
         s = get_settings()
         assert s.kronos_sample_count == 5
 
-    def test_runner_uses_default_sample_count(self):
+    def test_runner_uses_default_sample_count(self) -> None:
         """KronosRunner 未传 sample_count 时使用 settings 默认值。"""
         from tests.conftest import make_mock_settings
 
@@ -24,19 +24,19 @@ class TestKronosSampleCount:
             runner = KronosRunner(no_cache=True, settings=settings)
             assert runner.sample_count == 5
 
-    def test_runner_uses_explicit_sample_count(self):
+    def test_runner_uses_explicit_sample_count(self) -> None:
         """KronosRunner 接受显式 sample_count 参数。"""
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=True, sample_count=1)
             assert runner.sample_count == 1
 
-    def test_runner_sample_count_ten(self):
+    def test_runner_sample_count_ten(self) -> None:
         """sample_count=10 可正确设置。"""
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=True, sample_count=10)
             assert runner.sample_count == 10
 
-    def test_predict_one_calls_cache_with_sample_count(self):
+    def test_predict_one_calls_cache_with_sample_count(self) -> None:
         """predict_one 的缓存查询包含 sample_count。"""
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             with patch.object(KronosRunner, "_prepare") as mock_prepare:
@@ -65,7 +65,7 @@ class TestKronosSampleCount:
                 call_args = runner._cache.get_kronos.call_args
                 assert call_args[0][3] == 5  # sample_count 参数
 
-    def test_cache_key_differs_by_sample_count(self):
+    def test_cache_key_differs_by_sample_count(self) -> None:
         """不同 sample_count 产生不同的缓存 key。"""
         import pandas as pd
 

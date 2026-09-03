@@ -1,6 +1,4 @@
-"""
-研究数据库 — Decisions 表和 Raw Reports 表读写。
-"""
+"""研究数据库 — Decisions 表和 Raw Reports 表读写。"""
 
 from __future__ import annotations
 

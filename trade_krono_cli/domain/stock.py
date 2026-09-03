@@ -1,5 +1,4 @@
-"""
-Stock — 领域层股票实体。
+"""Stock — 领域层股票实体。
 
 代表一只正在被分析的 A 股，携带标识信息和基础元数据。
 """
@@ -11,8 +10,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, order=False)
 class Stock:
-    """
-    一只 A 股的领域实体。
+    """一只 A 股的领域实体。
 
     Parameters
     ----------
@@ -23,6 +21,7 @@ class Stock:
     pe_ratio      市盈率（可选）
     pb_ratio      市净率（可选）
     listed_date   上市日期 ISO 字符串（可选）
+
     """
 
     ticker: str
@@ -50,7 +49,7 @@ class Stock:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Stock":
+    def from_dict(cls, data: dict) -> Stock:
         return cls(
             ticker=data["ticker"],
             name=data.get("name", ""),
@@ -61,7 +60,7 @@ class Stock:
             listed_date=data.get("listed_date"),
         )
 
-    def __lt__(self, other: "Stock") -> bool:
+    def __lt__(self, other: Stock) -> bool:
         return self.ticker < other.ticker
 
     def __hash__(self) -> int:

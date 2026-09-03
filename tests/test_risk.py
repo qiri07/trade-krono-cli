@@ -42,7 +42,7 @@ def _make_kline_df(close_values, high_values=None, volume_values=None):
             "low": close * 0.98,
             "close": close,
             "volume": volume,
-        }
+        },
     )
 
 
@@ -52,14 +52,14 @@ def _make_kline_df(close_values, high_values=None, volume_values=None):
 
 
 class TestVolatilityRisk:
-    def test_low_volatility_gives_low_score(self):
+    def test_low_volatility_gives_low_score(self) -> None:
         """波动率低 → 风险分低。"""
         close = _make_close_series([100 + i * 0.01 for i in range(50)])  # 几乎无波动
         score, ann_vol = calc_volatility_risk(close)
         assert 0 <= score <= 20
         assert ann_vol < 10  # 年化波动率 < 10%
 
-    def test_high_volatility_gives_high_score(self):
+    def test_high_volatility_gives_high_score(self) -> None:
         """波动率高 → 风险分高。"""
         np.random.seed(42)
         close = pd.Series(100 * (1 + np.random.randn(50) * 0.04), dtype=float)
@@ -67,14 +67,14 @@ class TestVolatilityRisk:
         assert score > 50  # 高风险
         assert ann_vol > 50
 
-    def test_insufficient_data_returns_default(self):
+    def test_insufficient_data_returns_default(self) -> None:
         """数据不足时返回默认中等风险分。"""
         close = _make_close_series([100, 101, 102])
         score, ann_vol = calc_volatility_risk(close)
         assert score == 25.0
         assert ann_vol == 0.0
 
-    def test_score_clamped_to_0_100(self):
+    def test_score_clamped_to_0_100(self) -> None:
         """极端高波动时分数不超过 100。"""
         np.random.seed(99)
         close = pd.Series(
@@ -84,7 +84,7 @@ class TestVolatilityRisk:
         score, _ = calc_volatility_risk(close)
         assert 0 <= score <= 100
 
-    def test_custom_thresholds(self):
+    def test_custom_thresholds(self) -> None:
         """自定义 thresholds 应生效。"""
         close = _make_close_series([100 + i * 0.01 for i in range(50)])
         th = VolatilityThresholds(low_pct=0.0, high_pct=10.0, insufficient_data_score=10.0)
@@ -99,7 +99,7 @@ class TestVolatilityRisk:
 
 
 class TestDrawdownRisk:
-    def test_no_drawdown_gives_low_score(self):
+    def test_no_drawdown_gives_low_score(self) -> None:
         """无回撤 → 低风险分。"""
         close = _make_close_series([100, 101, 102, 103, 104])
         high = close * 1.01
@@ -107,7 +107,7 @@ class TestDrawdownRisk:
         assert score <= 20  # 无回撤时风险分 ≤ 20
         assert max_dd < 5
 
-    def test_large_drawdown_gives_high_score(self):
+    def test_large_drawdown_gives_high_score(self) -> None:
         """大回撤 → 高风险分。"""
         close = _make_close_series([100, 100, 90, 80, 75, 80, 85, 90, 95, 100] * 5)
         high = close * 1.02
@@ -115,7 +115,7 @@ class TestDrawdownRisk:
         assert score > 40
         assert max_dd >= 20  # 最大回撤 >= 20%
 
-    def test_insufficient_data_returns_default(self):
+    def test_insufficient_data_returns_default(self) -> None:
         """数据不足时返回默认风险分。"""
         close = _make_close_series([100, 101])
         high = close * 1.01
@@ -123,14 +123,14 @@ class TestDrawdownRisk:
         assert score == 20.0
         assert max_dd == 0.0
 
-    def test_score_clamped_to_0_100(self):
+    def test_score_clamped_to_0_100(self) -> None:
         """极端回撤时分数不超过 100。"""
         close = _make_close_series([100, 60, 50, 55, 60, 70, 80, 90, 100] * 5)
         high = close * 1.05
         score, _ = calc_drawdown_risk(high, close)
         assert 0 <= score <= 100
 
-    def test_custom_thresholds(self):
+    def test_custom_thresholds(self) -> None:
         """自定义 breakpoints 应生效。"""
         close = _make_close_series([100, 95, 90, 85, 80, 75, 70] * 5)
         high = close * 1.02
@@ -150,27 +150,27 @@ class TestDrawdownRisk:
 
 
 class TestLiquidityRisk:
-    def test_high_volume_gives_low_score(self):
+    def test_high_volume_gives_low_score(self) -> None:
         """成交量大 → 低风险分。"""
         volume = pd.Series([5e8] * 30, dtype=float)  # 日均 5 亿股
         score, turnover = calc_liquidity_risk(volume)
         assert score < 30
         assert isinstance(turnover, (int, float, type(None)))
 
-    def test_low_volume_gives_high_score(self):
+    def test_low_volume_gives_high_score(self) -> None:
         """成交量极小 → 高风险分。"""
         volume = pd.Series([100.0] * 30, dtype=float)  # 日均仅 100 股，极不流动
-        score, turnover = calc_liquidity_risk(volume)
+        score, _turnover = calc_liquidity_risk(volume)
         assert score > 60  # 极低成交量 → 高风险
 
-    def test_insufficient_data_returns_default(self):
+    def test_insufficient_data_returns_default(self) -> None:
         """数据不足时返回默认风险分。"""
         volume = pd.Series([1e7, 2e7], dtype=float)
         score, turnover = calc_liquidity_risk(volume)
         assert score == 30.0
         assert turnover is None
 
-    def test_market_cap_produces_turnover(self):
+    def test_market_cap_produces_turnover(self) -> None:
         """提供市值时应计算换手率。"""
         volume = pd.Series([5e7] * 30, dtype=float)
         score, turnover = calc_liquidity_risk(volume, market_cap=100.0)  # 100 亿元
@@ -178,7 +178,7 @@ class TestLiquidityRisk:
         assert turnover is not None
         assert isinstance(turnover, float)
 
-    def test_custom_thresholds(self):
+    def test_custom_thresholds(self) -> None:
         """自定义 breakpoints 应生效。"""
         volume = pd.Series([1e6] * 20, dtype=float)
         th = LiquidityThresholds(
@@ -196,12 +196,12 @@ class TestLiquidityRisk:
 
 
 class TestConcentrationRisk:
-    def test_default_score(self):
+    def test_default_score(self) -> None:
         """无 TA 结果时返回默认 10 分。"""
         score = calc_concentration_risk()
         assert score == 10.0
 
-    def test_with_ta_result_returns_10(self):
+    def test_with_ta_result_returns_10(self) -> None:
         """有 TA 结果时也返回默认值（占位实现）。"""
         score = calc_concentration_risk(ta_result="dummy")
         assert score == 10.0
@@ -213,31 +213,31 @@ class TestConcentrationRisk:
 
 
 class TestMarketRegimeRisk:
-    def test_uptrend_gives_low_score(self):
+    def test_uptrend_gives_low_score(self) -> None:
         """上涨趋势 → 低风险分。"""
         close = _make_close_series([100 + i * 0.5 for i in range(60)])
         score = calc_market_regime_risk(close)
         assert score < 40
 
-    def test_downtrend_gives_high_score(self):
+    def test_downtrend_gives_high_score(self) -> None:
         """下跌趋势 → 高风险分。"""
         close = _make_close_series([100 - i * 0.5 for i in range(60)])
         score = calc_market_regime_risk(close)
         assert score > 50
 
-    def test_insufficient_data_returns_default(self):
+    def test_insufficient_data_returns_default(self) -> None:
         """数据不足时返回默认风险分。"""
         close = _make_close_series([100, 101, 102])
         score = calc_market_regime_risk(close)
         assert score == 30.0
 
-    def test_sideways_gives_mid_score(self):
+    def test_sideways_gives_mid_score(self) -> None:
         """横盘趋势 → 中等风险分。"""
         close = _make_close_series([100] * 40)
         score = calc_market_regime_risk(close)
         assert 20 <= score <= 50
 
-    def test_custom_thresholds(self):
+    def test_custom_thresholds(self) -> None:
         """自定义阈值应生效。"""
         close = _make_close_series([100 + i * 0.5 for i in range(60)])
         th = MarketRegimeThresholds(
@@ -259,7 +259,7 @@ class TestMarketRegimeRisk:
 
 
 class TestRiskEngine:
-    def test_assess_basic(self):
+    def test_assess_basic(self) -> None:
         """基础风险评估流程。"""
         engine = RiskEngine()
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
@@ -280,17 +280,17 @@ class TestRiskEngine:
         assert 0 <= risk_metrics.event_risk_score <= 100
         assert 0 <= risk_metrics.valuation_risk_score <= 100
 
-    def test_assess_with_quote_data(self):
+    def test_assess_with_quote_data(self) -> None:
         """提供实时估值数据时应计算换手率。"""
         engine = RiskEngine()
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
         quote = {"market_cap": 200.0}  # 200 亿元
-        risk_score, risk_metrics = engine.assess("sh.600519", "2026-08-11", df, quote_data=quote)
+        risk_score, _risk_metrics = engine.assess("sh.600519", "2026-08-11", df, quote_data=quote)
 
         assert risk_score.avg_turnover is not None
         assert isinstance(risk_score.avg_turnover, float)
 
-    def test_total_risk_is_weighted_sum(self):
+    def test_total_risk_is_weighted_sum(self) -> None:
         """总分是各维度加权求和。"""
         engine = RiskEngine()
         # 创建高波动数据
@@ -313,7 +313,7 @@ class TestRiskEngine:
         )
         assert risk_score.total_risk == pytest.approx(expected, abs=0.1)
 
-    def test_custom_weights(self):
+    def test_custom_weights(self) -> None:
         """自定义权重应生效。"""
         rc = RiskConfig(
             weights=RiskConfig().weights.merge(
@@ -325,7 +325,7 @@ class TestRiskEngine:
                 gap_risk=0.0,
                 event_risk=0.0,
                 valuation_risk=0.0,
-            )
+            ),
         )
         engine = RiskEngine(risk_config=rc)
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
@@ -340,7 +340,7 @@ class TestRiskEngine:
         )
         assert risk_score.total_risk == pytest.approx(expected, abs=0.1)
 
-    def test_to_dict(self):
+    def test_to_dict(self) -> None:
         """RiskScore 序列化应包含原始字段。"""
         engine = RiskEngine()
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
@@ -361,7 +361,7 @@ class TestRiskEngine:
         assert "valuation_risk_score" not in d
         assert "var_95" not in d
 
-    def test_print_report(self):
+    def test_print_report(self) -> None:
         """print_report 输出格式正确。"""
         engine = RiskEngine()
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
@@ -375,7 +375,7 @@ class TestRiskEngine:
         assert "波动率风险" in report
         assert "市场环境风险" in report
 
-    def test_risk_metrics_has_var_cvar(self):
+    def test_risk_metrics_has_var_cvar(self) -> None:
         """RiskMetrics 应包含 VaR/CVaR/Beta/return_adjustment。"""
         engine = RiskEngine()
         np.random.seed(42)
@@ -397,16 +397,16 @@ class TestRiskEngine:
 
 
 class TestAssessRisk:
-    def test_convenience_function(self):
+    def test_convenience_function(self) -> None:
         """便捷函数 assess_risk 应返回 (RiskScore, RiskMetrics)。"""
         from trade_krono_cli.risk.risk_engine import assess_risk
 
         df = _make_kline_df([100 + i * 0.1 for i in range(60)])
-        risk_score, risk_metrics = assess_risk("sh.600519", "2026-08-11", df)
+        risk_score, _risk_metrics = assess_risk("sh.600519", "2026-08-11", df)
         assert isinstance(risk_score, RiskScore)
         assert 0 <= risk_score.total_risk <= 100
 
-    def test_convenience_with_config(self):
+    def test_convenience_with_config(self) -> None:
         """便捷函数支持传入 RiskConfig。"""
         from trade_krono_cli.risk.risk_engine import assess_risk
 

@@ -1,5 +1,4 @@
-"""
-数据源信息丰富度深度对比（只读，不修改任何代码）。
+"""数据源信息丰富度深度对比（只读，不修改任何代码）。
 
 测试维度：
   1. K线扩展字段（PE/PB/均线/换手率/涨跌幅等）
@@ -39,7 +38,7 @@ def _safe_float(v: Any) -> float | None:
         return None
 
 
-async def main():
+async def main() -> None:
     factory = DataProviderFactory()
     ticker = TICKER
 
@@ -63,7 +62,7 @@ async def main():
         bs_meta_fields: dict[str, str] = {}
         if rows:
             for i, fname in enumerate(
-                ["code", "code_name", "ipoDate", "outDate", "type", "status"]
+                ["code", "code_name", "ipoDate", "outDate", "type", "status"],
             ):
                 val = rows[0][i] if i < len(rows[0]) else None
                 bs_meta_fields[fname] = str(val)
@@ -88,7 +87,7 @@ async def main():
                 if ext_rows:
                     logger.info(f"   实际返回字段: {list(rs_ext.fields)}")
                     sample = ext_rows[0]
-                    for fn, sv in zip(rs_ext.fields, sample):
+                    for fn, sv in zip(rs_ext.fields, sample, strict=False):
                         if sv:
                             logger.info(f"     {fn}: {sv}")
                     logger.info(f"   有效行数: {len(ext_rows)}")
@@ -216,7 +215,7 @@ async def main():
             ak._ensure_import()
             code = ak._ticker_to_ak(ticker)
             df_hist = ak._ak.stock_zh_a_hist(
-                symbol=code, start_date="20260101", end_date="20260830", adjust="1"
+                symbol=code, start_date="20260101", end_date="20260830", adjust="1",
             )
             if df_hist is not None and not df_hist.empty:
                 logger.info("\n📈 stock_zh_a_hist 返回列:")
@@ -267,24 +266,24 @@ async def main():
         # 从源码读取支持的接口
         logger.info("\n📈 pro_bar() 字段:")
         logger.info(
-            "   trade_date, open, high, low, close, volume, amount, pre_close, change, pct_change"
+            "   trade_date, open, high, low, close, volume, amount, pre_close, change, pct_change",
         )
         logger.info("\n📊 daily_basic() 字段（每日指标）:")
         logger.info(
             "   ts_code, trade_date, close, high, low, open, volume, amount, "
             "pct_chg, turnover_rate, pe, pe_ttm, pb, ps, dv_ratio, dv_ttm, "
-            "total_mv, circ_mv"
+            "total_mv, circ_mv",
         )
         logger.info("\n📊 realtime_quote() 字段:")
         logger.info(
             "   ts_code, symbol, name, area, industry, last_close, price, volume, amount, "
-            "high, low, open, bid1, ask1, bid1_vol, ask1_vol, pe, pb, total_mv, circ_mv"
+            "high, low, open, bid1, ask1, bid1_vol, ask1_vol, pe, pb, total_mv, circ_mv",
         )
         logger.info("\n🏷️  stock_basic() 字段:")
         logger.info("   ts_code, symbol, name, area, industry, market, list_date, delist_date")
         logger.info("\n💡 独家扩展能力（当前代码未封装，需额外调用）:")
         logger.info(
-            "   ⭐⭐⭐ finance_indicator()  — 财务指标全套（EPS/净利润/ROE/营收/资产负债率/现金流）"
+            "   ⭐⭐⭐ finance_indicator()  — 财务指标全套（EPS/净利润/ROE/营收/资产负债率/现金流）",
         )
         logger.info("   ⭐⭐    daily_basic()      — 每日PE/PB/市值/换手率（历史序列）")
         logger.info("   ⭐⭐    moneyflow()        — 资金流向（主力/散户净流入）")
@@ -338,8 +337,8 @@ async def main():
             "tonghuashun",
             "OHLCV+amount",
             "无",
-            "✅ last_price/price_change/price_change_ratio_pct/"
-            "open/high/low/prev_price/volume/turnover",
+            ("✅ last_price/price_change/price_change_ratio_pct/"
+            "open/high/low/prev_price/volume/turnover"),
             "11",
             "⚠️ 仅name/exchange",
             "API稳定，但封装层未充分利用snapshot字段",
@@ -367,7 +366,7 @@ async def main():
 
     for row in summary:
         formatted = []
-        for cell, w in zip(row, col_widths):
+        for cell, w in zip(row, col_widths, strict=False):
             formatted.append(cell[:w].ljust(w))
         logger.info("  " + " | ".join(formatted))
 
@@ -375,7 +374,7 @@ async def main():
     logger.info("🏆  信息丰富度排名（除OHLCV外的附加价值）:")
     logger.info("  🥇 tushare Pro  — 维度最广（财务+每日指标+资金流向），但需Token + 额度限制")
     logger.info(
-        "  🥈 akshare       — 免费，实时行情字段最多（20+），含换手率/涨跌幅/振幅，无需Token"
+        "  🥈 akshare       — 免费，实时行情字段最多（20+），含换手率/涨跌幅/振幅，无需Token",
     )
     logger.info("  🥉 baostock      — K线支持追加PE/PB/均线/成交量均线，有ST/退市判断能力")
     logger.info("  4. tonghuashun   — 速度快稳定，snapshot含11字段，但封装层利用率低")

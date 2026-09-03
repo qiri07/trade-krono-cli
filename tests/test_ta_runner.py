@@ -1,5 +1,6 @@
 """测试 StockAnalysisResult、DecisionAdapter 及 TradingAgentsRunner 内部方法。"""
 
+from typing import NoReturn
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,7 +24,7 @@ def _make_ta_runner(settings=None):
 class TestStockAnalysisResult:
     """StockAnalysisResult 数据类测试。"""
 
-    def test_default_init(self):
+    def test_default_init(self) -> None:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(ticker="sh.600519", date="2026-08-12")
@@ -33,7 +34,7 @@ class TestStockAnalysisResult:
         assert r.reports == {}
         assert r.reports_raw == {}
 
-    def test_to_dict(self):
+    def test_to_dict(self) -> None:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
@@ -48,7 +49,7 @@ class TestStockAnalysisResult:
         assert d["signal"] == "BUY"
         assert d["confidence"] == 80.0
 
-    def test_decision_property_with_investment_decision(self):
+    def test_decision_property_with_investment_decision(self) -> None:
         """当 investment_decision 存在时，decision 返回它。"""
         from trade_krono_cli.ta_decision import InvestmentDecision, Signal
         from trade_krono_cli.ta_runner import StockAnalysisResult
@@ -58,46 +59,46 @@ class TestStockAnalysisResult:
         assert r.decision.signal == Signal.BUY
         assert r.decision.confidence == 85.0
 
-    def test_decision_property_fallback(self):
+    def test_decision_property_fallback(self) -> None:
         """无 investment_decision 时 fallback 到 legacy 字段。"""
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="HOLD", confidence=60.0
+            ticker="sh.600519", date="2026-08-12", signal="HOLD", confidence=60.0,
         )
         d = r.decision
         assert d.signal.value == "HOLD"
         assert d.confidence == 60.0
 
-    def test_is_buy_true(self):
+    def test_is_buy_true(self) -> None:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0
+            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
         )
         assert r.is_buy(min_confidence=55.0) is True
 
-    def test_is_buy_false_low_confidence(self):
+    def test_is_buy_false_low_confidence(self) -> None:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=50.0
+            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=50.0,
         )
         assert r.is_buy(min_confidence=55.0) is False
 
-    def test_is_buy_false_not_buy(self):
+    def test_is_buy_false_not_buy(self) -> None:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="HOLD", confidence=80.0
+            ticker="sh.600519", date="2026-08-12", signal="HOLD", confidence=80.0,
         )
         assert r.is_buy(min_confidence=55.0) is False
 
-    def test_is_buy_false_with_error(self):
+    def test_is_buy_false_with_error(self) -> None:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         r = StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0, error="some error"
+            ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0, error="some error",
         )
         assert r.is_buy(min_confidence=55.0) is False
 
@@ -105,7 +106,7 @@ class TestStockAnalysisResult:
 class TestTradingAgentsRunnerExtractReports:
     """_extract_reports 测试。"""
 
-    def test_extract_all_reports(self):
+    def test_extract_all_reports(self) -> None:
         runner = _make_ta_runner()
         state = {
             "market_report": "short market analysis text",
@@ -122,25 +123,25 @@ class TestTradingAgentsRunnerExtractReports:
         assert len(summary["market"]) <= 500
         assert summary["market"].startswith("short market analysis text")
 
-    def test_extract_skips_empty(self):
+    def test_extract_skips_empty(self) -> None:
         runner = _make_ta_runner()
         state = {
             "market_report": "some text",
             "sentiment_report": None,
             "news_report": "",
         }
-        raw, summary = runner._extract_reports(state)
+        raw, _summary = runner._extract_reports(state)
         assert "market" in raw
         assert "sentiment" not in raw
         assert "news" not in raw
 
-    def test_extract_non_string_value(self):
+    def test_extract_non_string_value(self) -> None:
         """非字符串值应被 json.dumps 序列化。"""
         runner = _make_ta_runner()
         state = {
             "market_report": {"key": "value"},
         }
-        raw, summary = runner._extract_reports(state)
+        raw, _summary = runner._extract_reports(state)
         assert "market" in raw
         assert '"key"' in raw["market"]
 
@@ -148,7 +149,7 @@ class TestTradingAgentsRunnerExtractReports:
 class TestTradingAgentsRunnerExtractDecision:
     """_extract_decision 测试。"""
 
-    def test_extract_from_final_trade_decision(self):
+    def test_extract_from_final_trade_decision(self) -> None:
         runner = _make_ta_runner()
         state = {
             "final_trade_decision": "BUY at 100.5 with high confidence",
@@ -158,16 +159,16 @@ class TestTradingAgentsRunnerExtractDecision:
         assert inv_decision is not None
         assert "BUY" in inv_decision.thesis.upper() or "buy" in inv_decision.thesis.lower()
 
-    def test_extract_from_investment_plan(self):
+    def test_extract_from_investment_plan(self) -> None:
         """fallback: 使用 investment_plan 字段。"""
         runner = _make_ta_runner()
         state = {
             "investment_plan": "HOLD for now",
         }
-        legacy, inv_decision = runner._extract_decision(state)
+        _legacy, inv_decision = runner._extract_decision(state)
         assert inv_decision is not None
 
-    def test_extract_from_debate_state(self):
+    def test_extract_from_debate_state(self) -> None:
         """辩论状态中的决策应优先使用。"""
         runner = _make_ta_runner()
         state = {
@@ -176,10 +177,10 @@ class TestTradingAgentsRunnerExtractDecision:
                 "final_decision": "debated BUY decision",
             },
         }
-        legacy, inv_decision = runner._extract_decision(state)
+        _legacy, inv_decision = runner._extract_decision(state)
         assert "debated" in inv_decision.thesis.lower() or "debated" in inv_decision.thesis.upper()
 
-    def test_extract_empty_state(self):
+    def test_extract_empty_state(self) -> None:
         """空 state 应返回默认 HOLD 决策。"""
         runner = _make_ta_runner()
         legacy, inv_decision = runner._extract_decision({})
@@ -190,7 +191,7 @@ class TestTradingAgentsRunnerExtractDecision:
 class TestTradingAgentsRunnerCacheHit:
     """analyze_one 缓存路径测试。"""
 
-    def test_cache_hit_returns_fast(self):
+    def test_cache_hit_returns_fast(self) -> None:
         """缓存命中时应直接返回，elapsed_sec=0。"""
         runner = _make_ta_runner()
         runner._cache = MagicMock()
@@ -214,7 +215,7 @@ class TestTradingAgentsRunnerCacheHit:
         assert result.elapsed_sec == 0.0
         assert result.investment_decision is not None
 
-    def test_cache_miss_calls_adapter(self):
+    def test_cache_miss_calls_adapter(self) -> None:
         """缓存未命中时应调用 adapter。"""
         runner = _make_ta_runner()
         runner._cache = MagicMock()
@@ -240,7 +241,7 @@ class TestTradingAgentsRunnerCacheHit:
 class TestTradingAgentsRunnerAnalyzeError:
     """analyze_one 异常路径测试。"""
 
-    def test_analysis_failure_sets_error(self):
+    def test_analysis_failure_sets_error(self) -> None:
         """分析过程失败时应记录 error。"""
         runner = _make_ta_runner()
         mock_adapter = MagicMock()
@@ -253,7 +254,7 @@ class TestTradingAgentsRunnerAnalyzeError:
         assert result.ticker == "sh.600519"
         assert result.elapsed_sec >= 0
 
-    def test_validation_error_raises(self):
+    def test_validation_error_raises(self) -> None:
         """无效 ticker 应抛出 ValueError（validate_ticker 在 try 之前调用）。"""
         runner = _make_ta_runner()
         with pytest.raises(ValueError, match="无效股票代码"):
@@ -263,16 +264,16 @@ class TestTradingAgentsRunnerAnalyzeError:
 class TestTradingAgentsRunnerSaveResults:
     """save_results 测试。"""
 
-    def test_saves_json_file(self, tmp_path):
+    def test_saves_json_file(self, tmp_path) -> None:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         runner = _make_ta_runner()
         results = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0
+                ticker="sh.600519", date="2026-08-12", signal="BUY", confidence=80.0,
             ),
             StockAnalysisResult(
-                ticker="sz.000858", date="2026-08-12", signal="HOLD", confidence=60.0
+                ticker="sz.000858", date="2026-08-12", signal="HOLD", confidence=60.0,
             ),
         ]
         path = str(tmp_path / "results.json")
@@ -292,7 +293,7 @@ class TestTradingAgentsRunnerSaveResults:
 class TestTradingAgentsRunnerBuildConfig:
     """_build_config 测试。"""
 
-    def test_build_config_default(self):
+    def test_build_config_default(self) -> None:
         runner = _make_ta_runner()
         cfg = runner._build_config()
         assert cfg["llm_provider"] == "deepseek"
@@ -300,13 +301,13 @@ class TestTradingAgentsRunnerBuildConfig:
         assert cfg["output_language"] == "Chinese"
         assert cfg["max_debate_rounds"] == 1
 
-    def test_build_config_with_backend_url(self):
+    def test_build_config_with_backend_url(self) -> None:
         runner = _make_ta_runner()
         runner.backend_url = "http://test:8080"
         cfg = runner._build_config()
         assert cfg["backend_url"] == "http://test:8080"
 
-    def test_build_config_custom_params(self):
+    def test_build_config_custom_params(self) -> None:
         runner = _make_ta_runner()
         runner.llm_provider = "openai"
         runner.deep_think_llm = "gpt-4"
@@ -318,7 +319,7 @@ class TestTradingAgentsRunnerBuildConfig:
 class TestTradingAgentsRunnerValidateProvider:
     """_validate_provider 测试（仅在无 session 时生效）。"""
 
-    def test_no_available_providers_raises(self):
+    def test_no_available_providers_raises(self) -> None:
         from tests.conftest import make_mock_settings
         from trade_krono_cli.ta_runner import TradingAgentsRunner
 
@@ -330,7 +331,7 @@ class TestTradingAgentsRunnerValidateProvider:
             with pytest.raises(RuntimeError, match="未检测到任何 LLM API 密钥"):
                 TradingAgentsRunner(safe_mode=True, settings=settings)
 
-    def test_provider_not_available_falls_back(self):
+    def test_provider_not_available_falls_back(self) -> None:
         from tests.conftest import make_mock_settings
         from trade_krono_cli.ta_runner import TradingAgentsRunner
 
@@ -345,7 +346,7 @@ class TestTradingAgentsRunnerValidateProvider:
 class TestTradingAgentsRunnerAdapter:
     """adapter 属性测试。"""
 
-    def test_adapter_creates_new_when_no_session(self):
+    def test_adapter_creates_new_when_no_session(self) -> None:
         """无 session 时 adapter 属性创建新实例。"""
         runner = _make_ta_runner()
         with patch("trade_krono_cli.ta_runner.TradingAgentsAdapterImpl") as MockAdapter:
@@ -355,7 +356,7 @@ class TestTradingAgentsRunnerAdapter:
             assert adapter is mock_adapter
             MockAdapter.assert_called_once()
 
-    def test_adapter_uses_session_when_available(self):
+    def test_adapter_uses_session_when_available(self) -> None:
         """有 session 时 adapter 从 session 获取。"""
         from trade_krono_cli.ta_runner import TradingAgentsRunner
 
@@ -368,29 +369,30 @@ class TestTradingAgentsRunnerAdapter:
 class TestTradingAgentsRunnerAnalyzeBatch:
     """analyze_batch 测试。"""
 
-    def test_analyze_batch_calls_analyze_one(self):
+    def test_analyze_batch_calls_analyze_one(self) -> None:
         runner = _make_ta_runner()
         results = runner.analyze_batch(["sh.600519", "sz.000858"], "2026-08-12")
         assert len(results) == 2
         assert all(r.ticker in ("sh.600519", "sz.000858") for r in results)
 
-    def test_analyze_batch_with_progress_cb(self):
+    def test_analyze_batch_with_progress_cb(self) -> None:
         runner = _make_ta_runner()
         callbacks = []
 
-        def cb(idx, total, result):
+        def cb(idx, total, result) -> None:
             callbacks.append((idx, total))
 
         _results = runner.analyze_batch(["sh.600519"], "2026-08-12", progress_cb=cb)
         assert len(callbacks) == 1
         assert callbacks[0] == (1, 1)
 
-    def test_analyze_batch_progress_cb_raises(self):
+    def test_analyze_batch_progress_cb_raises(self) -> None:
         """progress_cb 抛异常时不应中断批处理。"""
         runner = _make_ta_runner()
 
-        def bad_cb(idx, total, result):
-            raise RuntimeError("cb error")
+        def bad_cb(idx, total, result) -> NoReturn:
+            msg = "cb error"
+            raise RuntimeError(msg)
 
         results = runner.analyze_batch(["sh.600519"], "2026-08-12", progress_cb=bad_cb)
         assert len(results) == 1
@@ -400,7 +402,7 @@ class TestTradingAgentsRunnerAnalyzeBatch:
 class TestTradingAgentsRunnerSaveRawReports:
     """save_raw_reports 测试。"""
 
-    def test_save_raw_reports_writes_files(self, tmp_path):
+    def test_save_raw_reports_writes_files(self, tmp_path) -> None:
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
         runner = _make_ta_runner()
@@ -437,7 +439,7 @@ class TestTradingAgentsRunnerSaveRawReports:
 class TestTradingAgentsRunnerLoadRawReport:
     """load_raw_report 静态方法测试。"""
 
-    def test_load_existing_report(self, tmp_path):
+    def test_load_existing_report(self, tmp_path) -> None:
         import json
 
         raw_dir = tmp_path / "raw" / "2026-08-12"
@@ -449,15 +451,15 @@ class TestTradingAgentsRunnerLoadRawReport:
         from trade_krono_cli.ta_runner import TradingAgentsRunner
 
         result = TradingAgentsRunner.load_raw_report(
-            "sh.600519", "2026-08-12", results_dir=tmp_path
+            "sh.600519", "2026-08-12", results_dir=tmp_path,
         )
         assert result is not None
         assert result["ticker"] == "sh.600519"
 
-    def test_load_missing_report_returns_none(self, tmp_path):
+    def test_load_missing_report_returns_none(self, tmp_path) -> None:
         from trade_krono_cli.ta_runner import TradingAgentsRunner
 
         result = TradingAgentsRunner.load_raw_report(
-            "sh.600519", "2026-08-12", results_dir=tmp_path
+            "sh.600519", "2026-08-12", results_dir=tmp_path,
         )
         assert result is None

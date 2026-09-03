@@ -1,5 +1,4 @@
-"""
-Evaluation — 预测评估领域对象。
+"""Evaluation — 预测评估领域对象。
 
 EvaluationResult 封装单次预测的回测/评估结果，
 EvaluationSummary 封装多次预测的聚合统计。
@@ -8,13 +7,11 @@ EvaluationSummary 封装多次预测的聚合统计。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass(frozen=True)
 class EvalRecord:
-    """
-    单次预测的评估记录。
+    """单次预测的评估记录。
 
     Fields
     ------
@@ -46,26 +43,26 @@ class EvalRecord:
     ticker: str
     eval_date: str
     horizon_days: int
-    pred_direction: Optional[str] = None
-    pred_return_pct: Optional[float] = None
+    pred_direction: str | None = None
+    pred_return_pct: float | None = None
     actual_return_pct: float = 0.0
     actual_direction: str = "FLAT"
     is_direction_correct: bool = False
     error_pct: float = 0.0
 
     # 分位数
-    p10: Optional[float] = None
-    p25: Optional[float] = None
-    p50: Optional[float] = None
-    p75: Optional[float] = None
-    p90: Optional[float] = None
+    p10: float | None = None
+    p25: float | None = None
+    p50: float | None = None
+    p75: float | None = None
+    p90: float | None = None
 
     # 上下文
-    ta_signal: Optional[str] = None
-    ranking_score: Optional[float] = None
-    expected_value: Optional[float] = None
-    composite_score: Optional[float] = None  # 向后兼容别名
-    risk_score: Optional[float] = None
+    ta_signal: str | None = None
+    ranking_score: float | None = None
+    expected_value: float | None = None
+    composite_score: float | None = None  # 向后兼容别名
+    risk_score: float | None = None
     conflict: str = ""
     entry_blocked: bool = False
     exit_blocked: bool = False
@@ -99,7 +96,7 @@ class EvalRecord:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "EvalRecord":
+    def from_dict(cls, data: dict) -> EvalRecord:
         # 兼容旧版 composite_score → ranking_score
         rs = data.get("ranking_score") or data.get("composite_score")
         return cls(
@@ -181,7 +178,7 @@ class BacktestResult:
     records: list = field(default_factory=list)
 
     @staticmethod
-    def empty() -> "BacktestResult":
+    def empty() -> BacktestResult:
         return BacktestResult()
 
     def to_dict(self) -> dict:
@@ -212,7 +209,7 @@ class EvaluationSummary:
     horizons: dict[int, HorizonMetrics] = field(default_factory=dict)
     records: list[EvalRecord] = field(default_factory=list)
     # 回测结果
-    backtest: Optional[BacktestResult] = None
+    backtest: BacktestResult | None = None
     # 基准对比
     benchmark_cum_return_pct: float = 0.0
     excess_return_pct: float = 0.0

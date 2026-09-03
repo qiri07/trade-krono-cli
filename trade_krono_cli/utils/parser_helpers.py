@@ -1,5 +1,4 @@
-"""
-Parser helpers — thin backward-compatibility aliases for _parse_* callers.
+"""Parser helpers — thin backward-compatibility aliases for _parse_* callers.
 
 Public functions live in trade_krono_cli.utils; this module exists so that
 callers which previously imported _parse_* from pipeline_config or
@@ -22,8 +21,8 @@ from trade_krono_cli.utils import (
 )
 
 __all__ = [
-    "_parse_range",
+    "_merge_with_nested",
     "_parse_comma_list",
     "_parse_float",
-    "_merge_with_nested",
+    "_parse_range",
 ]

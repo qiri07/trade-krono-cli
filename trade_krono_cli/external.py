@@ -1,5 +1,4 @@
-"""
-外部项目管理 — External Repo Manager。
+"""外部项目管理 — External Repo Manager。
 
 管理依赖的下游项目（TradingAgents-astock、Kronos），支持：
   • repo status   — 查看各外部 repo 的分支/commit/dirty/up_to_date，对比 lock 文件
@@ -21,7 +20,6 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from loguru import logger
 
@@ -40,7 +38,7 @@ class ExternalRepo:
     path: str  # 相对项目根目录的路径
     branch: str  # 默认跟踪分支
     url: str  # 远程 git 地址
-    commit: Optional[str] = None  # YAML 中指定的 commit（None = unpinned）
+    commit: str | None = None  # YAML 中指定的 commit（None = unpinned）
 
     @property
     def absolute_path(self) -> Path:
@@ -70,16 +68,16 @@ class RepoStatus:
     name: str
     path_exists: bool
     is_git_repo: bool = False
-    branch: Optional[str] = None
-    commit: Optional[str] = None
-    commit_short: Optional[str] = None
+    branch: str | None = None
+    commit: str | None = None
+    commit_short: str | None = None
     is_dirty: bool = False
     is_pinned: bool = False  # YAML 配置中是否 pinned
     is_locked: bool = False  # repo.lock 中是否有记录
-    is_up_to_date: Optional[bool] = None
-    remote_url: Optional[str] = None
-    error: Optional[str] = None
-    lock_commit: Optional[str] = None  # repo.lock 中记录的 commit
+    is_up_to_date: bool | None = None
+    remote_url: str | None = None
+    error: str | None = None
+    lock_commit: str | None = None  # repo.lock 中记录的 commit
     lock_mismatch: bool = False  # 当前 commit 与 lock 不一致
 
 
@@ -130,7 +128,7 @@ def _get_git_status(
     status.commit = out if rc == 0 else None
     if status.commit:
         _, short, _ = _git(repo_path, "rev-parse", "--short", "HEAD")
-        status.commit_short = short if short else status.commit[:8]
+        status.commit_short = short or status.commit[:8]
 
     # dirty 检查
     rc, out, _ = _git(repo_path, "status", "--porcelain")
@@ -159,39 +157,39 @@ def _get_git_status(
 _LOCK_FILENAME = "repo.lock"
 
 
-def _lock_path(project_root: Optional[Path] = None) -> Path:
+def _lock_path(project_root: Path | None = None) -> Path:
     root = project_root or Path(__file__).resolve().parent.parent
     return root / "external" / _LOCK_FILENAME
 
 
-def load_lock(project_root: Optional[Path] = None) -> dict:
-    """
-    加载 repo.lock 文件。
+def load_lock(project_root: Path | None = None) -> dict:
+    """加载 repo.lock 文件。
 
     Returns
     -------
     dict : {"generated_at": str, "repos": {name: LockedRepo 字段}}
       文件不存在时返回空 dict
+
     """
     lock_path = _lock_path(project_root)
     if not lock_path.exists():
         return {}
     try:
-        with open(lock_path, "r", encoding="utf-8") as f:
+        with open(lock_path, encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError) as e:
         logger.warning(f"⚠️  repo.lock 读取失败: {e}")
         return {}
 
 
-def save_lock(data: dict, project_root: Optional[Path] = None) -> None:
-    """
-    保存 repo.lock 文件。
+def save_lock(data: dict, project_root: Path | None = None) -> None:
+    """保存 repo.lock 文件。
 
     Parameters
     ----------
     data : dict
       {"generated_at": ISO timestamp, "repos": {name: {...}}}
+
     """
     lock_path = _lock_path(project_root)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -200,7 +198,7 @@ def save_lock(data: dict, project_root: Optional[Path] = None) -> None:
     logger.debug(f"💾 repo.lock 已更新: {lock_path}")
 
 
-def get_locked_commit(name: str, project_root: Optional[Path] = None) -> Optional[str]:
+def get_locked_commit(name: str, project_root: Path | None = None) -> str | None:
     """从 repo.lock 获取指定 repo 的锁定 commit（全量 SHA）。"""
     lock = load_lock(project_root)
     repos = lock.get("repos", {})
@@ -214,10 +212,9 @@ def update_lock(
     commit_short: str,
     branch: str,
     dirty: bool,
-    project_root: Optional[Path] = None,
+    project_root: Path | None = None,
 ) -> None:
-    """
-    更新 repo.lock 中指定 repo 的锁定信息。
+    """更新 repo.lock 中指定 repo 的锁定信息。
 
     Parameters
     ----------
@@ -226,6 +223,7 @@ def update_lock(
     commit_short : 短 SHA（前 12 位）
     branch       : 当前分支
     dirty        : 工作区是否 dirty
+
     """
     lock = load_lock(project_root)
     lock["generated_at"] = datetime.now().isoformat()
@@ -240,11 +238,11 @@ def update_lock(
     save_lock(lock, project_root)
 
 
-def _is_pinned(repo_path: Path, pinned_commit: Optional[str]) -> bool:
+def _is_pinned(repo_path: Path, pinned_commit: str | None) -> bool:
     """检查 repo 是否已 pinned 到指定 commit。"""
     if not pinned_commit:
         return False
-    rc, out, _ = _git(repo_path, "rev-parse", "--verify", pinned_commit)
+    rc, _out, _ = _git(repo_path, "rev-parse", "--verify", pinned_commit)
     return rc == 0
 
 
@@ -255,22 +253,22 @@ def _is_pinned(repo_path: Path, pinned_commit: Optional[str]) -> bool:
 _CONFIG_FILENAME = "repos.yaml"
 
 
-def _config_path(project_root: Optional[Path] = None) -> Path:
+def _config_path(project_root: Path | None = None) -> Path:
     """获取配置文件路径。"""
     root = project_root or Path(__file__).resolve().parent.parent
     return root / "external" / _CONFIG_FILENAME
 
 
 def load_config(
-    project_root: Optional[Path] = None,
+    project_root: Path | None = None,
 ) -> dict:
-    """
-    加载 external/repos.yaml 配置。
+    """加载 external/repos.yaml 配置。
 
     Returns
     -------
     dict : {name: {path, branch, url, commit}}
       commit 为 None 表示 unpinned（跟踪 branch）
+
     """
     import yaml
 
@@ -278,7 +276,7 @@ def load_config(
     if not cfg_path.exists():
         logger.debug(f"外部配置不存在: {cfg_path}（使用 .env 默认路径）")
         return {}
-    with open(cfg_path, "r", encoding="utf-8") as f:
+    with open(cfg_path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     repos = data.get("repos", {})
     # 规范化：确保 commit 字段存在
@@ -296,16 +294,16 @@ def load_config(
 
 def save_config(
     repos: dict,
-    project_root: Optional[Path] = None,
+    project_root: Path | None = None,
 ) -> Path:
-    """
-    保存 external/repos.yaml 配置。
+    """保存 external/repos.yaml 配置。
 
     Parameters
     ----------
     repos : dict
       {name: {path, branch, url, commit}}
       commit = None 表示 unpinned
+
     """
     import yaml
 
@@ -324,10 +322,9 @@ def save_config(
 
 
 def get_repos(
-    project_root: Optional[Path] = None, settings: Optional[Settings] = None
+    project_root: Path | None = None, settings: Settings | None = None,
 ) -> list[ExternalRepo]:
-    """
-    获取所有外部 repo 配置（从 YAML 或 .env fallback）。
+    """获取所有外部 repo 配置（从 YAML 或 .env fallback）。
 
     优先级：
       1. external/repos.yaml
@@ -356,11 +353,11 @@ def get_repos(
                 path=str(
                     s.tradingagents_root.relative_to(s.project_root)
                     if str(s.tradingagents_root).startswith(str(s.project_root))
-                    else s.tradingagents_root
+                    else s.tradingagents_root,
                 ),
                 branch="main",
                 url="https://github.com/simonlin1212/TradingAgents-astock",
-            )
+            ),
         )
     if s.kronos_root:
         repos.append(
@@ -369,22 +366,22 @@ def get_repos(
                 path=str(
                     s.kronos_root.relative_to(s.project_root)
                     if str(s.kronos_root).startswith(str(s.project_root))
-                    else s.kronos_root
+                    else s.kronos_root,
                 ),
                 branch="main",
                 url="https://github.com/shiyu-coder/Kronos",
-            )
+            ),
         )
     return repos
 
 
-def status(project_root: Optional[Path] = None) -> list[RepoStatus]:
-    """
-    获取所有外部 repo 的运行时状态，对比 repo.lock 中的锁定版本。
+def status(project_root: Path | None = None) -> list[RepoStatus]:
+    """获取所有外部 repo 的运行时状态，对比 repo.lock 中的锁定版本。
 
     Returns
     -------
     list[RepoStatus]
+
     """
     repos = get_repos(project_root)
     lock = load_lock(project_root)
@@ -401,18 +398,16 @@ def status(project_root: Optional[Path] = None) -> list[RepoStatus]:
         st.is_locked = bool(st.lock_commit)
 
         # 对比当前 commit 与 lock 文件
-        if st.commit and st.lock_commit:
-            if not st.commit.startswith(st.lock_commit):
-                st.lock_mismatch = True
-                st.error = f"lock 漂移：当前={st.commit_short} 期望(lock)={st.lock_commit[:12]}"
+        if st.commit and st.lock_commit and not st.commit.startswith(st.lock_commit):
+            st.lock_mismatch = True
+            st.error = f"lock 漂移：当前={st.commit_short} 期望(lock)={st.lock_commit[:12]}"
 
         results.append(st)
     return results
 
 
-def doctor(project_root: Optional[Path] = None) -> list[str]:
-    """
-    诊断外部 repo 状态，返回问题列表。
+def doctor(project_root: Path | None = None) -> list[str]:
+    """诊断外部 repo 状态，返回问题列表。
 
     检查项：
       • 路径是否存在
@@ -425,6 +420,7 @@ def doctor(project_root: Optional[Path] = None) -> list[str]:
     Returns
     -------
     list[str] : 每条是一个问题描述，空列表表示无问题
+
     """
     issues = []
     for st in status(project_root):
@@ -440,7 +436,7 @@ def doctor(project_root: Optional[Path] = None) -> list[str]:
         if st.lock_mismatch:
             lock_short = st.lock_commit[:12] if st.lock_commit else "?"
             issues.append(
-                f"[{name}] ❌ lock 漂移：repo.lock 锁定的是 {lock_short}，当前是 {st.commit_short}"
+                f"[{name}] ❌ lock 漂移：repo.lock 锁定的是 {lock_short}，当前是 {st.commit_short}",
             )
         elif st.error and "未 pin" in st.error:
             issues.append(f"[{name}] ❌ {st.error}")
@@ -449,9 +445,8 @@ def doctor(project_root: Optional[Path] = None) -> list[str]:
     return issues
 
 
-def update(project_root: Optional[Path] = None) -> dict[str, str]:
-    """
-    拉取所有 unpinned repo 的最新代码，并自动刷新 repo.lock。
+def update(project_root: Path | None = None) -> dict[str, str]:
+    """拉取所有 unpinned repo 的最新代码，并自动刷新 repo.lock。
 
     Parameters
     ----------
@@ -460,6 +455,7 @@ def update(project_root: Optional[Path] = None) -> dict[str, str]:
     Returns
     -------
     dict : {name: result_msg}
+
     """
     repos = get_repos(project_root)
     results: dict[str, str] = {}
@@ -484,10 +480,9 @@ def update(project_root: Optional[Path] = None) -> dict[str, str]:
 def pin(
     name: str,
     commit: str,
-    project_root: Optional[Path] = None,
+    project_root: Path | None = None,
 ) -> bool:
-    """
-    将指定外部 repo pin 到指定 commit，同时更新 repos.yaml 和 repo.lock。
+    """将指定外部 repo pin 到指定 commit，同时更新 repos.yaml 和 repo.lock。
 
     Parameters
     ----------
@@ -498,16 +493,19 @@ def pin(
     Returns
     -------
     bool : 成功返回 True
+
     """
     repos = get_repos(project_root)
     target = next((r for r in repos if r.name == name), None)
     if not target:
-        raise ValueError(f"未知 repo: {name}（可用: {[r.name for r in repos]}）")
+        msg = f"未知 repo: {name}（可用: {[r.name for r in repos]}）"
+        raise ValueError(msg)
 
     # 验证 commit 存在并获取全量 SHA
     rc, full_sha, _ = _git(target.absolute_path, "rev-parse", "--verify", commit)
     if rc != 0:
-        raise ValueError(f"commit 不存在: {commit}（在 {target.name} 中）")
+        msg = f"commit 不存在: {commit}（在 {target.name} 中）"
+        raise ValueError(msg)
 
     _, short, _ = _git(target.absolute_path, "rev-parse", "--short", full_sha)
     commit_short = short or full_sha[:12]
@@ -530,15 +528,15 @@ def pin(
     return True
 
 
-def get_repro_info(project_root: Optional[Path] = None) -> dict:
-    """
-    获取本次运行所需的外部 repo 复现信息（供 run snapshot 使用）。
+def get_repro_info(project_root: Path | None = None) -> dict:
+    """获取本次运行所需的外部 repo 复现信息（供 run snapshot 使用）。
 
     优先级：repo.lock > 当前 git HEAD
 
     Returns
     -------
     dict : {name: {commit, branch, pinned, locked, dirty}}
+
     """
     lock = load_lock(project_root)
     lock_repos = lock.get("repos", {})

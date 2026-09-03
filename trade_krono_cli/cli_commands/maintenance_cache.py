@@ -22,10 +22,10 @@ def clear_cache() -> None:
 
 def warm_cache(
     tickers: str | None = typer.Option(
-        None, "--tickers", "-t", help="逗号分隔的股票代码，如 600519,000858,600036"
+        None, "--tickers", "-t", help="逗号分隔的股票代码，如 600519,000858,600036",
     ),
     config: str | None = typer.Option(
-        None, "--config", "-c", help="股票列表文件路径（每行一只，支持 # 注释）"
+        None, "--config", "-c", help="股票列表文件路径（每行一只，支持 # 注释）",
     ),
     date: str = typer.Option(..., "--date", "-d", help="基准日期 YYYY-MM-DD（默认今天）"),
     lookback: int = typer.Option(730, "--lookback", "-l", help="回溯天数，默认 730（2年）"),
@@ -45,7 +45,7 @@ def warm_cache(
     cache = get_cache()
     total_rows, total_segments = 0, 0
     console.print(
-        f"[bold green]🔥 缓存预热[/bold green] {len(tk_list)} 只 → {date} (回溯 {lookback} 天)"
+        f"[bold green]🔥 缓存预热[/bold green] {len(tk_list)} 只 → {date} (回溯 {lookback} 天)",
     )
     for i, tk in enumerate(tk_list, 1):
         console.print(f"  [{i}/{len(tk_list)}] {tk} ...", end="")
@@ -55,5 +55,5 @@ def warm_cache(
         console.print(f" ✅ {rows}行/{segs}段")
 
     console.print(
-        f"[bold green]✅ 预热完成[/bold green] 共 {total_rows} 行 / {total_segments} 个缓存段"
+        f"[bold green]✅ 预热完成[/bold green] 共 {total_rows} 行 / {total_segments} 个缓存段",
     )

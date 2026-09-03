@@ -1,25 +1,25 @@
-"""
-波动率风险模块 — Volatility Risk。
+"""波动率风险模块 — Volatility Risk。
 
 计算基于 K 线日收益率的年化波动率，映射为 0-100 风险分。
 """
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
 
 from trade_krono_cli.configs.risk import VolatilityThresholds
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def calc_volatility_risk(
     close: pd.Series,
-    thresholds: Optional[VolatilityThresholds] = None,
-) -> Tuple[float, float]:
-    """
-    计算波动率风险分。
+    thresholds: VolatilityThresholds | None = None,
+) -> tuple[float, float]:
+    """计算波动率风险分。
 
     逻辑：
       1. 计算日收益率
@@ -36,6 +36,7 @@ def calc_volatility_risk(
     (risk_score, annualized_vol_pct)
       risk_score       0-100，越高越危险
       annualized_vol_pct  年化波动率（%）
+
     """
     th = thresholds or VolatilityThresholds()
 

@@ -1,6 +1,4 @@
-"""
-测试 eval_combined.py — 综合信号与高置信度评估。
-"""
+"""测试 eval_combined.py — 综合信号与高置信度评估。"""
 
 from __future__ import annotations
 
@@ -43,13 +41,13 @@ def _make_record(
 class TestComputeCombinedMetrics:
     """综合信号（TA BUY + Kronos UP）指标计算测试。"""
 
-    def test_empty_records(self):
+    def test_empty_records(self) -> None:
         """空记录应返回 0，不修改 metrics。"""
         metrics = HorizonMetrics()
         result = compute_combined_metrics([], metrics)
         assert result == 0
 
-    def test_no_combined_signal(self):
+    def test_no_combined_signal(self) -> None:
         """没有 TA BUY + Kronos UP 组合时应返回 0。"""
         records = [
             _make_record(ta_signal="SELL", pred_direction="UP"),
@@ -61,7 +59,7 @@ class TestComputeCombinedMetrics:
         assert metrics.combined_buy_up_win_rate == 0.0
         assert metrics.combined_buy_up_avg_return == 0.0
 
-    def test_all_combined_wins(self):
+    def test_all_combined_wins(self) -> None:
         """所有组合信号都盈利 → win_rate=100。"""
         records = [
             _make_record(ta_signal="BUY", pred_direction="UP", actual_return_pct=3.0),
@@ -74,7 +72,7 @@ class TestComputeCombinedMetrics:
         assert metrics.combined_buy_up_win_rate == 100.0
         assert metrics.combined_buy_up_avg_return == pytest.approx(3.0)
 
-    def test_mixed_outcomes(self):
+    def test_mixed_outcomes(self) -> None:
         """混合结果：2胜1负 → win_rate≈66.7。"""
         records = [
             _make_record(ta_signal="BUY", pred_direction="UP", actual_return_pct=2.0),
@@ -87,7 +85,7 @@ class TestComputeCombinedMetrics:
         assert metrics.combined_buy_up_win_rate == pytest.approx(66.7)
         assert metrics.combined_buy_up_avg_return == pytest.approx(1.67)
 
-    def test_all_combined_losses(self):
+    def test_all_combined_losses(self) -> None:
         """所有组合信号都亏损 → win_rate=0。"""
         records = [
             _make_record(ta_signal="BUY", pred_direction="UP", actual_return_pct=-2.0),
@@ -99,7 +97,7 @@ class TestComputeCombinedMetrics:
         assert metrics.combined_buy_up_win_rate == 0.0
         assert metrics.combined_buy_up_avg_return == pytest.approx(-3.5)
 
-    def test_with_non_combined_records_ignored(self):
+    def test_with_non_combined_records_ignored(self) -> None:
         """非组合信号应被忽略。"""
         records = [
             _make_record(ta_signal="BUY", pred_direction="UP", actual_return_pct=5.0),
@@ -118,13 +116,13 @@ class TestComputeCombinedMetrics:
 class TestComputeHighConfMetrics:
     """高置信信号（composite_score ≥ 70）指标计算测试。"""
 
-    def test_empty_records(self):
+    def test_empty_records(self) -> None:
         """空记录应返回 0。"""
         metrics = HorizonMetrics()
         result = compute_high_conf_metrics([], metrics)
         assert result == 0
 
-    def test_no_high_conf_signal(self):
+    def test_no_high_conf_signal(self) -> None:
         """没有高置信信号时应返回 0。"""
         records = [
             _make_record(composite_score=50.0),
@@ -136,7 +134,7 @@ class TestComputeHighConfMetrics:
         assert metrics.high_conf_win_rate == 0.0
         assert metrics.high_conf_avg_return == 0.0
 
-    def test_all_high_conf_wins(self):
+    def test_all_high_conf_wins(self) -> None:
         """所有高置信信号都盈利。"""
         records = [
             _make_record(composite_score=80.0, actual_return_pct=4.0),
@@ -149,7 +147,7 @@ class TestComputeHighConfMetrics:
         assert metrics.high_conf_win_rate == 100.0
         assert metrics.high_conf_avg_return == pytest.approx(4.0)
 
-    def test_mixed_outcomes(self):
+    def test_mixed_outcomes(self) -> None:
         """混合结果。"""
         records = [
             _make_record(composite_score=85.0, actual_return_pct=5.0),
@@ -162,7 +160,7 @@ class TestComputeHighConfMetrics:
         assert metrics.high_conf_win_rate == pytest.approx(66.7)
         assert metrics.high_conf_avg_return == pytest.approx(2.0)
 
-    def test_boundary_score(self):
+    def test_boundary_score(self) -> None:
         """composite_score=70 应包含（边界值）。"""
         records = [
             _make_record(composite_score=70.0, actual_return_pct=2.0),  # 刚好边界
@@ -173,7 +171,7 @@ class TestComputeHighConfMetrics:
         assert result == 1
         assert metrics.high_conf_avg_return == pytest.approx(2.0)
 
-    def test_none_score_ignored(self):
+    def test_none_score_ignored(self) -> None:
         """composite_score=None 应被忽略。"""
         records = [
             _make_record(composite_score=80.0, actual_return_pct=3.0),
@@ -184,7 +182,7 @@ class TestComputeHighConfMetrics:
         assert result == 1
         assert metrics.high_conf_win_rate == 100.0
 
-    def test_with_non_high_conf_records_ignored(self):
+    def test_with_non_high_conf_records_ignored(self) -> None:
         """非高置信信号应被忽略。"""
         records = [
             _make_record(composite_score=85.0, actual_return_pct=5.0),

@@ -14,7 +14,7 @@ from trade_krono_cli.domain.types import Direction
 # ── EvalRecord ────────────────────────────────────────────────────────────────
 
 
-def test_basic():
+def test_basic() -> None:
     record = EvalRecord(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -34,7 +34,7 @@ def test_basic():
     assert record.error_pct == pytest.approx(0.7, abs=0.01)
 
 
-def test_frozen():
+def test_frozen() -> None:
     record = EvalRecord(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -49,7 +49,7 @@ def test_frozen():
         record.ticker = "sz.000858"  # type: ignore[misc]
 
 
-def test_to_dict():
+def test_to_dict() -> None:
     record = EvalRecord(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -72,7 +72,7 @@ def test_to_dict():
     assert d["expected_value"] == 5.0
 
 
-def test_from_dict():
+def test_from_dict() -> None:
     data = {
         "ticker": "sh.600519",
         "eval_date": "2026-08-11",
@@ -89,7 +89,7 @@ def test_from_dict():
     assert record.pred_direction == Direction.UP
 
 
-def test_from_dict_invalid_direction():
+def test_from_dict_invalid_direction() -> None:
     """pred_direction 为非法字符串时，EvalRecord 接受原始值（不做枚举校验）。"""
     data = {
         "ticker": "sh.600519",
@@ -105,7 +105,7 @@ def test_from_dict_invalid_direction():
     assert record.pred_direction == "UNKNOWN"
 
 
-def test_from_dict_missing_pred_direction():
+def test_from_dict_missing_pred_direction() -> None:
     """pred_direction 为 None 时不校验 Direction 枚举。"""
     data = {
         "ticker": "sh.600519",
@@ -125,7 +125,7 @@ def test_from_dict_missing_pred_direction():
 # ── HorizonMetrics ────────────────────────────────────────────────────────────
 
 
-def test_defaults():
+def test_defaults() -> None:
     m = HorizonMetrics()
     assert m.kronos_dir_accuracy == 0.0
     assert m.ta_buy_win_rate == 0.0
@@ -133,7 +133,7 @@ def test_defaults():
     assert m.high_conf_win_rate == 0.0
 
 
-def test_with_values():
+def test_with_values() -> None:
     m = HorizonMetrics(
         kronos_dir_accuracy=72.5,
         ta_buy_win_rate=65.0,
@@ -143,7 +143,7 @@ def test_with_values():
     assert m.kronos_dir_accuracy == 72.5
 
 
-def test_horizon_metrics_to_dict():
+def test_horizon_metrics_to_dict() -> None:
     m = HorizonMetrics(
         kronos_dir_accuracy=75.0,
         ta_buy_win_rate=60.0,
@@ -157,7 +157,7 @@ def test_horizon_metrics_to_dict():
 # ── EvaluationSummary ─────────────────────────────────────────────────────────
 
 
-def test_empty_summary():
+def test_empty_summary() -> None:
     s = EvaluationSummary()
     assert s.kronos_n == 0
     assert s.ta_buy_n == 0
@@ -165,7 +165,7 @@ def test_empty_summary():
     assert s.high_conf_n == 0
 
 
-def test_summary_with_horizons():
+def test_summary_with_horizons() -> None:
     m5 = HorizonMetrics(kronos_dir_accuracy=70.0)
     m10 = HorizonMetrics(kronos_dir_accuracy=65.0)
     s = EvaluationSummary(horizons={5: m5, 10: m10})
@@ -173,7 +173,7 @@ def test_summary_with_horizons():
     assert s.horizons[10].kronos_dir_accuracy == 65.0
 
 
-def test_summary_to_dict():
+def test_summary_to_dict() -> None:
     m5 = HorizonMetrics(kronos_dir_accuracy=70.0)
     s = EvaluationSummary(horizons={5: m5})
     d = s.to_dict()
@@ -181,7 +181,7 @@ def test_summary_to_dict():
     assert d["horizons"]["5"]["kronos_dir_accuracy"] == 70.0
 
 
-def test_summary_from_dict():
+def test_summary_from_dict() -> None:
     _data = {
         "horizons": {
             "5": {
@@ -189,8 +189,8 @@ def test_summary_from_dict():
                 "ta_buy_win_rate": 65.0,
                 "combined_buy_up_win_rate": 68.0,
                 "high_conf_win_rate": 75.0,
-            }
-        }
+            },
+        },
     }
     s = EvaluationSummary(
         horizons={
@@ -199,13 +199,13 @@ def test_summary_from_dict():
                 ta_buy_win_rate=65.0,
                 combined_buy_up_win_rate=68.0,
                 high_conf_win_rate=75.0,
-            )
-        }
+            ),
+        },
     )
     assert s.horizons[5].kronos_dir_accuracy == 70.0
 
 
-def test_summary_roundtrip():
+def test_summary_roundtrip() -> None:
     m5 = HorizonMetrics(
         kronos_dir_accuracy=70.0,
         ta_buy_win_rate=65.0,

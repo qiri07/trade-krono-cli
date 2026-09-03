@@ -1,5 +1,4 @@
-"""
-A 股交易约束引擎。
+"""A 股交易约束引擎。
 
 提供：
   - 涨跌停价格检测（主板 ±10%，创业板/科创板 ±20%）
@@ -13,12 +12,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Optional
 
 from loguru import logger
 
 from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.security import validate_ticker
+from trade_krono_cli.utils.st_cache import cached
 
 # ═══════════════════════════════════════════════════════
 # 约束结果
@@ -31,11 +30,11 @@ class TradingConstraintResult:
 
     symbol: str
     allowed: bool
-    reason: Optional[str] = None  # 拒绝原因（None 表示通过）
+    reason: str | None = None  # 拒绝原因（None 表示通过）
     cost_bps: float = 0.0  # 本次交易所需成本（bps）
-    position_locked_until: Optional[date] = None  # T+1 锁定到期日
-    limit_up_price: Optional[float] = None  # 今日涨停价
-    limit_down_price: Optional[float] = None  # 今日跌停价
+    position_locked_until: date | None = None  # T+1 锁定到期日
+    limit_up_price: float | None = None  # 今日涨停价
+    limit_down_price: float | None = None  # 今日跌停价
     is_st: bool = False  # 是否为 ST 标的
 
 
@@ -46,13 +45,11 @@ class TradingConstraintResult:
 # baostock ST 股票名称中常见的标记（实际需查询属性字段）
 _ST_PATTERNS = re.compile(r"^(ST|\*ST|SST|N ST)", re.IGNORECASE)
 
-# 模块级 ST 缓存：{ticker: is_st_bool}，进程生命周期内有效
-_st_cache: dict[str, bool] = {}
+# 模块级 ST 缓存由 @cached 装饰器管理（30 分钟 TTL）
 
 
-def _is_st_by_name(ticker: str, name_hint: Optional[str] = None) -> bool:
-    """
-    通过股票代码后缀或名称线索判断 ST。
+def _is_st_by_name(ticker: str, name_hint: str | None = None) -> bool:
+    """通过股票代码后缀或名称线索判断 ST。
 
     baostock 的 ST 标记通常在 name 字段中，这里先按 ticker 后三位做启发式
     判断（实际应在 fetch 数据后检查 name 字段）。
@@ -63,12 +60,12 @@ def _is_st_by_name(ticker: str, name_hint: Optional[str] = None) -> bool:
     return False
 
 
+@cached(ttl=1800)
 def check_st_status(
     ticker: str,
-    config: Optional[ConstraintConfig] = None,
+    config: ConstraintConfig | None = None,
 ) -> bool:
-    """
-    检查是否为 ST/*ST 标的。
+    """检查是否为 ST/*ST 标的。
 
     实现方式：通过 baostock 的 query_stock_basic() 获取 ST 状态，
     缓存结果避免重复网络请求。
@@ -81,12 +78,10 @@ def check_st_status(
     Returns
     -------
     True 表示是 ST 标的，应被过滤
+
     """
     if config is None or not config.enable_st_filter:
         return False
-
-    if ticker in _st_cache:
-        return _st_cache[ticker]
 
     try:
         import baostock as bs  # type: ignore
@@ -121,7 +116,6 @@ def check_st_status(
         logger.debug(f"ST 检测异常 {ticker}: {str(e)[:200]}")
         result = False
 
-    _st_cache[ticker] = result
     return result
 
 
@@ -131,30 +125,29 @@ def check_st_status(
 
 
 def detect_exchange(ticker: str) -> str:
-    """
-    从 ticker 识别交易所前缀。
+    """从 ticker 识别交易所前缀。
 
     Returns
     -------
     "sse" (上交所) | "szse" (深交所) | "unknown"
+
     """
     ticker = validate_ticker(ticker)
     if ticker.startswith("sh."):
         return "sse"
-    elif ticker.startswith("sz."):
+    if ticker.startswith("sz."):
         return "szse"
-    elif ticker.startswith("bj."):
+    if ticker.startswith("bj."):
         return "bse"
     return "unknown"
 
 
 def compute_limit_prices(
     prev_close: float,
-    ticker: Optional[str] = None,
-    config: Optional[ConstraintConfig] = None,
-) -> tuple[Optional[float], Optional[float]]:
-    """
-    根据前一日收盘价计算今日涨跌停价。
+    ticker: str | None = None,
+    config: ConstraintConfig | None = None,
+) -> tuple[float | None, float | None]:
+    """根据前一日收盘价计算今日涨跌停价。
 
     Parameters
     ----------
@@ -166,6 +159,7 @@ def compute_limit_prices(
     -------
     (limit_up_price, limit_down_price)
       任意一个为 None 表示未启用检测
+
     """
     if config is None:
         config = ConstraintConfig()
@@ -180,7 +174,7 @@ def compute_limit_prices(
         _ = detect_exchange(ticker)
         code = ticker.split(".")[-1]
         # 科创板(688)在上证，创业板(300/301)在深证，均用20%
-        if code.startswith("688") or code.startswith("300") or code.startswith("301"):
+        if code.startswith(("688", "300", "301")):
             limit_pct = config.szse_limit_pct
 
     limit_up = round(prev_close * (1 + limit_pct / 100.0), 2)
@@ -193,10 +187,9 @@ def check_limit_status(
     current_price: float,
     prev_close: float,
     kline_df=None,
-    config: Optional[ConstraintConfig] = None,
+    config: ConstraintConfig | None = None,
 ) -> TradingConstraintResult:
-    """
-    检查当前价格是否触及涨跌停。
+    """检查当前价格是否触及涨跌停。
 
     Parameters
     ----------
@@ -211,6 +204,7 @@ def check_limit_status(
     TradingConstraintResult
       - allowed=False + reason="LIMIT_UP"/"LIMIT_DOWN" 表示触及涨跌停
       - limit_up_price / limit_down_price 记录边界值
+
     """
     if config is None:
         config = ConstraintConfig()
@@ -254,13 +248,12 @@ def check_limit_status(
 
 
 class T1Tracker:
-    """
-    跟踪当日买入记录，支持 T+1 结算约束检查。
+    """跟踪当日买入记录，支持 T+1 结算约束检查。
 
     线程安全：内部使用 dict，建议每次 pipeline run 创建新实例。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # ticker -> buy_date (str "YYYY-MM-DD")
         self._buys: dict[str, str] = {}
 
@@ -269,8 +262,7 @@ class T1Tracker:
         self._buys[ticker] = buy_date
 
     def can_sell(self, ticker: str, sell_date: str) -> bool:
-        """
-        检查是否可以在 sell_date 卖出 ticker。
+        """检查是否可以在 sell_date 卖出 ticker。
 
         T+1 规则：买入当日不能卖出，次日及之后可以。
         """
@@ -280,7 +272,7 @@ class T1Tracker:
         # 简单日期比较：sell_date > buy_date
         return sell_date > buy_date
 
-    def locked_until(self, ticker: str) -> Optional[date]:
+    def locked_until(self, ticker: str) -> date | None:
         """返回 ticker 被锁定的最早解锁日期。"""
         buy_date = self._buys.get(ticker)
         if buy_date is None:
@@ -300,10 +292,9 @@ def enforce_t1(
     ticker: str,
     eval_date: str,
     tracker: T1Tracker,
-    config: Optional[ConstraintConfig] = None,
+    config: ConstraintConfig | None = None,
 ) -> TradingConstraintResult:
-    """
-    对单只股票执行 T+1 约束检查。
+    """对单只股票执行 T+1 约束检查。
 
     Parameters
     ----------
@@ -315,6 +306,7 @@ def enforce_t1(
     Returns
     -------
     TradingConstraintResult
+
     """
     if config is None:
         config = ConstraintConfig()
@@ -342,10 +334,9 @@ def enforce_t1(
 def compute_transaction_cost(
     gross_return_pct: float,
     side: str = "sell",
-    config: Optional[ConstraintConfig] = None,
+    config: ConstraintConfig | None = None,
 ) -> float:
-    """
-    计算交易成本对收益的影响。
+    """计算交易成本对收益的影响。
 
     Parameters
     ----------
@@ -356,21 +347,21 @@ def compute_transaction_cost(
     Returns
     -------
     净收益率（%）
+
     """
     if config is None:
         config = ConstraintConfig()
 
     if side == "buy":
         return config.apply_cost(gross_return_pct)
-    elif side == "sell":
+    if side == "sell":
         # 卖出时扣除卖出成本
         if not config.enable_cost_model:
             return gross_return_pct
         return gross_return_pct - config.sell_cost_bps() / 100.0
-    elif side == "roundtrip":
+    if side == "roundtrip":
         return config.apply_roundtrip_cost(gross_return_pct)
-    else:
-        return gross_return_pct
+    return gross_return_pct
 
 
 # ═══════════════════════════════════════════════════════
@@ -381,14 +372,13 @@ def compute_transaction_cost(
 def check_all_constraints(
     ticker: str,
     eval_date: str,
-    current_price: Optional[float] = None,
-    prev_close: Optional[float] = None,
+    current_price: float | None = None,
+    prev_close: float | None = None,
     kline_df=None,
-    t1_tracker: Optional[T1Tracker] = None,
-    config: Optional[ConstraintConfig] = None,
+    t1_tracker: T1Tracker | None = None,
+    config: ConstraintConfig | None = None,
 ) -> TradingConstraintResult:
-    """
-    对单只股票执行全部交易约束检查。
+    """对单只股票执行全部交易约束检查。
 
     优先级：
       1. ST 过滤
@@ -408,6 +398,7 @@ def check_all_constraints(
     Returns
     -------
     TradingConstraintResult
+
     """
     if config is None:
         config = ConstraintConfig()
@@ -440,11 +431,10 @@ def check_all_constraints(
 
 def filter_by_constraints(
     merged_items: list[dict],
-    t1_tracker: Optional[T1Tracker] = None,
-    config: Optional[ConstraintConfig] = None,
+    t1_tracker: T1Tracker | None = None,
+    config: ConstraintConfig | None = None,
 ) -> tuple[list[dict], list[dict]]:
-    """
-    对合并后的结果列表应用交易约束过滤。
+    """对合并后的结果列表应用交易约束过滤。
 
     Parameters
     ----------
@@ -457,6 +447,7 @@ def filter_by_constraints(
     (allowed_items, rejected_items)
       allowed_items  — 通过所有约束的结果
       rejected_items — 被约束拦截的结果（标记 reason）
+
     """
     if config is None:
         config = ConstraintConfig()

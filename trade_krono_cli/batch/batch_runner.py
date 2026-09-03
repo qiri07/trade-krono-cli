@@ -1,5 +1,4 @@
-"""
-batch_runner — 动态 batch 调度器。
+"""batch_runner — 动态 batch 调度器。
 
 支持 asyncio 并发执行，动态调整 batch_size，
 内置限流防止 API rate limit。
@@ -10,9 +9,12 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine, Optional
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
 
 
 @dataclass
@@ -46,25 +48,23 @@ class BatchResult:
 
 
 class BatchRunner:
-    """
-    动态 batch 调度器。
+    """动态 batch 调度器。
 
     用法：
         runner = BatchRunner(config)
         results = await runner.run(tasks, process_fn)
     """
 
-    def __init__(self, config: Optional[BatchConfig] = None):
+    def __init__(self, config: BatchConfig | None = None) -> None:
         self.config = config or BatchConfig()
-        self._semaphore: Optional[asyncio.Semaphore] = None
+        self._semaphore: asyncio.Semaphore | None = None
 
     async def run(
         self,
         items: list[Any],
         process_fn: Callable[[Any], Coroutine[Any, Any, Any]],
     ) -> list[Any]:
-        """
-        批量执行异步任务，动态调整 concurrency。
+        """批量执行异步任务，动态调整 concurrency。
 
         Parameters
         ----------
@@ -74,6 +74,7 @@ class BatchRunner:
         Returns
         -------
         成功结果列表（失败项记录 error 但不中断）
+
         """
         if not items:
             return []
@@ -82,7 +83,7 @@ class BatchRunner:
         results: list[Any] = []
         errors: list[str] = []
 
-        async def _run_with_semaphore(item: Any, idx: int) -> tuple[Any | None, str | None]:
+        async def _run_with_semaphore(item: Any, idx: int) -> tuple[Any | None, str | None]:  # noqa: ANN401 — 动态 batch 调度器，item 类型因调用方而异
             assert self._semaphore is not None
             async with self._semaphore:
                 for attempt in range(1 + self.config.retry_attempts):
@@ -96,7 +97,7 @@ class BatchRunner:
                         if attempt < self.config.retry_attempts:
                             logger.warning(
                                 f"  ⚠ [{idx}] 第 {attempt + 1} 次失败: {e}，"
-                                f"等待 {self.config.retry_delay}s 后重试"
+                                f"等待 {self.config.retry_delay}s 后重试",
                             )
                             await asyncio.sleep(self.config.retry_delay)
                         else:
@@ -110,7 +111,7 @@ class BatchRunner:
         logger.info(
             f"📦 BatchRunner 启动 | {len(items)} 项 / "
             f"batch_size={self.config.batch_size} / "
-            f"concurrent={self.config.max_concurrent}"
+            f"concurrent={self.config.max_concurrent}",
         )
 
         for batch_idx, batch in enumerate(batches):
@@ -134,7 +135,7 @@ class BatchRunner:
             logger.info(
                 f"  📊 批次 {batch_idx + 1}/{total_batches} 完成 "
                 f"({batch_elapsed:.1f}s, 成功 {sum(1 for r, e in batch_results if r is not None)}/"
-                f"{len(batch)})"
+                f"{len(batch)})",
             )
 
         logger.info(f"📊 BatchRunner 完成 | 成功 {len(results)}/{len(items)}, 失败 {len(errors)}")
@@ -145,9 +146,7 @@ class BatchRunner:
         items: list[Any],
         process_fn: Callable[[Any], Any],
     ) -> list[Any]:
-        """
-        同步版本：包装 asyncio.run。
-        """
+        """同步版本：包装 asyncio.run。"""
 
         async def _async_runner():
             async def _wrap(item):

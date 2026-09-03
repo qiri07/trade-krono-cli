@@ -24,49 +24,49 @@ def runner():
 class TestResolveTickers:
     """测试 _resolve_tickers() 前缀补全逻辑。"""
 
-    def test_sh_prefix(self):
+    def test_sh_prefix(self) -> None:
         from trade_krono_cli.cli_commands.maintenance import _resolve_tickers
 
         result = _resolve_tickers("600519,688801")
         assert result == ["sh.600519", "sh.688801"]
 
-    def test_sz_prefix(self):
+    def test_sz_prefix(self) -> None:
         from trade_krono_cli.cli_commands.maintenance import _resolve_tickers
 
         result = _resolve_tickers("000858,300750")
         assert result == ["sz.000858", "sz.300750"]
 
-    def test_bj_prefix(self):
+    def test_bj_prefix(self) -> None:
         from trade_krono_cli.cli_commands.maintenance import _resolve_tickers
 
         result = _resolve_tickers("920071,920268")
         assert result == ["bj.920071", "bj.920268"]
 
-    def test_mixed_exchanges(self):
+    def test_mixed_exchanges(self) -> None:
         from trade_krono_cli.cli_commands.maintenance import _resolve_tickers
 
         result = _resolve_tickers("600519,000858,920071")
         assert result == ["sh.600519", "sz.000858", "bj.920071"]
 
-    def test_empty_string(self):
+    def test_empty_string(self) -> None:
         from trade_krono_cli.cli_commands.maintenance import _resolve_tickers
 
         result = _resolve_tickers("")
         assert result == []
 
-    def test_whitespace_and_dedup(self):
+    def test_whitespace_and_dedup(self) -> None:
         from trade_krono_cli.cli_commands.maintenance import _resolve_tickers
 
         result = _resolve_tickers("  600519 , 000858 , 600519  ")
         assert result == ["sh.600519", "sz.000858"]
 
-    def test_invalid_codes_skipped(self):
+    def test_invalid_codes_skipped(self) -> None:
         from trade_krono_cli.cli_commands.maintenance import _resolve_tickers
 
         result = _resolve_tickers("600519,abc,12,920071")
         assert result == ["sh.600519", "bj.920071"]
 
-    def test_unknown_first_digit(self):
+    def test_unknown_first_digit(self) -> None:
         from trade_krono_cli.cli_commands.maintenance import _resolve_tickers
 
         result = _resolve_tickers("100001,200001,400001,500001")
@@ -81,7 +81,7 @@ class TestResolveTickers:
 class TestSyncWhitelist:
     """测试 sync-whitelist 命令。"""
 
-    def test_sync_whitelist_help(self, runner):
+    def test_sync_whitelist_help(self, runner) -> None:
         result = runner.invoke(app, ["sync-whitelist", "--help"])
         assert result.exit_code == 0
         out = _strip_ansi(result.output)
@@ -89,7 +89,7 @@ class TestSyncWhitelist:
         assert "--lookback" in out
         assert "--delay" in out
 
-    def test_sync_whitelist_no_config(self, runner):
+    def test_sync_whitelist_no_config(self, runner) -> None:
         """未配置 SYNC_WHITELIST 时应报错退出。"""
         with (
             patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
@@ -100,7 +100,7 @@ class TestSyncWhitelist:
             assert result.exit_code == 1
             assert "未配置 SYNC_WHITELIST" in _strip_ansi(result.output)
 
-    def test_sync_whitelist_invalid_codes(self, runner):
+    def test_sync_whitelist_invalid_codes(self, runner) -> None:
         """白名单全为无效代码时应报错退出。"""
         with (
             patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
@@ -111,7 +111,7 @@ class TestSyncWhitelist:
             assert result.exit_code == 1
             assert "无有效股票" in _strip_ansi(result.output)
 
-    def test_sync_whitelist_success(self, runner):
+    def test_sync_whitelist_success(self, runner) -> None:
         """正常执行应调用 fetch_kline_incremental 并输出完成信息。"""
         mock_df = MagicMock()
         mock_df.__len__ = MagicMock(return_value=800)
@@ -120,7 +120,7 @@ class TestSyncWhitelist:
             patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
-                "trade_krono_cli.data.fetch_kline_incremental", return_value=mock_df
+                "trade_krono_cli.data.fetch_kline_incremental", return_value=mock_df,
             ) as mock_fetch,
         ):
             mock_settings.return_value.sync_whitelist = "600519,000858"
@@ -136,7 +136,7 @@ class TestSyncWhitelist:
             called_tickers = {c[1]["ticker"] for c in mock_fetch.call_args_list}
             assert called_tickers == {"sh.600519", "sz.000858"}
 
-    def test_sync_whitelist_partial_failure(self, runner):
+    def test_sync_whitelist_partial_failure(self, runner) -> None:
         """部分股票失败时应报告成功/失败数。"""
         mock_df = MagicMock()
         mock_df.__len__ = MagicMock(return_value=500)
@@ -144,7 +144,8 @@ class TestSyncWhitelist:
         def side_effect(**kwargs):
             ticker = kwargs.get("ticker", "")
             if ticker == "sh.600519":
-                raise RuntimeError("network error")
+                msg = "network error"
+                raise RuntimeError(msg)
             return mock_df
 
         with (
@@ -172,7 +173,7 @@ class TestSyncWhitelist:
 class TestSyncUniverseWhitelist:
     """测试 sync-universe 中白名单优先行为。"""
 
-    def test_sync_universe_with_whitelist_order(self, runner):
+    def test_sync_universe_with_whitelist_order(self, runner) -> None:
         """白名单股票应在全量列表之前处理。"""
         mock_df = MagicMock()
         mock_df.__len__ = MagicMock(return_value=800)
@@ -195,7 +196,7 @@ class TestSyncUniverseWhitelist:
             patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
-                "trade_krono_cli.universe.provider.TongHuaShunUniverseProvider"
+                "trade_krono_cli.universe.provider.TongHuaShunUniverseProvider",
             ) as mock_provider_cls,
             patch("trade_krono_cli.data.fetch_kline_incremental", side_effect=record_fetch),
         ):
@@ -216,7 +217,7 @@ class TestSyncUniverseWhitelist:
             assert call_order.count("sh.600519") == 1
             assert call_order.count("sz.000858") == 1
 
-    def test_sync_universe_without_whitelist(self, runner):
+    def test_sync_universe_without_whitelist(self, runner) -> None:
         """未配置白名单时应正常执行全量同步。"""
         mock_df = MagicMock()
         mock_df.__len__ = MagicMock(return_value=800)
@@ -231,7 +232,7 @@ class TestSyncUniverseWhitelist:
             patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
-                "trade_krono_cli.universe.provider.TongHuaShunUniverseProvider"
+                "trade_krono_cli.universe.provider.TongHuaShunUniverseProvider",
             ) as mock_provider_cls,
             patch("trade_krono_cli.data.fetch_kline_incremental", return_value=mock_df),
         ):

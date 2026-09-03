@@ -1,5 +1,4 @@
-"""
-WalkForwardEngine — 滚动时间窗口的回测评估引擎。
+"""WalkForwardEngine — 滚动时间窗口的回测评估引擎。
 
 与 backtest_engine.py 的区别：
   backtest_engine     对固定信号集合做一次性模拟（适合策略参数调优）
@@ -26,14 +25,19 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Callable, Iterable, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.data_snapshot import DataSnapshot
 from trade_krono_cli.eval_data import EvalRecord, EvaluationSummary, HorizonMetrics
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    import pandas as pd
+
+    from trade_krono_cli.data_snapshot import DataSnapshot
 
 # ═══════════════════════════════════════════════════════
 #  WalkForwardConfig
@@ -42,8 +46,7 @@ from trade_krono_cli.eval_data import EvalRecord, EvaluationSummary, HorizonMetr
 
 @dataclass
 class WalkForwardConfig:
-    """
-    滚动窗口评估的配置参数。
+    """滚动窗口评估的配置参数。
 
     Parameters
     ----------
@@ -53,6 +56,7 @@ class WalkForwardConfig:
     min_train_samples   最少训练样本数，低于此值跳过该窗口
     test_start_date     测试区间起始日期（ISO）
     test_end_date       测试区间截止日期（ISO）
+
     """
 
     lookback_days: int = 252  # 1 年交易日
@@ -77,9 +81,9 @@ class WalkForwardResult:
     total_windows: int = 0
     valid_windows: int = 0  # 满足 min_train_samples 的窗口数
     records: list[EvalRecord] = field(default_factory=list)
-    summary: Optional[EvaluationSummary] = None
+    summary: EvaluationSummary | None = None
     elapsed_sec: float = 0.0
-    data_snapshot: Optional[DataSnapshot] = None
+    data_snapshot: DataSnapshot | None = None
 
     @property
     def win_rate(self) -> float:
@@ -111,8 +115,7 @@ class WalkForwardResult:
 
 
 class WalkForwardEngine:
-    """
-    滚动时间窗口评估引擎。
+    """滚动时间窗口评估引擎。
 
     使用方式：
         engine = WalkForwardEngine(config)
@@ -124,7 +127,7 @@ class WalkForwardEngine:
         )
     """
 
-    def __init__(self, config: Optional[WalkForwardConfig] = None):
+    def __init__(self, config: WalkForwardConfig | None = None) -> None:
         self.config = config or WalkForwardConfig()
         self._records: list[EvalRecord] = []
 
@@ -148,13 +151,12 @@ class WalkForwardEngine:
     def run(
         self,
         ticker: str,
-        predict_fn: Callable[[str, str], Optional[dict]],
-        fetch_actual_fn: Callable[[str, str, int], Optional[float]],
-        data_snapshot: Optional[DataSnapshot] = None,
-        train_data_fn: Optional[Callable[[str, str], Optional[pd.DataFrame]]] = None,
+        predict_fn: Callable[[str, str], dict | None],
+        fetch_actual_fn: Callable[[str, str, int], float | None],
+        data_snapshot: DataSnapshot | None = None,
+        train_data_fn: Callable[[str, str], pd.DataFrame | None] | None = None,
     ) -> WalkForwardResult:
-        """
-        执行一次完整的 walk-forward 评估。
+        """执行一次完整的 walk-forward 评估。
 
         Parameters
         ----------
@@ -170,6 +172,7 @@ class WalkForwardEngine:
         Returns
         -------
         WalkForwardResult
+
         """
         t0 = time.time()
         run_id = f"wf_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -180,7 +183,8 @@ class WalkForwardEngine:
             cfg.test_start_date or data_snapshot.effective_cut_date() if data_snapshot else ""
         )
         if not test_start or not cfg.test_end_date:
-            raise ValueError("需要提供 test_start_date 和 test_end_date（或从 data_snapshot 推断）")
+            msg = "需要提供 test_start_date 和 test_end_date（或从 data_snapshot 推断）"
+            raise ValueError(msg)
 
         # 生成测试日期序列
         test_dates = self._generate_test_dates(
@@ -208,7 +212,7 @@ class WalkForwardEngine:
                 train_df = train_data_fn(ticker, train_end)
                 if train_df is None or len(train_df) < cfg.min_train_samples:
                     logger.debug(
-                        f"跳过 {ticker} @ {eval_date}：训练数据不足 ({len(train_df) if train_df is not None else 0} < {cfg.min_train_samples})"
+                        f"跳过 {ticker} @ {eval_date}：训练数据不足 ({len(train_df) if train_df is not None else 0} < {cfg.min_train_samples})",
                     )
                     continue
 
@@ -273,7 +277,7 @@ class WalkForwardEngine:
         logger.info(
             f"WalkForward 完成: {ticker} {valid_windows} windows, "
             f"win_rate={result.win_rate:.1f}%, avg_ret={result.avg_return:.2f}%, "
-            f"sharpe={result.sharpe_annual:.2f}, {elapsed:.1f}s"
+            f"sharpe={result.sharpe_annual:.2f}, {elapsed:.1f}s",
         )
         return result
 
@@ -320,13 +324,12 @@ class WalkForwardEngine:
 def run_walk_forward_quick(
     ticker: str,
     eval_dates: Iterable[str],
-    predict_fn: Callable[[str, str], Optional[dict]],
-    fetch_actual_fn: Callable[[str, str, int], Optional[float]],
+    predict_fn: Callable[[str, str], dict | None],
+    fetch_actual_fn: Callable[[str, str, int], float | None],
     horizons: tuple[int, ...] = (5, 10, 20, 30),
     lookback_days: int = 252,
 ) -> WalkForwardResult:
-    """
-    快速入口：一行代码跑完 walk-forward。
+    """快速入口：一行代码跑完 walk-forward。
 
     Parameters
     ----------
@@ -340,6 +343,7 @@ def run_walk_forward_quick(
     Returns
     -------
     WalkForwardResult
+
     """
     from uuid import uuid4
 
@@ -381,7 +385,7 @@ def run_walk_forward_quick(
                     p50=pred.get("p50"),
                     p75=pred.get("p75"),
                     p90=pred.get("p90"),
-                )
+                ),
             )
 
     summary = engine._build_summary(records, horizons)

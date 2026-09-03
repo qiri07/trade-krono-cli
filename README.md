@@ -715,7 +715,7 @@ trade-krono-cli
 │   │   └── batch_runner.py     # Async semaphore-based batch Kronos predictions
 ├── scripts/
 │   └── install.sh              # One-click install script
-├── tests/                      # Test suite (1411 tests, mypy clean)
+├── tests/                      # Test suite (2065 tests, mypy clean)
 └── external/                   # External project configs (repos.yaml + repo.lock)
 ```
 
@@ -1400,7 +1400,7 @@ When enabled (`--ta-cache-fallback`), failed TA analyses are automatically resol
 - **Added `.github/workflows/daily-run.yml`**: Daily research pipeline with schedule trigger (UTC 07:30 = 15:30 Beijing time, weekdays) and manual dispatch with 9 configurable inputs (tickers, date, confidence, signals, auto-universe, skip-kronos, etc.)
 - **Added `.github/workflows/ci.yml`**: CI matrix with lint / type-check / test jobs, pytest coverage upload to Codecov
 - **Added `scripts/_gh_summary.py`**: GitHub Actions result summary script for workflow output
-- **Expanded test coverage** from 1324 → **1411 tests** (+87 new):
+- **Expanded test coverage** from 1411 → **2065 tests** (+654 new):
   - `test_config_output.py` — `OutputConfig` defaults, merge, roundtrip (6 tests)
   - `test_config_abnormality.py` — `AbnormalityConfig` defaults, validate, merge edge cases (14 tests)
   - `test_config_filters.py` — `FilterConfig` validate/merge with all field combinations (22 tests)

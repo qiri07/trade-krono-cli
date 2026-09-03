@@ -1,5 +1,4 @@
-"""
-pipeline — 投研流水线核心模块。
+"""pipeline — 投研流水线核心模块。
 
 单一编排入口：QuantPipeline（TA + Kronos 并行）+ PipelineFactory（组件工厂）。
 底层函数从子模块直接导入：
@@ -11,4 +10,4 @@ from __future__ import annotations
 
 from trade_krono_cli.pipeline.orchestrator import PipelineFactory, QuantPipeline
 
-__all__ = ["QuantPipeline", "PipelineFactory"]
+__all__ = ["PipelineFactory", "QuantPipeline"]

@@ -22,13 +22,13 @@ def _capture_logs(fn):
 
 
 class TestSetupLogger:
-    def test_setup_text_mode(self):
-        """text 模式下输出可读日志。"""
+    def test_setup_text_mode(self) -> None:
+        """Text 模式下输出可读日志。"""
         output = _capture_logs(lambda buf: logger.info("test message"))
         assert "test message" in output
 
-    def test_setup_json_mode(self):
-        """json 模式下输出合法 JSON 行。"""
+    def test_setup_json_mode(self) -> None:
+        """Json 模式下输出合法 JSON 行。"""
         setup_logger(level="INFO", json_format=True)
         logger.info("test json message")
         import trade_krono_cli.logging_config as _mod
@@ -42,14 +42,14 @@ class TestSetupLogger:
 
 
 class TestStructuredHelpers:
-    def test_info_structured(self):
+    def test_info_structured(self) -> None:
         output = _capture_logs(lambda buf: info_structured("hello", symbol="sh.600519", score=85.0))
         assert "hello" in output
 
-    def test_error_structured(self):
+    def test_error_structured(self) -> None:
         output = _capture_logs(lambda buf: error_structured("boom", module="kronos"))
         assert "boom" in output
 
-    def test_warning_structured(self):
+    def test_warning_structured(self) -> None:
         output = _capture_logs(lambda buf: warning_structured("warn msg", code="T1_LOCKED"))
         assert "warn msg" in output

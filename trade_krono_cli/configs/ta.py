@@ -15,7 +15,7 @@ class TAConfig:
     max_debate_rounds: int = 1
     output_language: str = "Chinese"
 
-    def merge(self, **overrides) -> "TAConfig":
+    def merge(self, **overrides) -> TAConfig:
         current = {k: getattr(self, k) for k in self.__dataclass_fields__}
         current.update({k: v for k, v in overrides.items() if v is not None})
         return TAConfig(**current)

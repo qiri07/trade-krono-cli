@@ -18,33 +18,33 @@ from trade_krono_cli.domain.types import Signal as DomainSignal
 # ── _majority_vote ────────────────────────────────────────────────────────────
 
 
-def test_majority_vote_single():
+def test_majority_vote_single() -> None:
     votes = [(DomainSignal.BUY, 80.0, "ta")]
     sig, conf = _majority_vote(votes)
     assert sig == DomainSignal.BUY
     assert conf > 0
 
 
-def test_majority_vote_two_same():
+def test_majority_vote_two_same() -> None:
     votes = [
         (DomainSignal.BUY, 80.0, "ta"),
         (DomainSignal.BUY, 70.0, "kronos"),
     ]
-    sig, conf = _majority_vote(votes)
+    sig, _conf = _majority_vote(votes)
     assert sig == DomainSignal.BUY
 
 
-def test_majority_vote_two_different():
+def test_majority_vote_two_different() -> None:
     """不同信号时取置信度高的。"""
     votes = [
         (DomainSignal.BUY, 80.0, "ta"),
         (DomainSignal.SELL, 60.0, "kronos"),
     ]
-    sig, conf = _majority_vote(votes)
+    sig, _conf = _majority_vote(votes)
     assert sig == DomainSignal.BUY
 
 
-def test_majority_vote_empty():
+def test_majority_vote_empty() -> None:
     sig, conf = _majority_vote([])
     assert sig == DomainSignal.HOLD
     assert conf == 50.0
@@ -53,7 +53,7 @@ def test_majority_vote_empty():
 # ── build_signal_assessment ───────────────────────────────────────────────────
 
 
-def test_build_only_ta():
+def test_build_only_ta() -> None:
     ta = TAAnalysis(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -71,7 +71,7 @@ def test_build_only_ta():
     assert sa.conflict == SignalConflict.NONE
 
 
-def test_build_only_kronos():
+def test_build_only_kronos() -> None:
     kd = PredictionDistribution(
         expected_return=3.2,
         direction=Direction.UP,
@@ -96,7 +96,7 @@ def test_build_only_kronos():
     assert sa.expected_value is not None
 
 
-def test_build_ta_and_kronos_conflict():
+def test_build_ta_and_kronos_conflict() -> None:
     ta = TAAnalysis(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -127,7 +127,7 @@ def test_build_ta_and_kronos_conflict():
     assert sa.conflict in (SignalConflict.TA_vs_KRONOS, SignalConflict.ALL_CONFLICT)
 
 
-def test_build_with_committee():
+def test_build_with_committee() -> None:
     sa = build_signal_assessment(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -137,7 +137,7 @@ def test_build_with_committee():
     assert sa.final_signal == DomainSignal.BUY
 
 
-def test_build_all_none():
+def test_build_all_none() -> None:
     """所有输入均为 None 时，final_signal = HOLD, conflict = NONE。"""
     sa = build_signal_assessment(
         ticker="sh.600519",
@@ -147,7 +147,7 @@ def test_build_all_none():
     assert sa.conflict == SignalConflict.NONE
 
 
-def test_build_with_bull_bear_case():
+def test_build_with_bull_bear_case() -> None:
     sa = build_signal_assessment(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -157,7 +157,7 @@ def test_build_with_bull_bear_case():
     assert "Bull" in sa.thesis
 
 
-def test_build_custom_cost_bps():
+def test_build_custom_cost_bps() -> None:
     sa = build_signal_assessment(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -175,7 +175,7 @@ def test_build_custom_cost_bps():
 # ── build_investment_decision ─────────────────────────────────────────────────
 
 
-def test_build_decision_from_assessment():
+def test_build_decision_from_assessment() -> None:
     assessment = SignalAssessment(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -198,7 +198,7 @@ def test_build_decision_from_assessment():
     assert d.thesis == "论点"
 
 
-def test_build_decision_with_risk():
+def test_build_decision_with_risk() -> None:
     from trade_krono_cli.domain.risk import RiskAssessment
 
     assessment = SignalAssessment(
@@ -217,7 +217,7 @@ def test_build_decision_with_risk():
     assert d.risk_assessment == risk
 
 
-def test_build_decision_with_params():
+def test_build_decision_with_params() -> None:
     assessment = SignalAssessment(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -244,7 +244,7 @@ def test_build_decision_with_params():
 # ── build_eval_record ─────────────────────────────────────────────────────────
 
 
-def test_build_eval_record():
+def test_build_eval_record() -> None:
     record = build_eval_record(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -263,7 +263,7 @@ def test_build_eval_record():
     assert record.error_pct == pytest.approx(3.2 - 2.5, abs=0.01)
 
 
-def test_build_eval_record_flat():
+def test_build_eval_record_flat() -> None:
     record = build_eval_record(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -276,7 +276,7 @@ def test_build_eval_record_flat():
     assert record.is_direction_correct is False
 
 
-def test_build_eval_record_down():
+def test_build_eval_record_down() -> None:
     record = build_eval_record(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -289,7 +289,7 @@ def test_build_eval_record_down():
     assert record.is_direction_correct is True
 
 
-def test_build_eval_record_with_distribution():
+def test_build_eval_record_with_distribution() -> None:
     record = build_eval_record(
         ticker="sh.600519",
         eval_date="2026-08-11",
@@ -307,7 +307,7 @@ def test_build_eval_record_with_distribution():
     assert record.p90 == 8.0
 
 
-def test_build_eval_record_composite_score_backward_compat():
+def test_build_eval_record_composite_score_backward_compat() -> None:
     """composite_score 参数作为 ranking_score 的别名。"""
     record = build_eval_record(
         ticker="sh.600519",

@@ -1,5 +1,4 @@
-"""
-resource_manager — 统一资源管理器（ResourceManager）。
+"""resource_manager — 统一资源管理器（ResourceManager）。
 
 这是项目所有并发资源的唯一入口。禁止在各业务模块中直接创建线程池、信号量
 或轮询 GPU 状态。所有资源必须通过 ResourceManager 获取。
@@ -57,9 +56,13 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
+from typing_extensions import Self
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  配置
@@ -68,8 +71,7 @@ from loguru import logger
 
 @dataclass(frozen=True)
 class ResourceBudget:
-    """
-    资源预算配置。
+    """资源预算配置。
 
     所有默认值均基于当前机器配置（Ryzen 7 4800H / 64GB / Quadro P620 4GB）。
     可通过 .env 环境变量覆盖：
@@ -102,8 +104,7 @@ class ResourceBudget:
 
 
 class GpuQueue:
-    """
-    GPU 推理并发控制。
+    """GPU 推理并发控制。
 
     同步 API（供 KronosSession / KronosRunner 使用）：
         with manager.gpu():
@@ -116,7 +117,7 @@ class GpuQueue:
     设备为 CPU 时，acquire/release 均为 no-op（零开销）。
     """
 
-    def __init__(self, max_concurrency: int = 1):
+    def __init__(self, max_concurrency: int = 1) -> None:
         self._max = max_concurrency
         self._lock = threading.Lock()
         self._in_flight = 0
@@ -135,8 +136,7 @@ class GpuQueue:
         return self._max
 
     def acquire(self) -> None:
-        """
-        获取 GPU 推理许可（同步，阻塞直到有空位）。
+        """获取 GPU 推理许可（同步，阻塞直到有空位）。
 
         当同时有 max_concurrency 个推理任务在运行时阻塞等待。
         """
@@ -157,14 +157,14 @@ class GpuQueue:
             if self._in_flight > 0:
                 self._in_flight -= 1
 
-    def __enter__(self) -> "GpuQueue":
+    def __enter__(self) -> Self:
         self.acquire()
         return self
 
     def __exit__(self, *args) -> None:
         self.release()
 
-    async def __aenter__(self) -> "GpuQueue":
+    async def __aenter__(self) -> Self:
         self.acquire()
         return self
 
@@ -185,8 +185,7 @@ class GpuQueue:
 
 
 class LlmSemaphore:
-    """
-    LLM API 并发控制 + 滑动窗口限流。
+    """LLM API 并发控制 + 滑动窗口限流。
 
     并发控制：最多 N 个请求同时发送（N = llm_concurrency）。
     滑动窗口：每个 provider 在最近 min_interval 秒内最多发送 N 个请求。
@@ -199,7 +198,7 @@ class LlmSemaphore:
         self,
         max_concurrency: int = 3,
         min_interval: float = 1.0,
-    ):
+    ) -> None:
         self._max_concurrency = max_concurrency
         self._min_interval = min_interval
         self._lock = threading.Lock()
@@ -209,8 +208,7 @@ class LlmSemaphore:
         self._total_throttled = 0
 
     def _check_rate_limit(self, provider: str) -> float:
-        """
-        检查指定 provider 的滑动窗口，返回需要等待的秒数。
+        """检查指定 provider 的滑动窗口，返回需要等待的秒数。
         0.0 表示无需等待。
         """
         now = time.time()
@@ -229,12 +227,12 @@ class LlmSemaphore:
             return 0.0
 
     def acquire(self, provider: str = "default") -> None:
-        """
-        获取 LLM 请求许可（同步，含滑动窗口限流）。
+        """获取 LLM 请求许可（同步，含滑动窗口限流）。
 
         Parameters
         ----------
         provider : LLM provider 名称（用于独立滑动窗口计数）
+
         """
         # 滑动窗口限流：等待直到窗口内有空间
         while True:
@@ -253,10 +251,10 @@ class LlmSemaphore:
     def release(self, provider: str = "default") -> None:
         """释放 LLM 请求许可。"""
         with self._lock:
-            if provider in self._request_log and self._request_log[provider]:
+            if self._request_log.get(provider):
                 self._request_log[provider].popleft()
 
-    async def __aenter__(self) -> "LlmSemaphore":
+    async def __aenter__(self) -> Self:
         # 异步路径：简单 acquire（滑动窗口已在同步路径处理）
         self.acquire()
         return self
@@ -282,12 +280,12 @@ class LlmSemaphore:
 class _ThreadPoolWrapper:
     """懒初始化 ThreadPoolExecutor 包装器。"""
 
-    __slots__ = ("_name", "_workers", "_pool", "_lock")
+    __slots__ = ("_lock", "_name", "_pool", "_workers")
 
-    def __init__(self, name: str, workers: int):
+    def __init__(self, name: str, workers: int) -> None:
         self._name = name
         self._workers = workers
-        self._pool: Optional[ThreadPoolExecutor] = None
+        self._pool: ThreadPoolExecutor | None = None
         self._lock = threading.Lock()
 
     @property
@@ -318,8 +316,7 @@ class _ThreadPoolWrapper:
 
 
 class ResourceManager:
-    """
-    统一资源管理器。
+    """统一资源管理器。
 
     所有并发资源均由此处统一管理：
       · CPU 线程池   — TA 分析、数据预处理（最高 8 worker）
@@ -333,7 +330,7 @@ class ResourceManager:
     向后兼容：仍支持 get_pool() 调用（内部委托给 cpu/io 池）。
     """
 
-    def __init__(self, budget: Optional[ResourceBudget] = None):
+    def __init__(self, budget: ResourceBudget | None = None) -> None:
         self._budget = budget or ResourceBudget()
         self._cpu = _ThreadPoolWrapper("cpu", self._budget.cpu_workers)
         self._io = _ThreadPoolWrapper("io", self._budget.io_workers)
@@ -347,8 +344,7 @@ class ResourceManager:
     # ── 提交接口 ─────────────────────────────────────────────────────────────
 
     def submit(self, category: str, fn: Callable, *args, **kwargs) -> Future:
-        """
-        提交任务到指定资源类别。
+        """提交任务到指定资源类别。
 
         Parameters
         ----------
@@ -359,12 +355,14 @@ class ResourceManager:
         Returns
         -------
         concurrent.futures.Future
+
         """
         if category == "cpu":
             return self._cpu.submit(fn, *args, **kwargs)
         if category == "io":
             return self._io.submit(fn, *args, **kwargs)
-        raise ValueError(f"未知资源类别: {category!r}（支持: cpu, io）")
+        msg = f"未知资源类别: {category!r}（支持: cpu, io）"
+        raise ValueError(msg)
 
     def submit_cpu(self, fn: Callable, *args, **kwargs) -> Future:
         """提交 CPU-bound 任务（TA 分析、数据预处理）。"""
@@ -378,10 +376,9 @@ class ResourceManager:
         self,
         callables: list[Callable],
         *,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> list:
-        """
-        并行执行多个无参 callable，收集结果。
+        """并行执行多个无参 callable，收集结果。
 
         异常被捕获并转为 None 返回，不中断其他任务。
         """
@@ -469,18 +466,20 @@ class ResourceManager:
 
 # ── 模块级单例 ─────────────────────────────────────────────────────────────────
 
-_manager: Optional[ResourceManager] = None
+_manager: ResourceManager | None = None
+_manager_lock = threading.Lock()
 
 
 def get_manager() -> ResourceManager:
-    """
-    获取全局 ResourceManager 单例。
+    """获取全局 ResourceManager 单例。
 
     所有资源访问应通过此函数，禁止各模块自行创建线程池或信号量。
     """
     global _manager
     if _manager is None:
-        _manager = ResourceManager()
+        with _manager_lock:
+            if _manager is None:
+                _manager = ResourceManager()
     return _manager
 
 
@@ -496,8 +495,7 @@ def clear_manager() -> None:
 
 
 def get_pool():
-    """
-    向后兼容：返回 ResourceManager 实例。
+    """向后兼容：返回 ResourceManager 实例。
 
     ResourceManager 提供与 ResourcePool 兼容的接口：
       .submit_cpu() / .submit_io() / .run_parallel() / .close()
@@ -505,6 +503,6 @@ def get_pool():
     return get_manager()
 
 
-def clear_pool_singleton():
+def clear_pool_singleton() -> None:
     """向后兼容：调用 clear_manager()。"""
     clear_manager()

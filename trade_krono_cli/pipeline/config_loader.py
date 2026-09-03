@@ -1,5 +1,4 @@
-"""
-pipeline.config_loader — backward-compatibility re-export layer.
+"""pipeline.config_loader — backward-compatibility re-export layer.
 
 All implementation lives in trade_krono_cli.utils.parser_helpers.
 This module is retained only so callers that import from
@@ -17,8 +16,8 @@ from trade_krono_cli.utils.parser_helpers import (
 )
 
 __all__ = [
-    "_parse_range",
+    "_merge_with_nested",
     "_parse_comma_list",
     "_parse_float",
-    "_merge_with_nested",
+    "_parse_range",
 ]

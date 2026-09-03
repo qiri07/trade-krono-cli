@@ -1,6 +1,4 @@
-"""
-研究数据库 — TA Analysis 表读写。
-"""
+"""研究数据库 — TA Analysis 表读写。"""
 
 from __future__ import annotations
 
@@ -78,8 +76,7 @@ class TaAnalysisMixin(ResearchDatabase):
         ticker: str,
         max_age_days: int = 7,
     ) -> dict | None:
-        """
-        查询最近一次成功的 TA 分析结果（不限定 job_id）。
+        """查询最近一次成功的 TA 分析结果（不限定 job_id）。
 
         Parameters
         ----------
@@ -90,6 +87,7 @@ class TaAnalysisMixin(ResearchDatabase):
         -------
         dict with keys: ticker, signal, confidence, thesis, risks, date, job_id
         or None if no suitable record found.
+
         """
         cutoff = time.time() - max_age_days * 86400
         with self._conn as conn:

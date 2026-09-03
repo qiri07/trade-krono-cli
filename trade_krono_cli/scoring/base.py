@@ -1,5 +1,4 @@
-"""
-scoring.base — 评分与风险插件抽象基类。
+"""scoring.base — 评分与风险插件抽象基类。
 
 提供三个 ABC：
   CompositeScorer   : 综合打分器（对单只股票合并结果打分）
@@ -13,7 +12,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 # ═══════════════════════════════════════════════════════
 # 综合打分器
@@ -32,8 +31,7 @@ class ScoreResult:
 
 
 class CompositeScorer(ABC):
-    """
-    综合打分器抽象基类。
+    """综合打分器抽象基类。
 
     实现要点：
       - name: 策略标识符（小写），用于 Registry 注册
@@ -43,9 +41,8 @@ class CompositeScorer(ABC):
 
     name: str = "base"
 
-    def score(self, merged: dict, config: Any = None) -> float:
-        """
-        对合并后的股票结果打分，返回 0–100 的浮点数。
+    def score(self, merged: dict, config: Any = None) -> float:  # noqa: ANN401 — 插件配置类型动态，由具体策略类定义
+        """对合并后的股票结果打分，返回 0–100 的浮点数。
 
         Parameters
         ----------
@@ -57,11 +54,12 @@ class CompositeScorer(ABC):
         Returns
         -------
         float : 0–100
+
         """
         return self._score_impl(merged, config)
 
     @abstractmethod
-    def _score_impl(self, merged: dict, config: Any) -> float:
+    def _score_impl(self, merged: dict, config: Any) -> float:  # noqa: ANN401 — 子类实现，config 类型动态
         """子类实现核心打分逻辑。"""
         ...
 
@@ -87,8 +85,7 @@ class BoostResult:
 
 
 class RiskBoostStrategy(ABC):
-    """
-    异常标记风险加分策略抽象基类。
+    """异常标记风险加分策略抽象基类。
 
     实现要点：
       - name: 策略标识符
@@ -97,9 +94,8 @@ class RiskBoostStrategy(ABC):
 
     name: str = "base"
 
-    def boost(self, base_risk: float, flags: list[str], params: Any = None) -> float:
-        """
-        根据异常标记上调风险分。
+    def boost(self, base_risk: float, flags: list[str], params: Any = None) -> float:  # noqa: ANN401 — 插件参数类型动态
+        """根据异常标记上调风险分。
 
         Parameters
         ----------
@@ -113,12 +109,13 @@ class RiskBoostStrategy(ABC):
         Returns
         -------
         float : 上调后的风险分（0–100）
+
         """
         result = self._boost_impl(base_risk, flags, params)
         return result if isinstance(result, float) else result.boosted_risk
 
     @abstractmethod
-    def _boost_impl(self, base_risk: float, flags: list[str], params: Any) -> float | BoostResult:
+    def _boost_impl(self, base_risk: float, flags: list[str], params: Any) -> float | BoostResult:  # noqa: ANN401 — 子类实现，params 类型动态
         """子类实现核心风险加分逻辑。"""
         ...
 
@@ -130,12 +127,13 @@ class RiskBoostStrategy(ABC):
 # Rating 映射策略（LLM 输出 → Signal + Confidence）
 # ═══════════════════════════════════════════════════════
 
-from trade_krono_cli.ta_decision import Signal  # noqa: E402 (avoid circular at module level)
+
+if TYPE_CHECKING:
+    from trade_krono_cli.ta_decision import Signal
 
 
 class RatingMapper(ABC):
-    """
-    LLM Rating 文本 → (Signal, confidence) 映射策略。
+    """LLM Rating 文本 → (Signal, confidence) 映射策略。
 
     不同 Prompt 模板可能输出不同格式的 Rating，
     此插件允许切换解析策略而不改主逻辑。
@@ -145,8 +143,7 @@ class RatingMapper(ABC):
 
     @abstractmethod
     def map_rating(self, rating_text: str) -> tuple[Signal, float]:
-        """
-        将 LLM 输出的评级文本映射为标准 Signal + confidence。
+        """将 LLM 输出的评级文本映射为标准 Signal + confidence。
 
         Parameters
         ----------
@@ -158,6 +155,7 @@ class RatingMapper(ABC):
         (Signal, confidence)
           Signal : BUY / HOLD / SELL
           confidence : 0–100 的置信度
+
         """
         ...
 

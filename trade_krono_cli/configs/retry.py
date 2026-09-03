@@ -15,7 +15,7 @@ class RetryConfig:
     retry_rate_limit_backoff: bool = True
     retry_rate_limit_max_wait: float = 60.0
 
-    def merge(self, **overrides) -> "RetryConfig":
+    def merge(self, **overrides) -> RetryConfig:
         current = {k: getattr(self, k) for k in self.__dataclass_fields__}
         current.update(overrides)
         return RetryConfig(**current)

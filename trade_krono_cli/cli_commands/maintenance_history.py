@@ -13,7 +13,7 @@ console = Console()
 
 def history(
     ticker: str | None = typer.Option(
-        None, "--ticker", "-t", help="指定股票代码，查看该股票的历史分析记录"
+        None, "--ticker", "-t", help="指定股票代码，查看该股票的历史分析记录",
     ),
     limit: int = typer.Option(10, "--limit", "-l", help="最多显示条数"),
 ) -> None:

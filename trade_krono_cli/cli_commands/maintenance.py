@@ -1,5 +1,4 @@
-"""
-CLI 维护命令 — 向后兼容薄包装模块。
+"""CLI 维护命令 — 向后兼容薄包装模块。
 
 实际实现已拆分到以下子模块：
   maintenance_status.py  — status

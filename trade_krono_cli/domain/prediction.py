@@ -1,5 +1,4 @@
-"""
-Prediction — 预测相关的领域对象。
+"""Prediction — 预测相关的领域对象。
 
 包含：
   · PredictionDistribution  — 完整的概率分布描述（p10–p90）
@@ -10,7 +9,6 @@ Prediction — 预测相关的领域对象。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from trade_krono_cli.domain.types import Direction
 
@@ -21,8 +19,7 @@ from trade_krono_cli.domain.types import Direction
 
 @dataclass(frozen=True)
 class PredictionDistribution:
-    """
-    预测结果的概率分布描述。
+    """预测结果的概率分布描述。
 
     包含两个层次的统计信息：
       1. 摘要指标（expected_return / direction / confidence_score 等）
@@ -31,23 +28,23 @@ class PredictionDistribution:
     单样本时百分位退化为最终价；多样本时从路径矩阵计算。
     """
 
-    expected_return: Optional[float] = None  # 预期收益率（%）
-    direction: Optional[Direction] = None  # UP / DOWN / FLAT
-    direction_score: Optional[float] = None  # 方向强度 0-1
-    volatility: Optional[float] = None  # 预测路径标准差
-    path_dispersion: Optional[float] = None  # 归一化路径分散度
-    confidence_score: Optional[float] = None  # 综合置信度 0-100
+    expected_return: float | None = None  # 预期收益率（%）
+    direction: Direction | None = None  # UP / DOWN / FLAT
+    direction_score: float | None = None  # 方向强度 0-1
+    volatility: float | None = None  # 预测路径标准差
+    path_dispersion: float | None = None  # 归一化路径分散度
+    confidence_score: float | None = None  # 综合置信度 0-100
     sample_count_used: int = 1
 
     # 分位数（多样本时填充）
-    p10: Optional[float] = None
-    p25: Optional[float] = None
-    p50: Optional[float] = None
-    p75: Optional[float] = None
-    p90: Optional[float] = None
+    p10: float | None = None
+    p25: float | None = None
+    p50: float | None = None
+    p75: float | None = None
+    p90: float | None = None
 
     @property
-    def predicted_final(self) -> Optional[float]:
+    def predicted_final(self) -> float | None:
         """预测最终价（取 p50，退化为 expected_return + last_close）。"""
         if self.p50 is not None:
             return self.p50
@@ -70,7 +67,7 @@ class PredictionDistribution:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "PredictionDistribution":
+    def from_dict(cls, data: dict) -> PredictionDistribution:
         direction_val = data.get("direction")
         direction = (
             Direction.UP
@@ -95,7 +92,7 @@ class PredictionDistribution:
         )
 
     @classmethod
-    def empty(cls) -> "PredictionDistribution":
+    def empty(cls) -> PredictionDistribution:
         return cls()
 
 
@@ -106,8 +103,7 @@ class PredictionDistribution:
 
 @dataclass(frozen=True)
 class TAAnalysis:
-    """
-    技术面 / 基本面分析结果。
+    """技术面 / 基本面分析结果。
 
     由 TradingAgents 产出，代表从多个维度对股票的分析结论。
     """
@@ -122,18 +118,18 @@ class TAAnalysis:
     invalidations: list[str] = field(default_factory=list)
 
     # 多因子评分
-    valuation_score: Optional[float] = None
-    fundamental_score: Optional[float] = None
-    technical_score: Optional[float] = None
-    sentiment_score: Optional[float] = None
-    capital_flow_score: Optional[float] = None
-    macro_score: Optional[float] = None
+    valuation_score: float | None = None
+    fundamental_score: float | None = None
+    technical_score: float | None = None
+    sentiment_score: float | None = None
+    capital_flow_score: float | None = None
+    macro_score: float | None = None
 
     # 催化剂
     catalysts: list[str] = field(default_factory=list)
 
     # 错误信息（分析失败时填充）
-    error: Optional[str] = None
+    error: str | None = None
     elapsed_sec: float = 0.0
 
     def to_dict(self) -> dict:
@@ -158,7 +154,7 @@ class TAAnalysis:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "TAAnalysis":
+    def from_dict(cls, data: dict) -> TAAnalysis:
         from trade_krono_cli.domain import Signal
 
         signal_val = data.get("signal", "HOLD")
@@ -190,7 +186,7 @@ class TAAnalysis:
         )
 
     @classmethod
-    def failed(cls, ticker: str, eval_date: str, error: str) -> "TAAnalysis":
+    def failed(cls, ticker: str, eval_date: str, error: str) -> TAAnalysis:
         return cls(
             ticker=ticker,
             eval_date=eval_date,
@@ -207,8 +203,7 @@ class TAAnalysis:
 
 @dataclass(frozen=True)
 class KronosPrediction:
-    """
-    Kronos 时序预测结果。
+    """Kronos 时序预测结果。
 
     与 TAAnalysis 并行，提供基于时间序列的概率预测。
     """
@@ -225,7 +220,7 @@ class KronosPrediction:
     model_name: str = ""
     sample_count_used: int = 1
     elapsed_sec: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
     @property
     def p10(self) -> float | None:
@@ -263,7 +258,7 @@ class KronosPrediction:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "KronosPrediction":
+    def from_dict(cls, data: dict) -> KronosPrediction:
         dist_data = data.get("distribution", {})
         dist = (
             PredictionDistribution.from_dict(dist_data) if dist_data else PredictionDistribution()
@@ -289,7 +284,7 @@ class KronosPrediction:
         )
 
     @classmethod
-    def failed(cls, ticker: str, eval_date: str, horizon: int, error: str) -> "KronosPrediction":
+    def failed(cls, ticker: str, eval_date: str, horizon: int, error: str) -> KronosPrediction:
         return cls(
             ticker=ticker,
             eval_date=eval_date,

@@ -1,6 +1,4 @@
-"""
-retry_policy.store — 失败记录持久化（FailureStore）。
-"""
+"""retry_policy.store — 失败记录持久化（FailureStore）。"""
 
 from __future__ import annotations
 
@@ -8,17 +6,18 @@ import json
 import threading
 import time
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from trade_krono_cli.config import get_settings
 from trade_krono_cli.retry_policy.classifier import classify_error
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 @dataclass
 class FailureRecord:
-    """
-    单只股票的失败记录。
+    """单只股票的失败记录。
 
     Attributes
     ----------
@@ -30,6 +29,7 @@ class FailureRecord:
     error_message   : 错误消息（脱敏后）
     timestamp       : 记录时间（epoch seconds）
     attempt_count   : 已尝试次数
+
     """
 
     ticker: str
@@ -45,13 +45,12 @@ class FailureRecord:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "FailureRecord":
+    def from_dict(cls, d: dict) -> FailureRecord:
         return cls(**{k: d[k] for k in cls.__dataclass_fields__ if k in d})
 
 
 class FailureStore:
-    """
-    失败记录持久化存储（JSON 文件）。
+    """失败记录持久化存储（JSON 文件）。
 
     用法：
         store = FailureStore()
@@ -60,7 +59,7 @@ class FailureStore:
         store.clear_for_date("2026-01-15")
     """
 
-    def __init__(self, store_path: Optional[Path] = None) -> None:
+    def __init__(self, store_path: Path | None = None) -> None:
         self._path = store_path or (get_settings().cache_dir / "failure_store.json")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._records: list[FailureRecord] = []
@@ -99,12 +98,11 @@ class FailureStore:
         exc: Exception,
         attempt_count: int = 1,
     ) -> FailureRecord:
-        """
-        记录一次失败。
+        """记录一次失败。
 
         若同一 ticker + date + module 已有记录，则更新 attempt_count 和 error 信息。
         """
-        category, desc = classify_error(exc)
+        category, _desc = classify_error(exc)
         record = FailureRecord(
             ticker=ticker,
             date=date,
@@ -132,18 +130,18 @@ class FailureStore:
 
     def list_fails(
         self,
-        date: Optional[str] = None,
-        module: Optional[str] = None,
-        category: Optional[str] = None,
+        date: str | None = None,
+        module: str | None = None,
+        category: str | None = None,
     ) -> list[FailureRecord]:
-        """
-        查询失败记录。
+        """查询失败记录。
 
         Parameters
         ----------
         date     : 筛选日期（None = 全部）
         module   : 筛选模块 "ta"/"kronos"/"data"（None = 全部）
         category : 筛选分类 "retriable"/"non_retriable"（None = 全部）
+
         """
         result = self._records
         if date:
@@ -156,8 +154,8 @@ class FailureStore:
 
     def get_tickers(
         self,
-        date: Optional[str] = None,
-        module: Optional[str] = None,
+        date: str | None = None,
+        module: str | None = None,
     ) -> list[str]:
         """返回失败股票的 ticker 列表（去重，保留首次出现顺序）。"""
         fails = self.list_fails(date=date, module=module)

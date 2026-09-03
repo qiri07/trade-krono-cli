@@ -6,13 +6,13 @@ from trade_krono_cli.batch.batch_runner import BatchConfig, BatchRunner
 class TestBatchRunner:
     """BatchRunner 单元测试。"""
 
-    def test_empty_items(self):
+    def test_empty_items(self) -> None:
         """空列表直接返回。"""
         runner = BatchRunner()
         result = runner.run_sync([], lambda x: x)
         assert result == []
 
-    def test_basic_batch(self):
+    def test_basic_batch(self) -> None:
         """基本批量执行。"""
         runner = BatchRunner(config=BatchConfig(batch_size=2, max_concurrent=2))
 
@@ -23,7 +23,7 @@ class TestBatchRunner:
         results = runner.run_sync(items, process)
         assert sorted(results) == [2, 4, 6, 8]
 
-    def test_concurrent_execution(self):
+    def test_concurrent_execution(self) -> None:
         """并发执行：多个任务同时运行。"""
         runner = BatchRunner(config=BatchConfig(max_concurrent=3, cooldown_seconds=0))
 
@@ -39,19 +39,20 @@ class TestBatchRunner:
         # 6 个任务都执行了
         assert len(execution_order) == 6
 
-    def test_error_handling(self):
+    def test_error_handling(self) -> None:
         """单个任务失败不影响其他任务。"""
         runner = BatchRunner(
             config=BatchConfig(
                 batch_size=2,
                 max_concurrent=2,
                 retry_attempts=0,
-            )
+            ),
         )
 
         def flaky_process(x):
             if x == 2:
-                raise ValueError(f"item {x} failed")
+                msg = f"item {x} failed"
+                raise ValueError(msg)
             return x
 
         items = [1, 2, 3]
@@ -59,7 +60,7 @@ class TestBatchRunner:
         # 只有成功的结果返回
         assert sorted(results) == [1, 3]
 
-    def test_retry_on_failure(self):
+    def test_retry_on_failure(self) -> None:
         """失败后重试，最终成功。"""
         runner = BatchRunner(
             config=BatchConfig(
@@ -67,7 +68,7 @@ class TestBatchRunner:
                 max_concurrent=1,
                 retry_attempts=2,
                 retry_delay=0.01,
-            )
+            ),
         )
 
         call_count = 0
@@ -76,14 +77,15 @@ class TestBatchRunner:
             nonlocal call_count
             call_count += 1
             if call_count < 3:
-                raise RuntimeError("not yet")
+                msg = "not yet"
+                raise RuntimeError(msg)
             return x
 
         results = runner.run_sync([42], eventually_succeeds)
         assert results == [42]
         assert call_count == 3
 
-    def test_split_batches(self):
+    def test_split_batches(self) -> None:
         """测试批次分割逻辑。"""
         items = list(range(7))
         batches = BatchRunner._split_batches(items, 3)
@@ -92,14 +94,14 @@ class TestBatchRunner:
         assert batches[1] == [3, 4, 5]
         assert batches[2] == [6]
 
-    def test_split_batches_exact(self):
+    def test_split_batches_exact(self) -> None:
         """整除时批次大小均匀。"""
         items = list(range(6))
         batches = BatchRunner._split_batches(items, 3)
         assert len(batches) == 2
         assert all(len(b) == 3 for b in batches)
 
-    def test_split_batches_larger_than_items(self):
+    def test_split_batches_larger_than_items(self) -> None:
         """batch_size 大于 items 数量时只有一批。"""
         items = [1, 2]
         batches = BatchRunner._split_batches(items, 10)
@@ -110,7 +112,7 @@ class TestBatchRunner:
 class TestBatchConfig:
     """BatchConfig 默认值测试。"""
 
-    def test_defaults(self):
+    def test_defaults(self) -> None:
         cfg = BatchConfig()
         assert cfg.batch_size == 5
         assert cfg.max_concurrent == 3
@@ -118,7 +120,7 @@ class TestBatchConfig:
         assert cfg.retry_attempts == 2
         assert cfg.retry_delay == 1.0
 
-    def test_custom_values(self):
+    def test_custom_values(self) -> None:
         cfg = BatchConfig(batch_size=10, max_concurrent=5, cooldown_seconds=0.5)
         assert cfg.batch_size == 10
         assert cfg.max_concurrent == 5

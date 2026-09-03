@@ -7,7 +7,7 @@ from trade_krono_cli.pipeline.merge import default_scorer, filter_pool, merge_re
 from trade_krono_cli.ta_runner import StockAnalysisResult
 
 
-def test_default_scorer_buy_up():
+def test_default_scorer_buy_up() -> None:
     merged = {
         "ta_confidence": 80.0,
         "kronos_change_pct": 3.2,
@@ -24,7 +24,7 @@ def test_default_scorer_buy_up():
     assert score == pytest.approx(58.96, abs=0.1)
 
 
-def test_default_scorer_sell_down():
+def test_default_scorer_sell_down() -> None:
     merged = {
         "ta_confidence": 80.0,
         "kronos_change_pct": -1.5,
@@ -41,7 +41,7 @@ def test_default_scorer_sell_down():
     assert score == pytest.approx(52.55, abs=0.1)
 
 
-def test_default_scorer_flat():
+def test_default_scorer_flat() -> None:
     merged = {
         "ta_confidence": 60.0,
         "kronos_change_pct": 0.0,
@@ -58,7 +58,7 @@ def test_default_scorer_flat():
     assert score == pytest.approx(45.0, abs=0.1)
 
 
-def test_merge_results():
+def test_merge_results() -> None:
     ta_results = [
         StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0),
         StockAnalysisResult(ticker="sz.000858", date="2026-08-11", signal="SELL", confidence=70.0),
@@ -106,7 +106,7 @@ def test_merge_results():
     assert merged[0]["kronos_prediction_uncertainty"]["confidence_score"] == 75.0
 
 
-def test_merge_results_with_errors():
+def test_merge_results_with_errors() -> None:
     ta_results = [
         StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0),
         StockAnalysisResult(ticker="sz.000858", date="2026-08-11", error="Test error"),
@@ -127,7 +127,7 @@ def test_merge_results_with_errors():
     assert merged[1]["ta_error"] == "Test error"
 
 
-def test_filter_pool():
+def test_filter_pool() -> None:
     ta_results = [
         StockAnalysisResult(ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0),
         StockAnalysisResult(ticker="sz.000858", date="2026-08-11", signal="SELL", confidence=70.0),
@@ -144,7 +144,7 @@ def test_filter_pool():
     assert "sz.300001" not in tickers
 
 
-def test_empty_merge():
+def test_empty_merge() -> None:
     merged = merge_results([], [])
     assert merged == []
 
@@ -152,8 +152,8 @@ def test_empty_merge():
 # ── TA 决策提取逻辑测试 ─────────────────────────────────────────────────────
 
 
-def test_merge_with_confidence():
-    """merged 结果中 ta_confidence 不再为 None。"""
+def test_merge_with_confidence() -> None:
+    """Merged 结果中 ta_confidence 不再为 None。"""
     from trade_krono_cli.kronos_runner import KronosForecastResult
     from trade_krono_cli.ta_runner import StockAnalysisResult
 
@@ -181,7 +181,7 @@ def test_merge_with_confidence():
 # ── Risk Engine 集成测试 ─────────────────────────────────────────────────────
 
 
-def test_merge_with_risk_data():
+def test_merge_with_risk_data() -> None:
     """有 K 线数据时应计算风险分并影响综合得分。"""
     import numpy as np
     import pandas as pd
@@ -206,7 +206,7 @@ def test_merge_with_risk_data():
             "low": close_vals * 0.98,
             "close": close_vals,
             "volume": pd.Series([1e7] * 60),
-        }
+        },
     )
 
     merged = merge_results([ta], [kronos], kline_data={"sh.600519": kline_df})
@@ -218,7 +218,7 @@ def test_merge_with_risk_data():
         assert dim in merged[0]["risk_scores"]
 
 
-def test_risk_penalty_reduces_score():
+def test_risk_penalty_reduces_score() -> None:
     """高风险应降低综合得分。"""
     import numpy as np
     import pandas as pd
@@ -248,7 +248,7 @@ def test_risk_penalty_reduces_score():
             "low": close_high_vol * 0.98,
             "close": close_high_vol,
             "volume": pd.Series([5e6] * 60),
-        }
+        },
     )
     merged_with_risk = merge_results([ta], [kronos], kline_data={"sh.600519": kline_high_vol})
     score_with_risk = merged_with_risk[0]["composite_score"]
@@ -260,7 +260,7 @@ def test_risk_penalty_reduces_score():
     assert score_with_risk < score_no_risk
 
 
-def test_merge_with_quote_data():
+def test_merge_with_quote_data() -> None:
     """提供 quote_data 时应计算换手率。"""
     import pandas as pd
 
@@ -283,7 +283,7 @@ def test_merge_with_quote_data():
             "low": [c * 0.98 for c in close_vals],
             "close": close_vals,
             "volume": [1e7] * 60,
-        }
+        },
     )
 
     merged = merge_results(

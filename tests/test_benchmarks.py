@@ -21,8 +21,7 @@ def benchmark(fn, iterations=100):
         t0 = time.perf_counter()
         fn()
         times.append(time.perf_counter() - t0)
-    avg_ms = (sum(times) / len(times)) * 1000
-    return avg_ms
+    return (sum(times) / len(times)) * 1000
 
 
 # ═══════════════════════════════════════════════════════
@@ -40,7 +39,7 @@ def _make_ta_result(ticker: str, confidence: float = 70.0) -> StockAnalysisResul
 
 
 def _make_kronos_result(
-    ticker: str, direction: str = "UP", change: float = 2.0
+    ticker: str, direction: str = "UP", change: float = 2.0,
 ) -> KronosForecastResult:
     return KronosForecastResult(
         ticker=ticker,
@@ -66,7 +65,7 @@ def _make_merged_pool(n=50):
                 "kronos_prediction_uncertainty": {"confidence_score": 60.0 + (i % 30)},
                 "rank": i + 1,
                 "_pool_size": n,
-            }
+            },
         )
     return pool
 
@@ -77,45 +76,49 @@ def _make_merged_pool(n=50):
 
 
 class TestMergeResultsBenchmark:
-    def test_merge_linear_50_stocks(self):
+    def test_merge_linear_50_stocks(self) -> None:
+        from trade_krono_cli.constraints_config import ConstraintConfig
         from trade_krono_cli.pipeline.merge import merge_results
 
         ta_results = [_make_ta_result(f"sh.{600000 + i}") for i in range(50)]
         kronos_results = [_make_kronos_result(f"sh.{600000 + i}") for i in range(50)]
+        # 禁用 ST 过滤以避免 baostock 登录开销
+        constraints = ConstraintConfig(enable_st_filter=False)
 
         avg_ms = benchmark(
-            lambda: merge_results(ta_results, kronos_results),
+            lambda: merge_results(ta_results, kronos_results, constraints_config=constraints),
             iterations=50,
         )
-        print(f"\n  merge_results(50, linear): avg {avg_ms:.3f} ms")
         assert avg_ms < 500
 
-    def test_merge_linear_200_stocks(self):
+    def test_merge_linear_200_stocks(self) -> None:
+        from trade_krono_cli.constraints_config import ConstraintConfig
         from trade_krono_cli.pipeline.merge import merge_results
 
         ta_results = [_make_ta_result(f"sh.{600000 + i}") for i in range(200)]
         kronos_results = [_make_kronos_result(f"sh.{600000 + i}") for i in range(200)]
+        constraints = ConstraintConfig(enable_st_filter=False)
 
         avg_ms = benchmark(
-            lambda: merge_results(ta_results, kronos_results),
+            lambda: merge_results(ta_results, kronos_results, constraints_config=constraints),
             iterations=20,
         )
-        print(f"\n  merge_results(200, linear): avg {avg_ms:.3f} ms")
         assert avg_ms < 2000
 
-    def test_merge_multiplicative_50_stocks(self):
+    def test_merge_multiplicative_50_stocks(self) -> None:
         from trade_krono_cli.configs.schema import ScoringStrategyConfig
+        from trade_krono_cli.constraints_config import ConstraintConfig
         from trade_krono_cli.pipeline.merge import merge_results
 
         ta_results = [_make_ta_result(f"sh.{600000 + i}") for i in range(50)]
         kronos_results = [_make_kronos_result(f"sh.{600000 + i}") for i in range(50)]
         config = ScoringStrategyConfig(strategy="multiplicative")
+        constraints = ConstraintConfig(enable_st_filter=False)
 
         avg_ms = benchmark(
-            lambda: merge_results(ta_results, kronos_results, scoring_strategy=config),
+            lambda: merge_results(ta_results, kronos_results, scoring_strategy=config, constraints_config=constraints),
             iterations=50,
         )
-        print(f"\n  merge_results(50, multiplicative): avg {avg_ms:.3f} ms")
         assert avg_ms < 500
 
 
@@ -125,7 +128,7 @@ class TestMergeResultsBenchmark:
 
 
 class TestScorerBenchmark:
-    def test_linear_scorer_1000_items(self):
+    def test_linear_scorer_1000_items(self) -> None:
         from trade_krono_cli.scoring import LinearScorer
 
         pool = _make_merged_pool(1000)
@@ -136,10 +139,9 @@ class TestScorerBenchmark:
             iterations=20,
         )
         per_item_ms = avg_ms / 1000
-        print(f"\n  LinearScorer(1000): avg {avg_ms:.3f} ms total, {per_item_ms:.6f} ms/item")
         assert per_item_ms < 1.0
 
-    def test_multiplicative_scorer_1000_items(self):
+    def test_multiplicative_scorer_1000_items(self) -> None:
         from trade_krono_cli.scoring import MultiplicativeScorer
 
         pool = _make_merged_pool(1000)
@@ -150,12 +152,9 @@ class TestScorerBenchmark:
             iterations=20,
         )
         per_item_ms = avg_ms / 1000
-        print(
-            f"\n  MultiplicativeScorer(1000): avg {avg_ms:.3f} ms total, {per_item_ms:.6f} ms/item"
-        )
         assert per_item_ms < 1.0
 
-    def test_rank_based_scorer_1000_items(self):
+    def test_rank_based_scorer_1000_items(self) -> None:
         from trade_krono_cli.scoring import RankBasedScorer
 
         pool = _make_merged_pool(1000)
@@ -166,10 +165,9 @@ class TestScorerBenchmark:
             iterations=20,
         )
         per_item_ms = avg_ms / 1000
-        print(f"\n  RankBasedScorer(1000): avg {avg_ms:.3f} ms total, {per_item_ms:.6f} ms/item")
         assert per_item_ms < 1.0
 
-    def test_scorer_strategy_switch_overhead(self):
+    def test_scorer_strategy_switch_overhead(self) -> None:
         from trade_krono_cli.scoring import get_scorer_registry
 
         reg = get_scorer_registry()
@@ -178,7 +176,6 @@ class TestScorerBenchmark:
             lambda: [reg.get("linear"), reg.get("multiplicative"), reg.get("rank_based")],
             iterations=1000,
         )
-        print(f"\n  Registry lookup(3 strategies x 1000): avg {avg_ms:.3f} ms total")
         assert avg_ms < 100
 
 
@@ -188,7 +185,7 @@ class TestScorerBenchmark:
 
 
 class TestRiskBoostBenchmark:
-    def test_fixed_boost_1000_items(self):
+    def test_fixed_boost_1000_items(self) -> None:
         from trade_krono_cli.scoring import FixedBoostBooster
 
         pool = _make_merged_pool(1000)
@@ -205,10 +202,9 @@ class TestRiskBoostBenchmark:
             iterations=20,
         )
         per_item_ms = avg_ms / 1000
-        print(f"\n  FixedBoostBooster(1000): avg {avg_ms:.3f} ms total, {per_item_ms:.6f} ms/item")
         assert per_item_ms < 1.0
 
-    def test_scaled_boost_1000_items(self):
+    def test_scaled_boost_1000_items(self) -> None:
         from trade_krono_cli.scoring import ScaledBoostBooster
 
         pool = _make_merged_pool(1000)
@@ -217,17 +213,16 @@ class TestRiskBoostBenchmark:
         avg_ms = benchmark(
             lambda: [
                 booster.boost(
-                    base_risk=m["risk_score_total"], flags=["ST"], params={"multiplier": 1.5}
+                    base_risk=m["risk_score_total"], flags=["ST"], params={"multiplier": 1.5},
                 )
                 for m in pool
             ],
             iterations=20,
         )
         per_item_ms = avg_ms / 1000
-        print(f"\n  ScaledBoostBooster(1000): avg {avg_ms:.3f} ms total, {per_item_ms:.6f} ms/item")
         assert per_item_ms < 1.0
 
-    def test_diminishing_boost_1000_items(self):
+    def test_diminishing_boost_1000_items(self) -> None:
         from trade_krono_cli.scoring import DiminishingBoostBooster
 
         pool = _make_merged_pool(1000)
@@ -244,9 +239,6 @@ class TestRiskBoostBenchmark:
             iterations=20,
         )
         per_item_ms = avg_ms / 1000
-        print(
-            f"\n  DiminishingBoostBooster(1000): avg {avg_ms:.3f} ms total, {per_item_ms:.6f} ms/item"
-        )
         assert per_item_ms < 1.0
 
 
@@ -256,14 +248,13 @@ class TestRiskBoostBenchmark:
 
 
 class TestPipelineConfigBenchmark:
-    def test_config_default_creation(self):
+    def test_config_default_creation(self) -> None:
         from trade_krono_cli.pipeline_config import PipelineConfig
 
         avg_ms = benchmark(PipelineConfig.default, iterations=500)
-        print(f"\n  PipelineConfig.default(): avg {avg_ms:.3f} ms")
         assert avg_ms < 50
 
-    def test_config_override(self):
+    def test_config_override(self) -> None:
         from trade_krono_cli.pipeline_config import PipelineConfig
 
         cfg = PipelineConfig.default()
@@ -274,16 +265,14 @@ class TestPipelineConfigBenchmark:
         }
 
         avg_ms = benchmark(lambda: cfg.override(**override), iterations=500)
-        print(f"\n  PipelineConfig.override(): avg {avg_ms:.3f} ms")
         assert avg_ms < 50
 
-    def test_config_to_dict(self):
+    def test_config_to_dict(self) -> None:
         from trade_krono_cli.pipeline_config import PipelineConfig
 
         cfg = PipelineConfig.default()
 
         avg_ms = benchmark(cfg.to_dict, iterations=500)
-        print(f"\n  PipelineConfig.to_dict(): avg {avg_ms:.3f} ms")
         assert avg_ms < 50
 
 
@@ -293,7 +282,7 @@ class TestPipelineConfigBenchmark:
 
 
 class TestCacheBenchmark:
-    def test_cache_ta_write_read(self, tmp_path):
+    def test_cache_ta_write_read(self, tmp_path) -> None:
         from trade_krono_cli.cache import Cache
 
         cache = Cache(db_path=tmp_path / "bench.db")
@@ -309,10 +298,9 @@ class TestCacheBenchmark:
             return cache.get_ta(key, "2026-08-11")
 
         avg_ms = benchmark(op, iterations=200)
-        print(f"\n  Cache TA write+read: avg {avg_ms:.3f} ms")
         assert avg_ms < 50
 
-    def test_cache_kronos_write_read(self, tmp_path):
+    def test_cache_kronos_write_read(self, tmp_path) -> None:
         from trade_krono_cli.cache import Cache
 
         cache = Cache(db_path=tmp_path / "bench_k.db")
@@ -328,7 +316,6 @@ class TestCacheBenchmark:
             return cache.get_kronos(key, "2026-08-11", 30)
 
         avg_ms = benchmark(op, iterations=200)
-        print(f"\n  Cache Kronos write+read: avg {avg_ms:.3f} ms")
         assert avg_ms < 50
 
 
@@ -338,7 +325,7 @@ class TestCacheBenchmark:
 
 
 class TestResearchDbBenchmark:
-    def test_insert_and_query(self, tmp_path):
+    def test_insert_and_query(self, tmp_path) -> None:
         from trade_krono_cli.research_db import ResearchDatabase
 
         db = ResearchDatabase(db_path=tmp_path / "bench.db")
@@ -354,7 +341,6 @@ class TestResearchDbBenchmark:
             return db.query_strategy_history(limit=1)
 
         avg_ms = benchmark(op, iterations=50)
-        print(f"\n  ResearchDB insert+query: avg {avg_ms:.3f} ms")
         assert avg_ms < 200
 
 
@@ -364,7 +350,7 @@ class TestResearchDbBenchmark:
 
 
 class TestCliBenchmarks:
-    def test_load_tickers_large_string(self):
+    def test_load_tickers_large_string(self) -> None:
         from trade_krono_cli.cli_commands.core import _load_tickers
 
         tickers_str = ",".join(f"{600000 + i}" for i in range(500))
@@ -374,12 +360,9 @@ class TestCliBenchmarks:
             iterations=200,
         )
         per_item_ms = avg_ms / 500
-        print(
-            f"\n  _load_tickers(500 from string): avg {avg_ms:.3f} ms total, {per_item_ms:.6f} ms/item"
-        )
         assert per_item_ms < 0.01
 
-    def test_sanitize_path_resolution(self, tmp_path):
+    def test_sanitize_path_resolution(self, tmp_path) -> None:
         from trade_krono_cli.cli_commands.core import _sanitize_path
 
         p = tmp_path / "outputs" / "result.json"
@@ -389,5 +372,4 @@ class TestCliBenchmarks:
             lambda: _sanitize_path(str(p), "Test", tmp_path),
             iterations=500,
         )
-        print(f"\n  _sanitize_path(): avg {avg_ms:.3f} ms")
         assert avg_ms < 10

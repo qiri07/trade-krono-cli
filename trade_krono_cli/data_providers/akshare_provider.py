@@ -1,5 +1,4 @@
-"""
-data_providers.akshare_provider — AkShare 数据源实现。
+"""data_providers.akshare_provider — AkShare 数据源实现。
 
 AkShare 是免费开源的 A 股数据接口，无需注册 key。
 覆盖范围：K 线、实时行情、部分基本面数据。
@@ -14,7 +13,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -54,8 +53,9 @@ class AkShareProvider(DataProvider):
 
             cls._ak = ak
         except ImportError:
+            msg = "akshare 未安装，无法使用 akshare 数据源。请运行: pip install akshare"
             raise RuntimeError(
-                "akshare 未安装，无法使用 akshare 数据源。请运行: pip install akshare"
+                msg,
             )
 
     @classmethod
@@ -80,7 +80,7 @@ class AkShareProvider(DataProvider):
     @staticmethod
     def _ticker_to_ak(ticker: str) -> str:
         """将 sh.600519 格式转换为 akshare 的 600519 格式。"""
-        return ticker.split(".")[-1]
+        return ticker.rsplit(".", maxsplit=1)[-1]
 
     @staticmethod
     def _ak_to_ticker(code: str) -> str:
@@ -98,7 +98,7 @@ class AkShareProvider(DataProvider):
         end_date: str,
         frequency: str = "d",
         adjustflag: str = "1",
-    ) -> Optional[KlineData]:
+    ) -> KlineData | None:
         if frequency != "d":
             logger.debug(f"{self.name} 暂不支持频率 {frequency}，跳过")
             return None
@@ -134,7 +134,7 @@ class AkShareProvider(DataProvider):
             logger.warning(f"{self.name} K 线拉取异常 {ticker}: {str(e)[:200]}")
             return None
 
-    def fetch_quote(self, ticker: str) -> Optional[RealtimeQuote]:
+    def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
         try:
             self._ensure_import()
             # 使用缓存的全市场实时行情，避免重复拉取
@@ -163,8 +163,8 @@ class AkShareProvider(DataProvider):
             logger.debug(f"{self.name} 实时行情异常 {ticker}: {str(e)[:100]}")
             return None
 
-    def fetch_metadata(self, ticker: str) -> Optional[StockMetadata]:
-        """akshare 不提供完整的 ST/退市/行业元数据，返回 None。"""
+    def fetch_metadata(self, ticker: str) -> StockMetadata | None:
+        """Akshare 不提供完整的 ST/退市/行业元数据，返回 None。"""
         return None
 
     def health_check(self) -> bool:
@@ -178,5 +178,6 @@ class AkShareProvider(DataProvider):
                 adjust="1",
             )
             return df is not None and not df.empty
-        except Exception:
+        except Exception as e:
+            logger.debug(f"akshare health check 异常: {e}")
             return False

@@ -1,6 +1,4 @@
-"""
-测试 llm_request.py — LLM 请求追踪模块。
-"""
+"""测试 llm_request.py — LLM 请求追踪模块。"""
 
 import hashlib
 
@@ -21,36 +19,36 @@ from trade_krono_cli.llm_request import (
 
 
 class TestSha256Hex:
-    def test_deterministic(self):
+    def test_deterministic(self) -> None:
         h = sha256_hex("hello")
-        assert h == hashlib.sha256("hello".encode("utf-8")).hexdigest()
+        assert h == hashlib.sha256(b"hello").hexdigest()
 
-    def test_different_inputs(self):
+    def test_different_inputs(self) -> None:
         assert sha256_hex("a") != sha256_hex("b")
 
-    def test_empty_string(self):
+    def test_empty_string(self) -> None:
         h = sha256_hex("")
         assert len(h) == 64  # SHA-256 输出固定 64 字符 hex
 
 
 class TestHashSystemPrompt:
-    def test_basic_hash(self):
+    def test_basic_hash(self) -> None:
         h = hash_system_prompt("You are a stock analyst.")
         assert len(h) == 64
         assert h != ""
 
-    def test_same_input_same_hash(self):
+    def test_same_input_same_hash(self) -> None:
         h1 = hash_system_prompt("same prompt")
         h2 = hash_system_prompt("same prompt")
         assert h1 == h2
 
-    def test_whitespace_stripped(self):
+    def test_whitespace_stripped(self) -> None:
         # strip 首尾空白：前后空格被去掉，所以结果与无空格版本相同
         h1 = hash_system_prompt("  hello world  ")
         h2 = hash_system_prompt("hello world")
         assert h1 == h2  # 首尾空白被 strip，内容相同 → hash 相同
 
-    def test_internal_whitespace_preserved(self):
+    def test_internal_whitespace_preserved(self) -> None:
         # 内部多余空格保留，哈希不同
         h1 = hash_system_prompt("hello  world")  # 双空格
         h2 = hash_system_prompt("hello world")  # 单空格
@@ -58,7 +56,7 @@ class TestHashSystemPrompt:
 
 
 class TestHashUserPromptStructural:
-    def test_structural_hash(self):
+    def test_structural_hash(self) -> None:
         h = hash_user_prompt_structural(
             ticker="sh.600519",
             date="2026-08-11",
@@ -66,8 +64,8 @@ class TestHashUserPromptStructural:
         )
         assert len(h) == 64
 
-    def test_analyst_order_ignored(self):
-        """analysts 排序后哈希，顺序不影响结果。"""
+    def test_analyst_order_ignored(self) -> None:
+        """Analysts 排序后哈希，顺序不影响结果。"""
         h1 = hash_user_prompt_structural(
             ticker="sh.600519",
             date="2026-08-11",
@@ -80,7 +78,7 @@ class TestHashUserPromptStructural:
         )
         assert h1 == h2
 
-    def test_different_ticker_different_hash(self):
+    def test_different_ticker_different_hash(self) -> None:
         h1 = hash_user_prompt_structural(ticker="sh.600519", date="2026-08-11", analysts=[])
         h2 = hash_user_prompt_structural(ticker="sz.000858", date="2026-08-11", analysts=[])
         assert h1 != h2
@@ -92,7 +90,7 @@ class TestHashUserPromptStructural:
 
 
 class TestLLMRequest:
-    def test_default_values(self):
+    def test_default_values(self) -> None:
         r = LLMRequest()
         assert r.source == "external"
         assert r.provider == ""
@@ -101,7 +99,7 @@ class TestLLMRequest:
         assert r.latency_sec == 0.0
         assert r.fetched_at != ""
 
-    def test_roundtrip(self):
+    def test_roundtrip(self) -> None:
         r = LLMRequest(
             source="ta",
             provider="deepseek",
@@ -117,14 +115,14 @@ class TestLLMRequest:
         assert r2.temperature == 0.3
         assert r2.success is True
 
-    def test_frozen(self):
+    def test_frozen(self) -> None:
         r = LLMRequest(source="ta")
         with pytest.raises(Exception):  # FrozenInstanceError
             r.source = "kronos"  # frozen dataclass 不可修改
 
 
 class TestBuildTARequest:
-    def test_basic(self):
+    def test_basic(self) -> None:
         r = build_ta_llm_request(
             ticker="sh.600519",
             date="2026-08-11",
@@ -142,12 +140,12 @@ class TestBuildTARequest:
         assert r.model == "deepseek-chat"
         assert r.system_prompt_hash == hash_system_prompt("You are a stock analyst.")
         assert r.user_prompt_hash == hash_user_prompt_structural(
-            ticker="sh.600519", date="2026-08-11", analysts=["market", "news"]
+            ticker="sh.600519", date="2026-08-11", analysts=["market", "news"],
         )
         assert r.latency_sec == 3.2
         assert r.success is True
 
-    def test_failure(self):
+    def test_failure(self) -> None:
         r = build_ta_llm_request(
             ticker="sh.600519",
             date="2026-08-11",
@@ -168,7 +166,7 @@ class TestBuildTARequest:
 
 
 class TestBuildKronosRequest:
-    def test_basic(self):
+    def test_basic(self) -> None:
         r = build_kronos_llm_request(
             ticker="sh.600519",
             date="2026-08-11",

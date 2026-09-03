@@ -1,5 +1,4 @@
-"""
-TradingAgents 适配器实现。
+"""TradingAgents 适配器实现。
 
 封装 cli_anything.tradingagents 的全部导入和调用，
 业务代码只通过 TradingAgentsAdapter 与 TA 外部项目交互。
@@ -25,9 +24,8 @@ class TradingAgentsAdapterImpl(TradingAgentsAdapter):
 
     # ── 生命周期 ─────────────────────────────────────────────────────────────
 
-    def load(self, settings: Any) -> None:
-        """
-        将 TradingAgents-astock/agent-harness 加入 sys.path，
+    def load(self, settings: Any) -> None:  # noqa: ANN401 — Settings 来自 trade_krono_cli.config，此处为懒加载注入点
+        """将 TradingAgents-astock/agent-harness 加入 sys.path，
         并导入核心模块（run_analysis / build_config）。
         """
         if self._run_analysis is not None:
@@ -44,9 +42,12 @@ class TradingAgentsAdapterImpl(TradingAgentsAdapter):
                 run_analysis,
             )
         except ImportError as e:
-            raise ModelLoadError(
+            msg = (
                 f"无法导入 TradingAgents 核心模块：{e}。"
                 f"请确认已安装 tradingagents（pip install -e {settings.tradingagents_root}）"
+            )
+            raise ModelLoadError(
+                msg,
             ) from e
 
         self._run_analysis = run_analysis
@@ -55,19 +56,21 @@ class TradingAgentsAdapterImpl(TradingAgentsAdapter):
 
     # ── 接口实现 ─────────────────────────────────────────────────────────────
 
-    def build_config(self, **kwargs: Any) -> dict:
+    def build_config(self, **kwargs: Any) -> dict:  # noqa: ANN401 — 委托 cli_anything.tradingagents 动态函数
         """委托 cli_anything.tradingagents.core.analysis.build_config。"""
         if self._build_config is None:
+            msg = "TradingAgentsAdapter 尚未加载，请先调用 load() 或确保在分析前完成初始化"
             raise RuntimeError(
-                "TradingAgentsAdapter 尚未加载，请先调用 load() 或确保在分析前完成初始化"
+                msg,
             )
         return self._build_config(**kwargs)
 
     def run_analysis(self, ticker: str, config: dict) -> dict:
         """委托 cli_anything.tradingagents.core.analysis.run_analysis。"""
         if self._run_analysis is None:
+            msg = "TradingAgentsAdapter 尚未加载，请先调用 load() 或确保在分析前完成初始化"
             raise RuntimeError(
-                "TradingAgentsAdapter 尚未加载，请先调用 load() 或确保在分析前完成初始化"
+                msg,
             )
         # run_analysis(ticker, trade_date, config, analysts=[...], ...)
         return self._run_analysis(

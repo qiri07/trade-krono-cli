@@ -1,12 +1,9 @@
-"""
-retry_policy._legacy — 模块级单例和工厂函数（原 retry_policy.py 底部）。
+"""retry_policy._legacy — 模块级单例和工厂函数（原 retry_policy.py 底部）。
 
 不暴露为公共 API，仅供 __init__.py 内部使用。
 """
 
 from __future__ import annotations
-
-from typing import Optional
 
 from trade_krono_cli.retry_policy.exceptions import (
     AuthError,
@@ -18,7 +15,7 @@ from trade_krono_cli.retry_policy.exceptions import (
 )
 from trade_krono_cli.retry_policy.store import FailureStore
 
-_failure_store: Optional[FailureStore] = None
+_failure_store: FailureStore | None = None
 
 
 def get_failure_store() -> FailureStore:
@@ -34,9 +31,8 @@ def clear_failure_store_singleton() -> None:
     _failure_store = None
 
 
-def parse_retry_after(header_value: Optional[str]) -> Optional[float]:
-    """
-    解析 HTTP Retry-After 响应头。
+def parse_retry_after(header_value: str | None) -> float | None:
+    """解析 HTTP Retry-After 响应头。
 
     支持两种格式：
       - 整数秒数："120"
@@ -46,6 +42,7 @@ def parse_retry_after(header_value: Optional[str]) -> Optional[float]:
     -------
     float | None
         等待秒数，无法解析时返回 None。
+
     """
     import time
 
@@ -77,7 +74,7 @@ def parse_retry_after(header_value: Optional[str]) -> Optional[float]:
 
 def make_rate_limit_error(
     message: str,
-    headers: Optional[dict[str, str]] = None,
+    headers: dict[str, str] | None = None,
 ) -> RateLimitError:
     """从 HTTP 响应构建 RateLimitError，自动提取 Retry-After 头。"""
     retry_after = None

@@ -1,5 +1,4 @@
-"""
-kronos_session — Kronos 模型资源管理。
+"""kronos_session — Kronos 模型资源管理。
 
 职责边界（仅负责资源生命周期）：
   · 设备判断（CUDA 回退 CPU）
@@ -11,7 +10,7 @@ kronos_session — Kronos 模型资源管理。
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -19,8 +18,7 @@ from trade_krono_cli.kronos_runner import KronosRunner
 
 
 class KronosSession:
-    """
-    Kronos 模型资源会话。
+    """Kronos 模型资源会话。
 
     负责：
       - _resolve_device  ：判断 CUDA 是否可用，回退 CPU
@@ -36,7 +34,7 @@ class KronosSession:
     """
 
     # 类级别缓存，key = (device, model_name, sample_count, T, top_p, lookback)
-    _cache: dict[tuple, "KronosSession"] = {}
+    _cache: dict[tuple, KronosSession] = {}
 
     def __new__(cls, *args, **kwargs):
         # 跳过显式传入 runner 的测试场景（不命中缓存）
@@ -45,11 +43,11 @@ class KronosSession:
         # 计算缓存 key（纳入所有影响推理行为的参数）
         device = kwargs.get("device", "cpu")
         model_name = kwargs.get("model_name", "kronos-base")
-        sample_count = kwargs.get("sample_count", None)
+        sample_count = kwargs.get("sample_count")
         # T / top_p / lookback 直接影响适配器行为，纳入 key
-        T = kwargs.get("T", None)
-        top_p = kwargs.get("top_p", None)
-        lookback = kwargs.get("lookback", None)
+        T = kwargs.get("T")
+        top_p = kwargs.get("top_p")
+        lookback = kwargs.get("lookback")
         key = (device.lower(), model_name, sample_count, T, top_p, lookback)
         if key in cls._cache:
             return cls._cache[key]
@@ -59,15 +57,15 @@ class KronosSession:
 
     def __init__(
         self,
-        device: Optional[str] = None,
-        model_name: Optional[str] = None,
-        sample_count: Optional[int] = None,
-        runner: Optional[KronosRunner] = None,
+        device: str | None = None,
+        model_name: str | None = None,
+        sample_count: int | None = None,
+        runner: KronosRunner | None = None,
         no_cache: bool = False,
-        T: Optional[float] = None,
-        top_p: Optional[float] = None,
-        lookback: Optional[int] = None,
-    ):
+        T: float | None = None,
+        top_p: float | None = None,
+        lookback: int | None = None,
+    ) -> None:
         # 跳过 __new__ 缓存路径下的重复初始化（同一实例已初始化过）
         if hasattr(self, "_initialized"):
             return
@@ -80,8 +78,8 @@ class KronosSession:
             no_cache=no_cache,
             sample_count=sample_count,
         )
-        self._kronos_adapter: Optional[Any] = None
-        self._predictor: Optional[Any] = None
+        self._kronos_adapter: Any | None = None
+        self._predictor: Any | None = None
         self._device: str = "cpu"
         self._max_context: int = 512
         self._loaded = False
@@ -99,7 +97,7 @@ class KronosSession:
         return self._device
 
     @property
-    def predictor(self) -> Optional[Any]:
+    def predictor(self) -> Any | None:
         """暴露内部预测器（测试 / 高级场景使用）。"""
         return self._predictor
 

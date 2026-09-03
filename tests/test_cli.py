@@ -17,13 +17,13 @@ def runner():
     return CliRunner()
 
 
-def test_cli_help(runner):
+def test_cli_help(runner) -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "trade-krono-cli" in _strip_ansi(result.output)
 
 
-def test_run_command_help(runner):
+def test_run_command_help(runner) -> None:
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     output = _strip_ansi(result.output)
@@ -31,27 +31,27 @@ def test_run_command_help(runner):
     assert "--date" in output
 
 
-def test_ta_command_help(runner):
+def test_ta_command_help(runner) -> None:
     result = runner.invoke(app, ["ta", "--help"])
     assert result.exit_code == 0
 
 
-def test_kronos_command_help(runner):
+def test_kronos_command_help(runner) -> None:
     result = runner.invoke(app, ["kronos", "--help"])
     assert result.exit_code == 0
 
 
-def test_status_command(runner):
+def test_status_command(runner) -> None:
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
 
 
-def test_clear_cache_command(runner):
+def test_clear_cache_command(runner) -> None:
     result = runner.invoke(app, ["clear-cache"])
     assert result.exit_code == 0
 
 
-def test_run_missing_tickers(runner):
+def test_run_missing_tickers(runner) -> None:
     """不提供股票列表时应报错。"""
     with patch("trade_krono_cli.cli_commands.core._load_env"):
         result = runner.invoke(app, ["run", "--date", "2026-08-11"])
@@ -59,14 +59,14 @@ def test_run_missing_tickers(runner):
         assert "股票列表为空" in _strip_ansi(result.output)
 
 
-def test_load_tickers_from_string():
+def test_load_tickers_from_string() -> None:
     from trade_krono_cli.cli_commands.core import _load_tickers
 
     tickers = _load_tickers("600519,000858,600036", None)
     assert tickers == ["600519", "000858", "600036"]
 
 
-def test_load_tickers_from_config():
+def test_load_tickers_from_config() -> None:
     import os
     import tempfile
 
@@ -84,13 +84,13 @@ def test_load_tickers_from_config():
         os.unlink(path)
 
 
-def test_load_tickers_empty(runner):
+def test_load_tickers_empty(runner) -> None:
     with patch("trade_krono_cli.cli_commands.core._load_env"):
         result = runner.invoke(app, ["ta", "--tickers", ""])
         assert result.exit_code != 0
 
 
-def test_load_tickers_from_config_not_found():
+def test_load_tickers_from_config_not_found() -> None:
     """配置文件不存在时应抛出 Exit。"""
     from typer import Exit
 
@@ -100,7 +100,7 @@ def test_load_tickers_from_config_not_found():
         _load_tickers(None, "/nonexistent/path.txt")
 
 
-def test_sanitize_path_valid(tmp_path):
+def test_sanitize_path_valid(tmp_path) -> None:
     """合法路径应在项目根目录内。"""
     from trade_krono_cli.cli_commands.core import _sanitize_path
 
@@ -111,7 +111,7 @@ def test_sanitize_path_valid(tmp_path):
     assert result == p.resolve()
 
 
-def test_sanitize_path_traversal_rejected():
+def test_sanitize_path_traversal_rejected() -> None:
     """路径遍历应被拒绝。"""
     import tempfile
 
@@ -119,12 +119,11 @@ def test_sanitize_path_traversal_rejected():
 
     from trade_krono_cli.cli_commands.core import _sanitize_path
 
-    with tempfile.TemporaryDirectory() as td:
-        with pytest.raises(Exit):
-            _sanitize_path("/etc/passwd", "Test", Path(td))
+    with tempfile.TemporaryDirectory() as td, pytest.raises(Exit):
+        _sanitize_path("/etc/passwd", "Test", Path(td))
 
 
-def test_sanitize_path_symlink_escape_rejected(tmp_path):
+def test_sanitize_path_symlink_escape_rejected(tmp_path) -> None:
     """通过符号链接绕过项目根目录的检查应被拒绝。"""
     from typer import Exit
 
@@ -138,7 +137,7 @@ def test_sanitize_path_symlink_escape_rejected(tmp_path):
         _sanitize_path(str(link / "passwd"), "Test", tmp_path)
 
 
-def test_sanitize_path_symlink_to_valid_dir_accepted(tmp_path):
+def test_sanitize_path_symlink_to_valid_dir_accepted(tmp_path) -> None:
     """指向项目内合法目录的符号链接应被接受。"""
     from trade_krono_cli.cli_commands.core import _sanitize_path
 
@@ -151,8 +150,8 @@ def test_sanitize_path_symlink_to_valid_dir_accepted(tmp_path):
     assert result == (out_dir / "result.json").resolve()
 
 
-def test_repo_commands_help(runner):
-    """repo 子命令应显示帮助信息。"""
+def test_repo_commands_help(runner) -> None:
+    """Repo 子命令应显示帮助信息。"""
     result = runner.invoke(app, ["repo", "--help"])
     assert result.exit_code == 0
     assert "status" in _strip_ansi(result.output)
@@ -161,7 +160,7 @@ def test_repo_commands_help(runner):
     assert "pin" in _strip_ansi(result.output)
 
 
-def test_repo_status_command(runner):
+def test_repo_status_command(runner) -> None:
     """repo-status 应正常运行（不崩溃）。"""
     result = runner.invoke(app, ["repo-status"])
     # 可能因缺少外部 repo 配置而退出非 0，但不应是 help 错误
@@ -169,21 +168,21 @@ def test_repo_status_command(runner):
     assert "repo-status" in output or result.exit_code == 0
 
 
-def test_eval_prediction_command_help(runner):
-    """eval 命令应显示帮助。"""
+def test_eval_prediction_command_help(runner) -> None:
+    """Eval 命令应显示帮助。"""
     result = runner.invoke(app, ["eval-prediction", "--help"])
     assert result.exit_code == 0
 
 
-def test_history_command_help(runner):
-    """history 命令应显示帮助。"""
+def test_history_command_help(runner) -> None:
+    """History 命令应显示帮助。"""
     result = runner.invoke(app, ["history", "--help"])
     assert result.exit_code == 0
     assert "--ticker" in _strip_ansi(result.output)
 
 
-def test_run_command_with_tickers_patched(runner):
-    """run 命令传入有效 tickers 应进入 pipeline 逻辑。"""
+def test_run_command_with_tickers_patched(runner) -> None:
+    """Run 命令传入有效 tickers 应进入 pipeline 逻辑。"""
     from unittest.mock import patch
 
     mock_pipeline = MagicMock()
@@ -205,8 +204,8 @@ def test_run_command_with_tickers_patched(runner):
         assert result.exit_code == 0
 
 
-def test_ta_command_with_tickers_patched(runner):
-    """ta 命令传入有效 tickers 应进入 pipeline 逻辑。"""
+def test_ta_command_with_tickers_patched(runner) -> None:
+    """Ta 命令传入有效 tickers 应进入 pipeline 逻辑。"""
     from unittest.mock import patch
 
     mock_pipeline = MagicMock()
@@ -228,8 +227,8 @@ def test_ta_command_with_tickers_patched(runner):
         assert result.exit_code == 0
 
 
-def test_kronos_command_with_tickers_patched(runner):
-    """kronos 命令传入有效 tickers 应进入 pipeline 逻辑。"""
+def test_kronos_command_with_tickers_patched(runner) -> None:
+    """Kronos 命令传入有效 tickers 应进入 pipeline 逻辑。"""
     from unittest.mock import patch
 
     mock_pipeline = MagicMock()
@@ -251,8 +250,8 @@ def test_kronos_command_with_tickers_patched(runner):
         assert result.exit_code == 0
 
 
-def test_eval_command_with_tickers_patched(runner):
-    """eval 命令应调用 run_evaluation。"""
+def test_eval_command_with_tickers_patched(runner) -> None:
+    """Eval 命令应调用 run_evaluation。"""
     from unittest.mock import patch
 
     with (
@@ -279,8 +278,8 @@ def test_eval_command_with_tickers_patched(runner):
         assert call_kwargs["tickers"] == ["600519", "000858"]
 
 
-def test_eval_command_latest_flag(runner):
-    """eval --latest 应传递 latest=True。"""
+def test_eval_command_latest_flag(runner) -> None:
+    """Eval --latest 应传递 latest=True。"""
     from unittest.mock import patch
 
     with (

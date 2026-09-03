@@ -1,23 +1,23 @@
-"""
-Tests for universe/provider.py — covers previously uncovered lines:
-  - Base _safe_float NaN / inf edge cases
-  - AkshareUniverseProvider.get_universe() success path
-  - AkshareUniverseProvider._safe_float (class-level override)
-  - MootDxUniverseProvider market_cap fill path
-  - TongHuaShunUniverseProvider full get_universe path
-  - TongHuaShunUniverseProvider._thscode_to_ticker
-  - get_universe_provider factory fallbacks
+"""Tests for universe/provider.py — covers previously uncovered lines:
+- Base _safe_float NaN / inf edge cases
+- AkshareUniverseProvider.get_universe() success path
+- MootDxUniverseProvider market_cap fill path
+- TongHuaShunUniverseProvider full get_universe path
+- TongHuaShunUniverseProvider._thscode_to_ticker
+- get_universe_provider factory fallbacks.
 """
 
 from __future__ import annotations
 
 from types import ModuleType
+from typing import NoReturn
 from unittest.mock import patch
 
 from trade_krono_cli.universe.provider import (
     AkshareUniverseProvider,
     MootDxUniverseProvider,
     TongHuaShunUniverseProvider,
+    UniverseProvider,
     UniverseTicket,
     get_universe_provider,
 )
@@ -30,29 +30,29 @@ from trade_krono_cli.universe.provider import (
 class TestSafeFloat:
     """Base UniverseProvider._safe_float static method edge cases."""
 
-    def test_none_returns_none(self):
-        assert AkshareUniverseProvider._safe_float(None) is None
+    def test_none_returns_none(self) -> None:
+        assert UniverseProvider._safe_float(None) is None
 
-    def test_string_number(self):
-        assert AkshareUniverseProvider._safe_float("3.14") == 3.14
+    def test_string_number(self) -> None:
+        assert UniverseProvider._safe_float("3.14") == 3.14
 
-    def test_int(self):
-        assert AkshareUniverseProvider._safe_float(42) == 42.0
+    def test_int(self) -> None:
+        assert UniverseProvider._safe_float(42) == 42.0
 
-    def test_nan_returns_none(self):
-        assert AkshareUniverseProvider._safe_float(float("nan")) is None
+    def test_nan_returns_none(self) -> None:
+        assert UniverseProvider._safe_float(float("nan")) is None
 
-    def test_pos_inf_returns_none(self):
-        assert AkshareUniverseProvider._safe_float(float("inf")) is None
+    def test_pos_inf_returns_none(self) -> None:
+        assert UniverseProvider._safe_float(float("inf")) is None
 
-    def test_neg_inf_returns_none(self):
-        assert AkshareUniverseProvider._safe_float(float("-inf")) is None
+    def test_neg_inf_returns_none(self) -> None:
+        assert UniverseProvider._safe_float(float("-inf")) is None
 
-    def test_non_numeric_string_returns_none(self):
-        assert AkshareUniverseProvider._safe_float("abc") is None
+    def test_non_numeric_string_returns_none(self) -> None:
+        assert UniverseProvider._safe_float("abc") is None
 
-    def test_type_error_returns_none(self):
-        assert AkshareUniverseProvider._safe_float({"a": 1}) is None
+    def test_type_error_returns_none(self) -> None:
+        assert UniverseProvider._safe_float({"a": 1}) is None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -96,7 +96,7 @@ def _make_fake_akshare_df():
             for row in rows:
                 yield None, row
 
-        def __len__(self):
+        def __len__(self) -> int:
             return len(rows)
 
     return FakeDF()
@@ -105,7 +105,7 @@ def _make_fake_akshare_df():
 class TestAkshareGetUniverse:
     """AkshareUniverseProvider.get_universe success path."""
 
-    def test_get_universe_returns_tickets_with_all_fields(self):
+    def test_get_universe_returns_tickets_with_all_fields(self) -> None:
         fake_df = _make_fake_akshare_df()
         fake_ak = ModuleType("akshare")
         fake_ak.stock_zh_a_spot_em = lambda: fake_df
@@ -127,7 +127,7 @@ class TestAkshareGetUniverse:
         assert by_ticker["sh.600519"].industry == "白酒"
         assert by_ticker["sh.600519"].source == "akshare"
 
-    def test_get_universe_skips_invalid_codes(self):
+    def test_get_universe_skips_invalid_codes(self) -> None:
         """Codes shorter/longer than 6 digits are skipped."""
         rows = [{"代码": "123", "名称": "短码"}, {"代码": "600519", "名称": "茅台"}]
 
@@ -138,11 +138,11 @@ class TestAkshareGetUniverse:
                 for row in rows:
                     yield None, row
 
-            def __len__(self):
+            def __len__(self) -> int:
                 return len(rows)
 
         fake_ak = ModuleType("akshare")
-        fake_ak.stock_zh_a_spot_em = lambda: FakeDF()
+        fake_ak.stock_zh_a_spot_em = FakeDF
 
         with patch.dict("sys.modules", {"akshare": fake_ak}):
             provider = AkshareUniverseProvider()
@@ -151,33 +151,34 @@ class TestAkshareGetUniverse:
         assert len(tickets) == 1
         assert tickets[0].ticker == "sh.600519"
 
-    def test_get_universe_empty_df_returns_empty(self):
+    def test_get_universe_empty_df_returns_empty(self) -> None:
         class FakeDF:
             empty = True
 
             def iterrows(self):
                 return iter([])
 
-            def __len__(self):
+            def __len__(self) -> int:
                 return 0
 
         fake_ak = ModuleType("akshare")
-        fake_ak.stock_zh_a_spot_em = lambda: FakeDF()
+        fake_ak.stock_zh_a_spot_em = FakeDF
 
         with patch.dict("sys.modules", {"akshare": fake_ak}):
             provider = AkshareUniverseProvider()
             assert provider.get_universe() == []
 
-    def test_get_universe_import_error_returns_empty(self):
+    def test_get_universe_import_error_returns_empty(self) -> None:
         with patch.dict("sys.modules", {"akshare": None}):
             provider = AkshareUniverseProvider()
             assert provider.get_universe() == []
 
-    def test_get_universe_api_error_returns_empty(self):
+    def test_get_universe_api_error_returns_empty(self) -> None:
         fake_ak = ModuleType("akshare")
 
-        def bad_api():
-            raise RuntimeError("network timeout")
+        def bad_api() -> NoReturn:
+            msg = "network timeout"
+            raise RuntimeError(msg)
 
         fake_ak.stock_zh_a_spot_em = bad_api
 
@@ -185,23 +186,23 @@ class TestAkshareGetUniverse:
             provider = AkshareUniverseProvider()
             assert provider.get_universe() == []
 
-    def test_code_to_ticker_sh_prefix(self):
+    def test_code_to_ticker_sh_prefix(self) -> None:
         assert AkshareUniverseProvider._code_to_ticker("600519") == "sh.600519"
         assert AkshareUniverseProvider._code_to_ticker("510050") == "sh.510050"
         assert AkshareUniverseProvider._code_to_ticker("900901") == "sh.900901"
 
-    def test_code_to_ticker_sz_prefix(self):
+    def test_code_to_ticker_sz_prefix(self) -> None:
         assert AkshareUniverseProvider._code_to_ticker("000858") == "sz.000858"
         assert AkshareUniverseProvider._code_to_ticker("300750") == "sz.300750"
 
-    def test_code_to_ticker_empty_string(self):
+    def test_code_to_ticker_empty_string(self) -> None:
         assert AkshareUniverseProvider._code_to_ticker("") == "sz."
 
-    def test_class_safe_float_with_nan_inf(self):
-        """AkshareUniverseProvider has its own _safe_float override."""
-        assert AkshareUniverseProvider._safe_float(float("nan")) is None
-        assert AkshareUniverseProvider._safe_float(float("inf")) is None
-        assert AkshareUniverseProvider._safe_float(float("-inf")) is None
+    def test_class_safe_float_with_nan_inf(self) -> None:
+        """UniverseProvider._safe_float handles nan/inf correctly (no class-specific override needed)."""
+        assert UniverseProvider._safe_float(float("nan")) is None
+        assert UniverseProvider._safe_float(float("inf")) is None
+        assert UniverseProvider._safe_float(float("-inf")) is None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -214,7 +215,7 @@ class TestAkshareGetUniverse:
 class TestMootDxFetchQuotesBatch:
     """Test _fetch_quotes_batch helper."""
 
-    def test_fetches_tickets_with_price_and_industry(self):
+    def test_fetches_tickets_with_price_and_industry(self) -> None:
         class FakeDF:
             empty = False
             _data = [{"code": "600519", "market": 1, "price": 1800.0, "vol": 50000}]
@@ -222,7 +223,7 @@ class TestMootDxFetchQuotesBatch:
             def iterrows(self):
                 yield None, self._data[0]
 
-            def __len__(self):
+            def __len__(self) -> int:
                 return 1
 
         class FakeQ:
@@ -239,7 +240,7 @@ class TestMootDxFetchQuotesBatch:
         assert tickets[0].industry == "白酒"
         assert tickets[0].volume == 50000.0
 
-    def test_zero_price_skipped(self):
+    def test_zero_price_skipped(self) -> None:
         class FakeDF:
             empty = False
             _data = [{"code": "600519", "market": 1, "price": 0.0}]
@@ -247,7 +248,7 @@ class TestMootDxFetchQuotesBatch:
             def iterrows(self):
                 yield None, self._data[0]
 
-            def __len__(self):
+            def __len__(self) -> int:
                 return 1
 
         class FakeQ:
@@ -258,14 +259,14 @@ class TestMootDxFetchQuotesBatch:
         tickets = provider._fetch_quotes_batch(FakeQ(), ["sh.600519"], {})
         assert tickets == []
 
-    def test_empty_df_returns_empty(self):
+    def test_empty_df_returns_empty(self) -> None:
         class FakeDF:
             empty = True
 
             def iterrows(self):
                 return iter([])
 
-            def __len__(self):
+            def __len__(self) -> int:
                 return 0
 
         class FakeQ:
@@ -280,7 +281,7 @@ class TestMootDxFetchQuotesBatch:
 class TestMootDxPopulateMarketCaps:
     """Test _populate_market_caps helper."""
 
-    def test_fills_market_cap_from_finance(self):
+    def test_fills_market_cap_from_finance(self) -> None:
         class FakeFinanceDF:
             empty = False
 
@@ -302,7 +303,7 @@ class TestMootDxPopulateMarketCaps:
         # 500M shares × 1800元 / 1亿 = 9000亿元
         assert result[0].market_cap == 9000.0
 
-    def test_skips_when_price_none(self):
+    def test_skips_when_price_none(self) -> None:
         class FakeQ:
             def finance(self, symbol):
                 class DF:
@@ -322,10 +323,11 @@ class TestMootDxPopulateMarketCaps:
 
         assert result[0].market_cap is None
 
-    def test_finance_exception_handled(self):
+    def test_finance_exception_handled(self) -> None:
         class FakeQ:
-            def finance(self, symbol):
-                raise RuntimeError("finance api down")
+            def finance(self, symbol) -> NoReturn:
+                msg = "finance api down"
+                raise RuntimeError(msg)
 
         ticket = UniverseTicket(ticker="sh.600519", price=1800.0, source="mootdx")
         provider = MootDxUniverseProvider(populate_market_cap=True)
@@ -333,7 +335,7 @@ class TestMootDxPopulateMarketCaps:
 
         assert result[0].market_cap is None  # failed silently
 
-    def test_empty_list(self):
+    def test_empty_list(self) -> None:
         class FakeQ:
             pass
 
@@ -345,7 +347,7 @@ class TestMootDxPopulateMarketCaps:
 class TestMootDxFetchStockCodes:
     """Test _fetch_stock_codes helper."""
 
-    def test_filters_non_a_share_and_delisted(self):
+    def test_filters_non_a_share_and_delisted(self) -> None:
         class FakeRS:
             _rows = [
                 ["sh.600519", "茅台", "2001-01-01", "", "1", "1"],  # A-share listed
@@ -368,7 +370,7 @@ class TestMootDxFetchStockCodes:
         codes = MootDxUniverseProvider._fetch_stock_codes(rs)
         assert codes == ["sh.600519", "sz.300750"]
 
-    def test_short_rows_skipped(self):
+    def test_short_rows_skipped(self) -> None:
         class FakeRS:
             _rows = [["sh.600519", "茅台"], ["sz.000858", "五粮液", "2000-01-01", "", "1", "1"]]
             _idx = 0
@@ -385,9 +387,9 @@ class TestMootDxFetchStockCodes:
         codes = MootDxUniverseProvider._fetch_stock_codes(FakeRS())
         assert codes == ["sz.000858"]
 
-    def test_empty_result(self):
+    def test_empty_result(self) -> None:
         class FakeRS:
-            def next(self):
+            def next(self) -> bool:
                 return False
 
             def get_row_data(self):
@@ -410,16 +412,17 @@ class TestTongHuaShunUniverseProvider:
         fake_resp_ticker_list = []
 
         class FakeResponse:
-            def __init__(self, json_data, status_code=200):
+            def __init__(self, json_data, status_code=200) -> None:
                 self._json = json_data
                 self.status_code = status_code
 
             def json(self):
                 return self._json
 
-            def raise_for_status(self):
+            def raise_for_status(self) -> None:
                 if self.status_code >= 400:
-                    raise RuntimeError(f"HTTP {self.status_code}")
+                    msg = f"HTTP {self.status_code}"
+                    raise RuntimeError(msg)
 
         # Ticker list response
         ticker_items = [
@@ -454,7 +457,7 @@ class TestTongHuaShunUniverseProvider:
 
         return FakeRequests()
 
-    def test_get_universe_returns_tickets(self):
+    def test_get_universe_returns_tickets(self) -> None:
         fake_req = self._make_fake_requests()
 
         import trade_krono_cli.universe.provider as provider_mod
@@ -475,12 +478,12 @@ class TestTongHuaShunUniverseProvider:
         assert by_ticker["sh.600519"].volume == 50000.0
         assert by_ticker["sh.600519"].source == "tonghuashun"
 
-    def test_get_universe_no_api_key_returns_empty(self):
+    def test_get_universe_no_api_key_returns_empty(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             provider = TongHuaShunUniverseProvider()
             assert provider.get_universe() == []
 
-    def test_get_universe_import_error_returns_empty(self):
+    def test_get_universe_import_error_returns_empty(self) -> None:
         with (
             patch.dict("os.environ", {"HITHINK_FINANCE_API_KEY": "test-key"}),
             patch.dict("sys.modules", {"requests": None}),
@@ -488,22 +491,22 @@ class TestTongHuaShunUniverseProvider:
             provider = TongHuaShunUniverseProvider()
             assert provider.get_universe() == []
 
-    def test_thscode_to_ticker_sh(self):
+    def test_thscode_to_ticker_sh(self) -> None:
         assert TongHuaShunUniverseProvider._thscode_to_ticker("600519.SH") == "sh.600519"
 
-    def test_thscode_to_ticker_sz(self):
+    def test_thscode_to_ticker_sz(self) -> None:
         assert TongHuaShunUniverseProvider._thscode_to_ticker("000858.SZ") == "sz.000858"
 
-    def test_thscode_to_ticker_bj(self):
+    def test_thscode_to_ticker_bj(self) -> None:
         assert TongHuaShunUniverseProvider._thscode_to_ticker("830000.BJ") == "bj.830000"
 
-    def test_thscode_to_ticker_missing_dot(self):
+    def test_thscode_to_ticker_missing_dot(self) -> None:
         assert TongHuaShunUniverseProvider._thscode_to_ticker("600519") == ""
 
-    def test_thscode_to_ticker_unknown_exchange(self):
+    def test_thscode_to_ticker_unknown_exchange(self) -> None:
         assert TongHuaShunUniverseProvider._thscode_to_ticker("600519.HK") == ""
 
-    def test_init_populate_market_cap_ignored(self):
+    def test_init_populate_market_cap_ignored(self) -> None:
         """populate_market_cap is accepted but ignored (tonghuashun doesn't support it)."""
         provider = TongHuaShunUniverseProvider(populate_market_cap=True)
         assert provider._populate_market_cap is True
@@ -517,36 +520,36 @@ class TestTongHuaShunUniverseProvider:
 class TestGetUniverseProvider:
     """Factory function get_universe_provider fallback behavior."""
 
-    def test_known_source_akshare(self):
+    def test_known_source_akshare(self) -> None:
         provider = get_universe_provider("akshare")
         assert provider is not None
         assert provider.name == "akshare"
 
-    def test_known_source_mootdx(self):
+    def test_known_source_mootdx(self) -> None:
         provider = get_universe_provider("mootdx")
         assert provider is not None
         assert isinstance(provider, MootDxUniverseProvider)
         assert provider._populate_market_cap is False
 
-    def test_known_source_mootdx_with_market_cap(self):
+    def test_known_source_mootdx_with_market_cap(self) -> None:
         provider = get_universe_provider("mootdx", populate_market_cap=True)
         assert provider is not None
         assert isinstance(provider, MootDxUniverseProvider)
         assert provider._populate_market_cap is True
 
-    def test_known_source_tonghuashun(self):
+    def test_known_source_tonghuashun(self) -> None:
         provider = get_universe_provider("tonghuashun")
         assert provider is not None
         assert isinstance(provider, TongHuaShunUniverseProvider)
 
-    def test_unknown_source_falls_back_to_akshare(self):
+    def test_unknown_source_falls_back_to_akshare(self) -> None:
         with patch("trade_krono_cli.universe.provider.logger") as mock_logger:
             provider = get_universe_provider("unknown_source_xyz")
         assert provider is not None
         assert provider.name == "akshare"
         mock_logger.warning.assert_called_once()
 
-    def test_no_registered_providers_returns_none(self):
+    def test_no_registered_providers_returns_none(self) -> None:
         """Edge case: if akshare registration is missing, returns None."""
         with patch.dict("trade_krono_cli.universe.provider._PROVIDER_REGISTRY", {}, clear=True):
             result = get_universe_provider("akshare")

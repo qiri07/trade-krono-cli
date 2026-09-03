@@ -14,7 +14,7 @@ def adapter():
 # ── Rating 结构化解析 ────────────────────────────────────────────────────────
 
 
-def test_rating_structured_underweight(adapter):
+def test_rating_structured_underweight(adapter) -> None:
     text = "**Rating**: Underweight\n**Executive Summary**: ..."
     dec = adapter.parse(text)
     assert dec.signal == Signal.SELL
@@ -22,74 +22,74 @@ def test_rating_structured_underweight(adapter):
     assert dec.thesis != ""
 
 
-def test_rating_structured_strong_buy(adapter):
+def test_rating_structured_strong_buy(adapter) -> None:
     text = "**Rating**: Strong Buy\n**Summary**: ..."
     dec = adapter.parse(text)
     assert dec.signal == Signal.BUY
     assert dec.confidence == 95.0
 
 
-def test_rating_structured_buy(adapter):
+def test_rating_structured_buy(adapter) -> None:
     text = "**Rating**: Buy"
     dec = adapter.parse(text)
     assert dec.signal == Signal.BUY
     assert dec.confidence == 80.0
 
 
-def test_rating_structured_neutral(adapter):
+def test_rating_structured_neutral(adapter) -> None:
     text = "**Rating**: Neutral"
     dec = adapter.parse(text)
     assert dec.signal == Signal.HOLD
     assert dec.confidence == 50.0
 
 
-def test_rating_structured_sell(adapter):
+def test_rating_structured_sell(adapter) -> None:
     text = "**Rating**: Sell"
     dec = adapter.parse(text)
     assert dec.signal == Signal.SELL
     assert dec.confidence == 30.0
 
 
-def test_rating_structured_overweight(adapter):
+def test_rating_structured_overweight(adapter) -> None:
     text = "**Rating**: Overweight"
     dec = adapter.parse(text)
     assert dec.signal == Signal.OVERWEIGHT
     assert dec.confidence == 70.0
 
 
-def test_rating_structured_strong_sell(adapter):
+def test_rating_structured_strong_sell(adapter) -> None:
     text = "**Rating**: Strong Sell"
     dec = adapter.parse(text)
     assert dec.signal == Signal.SELL
     assert dec.confidence == 15.0
 
 
-def test_rating_unknown_fallback(adapter):
+def test_rating_unknown_fallback(adapter) -> None:
     """未识别的 Rating 值 → 兜底解析。"""
     text = "**Rating**: Accumulate"
     dec = adapter.parse(text)
     # "accumulate" 不匹配任何已知信号，fallback HOLD
-    assert dec.signal == Signal.HOLD or dec.signal == Signal.BUY  # 宽松断言
+    assert dec.signal in (Signal.HOLD, Signal.BUY)  # 宽松断言
 
 
 # ── 负上下文感知 ─────────────────────────────────────────────────────────────
 
 
-def test_negative_context_not_buy(adapter):
+def test_negative_context_not_buy(adapter) -> None:
     """ "not recommend BUY" 不应误判为 BUY。"""
     text = "The analyst does not recommend BUY due to valuation concerns."
     dec = adapter.parse(text)
     assert dec.signal != Signal.BUY
 
 
-def test_negative_context_not_sell(adapter):
+def test_negative_context_not_sell(adapter) -> None:
     """ "not recommend SELL" 不应误判为 SELL。"""
     text = "We do not see a compelling reason to SELL at this time."
     dec = adapter.parse(text)
     assert dec.signal != Signal.SELL
 
 
-def test_positive_buy_affirmed(adapter):
+def test_positive_buy_affirmed(adapter) -> None:
     """明确推荐 BUY → 正确识别。"""
     text = "We recommend BUY with strong conviction given the growth outlook."
     dec = adapter.parse(text)
@@ -99,20 +99,20 @@ def test_positive_buy_affirmed(adapter):
 # ── Keyword fallback（无 Rating 字段）────────────────────────────────────────
 
 
-def test_keyword_fallback_buy(adapter):
+def test_keyword_fallback_buy(adapter) -> None:
     text = "Momentum is strong and we see upside."
     dec = adapter.parse(text)
     # 无 BUY/SELL/HOLD 关键词 → fallback HOLD
     assert dec.signal == Signal.HOLD
 
 
-def test_keyword_fallback_with_buy(adapter):
+def test_keyword_fallback_with_buy(adapter) -> None:
     text = "We are initiating a BUY position on this name."
     dec = adapter.parse(text)
     assert dec.signal == Signal.BUY
 
 
-def test_keyword_fallback_with_sell(adapter):
+def test_keyword_fallback_with_sell(adapter) -> None:
     text = "Our base case leads us to SELL this stock."
     dec = adapter.parse(text)
     assert dec.signal == Signal.SELL
@@ -121,19 +121,19 @@ def test_keyword_fallback_with_sell(adapter):
 # ── Empty / edge cases ───────────────────────────────────────────────────────
 
 
-def test_empty_text(adapter):
+def test_empty_text(adapter) -> None:
     dec = adapter.parse("")
     assert dec.signal == Signal.HOLD
     assert dec.confidence == 50.0
 
 
-def test_none_text(adapter):
+def test_none_text(adapter) -> None:
     dec = adapter.parse(None)  # type: ignore
     assert dec.signal == Signal.HOLD
     assert dec.confidence == 50.0
 
 
-def test_only_whitespace(adapter):
+def test_only_whitespace(adapter) -> None:
     dec = adapter.parse("   \n  ")
     assert dec.signal == Signal.HOLD
 
@@ -141,7 +141,7 @@ def test_only_whitespace(adapter):
 # ── Thesis 提取 ──────────────────────────────────────────────────────────────
 
 
-def test_thesis_from_investment_thesis(adapter):
+def test_thesis_from_investment_thesis(adapter) -> None:
     text = """**Rating**: Buy
 **Investment Thesis**: The company has strong moat and pricing power.
 **Executive Summary**: Summary here."""
@@ -149,7 +149,7 @@ def test_thesis_from_investment_thesis(adapter):
     assert "strong moat" in dec.thesis.lower()
 
 
-def test_thesis_fallback_to_summary(adapter):
+def test_thesis_fallback_to_summary(adapter) -> None:
     text = """**Rating**: Hold
 **Executive Summary**: Mixed signals from analysts.
 No thesis section."""
@@ -160,7 +160,7 @@ No thesis section."""
 # ── Risks 提取 ───────────────────────────────────────────────────────────────
 
 
-def test_risks_extraction(adapter):
+def test_risks_extraction(adapter) -> None:
     text = """**Rating**: Sell
 Key risks include:
 - Valuation is stretched
@@ -172,7 +172,7 @@ Other content here."""
     assert any("valuation" in r.lower() or "估值" in r for r in dec.risks)
 
 
-def test_no_risks(adapter):
+def test_no_risks(adapter) -> None:
     text = "**Rating**: Buy\nNo risks identified."
     dec = adapter.parse(text)
     # 可能无风险条目
@@ -182,14 +182,14 @@ def test_no_risks(adapter):
 # ── Expected return ──────────────────────────────────────────────────────────
 
 
-def test_expected_return_buy(adapter):
+def test_expected_return_buy(adapter) -> None:
     text = "**Rating**: Buy\nWe expect the stock to gain 15% over the next year."
     dec = adapter.parse(text)
     assert dec.expected_return is not None
     assert 10 <= dec.expected_return <= 20
 
 
-def test_expected_return_buy_excludes_pe(adapter):
+def test_expected_return_buy_excludes_pe(adapter) -> None:
     """PE=19 等财务比率不应被当作预期收益。"""
     text = "**Rating**: Buy\nPE ratio is 19x and PEG is 1.5."
     dec = adapter.parse(text)
@@ -200,7 +200,7 @@ def test_expected_return_buy_excludes_pe(adapter):
 # ── InvestmentDecision dataclass ─────────────────────────────────────────────
 
 
-def test_investment_decision_to_dict(adapter):
+def test_investment_decision_to_dict(adapter) -> None:
     dec = InvestmentDecision(
         signal=Signal.BUY,
         confidence=85.0,
@@ -214,7 +214,7 @@ def test_investment_decision_to_dict(adapter):
     assert d["risks"] == ["val risk", "macro risk"]
 
 
-def test_reports_raw_vs_summary(adapter):
+def test_reports_raw_vs_summary(adapter) -> None:
     """reports_raw 应保留完整文本，reports 应为 500 字摘要。"""
     long_text = "x" * 1000  # 1000字符的模拟报告
     result = StockAnalysisResult(
@@ -227,7 +227,7 @@ def test_reports_raw_vs_summary(adapter):
     assert len(result.reports["market"]) == 500
 
 
-def test_json_full_fields(adapter):
+def test_json_full_fields(adapter) -> None:
     """完整 JSON 应正确映射所有字段。"""
     import json
 
@@ -238,7 +238,7 @@ def test_json_full_fields(adapter):
             "thesis": "基本面强劲，估值合理",
             "risks": ["估值偏高", "宏观波动"],
             "expected_return": 15.0,
-        }
+        },
     )
     dec = adapter.parse(text)
     assert dec.signal == Signal.BUY
@@ -248,7 +248,7 @@ def test_json_full_fields(adapter):
     assert dec.expected_return == 15.0
 
 
-def test_json_partial_fields(adapter):
+def test_json_partial_fields(adapter) -> None:
     """部分 JSON 字段缺失时应使用默认值。"""
     import json
 
@@ -261,7 +261,7 @@ def test_json_partial_fields(adapter):
     assert dec.expected_return is None
 
 
-def test_json_unknown_signal_fallback(adapter):
+def test_json_unknown_signal_fallback(adapter) -> None:
     """JSON 中未知 signal 值应回退到 HOLD。"""
     import json
 
@@ -271,22 +271,22 @@ def test_json_unknown_signal_fallback(adapter):
     assert dec.confidence == 90.0  # confidence 仍使用 JSON 中的值
 
 
-def test_json_risks_as_string(adapter):
-    """risks 为逗号分隔字符串时应正确拆分。"""
+def test_json_risks_as_string(adapter) -> None:
+    """Risks 为逗号分隔字符串时应正确拆分。"""
     import json
 
     text = json.dumps(
         {
             "signal": "HOLD",
             "risks": "流动性不足, 政策不确定性, 汇率波动",
-        }
+        },
     )
     dec = adapter.parse(text)
     assert dec.risks == ["流动性不足", "政策不确定性", "汇率波动"]
 
 
-def test_json_max_risks_cap(adapter):
-    """risks 超过 8 条应截断。"""
+def test_json_max_risks_cap(adapter) -> None:
+    """Risks 超过 8 条应截断。"""
     import json
 
     risks = [f"risk_{i}" for i in range(12)]
@@ -295,8 +295,8 @@ def test_json_max_risks_cap(adapter):
     assert len(dec.risks) == 8
 
 
-def test_json_case_insensitive_signal(adapter):
-    """signal 大小写不敏感。"""
+def test_json_case_insensitive_signal(adapter) -> None:
+    """Signal 大小写不敏感。"""
     import json
 
     for raw in ("buy", "Buy", "BUY", "buY"):
@@ -305,14 +305,14 @@ def test_json_case_insensitive_signal(adapter):
         assert dec.signal == Signal.BUY, f"failed for {raw!r}"
 
 
-def test_json_invalid_fallback_to_text(adapter, caplog):
+def test_json_invalid_fallback_to_text(adapter, caplog) -> None:
     """非法 JSON 应回退到文本正则解析，并记录 warning。"""
     text = "这是一段自由文本，包含 BUY 关键词。"
     dec = adapter.parse(text)
     assert dec.signal == Signal.BUY  # 回退后正常解析
 
 
-def test_json_non_dict_fallback(adapter):
+def test_json_non_dict_fallback(adapter) -> None:
     """JSON 数组应回退到文本正则解析。"""
     import json
 
@@ -322,8 +322,8 @@ def test_json_non_dict_fallback(adapter):
     assert dec.signal == Signal.BUY
 
 
-def test_json_confidence_clamped(adapter):
-    """confidence 超出 [0, 100] 应被截断。"""
+def test_json_confidence_clamped(adapter) -> None:
+    """Confidence 超出 [0, 100] 应被截断。"""
     import json
 
     text = json.dumps({"signal": "BUY", "confidence": 150.0})
@@ -335,7 +335,7 @@ def test_json_confidence_clamped(adapter):
     assert dec.confidence == 0.0
 
 
-def test_json_position_size_clamped(adapter):
+def test_json_position_size_clamped(adapter) -> None:
     """position_size 超出 [-1, 1] 应被截断。"""
     import json
 
@@ -348,8 +348,8 @@ def test_json_position_size_clamped(adapter):
     assert dec.position_size == -1.0
 
 
-def test_json_with_thesis_truncation(adapter):
-    """thesis 超过 THESIS_TRUNCATE_LEN 应被截断。"""
+def test_json_with_thesis_truncation(adapter) -> None:
+    """Thesis 超过 THESIS_TRUNCATE_LEN 应被截断。"""
     import json
 
     long_thesis = "x" * 500
@@ -358,7 +358,7 @@ def test_json_with_thesis_truncation(adapter):
     assert len(dec.thesis) == 300  # THESIS_TRUNCATE_LEN
 
 
-def test_json_empty_object(adapter):
+def test_json_empty_object(adapter) -> None:
     """空 JSON 对象应使用 signal 默认置信度。"""
     import json
 
@@ -368,7 +368,7 @@ def test_json_empty_object(adapter):
     assert dec.confidence == 50.0  # HOLD 默认置信度
 
 
-def test_json_only_signal(adapter):
+def test_json_only_signal(adapter) -> None:
     """仅含 signal 字段时，confidence 应使用 signal 默认值。"""
     import json
 
@@ -383,7 +383,7 @@ def test_json_only_signal(adapter):
 # ═══════════════════════════════════════════════════════
 
 
-def test_json_invalidations(adapter):
+def test_json_invalidations(adapter) -> None:
     """JSON 中的 invalidations 字段应正确解析。"""
     import json
 
@@ -395,7 +395,7 @@ def test_json_invalidations(adapter):
                 "订单增长 < 10%",
                 "核心客户流失",
             ],
-        }
+        },
     )
     dec = adapter.parse(text)
     assert dec.invalidations == [
@@ -405,7 +405,7 @@ def test_json_invalidations(adapter):
     ]
 
 
-def test_json_price_fields(adapter):
+def test_json_price_fields(adapter) -> None:
     """entry_zone / target_price / stop_loss 应正确解析。"""
     import json
 
@@ -415,7 +415,7 @@ def test_json_price_fields(adapter):
             "entry_zone": [148.0, 152.0],
             "target_price": 170.0,
             "stop_loss": 140.0,
-        }
+        },
     )
     dec = adapter.parse(text)
     assert dec.entry_zone == [148.0, 152.0]
@@ -423,7 +423,7 @@ def test_json_price_fields(adapter):
     assert dec.stop_loss == 140.0
 
 
-def test_json_holding_period(adapter):
+def test_json_holding_period(adapter) -> None:
     """expected_holding_period 应正确解析。"""
     import json
 
@@ -431,21 +431,21 @@ def test_json_holding_period(adapter):
         {
             "signal": "BUY",
             "expected_holding_period": 30,
-        }
+        },
     )
     dec = adapter.parse(text)
     assert dec.expected_holding_period == 30
 
 
-def test_json_catalysts(adapter):
-    """catalysts 字段应正确解析（字符串数组或逗号分隔）。"""
+def test_json_catalysts(adapter) -> None:
+    """Catalysts 字段应正确解析（字符串数组或逗号分隔）。"""
     import json
 
     text = json.dumps(
         {
             "signal": "BUY",
             "catalysts": ["Q3业绩超预期", "新产品发布"],
-        }
+        },
     )
     dec = adapter.parse(text)
     assert dec.catalysts == ["Q3业绩超预期", "新产品发布"]
@@ -455,13 +455,13 @@ def test_json_catalysts(adapter):
         {
             "signal": "BUY",
             "catalysts": "Q3业绩超预期, 新产品发布",
-        }
+        },
     )
     dec = adapter.parse(text)
     assert dec.catalysts == ["Q3业绩超预期", "新产品发布"]
 
 
-def test_json_multi_factor_scores(adapter):
+def test_json_multi_factor_scores(adapter) -> None:
     """多因子评分字段应正确解析并截断到 [0, 100]。"""
     import json
 
@@ -474,7 +474,7 @@ def test_json_multi_factor_scores(adapter):
             "sentiment_score": 90.0,
             "capital_flow_score": 55.0,
             "macro_score": 70.0,
-        }
+        },
     )
     dec = adapter.parse(text)
     assert dec.valuation_score == 75.0
@@ -485,7 +485,7 @@ def test_json_multi_factor_scores(adapter):
     assert dec.macro_score == 70.0
 
 
-def test_json_scores_clamped(adapter):
+def test_json_scores_clamped(adapter) -> None:
     """超出 [0, 100] 的评分应被截断。"""
     import json
 
@@ -494,14 +494,14 @@ def test_json_scores_clamped(adapter):
             "signal": "BUY",
             "valuation_score": 150.0,
             "fundamental_score": -10.0,
-        }
+        },
     )
     dec = adapter.parse(text)
     assert dec.valuation_score == 100.0
     assert dec.fundamental_score == 0.0
 
 
-def test_json_all_new_fields(adapter):
+def test_json_all_new_fields(adapter) -> None:
     """完整 JSON 包含所有新字段时应正确解析。"""
     import json
 
@@ -528,7 +528,7 @@ def test_json_all_new_fields(adapter):
             "sentiment_score": 90.0,
             "capital_flow_score": 55.0,
             "macro_score": 70.0,
-        }
+        },
     )
     dec = adapter.parse(text)
     assert dec.signal == Signal.BUY
@@ -548,7 +548,7 @@ def test_json_all_new_fields(adapter):
 # ═══════════════════════════════════════════════════════
 
 
-def test_text_extract_invalidations(adapter):
+def test_text_extract_invalidations(adapter) -> None:
     """无效条件应从文本中提取。"""
     text = """**Rating**: Buy
 Invalidation conditions:
@@ -562,7 +562,7 @@ Risks:估值偏高"""
     assert any("毛利率" in inv or "订单增长" in inv for inv in dec.invalidations)
 
 
-def test_text_extract_entry_zone(adapter):
+def test_text_extract_entry_zone(adapter) -> None:
     """入场区间应从文本中提取。"""
     text = """**Rating**: Buy
 Entry zone: 148-152 yuan
@@ -573,7 +573,7 @@ Target: 170 yuan"""
     assert dec.entry_zone[1] == 152.0
 
 
-def test_text_extract_target_price(adapter):
+def test_text_extract_target_price(adapter) -> None:
     """目标价应从文本中提取，返回标量值（domain model 字段类型为 float）。"""
     text = """**Rating**: Buy
 Target price: 170 yuan"""
@@ -582,7 +582,7 @@ Target price: 170 yuan"""
     assert dec.target_price == 170.0
 
 
-def test_text_extract_stop_loss(adapter):
+def test_text_extract_stop_loss(adapter) -> None:
     """止损价应从文本中提取，返回标量值（domain model 字段类型为 float）。"""
     text = """**Rating**: Buy
 Stop loss: 140 yuan"""
@@ -591,7 +591,7 @@ Stop loss: 140 yuan"""
     assert dec.stop_loss == 140.0
 
 
-def test_text_extract_holding_period(adapter):
+def test_text_extract_holding_period(adapter) -> None:
     """持有期应从文本中提取。"""
     text = """**Rating**: Buy
 Holding period: 30 trading days"""
@@ -599,7 +599,7 @@ Holding period: 30 trading days"""
     assert dec.expected_holding_period == 30
 
 
-def test_text_extract_catalysts(adapter):
+def test_text_extract_catalysts(adapter) -> None:
     """催化剂应从文本中提取。"""
     text = """**Rating**: Buy
 **Catalysts**: Q3业绩超预期
@@ -610,7 +610,7 @@ def test_text_extract_catalysts(adapter):
     assert any("业绩" in c or "产品" in c for c in dec.catalysts)
 
 
-def test_text_extract_scores(adapter):
+def test_text_extract_scores(adapter) -> None:
     """多因子评分应从文本中提取。"""
     text = """**Rating**: Buy
 估值: 75/100
@@ -628,7 +628,7 @@ def test_text_extract_scores(adapter):
     assert dec.macro_score == 70.0
 
 
-def test_text_missing_new_fields_are_none(adapter):
+def test_text_missing_new_fields_are_none(adapter) -> None:
     """文本中未出现的新字段应为 None/空列表。"""
     text = """**Rating**: Buy
 Strong fundamentals drive growth."""
@@ -648,7 +648,7 @@ Strong fundamentals drive growth."""
 # ═══════════════════════════════════════════════════════
 
 
-def test_investment_decision_to_dict_new_fields(adapter):
+def test_investment_decision_to_dict_new_fields(adapter) -> None:
     """新字段的 to_dict() 应正确输出。"""
     dec = InvestmentDecision(
         signal=Signal.BUY,

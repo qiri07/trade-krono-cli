@@ -1,5 +1,4 @@
-"""
-data_providers.baostock_provider — baostock 数据源实现。
+"""data_providers.baostock_provider — baostock 数据源实现。
 
 封装现有 baostock 调用逻辑，适配 DataProvider 接口。
 保留原有的 login/logout、限流、缓存兼容等特性。
@@ -10,9 +9,7 @@ from __future__ import annotations
 import atexit
 import re
 import threading
-import time
 from datetime import datetime
-from typing import Optional
 
 from loguru import logger
 
@@ -24,21 +21,17 @@ from trade_krono_cli.data_providers.base import (
     StockMetadata,
 )
 from trade_krono_cli.security import TokenBucket, validate_date, validate_ticker
+from trade_krono_cli.utils.st_cache import cached
 
 # baostock 模块级状态（保持与 data.py 原有的全局状态兼容）
 _bs = None
 _HAS_BS = False
 _bs_logged_in = False
-_bs_limiter: Optional[TokenBucket] = None
+_bs_limiter: TokenBucket | None = None
 _bs_login_lock = threading.Lock()
 
 # ST 标记正则（与 trading_constraints.py 保持一致）
 _ST_PATTERNS = re.compile(r"^(ST|\*ST|SST|N ST)", re.IGNORECASE)
-
-# _st_cache: ticker → (is_st: bool, timestamp: float)
-# TTL: 30 分钟，避免无限增长
-_st_cache: dict[str, tuple[bool, float]] = {}
-_ST_CACHE_TTL_SEC = 30 * 60  # 30 分钟
 
 
 def _cleanup_bs_on_exit() -> None:
@@ -88,7 +81,8 @@ class BaostockProvider(DataProvider):
             _bs = _bs_mod
             _HAS_BS = True
         except ImportError:
-            raise RuntimeError("baostock 未安装，请运行: pip install baostock")
+            msg = "baostock 未安装，请运行: pip install baostock"
+            raise RuntimeError(msg)
 
     def _ensure_login(self) -> None:
         global _bs_logged_in
@@ -101,7 +95,8 @@ class BaostockProvider(DataProvider):
                 return
             lg = _bs.login()  # type: ignore
         if lg.error_code != "0":
-            raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
+            msg = f"baostock 登录失败: {lg.error_msg}"
+            raise RuntimeError(msg)
         _bs_logged_in = True
         logger.debug(f"✅ baostock 登录成功（{self.name} provider）")
 
@@ -110,8 +105,8 @@ class BaostockProvider(DataProvider):
         if _bs_logged_in and _bs is not None:
             try:
                 _bs.logout()  # type: ignore
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"{self.name} baostock logout 异常: {e}")
             _bs_logged_in = False
 
     def _query_stock_basic(self, ticker: str) -> list[dict]:
@@ -135,7 +130,7 @@ class BaostockProvider(DataProvider):
         end_date: str,
         frequency: str = "d",
         adjustflag: str = "1",
-    ) -> Optional[KlineData]:
+    ) -> KlineData | None:
         ticker = validate_ticker(ticker)
         start_date = validate_date(start_date)
         end_date = validate_date(end_date)
@@ -187,11 +182,11 @@ class BaostockProvider(DataProvider):
             amount=df["amount"].astype(float).tolist(),
         )
 
-    def fetch_quote(self, ticker: str) -> Optional[RealtimeQuote]:
-        """baostock 不提供实时行情，返回 None。"""
+    def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
+        """Baostock 不提供实时行情，返回 None。"""
         return None
 
-    def fetch_metadata(self, ticker: str) -> Optional[StockMetadata]:
+    def fetch_metadata(self, ticker: str) -> StockMetadata | None:
         ticker = validate_ticker(ticker)
         rows = self._query_stock_basic(ticker)
         if not rows:
@@ -215,22 +210,11 @@ class BaostockProvider(DataProvider):
             source=self.name,
         )
 
+    @cached(ttl=1800)
     def check_st_status(self, ticker: str) -> bool:
-        """
-        检查是否为 ST 标的（带 TTL 缓存，避免无限增长）。
-        """
-        now = time.time()
-        if ticker in _st_cache:
-            is_st, cached_at = _st_cache[ticker]
-            if now - cached_at < _ST_CACHE_TTL_SEC:
-                return is_st
-            # 缓存过期，删除旧条目
-            del _st_cache[ticker]
-
+        """检查是否为 ST 标的（带 TTL 缓存，避免无限增长）。"""
         meta = self.fetch_metadata(ticker)
-        result = meta.is_st if meta else False
-        _st_cache[ticker] = (result, now)
-        return result
+        return meta.is_st if meta else False
 
     def check_delisted(self, ticker: str) -> bool:
         """检查股票是否已退市。"""
@@ -244,14 +228,14 @@ class BaostockProvider(DataProvider):
             return False
 
     def check_new_stock(
-        self, ticker: str, eval_date: str, min_listing_days: int = 60
+        self, ticker: str, eval_date: str, min_listing_days: int = 60,
     ) -> tuple[bool, str]:
-        """
-        检查是否为次新股。
+        """检查是否为次新股。
 
         Returns
         -------
         (is_new_stock, reason)
+
         """
         meta = self.fetch_metadata(ticker)
         if not meta or not meta.ipo_date:
@@ -275,5 +259,6 @@ class BaostockProvider(DataProvider):
         try:
             meta = self.fetch_metadata("sh.600519")
             return meta is not None
-        except Exception:
+        except Exception as e:
+            logger.debug(f"{self.name} health check 异常: {e}")
             return False

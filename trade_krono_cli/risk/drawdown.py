@@ -1,25 +1,24 @@
-"""
-回撤风险模块 — Drawdown Risk。
+"""回撤风险模块 — Drawdown Risk。
 
 计算基于 K 线价格的最大回撤，映射为 0-100 风险分。
 """
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
-
-import pandas as pd
+from typing import TYPE_CHECKING
 
 from trade_krono_cli.configs.risk import DrawdownThresholds
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def calc_drawdown_risk(
     high: pd.Series,
     close: pd.Series,
-    thresholds: Optional[DrawdownThresholds] = None,
-) -> Tuple[float, float]:
-    """
-    计算回撤风险分。
+    thresholds: DrawdownThresholds | None = None,
+) -> tuple[float, float]:
+    """计算回撤风险分。
 
     逻辑：
       1. 计算滚动 60 日最高价
@@ -37,6 +36,7 @@ def calc_drawdown_risk(
     (risk_score, max_drawdown_pct)
       risk_score          0-100，越高越危险
       max_drawdown_pct    最大回撤绝对值（%）
+
     """
     th = thresholds or DrawdownThresholds()
 

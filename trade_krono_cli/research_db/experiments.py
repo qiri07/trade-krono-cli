@@ -1,6 +1,4 @@
-"""
-研究数据库 — Experiments 表读写。
-"""
+"""研究数据库 — Experiments 表读写。"""
 
 from __future__ import annotations
 

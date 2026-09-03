@@ -1,5 +1,4 @@
-"""
-orchestrator — 调度主循环（向后兼容入口）。
+"""orchestrator — 调度主循环（向后兼容入口）。
 
 QuantPipeline 的核心实现已拆分为 pipeline/pipeline_core.py，
 PipelineFactory 拆分为 pipeline/factory.py。

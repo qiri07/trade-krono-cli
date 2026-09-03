@@ -1,5 +1,4 @@
-"""
-Fundamental Filter Stage — PE / PB / 市值 / 行业 基本面过滤。
+"""Fundamental Filter Stage — PE / PB / 市值 / 行业 基本面过滤。
 
 利用 akshare 实时行情中已有的 PE/PB/市值字段，
 加上 baostock 行业数据（懒加载），执行基本面筛选。
@@ -7,17 +6,18 @@ Fundamental Filter Stage — PE / PB / 市值 / 行业 基本面过滤。
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from trade_krono_cli.universe.provider import UniverseTicket
 from trade_krono_cli.universe.stages import FilterStage
+
+if TYPE_CHECKING:
+    from trade_krono_cli.universe.provider import UniverseTicket
 
 
 class FundamentalFilterStage(FilterStage):
-    """
-    基本面过滤阶段。
+    """基本面过滤阶段。
 
     过滤条件（全部可选，None 表示不限制）：
       - market_cap_range: 总市值 [low, high] 亿元
@@ -33,14 +33,14 @@ class FundamentalFilterStage(FilterStage):
 
     def __init__(
         self,
-        market_cap_range: Optional[tuple[float, float]] = None,
-        market_cap_min: Optional[float] = None,
-        pe_range: Optional[tuple[float, float]] = None,
-        pb_range: Optional[tuple[float, float]] = None,
-        min_pb: Optional[float] = None,
+        market_cap_range: tuple[float, float] | None = None,
+        market_cap_min: float | None = None,
+        pe_range: tuple[float, float] | None = None,
+        pb_range: tuple[float, float] | None = None,
+        min_pb: float | None = None,
         industry_whitelist: list[str] | None = None,
         industry_blacklist: list[str] | None = None,
-    ):
+    ) -> None:
         self.market_cap_range = market_cap_range
         self.market_cap_min = market_cap_min
         self.pe_range = pe_range
@@ -81,9 +81,8 @@ class FundamentalFilterStage(FilterStage):
                     continue
 
             # ── 最低 PB（资不抵债风险过滤）───────────────────────
-            if self.min_pb is not None and t.pb is not None:
-                if t.pb < self.min_pb:
-                    continue
+            if self.min_pb is not None and t.pb is not None and t.pb < self.min_pb:
+                continue
 
             # ── 行业过滤 ──────────────────────────────────────────────
             if self.industry_whitelist and t.industry is not None:

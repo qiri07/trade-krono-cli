@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from trade_krono_cli.research_db.schema import RESEARCH_TABLES, validate_table_name
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -105,7 +108,7 @@ class TestSignalsMixin:
                 "signal_assessment": None,
                 "expected_value": None,
                 "conflict": "",
-            }
+            },
         ]
         db.insert_signals(job_id, merged)  # type: ignore[attr-defined]
         signals = db.get_signals_by_job(job_id)  # type: ignore[attr-defined]

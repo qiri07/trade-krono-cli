@@ -58,7 +58,7 @@ def sample_merged():
     ]
 
 
-def test_save_json(sample_merged, tmp_path):
+def test_save_json(sample_merged, tmp_path) -> None:
     output = tmp_path / "results.json"
     path = save_json(sample_merged, str(output))
     assert Path(path).exists()
@@ -72,7 +72,7 @@ def test_save_json(sample_merged, tmp_path):
     assert results[0]["ticker"] == "sh.600519"
 
 
-def test_save_html(sample_merged, tmp_path):
+def test_save_html(sample_merged, tmp_path) -> None:
     output = tmp_path / "report.html"
     path = save_html(sample_merged, str(output), "2026-08-11")
     assert Path(path).exists()
@@ -82,7 +82,7 @@ def test_save_html(sample_merged, tmp_path):
     assert "000858" in content
 
 
-def test_print_table(sample_merged, capsys):
+def test_print_table(sample_merged, capsys) -> None:
     print_table(sample_merged)
     captured = capsys.readouterr()
     # rich table truncates ticker; check for score and confidence which are full-width
@@ -90,7 +90,7 @@ def test_print_table(sample_merged, capsys):
     assert "72.0" in captured.out  # Kronos confidence
 
 
-def test_print_summary(sample_merged, capsys):
+def test_print_summary(sample_merged, capsys) -> None:
     print_summary(sample_merged, "2026-08-11")
     captured = capsys.readouterr()
     assert "600519" in captured.out

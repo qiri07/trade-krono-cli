@@ -1,5 +1,4 @@
-"""
-LLM Request 追踪模块。
+"""LLM Request 追踪模块。
 
 记录每次 LLM 调用的完整上下文，用于：
   · 可重复性：知道每次决策由哪个模型、哪些参数产生
@@ -18,7 +17,6 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
 
 # ── 哈希工具 ──────────────────────────────────────────────────────────────────
 
@@ -29,8 +27,7 @@ def sha256_hex(text: str) -> str:
 
 
 def hash_system_prompt(system_prompt: str) -> str:
-    """
-    对系统提示词做规范化哈希。
+    """对系统提示词做规范化哈希。
     规范化：去除空白差异、转小写标记词，保留语义结构。
     """
     # 保留内容，只 strip 首尾空白
@@ -44,8 +41,7 @@ def hash_user_prompt_structural(
     analysts: list[str],
     **kwargs,
 ) -> str:
-    """
-    对用户提示词的结构性部分做哈希。
+    """对用户提示词的结构性部分做哈希。
     不包含具体的市场数据文本（这些数据每次都不同），
     只哈希决定"这是什么请求"的结构字段。
     """
@@ -63,8 +59,7 @@ def hash_user_prompt_structural(
 
 @dataclass(frozen=True)
 class LLMRequest:
-    """
-    一次 LLM 调用的完整上下文快照。
+    """一次 LLM 调用的完整上下文快照。
 
     字段说明：
       source             — "ta" | "kronos" | "external"
@@ -85,22 +80,22 @@ class LLMRequest:
     source: str = "external"
     provider: str = ""
     model: str = ""
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
+    temperature: float | None = None
+    top_p: float | None = None
     system_prompt_hash: str = ""
     user_prompt_hash: str = ""
-    input_tokens: Optional[int] = None
-    output_tokens: Optional[int] = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     latency_sec: float = 0.0
     success: bool = False
-    error: Optional[str] = None
+    error: str | None = None
     fetched_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "LLMRequest":
+    def from_dict(cls, data: dict) -> LLMRequest:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
     def __repr__(self) -> str:
@@ -119,18 +114,17 @@ def build_ta_llm_request(
     date: str,
     provider: str,
     model: str,
-    temperature: Optional[float],
-    top_p: Optional[float],
+    temperature: float | None,
+    top_p: float | None,
     system_prompt: str,
     analysts: list[str],
     latency_sec: float,
     success: bool,
-    error: Optional[str] = None,
-    input_tokens: Optional[int] = None,
-    output_tokens: Optional[int] = None,
+    error: str | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
 ) -> LLMRequest:
-    """
-    为 TradingAgents 分析构建 LLMRequest。
+    """为 TradingAgents 分析构建 LLMRequest。
 
     Parameters
     ----------
@@ -147,6 +141,7 @@ def build_ta_llm_request(
     error         : 失败信息（可选）
     input_tokens  : 输入 token 数（可选）
     output_tokens : 输出 token 数（可选）
+
     """
     return LLMRequest(
         source="ta",
@@ -169,13 +164,13 @@ def build_kronos_llm_request(
     date: str,
     provider: str,
     model: str,
-    temperature: Optional[float],
-    top_p: Optional[float],
+    temperature: float | None,
+    top_p: float | None,
     latency_sec: float,
     success: bool,
-    error: Optional[str] = None,
-    input_tokens: Optional[int] = None,
-    output_tokens: Optional[int] = None,
+    error: str | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
 ) -> LLMRequest:
     """为 Kronos 预测构建 LLMRequest（Kronos 无独立 prompt，hash 为空）。"""
     return LLMRequest(

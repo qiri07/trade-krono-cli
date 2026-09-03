@@ -6,7 +6,7 @@ from trade_krono_cli.ta_decision import InvestmentDecision, Signal
 from trade_krono_cli.ta_runner import StockAnalysisResult
 
 
-def test_investment_decision_fallback():
+def test_investment_decision_fallback() -> None:
     dec = InvestmentDecision.fallback(Signal.SELL, 30.0)
     assert dec.signal == Signal.SELL
     assert dec.confidence == 30.0
@@ -16,7 +16,7 @@ def test_investment_decision_fallback():
 # ── 端到端：StockAnalysisResult 集成 ─────────────────────────────────────────
 
 
-def test_stock_result_has_investment_decision():
+def test_stock_result_has_investment_decision() -> None:
     """StockAnalysisResult 应包含 investment_decision 字段。"""
     from trade_krono_cli.ta_runner import StockAnalysisResult
 
@@ -38,7 +38,7 @@ def test_stock_result_has_investment_decision():
     assert result.decision.confidence == 40.0
 
 
-def test_stock_result_legacy_fallback():
+def test_stock_result_legacy_fallback() -> None:
     """无 investment_decision 时，decision 属性使用 legacy 字段。"""
     from trade_krono_cli.ta_runner import StockAnalysisResult
 
@@ -53,7 +53,7 @@ def test_stock_result_legacy_fallback():
     assert result.decision.confidence == 80.0
 
 
-def test_stock_result_to_dict_includes_decision():
+def test_stock_result_to_dict_includes_decision() -> None:
     from trade_krono_cli.ta_runner import StockAnalysisResult
 
     result = StockAnalysisResult(
@@ -74,7 +74,7 @@ def test_stock_result_to_dict_includes_decision():
 # ── reports_raw：完整报告存储 ─────────────────────────────────────────────────
 
 
-def test_save_raw_reports_creates_file(tmp_path):
+def test_save_raw_reports_creates_file(tmp_path) -> None:
     """save_raw_reports 应在 raw/{date}/{ticker}.json 写入完整报告。"""
     from trade_krono_cli.config import reload_settings
     from trade_krono_cli.ta_runner import TradingAgentsRunner
@@ -124,7 +124,7 @@ def test_save_raw_reports_creates_file(tmp_path):
     assert data["investment_decision"]["confidence"] == 85.0
 
 
-def test_load_raw_report_exists(tmp_path):
+def test_load_raw_report_exists(tmp_path) -> None:
     """load_raw_report 能正确读取磁盘上的文件。"""
     from trade_krono_cli.config import reload_settings
     from trade_krono_cli.ta_runner import TradingAgentsRunner
@@ -146,7 +146,7 @@ def test_load_raw_report_exists(tmp_path):
     assert loaded["reports_raw"]["market"] == "市场报告"
 
 
-def test_load_raw_report_missing(tmp_path):
+def test_load_raw_report_missing(tmp_path) -> None:
     """不存在的报告文件返回 None。"""
     from trade_krono_cli.ta_runner import TradingAgentsRunner
 
@@ -155,7 +155,7 @@ def test_load_raw_report_missing(tmp_path):
     assert loaded is None
 
 
-def test_results_dir_contains_raw_subdir(tmp_path):
+def test_results_dir_contains_raw_subdir(tmp_path) -> None:
     """save_raw_reports 创建的目录结构正确。"""
     from trade_krono_cli.config import reload_settings
     from trade_krono_cli.ta_runner import TradingAgentsRunner

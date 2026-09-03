@@ -61,14 +61,13 @@ def sync_universe(
     ),
     lookback: int = typer.Option(730, "--lookback", "-l", help="回溯天数，默认 730（约 2 年）"),
     delay: float = typer.Option(
-        0.05, "--delay", help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）"
+        0.05, "--delay", help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）",
     ),
     show_progress: bool = typer.Option(
-        True, "--no-progress", "-p", help="不显示进度条（静默模式）"
+        True, "--no-progress", "-p", help="不显示进度条（静默模式）",
     ),
 ) -> None:
-    """
-    全量 A 股 K 线缓存同步。
+    """全量 A 股 K 线缓存同步。
 
     从指定 UniverseProvider 获取全市场 A 股列表，逐只拉取历史 K 线并写入缓存。
     首次运行拉取全量历史（全部永久缓存）；
@@ -129,7 +128,7 @@ def sync_universe(
     console.print(
         f"[bold green]🔥 全量 K 线缓存同步[/bold green] "
         f"来源={source} 股票数={total} 日期={start_date}~{date}"
-        + (f" 白名单={len(whitelist_tickers)}只优先" if whitelist_tickers else "")
+        + (f" 白名单={len(whitelist_tickers)}只优先" if whitelist_tickers else ""),
     )
 
     for i, ticker in enumerate(ordered_tickers, 1):
@@ -163,12 +162,34 @@ def sync_universe(
 
     console.print(
         f"[bold green]✅ 同步完成[/bold green] "
-        f"成功={success_count}/{total}  失败={len(fail_tickers)}"
+        f"成功={success_count}/{total}  失败={len(fail_tickers)}",
     )
     if fail_tickers:
         console.print(f"[yellow]⚠️  失败股票（可稍后重试）: {', '.join(fail_tickers[:20])}[/yellow]")
         if len(fail_tickers) > 20:
             console.print(f"[dim]   … 还有 {len(fail_tickers) - 20} 只[/dim]")
+
+    # ── 自动导出 daily_pv 供 RD-Agent 使用 ─────────────────────────────
+    try:
+        from pathlib import Path as _P
+
+        from trade_krono_cli.cache import get_cache
+
+        cache = get_cache()
+        rdagent_data = _P(__file__).resolve().parents[3] / "RD-Agent-Work" / "git_ignore_folder"
+        main_dir = rdagent_data / "factor_implementation_source_data"
+        parquet_main = main_dir / "daily_pv.parquet"
+        h5_main = main_dir / "daily_pv.h5"
+
+        result = cache.export_daily_pv(
+            parquet_path=str(parquet_main),
+            h5_path=str(h5_main),
+            debug_insts=100,
+        )
+        console.print(f"[bold green]✅ 已自动导出 daily_pv: {result['stocks']:,} 只, "
+                      f"{result['rows']:,} 行 ({result['date_min']} ~ {result['date_max']})[/bold green]")
+    except Exception as ex:
+        logger.warning(f"自动导出 daily_pv 失败（不影响同步结果）: {ex}")
 
 
 def sync_whitelist(
@@ -180,14 +201,13 @@ def sync_whitelist(
     ),
     lookback: int = typer.Option(730, "--lookback", "-l", help="回溯天数，默认 730（约 2 年）"),
     delay: float = typer.Option(
-        0.05, "--delay", help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）"
+        0.05, "--delay", help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）",
     ),
     show_progress: bool = typer.Option(
-        True, "--no-progress", "-p", help="不显示进度条（静默模式）"
+        True, "--no-progress", "-p", help="不显示进度条（静默模式）",
     ),
 ) -> None:
-    """
-    仅同步白名单股票的 K 线缓存。
+    """仅同步白名单股票的 K 线缓存。
 
     白名单来自 .env 中的 SYNC_WHITELIST 配置（逗号分隔的6位股票代码）。
     若未配置 SYNC_WHITELIST，命令将报错退出。
@@ -221,7 +241,7 @@ def sync_whitelist(
     fail_tickers: list[str] = []
 
     console.print(
-        f"[bold green]🔥 白名单 K 线缓存同步[/bold green] 股票数={total} 日期={start_date}~{date}"
+        f"[bold green]🔥 白名单 K 线缓存同步[/bold green] 股票数={total} 日期={start_date}~{date}",
     )
 
     for i, ticker in enumerate(whitelist_tickers, 1):
@@ -255,7 +275,7 @@ def sync_whitelist(
 
     console.print(
         f"[bold green]✅ 同步完成[/bold green] "
-        f"成功={success_count}/{total}  失败={len(fail_tickers)}"
+        f"成功={success_count}/{total}  失败={len(fail_tickers)}",
     )
     if fail_tickers:
         console.print(f"[yellow]⚠️  失败股票: {', '.join(fail_tickers)}[/yellow]")
@@ -271,8 +291,7 @@ def rank_providers(
     workers: int = typer.Option(3, "--workers", "-w", help="并发 benchmark 线程数（默认 3）"),
     force: bool = typer.Option(False, "--force", "-f", help="强制重新 benchmark，忽略缓存"),
 ) -> None:
-    """
-    Benchmark 所有数据源延迟，按速度排序输出。
+    """Benchmark 所有数据源延迟，按速度排序输出。
 
     结果会缓存 10 分钟，后续 K 线拉取自动按此顺序尝试。
     北交所（bj.）ticker 会自动将 tonghuashun 置顶。
@@ -287,16 +306,14 @@ def rank_providers(
     from trade_krono_cli.data_providers.factory import get_data_factory
 
     factory = get_data_factory()
+    ticker_type = ticker.split(".", maxsplit=1)[0] if "." in ticker else ticker
 
     console.print(f"[bold cyan]🔬 Provider Benchmark[/bold cyan] ticker={ticker} workers={workers}")
     console.print()
 
     if force:
-        # 清除该 ticker 类型的缓存
-        ticker_type = ticker.split(".")[0] if "." in ticker else ticker
-        from trade_krono_cli.data_providers.factory import DataProviderFactory
-
-        DataProviderFactory._rank_cache.pop(ticker_type, None)
+        # 清除该 ticker 类型的缓存，强制重新 benchmark
+        factory.invalidate_rank_cache(ticker_type)
 
     results = factory.bench_all(ticker=ticker, workers=workers)
 
@@ -318,13 +335,8 @@ def rank_providers(
             status_str = "❌"
         console.print(f"  {i:<4d} {r.name:<14s} {latency_str:<10s} {status_str:<6s}")
 
-    # 直接写入缓存，避免重复 benchmark
-    ranked = [r.name for r in results if r.success] + [r.name for r in results if not r.success]
-    from trade_krono_cli.data_providers.factory import DataProviderFactory
-
-    ticker_type = ticker.split(".")[0] if "." in ticker else ticker
-    with DataProviderFactory._rank_lock:
-        DataProviderFactory._rank_cache[ticker_type] = (ranked, time.time())
+    # 写入缓存，避免重复 benchmark
+    ranked = factory.get_ranked_chain_for_ticker(ticker)
     console.print()
     console.print(f"[bold green]✅ 已缓存 Provider 排序[/bold green] {' → '.join(ranked)}")
     console.print("  缓存 TTL: 10 分钟，下次 benchmark 将在 10 分钟后生效")

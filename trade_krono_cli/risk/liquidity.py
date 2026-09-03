@@ -1,5 +1,4 @@
-"""
-流动性风险模块 — Liquidity Risk。
+"""流动性风险模块 — Liquidity Risk。
 
 计算基于成交量的流动性风险分，映射为 0-100 风险分。
 """
@@ -7,20 +6,20 @@
 from __future__ import annotations
 
 import math
-from typing import Optional, Tuple
-
-import pandas as pd
+from typing import TYPE_CHECKING
 
 from trade_krono_cli.configs.risk import LiquidityThresholds
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def calc_liquidity_risk(
     volume: pd.Series,
-    market_cap: Optional[float] = None,
-    thresholds: Optional[LiquidityThresholds] = None,
-) -> Tuple[float, Optional[float]]:
-    """
-    计算流动性风险分。
+    market_cap: float | None = None,
+    thresholds: LiquidityThresholds | None = None,
+) -> tuple[float, float | None]:
+    """计算流动性风险分。
 
     逻辑：
       1. 计算近 20 日平均成交量
@@ -38,6 +37,7 @@ def calc_liquidity_risk(
     (risk_score, avg_turnover_pct)
       risk_score      0-100，越高越危险
       avg_turnover_pct 日均换手率（%），无法计算时返回 None
+
     """
     th = thresholds or LiquidityThresholds()
 
@@ -55,7 +55,7 @@ def calc_liquidity_risk(
     if log_vol >= sorted_bps[0][0]:
         # 超过最大 threshold：使用 tail_penalty_rate 递减
         risk_score = max(
-            0.0, sorted_bps[0][1] - (log_vol - sorted_bps[0][0]) * th.tail_penalty_rate
+            0.0, sorted_bps[0][1] - (log_vol - sorted_bps[0][0]) * th.tail_penalty_rate,
         )
     elif log_vol < sorted_bps[-1][0]:
         # 低于最小 threshold：使用该点的分数

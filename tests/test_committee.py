@@ -29,7 +29,7 @@ def research_db(tmp_path):
 # ── AgentReport / AgentType ────────────────────────────────────────────────
 
 
-def test_agent_report_to_dict():
+def test_agent_report_to_dict() -> None:
     report = AgentReport(
         agent_type=AgentType.FUNDAMENTAL,
         ticker="sh.600519",
@@ -46,7 +46,7 @@ def test_agent_report_to_dict():
     assert d["key_finding"] == "ROE 28%"
 
 
-def test_agent_report_frozen():
+def test_agent_report_frozen() -> None:
     report = AgentReport(
         agent_type=AgentType.MARKET,
         ticker="sz.000858",
@@ -59,7 +59,7 @@ def test_agent_report_frozen():
 # ── extract_agent_reports ──────────────────────────────────────────────────
 
 
-def test_extract_agent_reports_basic():
+def test_extract_agent_reports_basic() -> None:
     final_state = {
         "fundamentals_report": "基本面稳健，ROE 25%",
         "market_report": "技术面突破均线",
@@ -84,12 +84,12 @@ def test_extract_agent_reports_basic():
     assert all(r.ticker == "sh.600519" for r in reports)
 
 
-def test_extract_agent_reports_empty():
+def test_extract_agent_reports_empty() -> None:
     reports = extract_agent_reports({}, "sh.600519")
     assert reports == []
 
 
-def test_extract_agent_reports_skips_missing():
+def test_extract_agent_reports_skips_missing() -> None:
     final_state = {
         "fundamentals_report": "只有基本面",
         # 其他报告缺失
@@ -99,7 +99,7 @@ def test_extract_agent_reports_skips_missing():
     assert reports[0].agent_type == AgentType.FUNDAMENTAL
 
 
-def test_extract_agent_reports_with_debate():
+def test_extract_agent_reports_with_debate() -> None:
     final_state = {
         "fundamentals_report": "基本面内容",
         "investment_debate_state": {
@@ -118,7 +118,7 @@ def test_extract_agent_reports_with_debate():
 # ── build_committee_input ──────────────────────────────────────────────────
 
 
-def test_build_committee_input():
+def test_build_committee_input() -> None:
     final_state = {
         "fundamentals_report": "ROE 25%",
         "market_report": "均线突破",
@@ -148,7 +148,7 @@ def test_build_committee_input():
     assert len(inp.agent_reports) >= 2
 
 
-def test_build_committee_input_no_kronos():
+def test_build_committee_input_no_kronos() -> None:
     inp = build_committee_input(
         ticker="sz.000858",
         date="2026-08-14",
@@ -166,7 +166,7 @@ def test_build_committee_input_no_kronos():
 # ── InvestmentCommittee.deliberate (heuristic) ─────────────────────────────
 
 
-def test_deliberate_buy_consensus(research_db):
+def test_deliberate_buy_consensus(research_db) -> None:
     inp = StockCommitteeInput(
         ticker="sh.600519",
         date="2026-08-14",
@@ -214,7 +214,7 @@ def test_deliberate_buy_consensus(research_db):
     assert isinstance(result.agent_consensus, dict)
 
 
-def test_deliberate_sell_consensus(research_db):
+def test_deliberate_sell_consensus(research_db) -> None:
     inp = StockCommitteeInput(
         ticker="sz.000858",
         date="2026-08-14",
@@ -246,7 +246,7 @@ def test_deliberate_sell_consensus(research_db):
     assert result.bear_case  # 非空
 
 
-def test_deliberate_hold_split(research_db):
+def test_deliberate_hold_split(research_db) -> None:
     """买入和卖出票数相同 → HOLD。"""
     inp = StockCommitteeInput(
         ticker="sh.600036",
@@ -278,7 +278,7 @@ def test_deliberate_hold_split(research_db):
     assert result.recommendation == "HOLD"
 
 
-def test_deliberate_empty_reports(research_db):
+def test_deliberate_empty_reports(research_db) -> None:
     """没有 agent reports 时 → HOLD，置信度 50。"""
     inp = StockCommitteeInput(
         ticker="sh.600519",
@@ -296,7 +296,7 @@ def test_deliberate_empty_reports(research_db):
     assert result.bear_case == "无明显看空论点"
 
 
-def test_deliberate_with_kronos_up(research_db):
+def test_deliberate_with_kronos_up(research_db) -> None:
     inp = StockCommitteeInput(
         ticker="sh.600519",
         date="2026-08-14",
@@ -324,7 +324,7 @@ def test_deliberate_with_kronos_up(research_db):
     assert "上涨" in result.bull_case or "4.2" in result.bull_case
 
 
-def test_deliberate_with_kronos_down(research_db):
+def test_deliberate_with_kronos_down(research_db) -> None:
     inp = StockCommitteeInput(
         ticker="sh.600519",
         date="2026-08-14",
@@ -342,7 +342,7 @@ def test_deliberate_with_kronos_down(research_db):
     assert "下跌" in result.bear_case or "-2.5" in result.bear_case
 
 
-def test_deliberate_confidence_capped(research_db):
+def test_deliberate_confidence_capped(research_db) -> None:
     """置信度上限 95。"""
     inp = StockCommitteeInput(
         ticker="sh.600519",
@@ -400,7 +400,7 @@ def test_deliberate_confidence_capped(research_db):
     assert result.recommendation_confidence >= 90.0
 
 
-def test_deliberate_llm_path_fallback_to_heuristic(research_db):
+def test_deliberate_llm_path_fallback_to_heuristic(research_db) -> None:
     """LLM 路径失败时降级到启发式路径，不抛出异常。"""
     inp = StockCommitteeInput(
         ticker="sh.600519",
@@ -415,7 +415,7 @@ def test_deliberate_llm_path_fallback_to_heuristic(research_db):
     assert result.recommendation_confidence == 50.0
 
 
-def test_deliberate_llm_path_success(research_db):
+def test_deliberate_llm_path_success(research_db) -> None:
     """LLM 返回有效 JSON 时使用 LLM 结果。"""
     inp = StockCommitteeInput(
         ticker="sh.600519",
@@ -456,7 +456,7 @@ def test_deliberate_llm_path_success(research_db):
     assert "LLM推理" in result.reasoning
 
 
-def test_get_consensus(research_db):
+def test_get_consensus(research_db) -> None:
     inp = StockCommitteeInput(
         ticker="sh.600519",
         date="2026-08-14",
@@ -497,7 +497,7 @@ def test_get_consensus(research_db):
 # ── InvestmentCommitteeResult ──────────────────────────────────────────────
 
 
-def test_committee_result_to_dict():
+def test_committee_result_to_dict() -> None:
     result = InvestmentCommitteeResult(
         ticker="sh.600519",
         date="2026-08-14",
@@ -518,7 +518,7 @@ def test_committee_result_to_dict():
     assert d["created_at"] > 0
 
 
-def test_committee_result_auto_created_at():
+def test_committee_result_auto_created_at() -> None:
     result = InvestmentCommitteeResult(
         ticker="sh.600519",
         date="2026-08-14",
@@ -531,7 +531,7 @@ def test_committee_result_auto_created_at():
 # ── describe_committee ─────────────────────────────────────────────────────
 
 
-def test_describe_committee():
+def test_describe_committee() -> None:
     result = InvestmentCommitteeResult(
         ticker="sh.600519",
         date="2026-08-14",
@@ -555,7 +555,7 @@ def test_describe_committee():
 # ── Persistence: insert + get_committee_for_ticker ─────────────────────────
 
 
-def test_insert_and_get_committee_deliberation(research_db):
+def test_insert_and_get_committee_deliberation(research_db) -> None:
     job_id = research_db.create_job("2026-08-14", ["sh.600519"])
     research_db.insert_committee_deliberation(
         job_id=job_id,
@@ -578,12 +578,12 @@ def test_insert_and_get_committee_deliberation(research_db):
     assert got["agent_consensus"] == {"BUY": 3, "HOLD": 1, "SELL": 0}
 
 
-def test_get_committee_for_ticker_not_found(research_db):
+def test_get_committee_for_ticker_not_found(research_db) -> None:
     result = research_db.get_committee_for_ticker("sh.999999")
     assert result is None
 
 
-def test_insert_committee_overwrite(research_db):
+def test_insert_committee_overwrite(research_db) -> None:
     job_id = research_db.create_job("2026-08-14", ["sh.600519"])
     research_db.insert_committee_deliberation(
         job_id=job_id,
@@ -613,7 +613,7 @@ def test_insert_committee_overwrite(research_db):
     assert got["bull_case"] == "v2"  # 后写入覆盖
 
 
-def test_committee_stats_count(research_db):
+def test_committee_stats_count(research_db) -> None:
     """stats() 中 committee_deliberations 应返回正确计数。"""
     job_id = research_db.create_job("2026-08-14", ["sh.600519", "sz.000858"])
     research_db.insert_committee_deliberation(
@@ -642,7 +642,7 @@ def test_committee_stats_count(research_db):
     assert stats["research_committee_deliberations"] == 2
 
 
-def test_committee_table_exists_after_init(tmp_path):
+def test_committee_table_exists_after_init(tmp_path) -> None:
     """初始化后 committee_deliberations 表应已创建。"""
     db = ResearchDatabase(db_path=tmp_path / "test.db")
     with db._conn as conn:

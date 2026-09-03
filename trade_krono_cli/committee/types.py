@@ -1,5 +1,4 @@
-"""
-committee/types — 委员会数据类型与报告提取工具。
+"""committee/types — 委员会数据类型与报告提取工具。
 
 包含：
   - AgentType / AgentReport / StockCommitteeInput / InvestmentCommitteeResult
@@ -11,7 +10,6 @@ from __future__ import annotations
 import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Optional
 
 from loguru import logger
 
@@ -36,8 +34,7 @@ class AgentType(str, Enum):
 
 @dataclass(frozen=True)
 class AgentReport:
-    """
-    单个 Agent 的分析报告。
+    """单个 Agent 的分析报告。
 
     Attributes
     ----------
@@ -47,13 +44,14 @@ class AgentReport:
     signal          : Agent 独立判断的信号（BUY/HOLD/SELL/None）
     confidence      : Agent 独立置信度（0-100，None 表示未明确表达）
     key_finding     : 最关键的发现（一句话）
+
     """
 
     agent_type: AgentType
     ticker: str
     content: str
-    signal: Optional[str] = None
-    confidence: Optional[float] = None
+    signal: str | None = None
+    confidence: float | None = None
     key_finding: str = ""
 
     def to_dict(self) -> dict:
@@ -64,8 +62,7 @@ class AgentReport:
 
 @dataclass
 class StockCommitteeInput:
-    """
-    单只股票的委员会审议输入。
+    """单只股票的委员会审议输入。
 
     Attributes
     ----------
@@ -78,17 +75,18 @@ class StockCommitteeInput:
     ta_signal          : TA 综合信号
     ta_confidence      : TA 综合置信度
     composite_score    : 合并打分
+
     """
 
     ticker: str
     date: str
     agent_reports: list[AgentReport] = field(default_factory=list)
-    kronos_direction: Optional[str] = None
-    kronos_change_pct: Optional[float] = None
-    kronos_confidence: Optional[float] = None
-    ta_signal: Optional[str] = None
-    ta_confidence: Optional[float] = None
-    composite_score: Optional[float] = None
+    kronos_direction: str | None = None
+    kronos_change_pct: float | None = None
+    kronos_confidence: float | None = None
+    ta_signal: str | None = None
+    ta_confidence: float | None = None
+    composite_score: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -106,8 +104,7 @@ class StockCommitteeInput:
 
 @dataclass
 class InvestmentCommitteeResult:
-    """
-    委员会审议结果。
+    """委员会审议结果。
 
     Attributes
     ----------
@@ -122,6 +119,7 @@ class InvestmentCommitteeResult:
     reasoning           : 完整审议推理链
     agent_consensus     : Agent 信号分布（如 {"BUY": 3, "HOLD": 2, "SELL": 1}）
     created_at          : 创建时间戳
+
     """
 
     ticker: str
@@ -163,8 +161,7 @@ def extract_agent_reports(
     final_state: dict,
     ticker: str,
 ) -> list[AgentReport]:
-    """
-    从 TradingAgents final_state 提取结构化的 Agent 报告。
+    """从 TradingAgents final_state 提取结构化的 Agent 报告。
 
     Parameters
     ----------
@@ -174,6 +171,7 @@ def extract_agent_reports(
     Returns
     -------
     list[AgentReport]
+
     """
     reports: list[AgentReport] = []
     for key, agent_type in _AGENT_TYPE_MAP.items():
@@ -187,7 +185,7 @@ def extract_agent_reports(
                 ticker=ticker,
                 content=content[:2000],
                 key_finding=key_finding,
-            )
+            ),
         )
 
     # 提取辩论历史作为补充证据
@@ -202,7 +200,7 @@ def extract_agent_reports(
                     ticker=ticker,
                     content=bull_history[:1000],
                     key_finding="Bull debate highlights",
-                )
+                ),
             )
         if bear_history:
             reports.append(
@@ -211,7 +209,7 @@ def extract_agent_reports(
                     ticker=ticker,
                     content=bear_history[:1000],
                     key_finding="Bear debate highlights",
-                )
+                ),
             )
 
     logger.info(f"📡 委员会输入: {ticker} | {len(reports)} 份 Agent 报告已提取")
@@ -222,15 +220,15 @@ def _extract_key_finding(content: str, agent_type: AgentType) -> str:
     """从报告文本中提取关键发现（首句或前100字）。"""
     if not content:
         return ""
-    first_sentence = content.split("\n")[0].strip()
+    first_sentence = content.split("\n", maxsplit=1)[0].strip()
     first_sentence = first_sentence.lstrip("#* ").strip()
     return first_sentence[:150] if first_sentence else content[:150]
 
 
 __all__ = (
-    "AgentType",
     "AgentReport",
-    "StockCommitteeInput",
+    "AgentType",
     "InvestmentCommitteeResult",
+    "StockCommitteeInput",
     "extract_agent_reports",
 )

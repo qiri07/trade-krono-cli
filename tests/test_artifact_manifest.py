@@ -11,7 +11,7 @@ import pytest
 
 
 class TestGitTools:
-    def test_git_sha_path_not_exists(self, tmp_path):
+    def test_git_sha_path_not_exists(self, tmp_path) -> None:
         """路径不存在时返回 (None, None)。"""
         from trade_krono_cli.artifact_manifest import _git_sha
 
@@ -19,7 +19,7 @@ class TestGitTools:
         assert full is None
         assert short is None
 
-    def test_git_sha_not_git_repo(self, tmp_path):
+    def test_git_sha_not_git_repo(self, tmp_path) -> None:
         """非 git 目录返回 (None, None)。"""
         from trade_krono_cli.artifact_manifest import _git_sha
 
@@ -29,7 +29,7 @@ class TestGitTools:
         assert full is None
         assert short is None
 
-    def test_git_sha_valid_repo(self, tmp_path):
+    def test_git_sha_valid_repo(self, tmp_path) -> None:
         """有效 git repo 返回正确 commit。"""
         from trade_krono_cli.artifact_manifest import _git_sha
 
@@ -52,7 +52,7 @@ class TestGitTools:
             assert full == "abc123def456789abc"
             assert short == "abc123def456"
 
-    def test_git_dirty_clean(self, tmp_path):
+    def test_git_dirty_clean(self, tmp_path) -> None:
         """干净工作区返回 False。"""
         from trade_krono_cli.artifact_manifest import _git_dirty
 
@@ -64,7 +64,7 @@ class TestGitTools:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             assert _git_dirty(repo_dir) is False
 
-    def test_git_dirty_untracked(self, tmp_path):
+    def test_git_dirty_untracked(self, tmp_path) -> None:
         """有未跟踪文件时返回 True。"""
         from trade_krono_cli.artifact_manifest import _git_dirty
 
@@ -83,7 +83,7 @@ class TestGitTools:
 
 
 class TestDataclasses:
-    def test_code_artifact_defaults(self):
+    def test_code_artifact_defaults(self) -> None:
         from trade_krono_cli.artifact_manifest import CodeArtifact
 
         ca = CodeArtifact()
@@ -91,29 +91,29 @@ class TestDataclasses:
         assert ca.tradingagents == {}
         assert ca.kronos == {}
 
-    def test_model_artifact_version_tag(self):
+    def test_model_artifact_version_tag(self) -> None:
         from trade_krono_cli.artifact_manifest import ModelArtifact
 
         ma = ModelArtifact(name="kronos-base", tokenizer="kronos-Tokenizer-base", device="cpu")
         assert ma.version_tag == "kronos-kronos-base-kronos-Tokenizer-base-cpu"
 
-    def test_llm_artifact_version_tag(self):
+    def test_llm_artifact_version_tag(self) -> None:
         from trade_krono_cli.artifact_manifest import LlmArtifact
 
         la = LlmArtifact(
-            provider="deepseek", deep_think_model="deepseek-chat", quick_think_model="deepseek-chat"
+            provider="deepseek", deep_think_model="deepseek-chat", quick_think_model="deepseek-chat",
         )
         assert la.version_tag == "deepseek/deepseek-chat+deepseek-chat"
 
-    def test_prompt_artifact_version_tag(self):
+    def test_prompt_artifact_version_tag(self) -> None:
         from trade_krono_cli.artifact_manifest import PromptArtifact
 
         pa = PromptArtifact(
-            max_debate_rounds=1, max_risk_discuss_rounds=2, output_language="Chinese"
+            max_debate_rounds=1, max_risk_discuss_rounds=2, output_language="Chinese",
         )
         assert pa.version_tag == "ta-v1r2-chinese-json"
 
-    def test_environment_artifact_hostname(self):
+    def test_environment_artifact_hostname(self) -> None:
         from trade_krono_cli.artifact_manifest import EnvironmentArtifact
 
         ea = EnvironmentArtifact()
@@ -129,7 +129,7 @@ class TestDataclasses:
 
 
 class TestArtifactManifest:
-    def test_to_dict(self):
+    def test_to_dict(self) -> None:
         from trade_krono_cli.artifact_manifest import ArtifactManifest
 
         m = ArtifactManifest()
@@ -142,7 +142,7 @@ class TestArtifactManifest:
         assert "strategy" in d
         assert "environment" in d
 
-    def test_experiment_id_deterministic(self):
+    def test_experiment_id_deterministic(self) -> None:
         import hashlib
         import json
 
@@ -158,7 +158,7 @@ class TestArtifactManifest:
         h2 = hashlib.sha256(json.dumps(d2, sort_keys=True, default=str).encode()).hexdigest()[:16]
         assert h1 == h2
 
-    def test_experiment_id_differs_on_change(self):
+    def test_experiment_id_differs_on_change(self) -> None:
         from trade_krono_cli.artifact_manifest import (
             ArtifactManifest,
             ModelArtifact,
@@ -168,7 +168,7 @@ class TestArtifactManifest:
         m2 = ArtifactManifest(model=ModelArtifact(name="kronos-large", device="cuda"))
         assert m1.experiment_id() != m2.experiment_id()
 
-    def test_experiment_id_is_16_chars(self):
+    def test_experiment_id_is_16_chars(self) -> None:
         from trade_krono_cli.artifact_manifest import ArtifactManifest
 
         m = ArtifactManifest()
@@ -176,7 +176,7 @@ class TestArtifactManifest:
         assert isinstance(eid, str)
         assert len(eid) == 16
 
-    def test_summary_contains_experiment_id(self):
+    def test_summary_contains_experiment_id(self) -> None:
         from trade_krono_cli.artifact_manifest import ArtifactManifest
 
         m = ArtifactManifest()
@@ -185,7 +185,7 @@ class TestArtifactManifest:
         # config_hash 可能为空，summary 会截断为 ""
         assert "config_hash" in s["strategy"]
 
-    def test_frozen_dataclass(self):
+    def test_frozen_dataclass(self) -> None:
         from trade_krono_cli.artifact_manifest import ArtifactManifest
 
         m = ArtifactManifest()
@@ -223,7 +223,7 @@ class TestBuildManifest:
             default_allowed_signals=["BUY", "HOLD"],
         )
 
-    def test_build_manifest_all_fields(self, tmp_path):
+    def test_build_manifest_all_fields(self, tmp_path) -> None:
         from trade_krono_cli.artifact_manifest import build_manifest
 
         settings = self._make_mock_settings(tmp_path)
@@ -238,7 +238,7 @@ class TestBuildManifest:
         assert manifest.strategy.scoring_strategy == "linear"
         assert manifest.environment.python_version
 
-    def test_build_manifest_code_artifact_skips_missing_repos(self, tmp_path):
+    def test_build_manifest_code_artifact_skips_missing_repos(self, tmp_path) -> None:
         """外部 repo 目录不存在时，CodeArtifact 字段为空 dict。"""
         from trade_krono_cli.artifact_manifest import build_manifest
 
@@ -249,7 +249,7 @@ class TestBuildManifest:
         assert manifest.code.tradingagents == {}
         assert manifest.code.kronos == {}
 
-    def test_build_manifest_with_mock_repos(self, tmp_path):
+    def test_build_manifest_with_mock_repos(self, tmp_path) -> None:
         """存在 mock git repo 时，CodeArtifact 应包含 commit 信息。"""
         from trade_krono_cli.artifact_manifest import build_manifest
 
@@ -282,7 +282,7 @@ class TestBuildManifest:
         assert manifest.code.tradingagents["commit"] == "ta_sha_def456ghi789"
         assert manifest.code.kronos["commit"] == "kr_sha_ghi789jkl012"
 
-    def test_experiment_id_is_stable_across_runs(self, tmp_path):
+    def test_experiment_id_is_stable_across_runs(self, tmp_path) -> None:
         """相同 settings 产生的 experiment_id 应相同（归一化时间戳后）。"""
         from trade_krono_cli.artifact_manifest import build_manifest
 
@@ -302,10 +302,10 @@ class TestBuildManifest:
         d2 = m2.to_dict()
         d1["environment"]["timestamp"] = d2["environment"]["timestamp"]
         h1 = hashlib.sha256(
-            json.dumps(d1, sort_keys=True, ensure_ascii=False, default=str).encode()
+            json.dumps(d1, sort_keys=True, ensure_ascii=False, default=str).encode(),
         ).hexdigest()[:16]
         h2 = hashlib.sha256(
-            json.dumps(d2, sort_keys=True, ensure_ascii=False, default=str).encode()
+            json.dumps(d2, sort_keys=True, ensure_ascii=False, default=str).encode(),
         ).hexdigest()[:16]
         assert h1 == h2, f"expected same id after timestamp normalization: {h1} vs {h2}"
 
@@ -316,13 +316,13 @@ class TestBuildManifest:
 
 
 class TestArtifactLock:
-    def test_load_empty_returns_empty_list(self, tmp_path):
+    def test_load_empty_returns_empty_list(self, tmp_path) -> None:
         from trade_krono_cli.artifact_manifest import load_artifact_lock
 
         result = load_artifact_lock(project_root=tmp_path)
         assert result == []
 
-    def test_save_and_load_roundtrip(self, tmp_path):
+    def test_save_and_load_roundtrip(self, tmp_path) -> None:
         from trade_krono_cli.artifact_manifest import load_artifact_lock, save_artifact_lock
 
         entries = [
@@ -333,7 +333,7 @@ class TestArtifactLock:
                 "created_at": "2026-08-11T12:00:00+00:00",
                 "manifest": {"test": True},
                 "summary": {"experiment_id": "abc123"},
-            }
+            },
         ]
         save_artifact_lock(entries, project_root=tmp_path)
         loaded = load_artifact_lock(project_root=tmp_path)
@@ -341,7 +341,7 @@ class TestArtifactLock:
         assert loaded[0]["experiment_id"] == "abc123"
         assert loaded[0]["manifest"]["test"] is True
 
-    def test_append_artifact(self, tmp_path):
+    def test_append_artifact(self, tmp_path) -> None:
         from trade_krono_cli.artifact_manifest import (
             ArtifactManifest,
             append_artifact,
@@ -365,7 +365,7 @@ class TestArtifactLock:
         assert len(loaded) == 1
         assert loaded[0]["experiment_id"] == "test_exp_01"
 
-    def test_append_artifact_auto_expid(self, tmp_path):
+    def test_append_artifact_auto_expid(self, tmp_path) -> None:
         """不传 experiment_id 时自动从 manifest 计算。"""
         from trade_krono_cli.artifact_manifest import (
             ArtifactManifest,
@@ -376,7 +376,7 @@ class TestArtifactLock:
         entry = append_artifact(manifest, project_root=tmp_path)
         assert entry["experiment_id"] == manifest.experiment_id()
 
-    def test_lookup_experiment_found(self, tmp_path):
+    def test_lookup_experiment_found(self, tmp_path) -> None:
         from trade_krono_cli.artifact_manifest import (
             ArtifactManifest,
             append_artifact,
@@ -389,13 +389,13 @@ class TestArtifactLock:
         assert found is not None
         assert found["experiment_id"] == "lookup_test"
 
-    def test_lookup_experiment_not_found(self, tmp_path):
+    def test_lookup_experiment_not_found(self, tmp_path) -> None:
         from trade_krono_cli.artifact_manifest import lookup_experiment
 
         result = lookup_experiment("nonexistent_id", project_root=tmp_path)
         assert result is None
 
-    def test_append_artifact_uses_schema_version(self, tmp_path):
+    def test_append_artifact_uses_schema_version(self, tmp_path) -> None:
         from trade_krono_cli.artifact_manifest import (
             ArtifactManifest,
             append_artifact,
@@ -407,7 +407,7 @@ class TestArtifactLock:
         lock = load_artifact_lock(project_root=tmp_path)
         assert lock[0].get("schema_version") == "2.0" or True  # check file exists
 
-    def test_load_artifact_lock_compatible_format(self, tmp_path):
+    def test_load_artifact_lock_compatible_format(self, tmp_path) -> None:
         """兼容旧格式（纯数组）。"""
         from trade_krono_cli.artifact_manifest import load_artifact_lock
 
@@ -427,7 +427,7 @@ class TestArtifactLock:
 
 
 class TestDescribe:
-    def test_describe_contains_experiment_id(self):
+    def test_describe_contains_experiment_id(self) -> None:
         from trade_krono_cli.artifact_manifest import ArtifactManifest, describe
 
         m = ArtifactManifest()
@@ -441,7 +441,7 @@ class TestDescribe:
         assert "strategy:" in s
         assert "environment:" in s
 
-    def test_describe_default_values(self):
+    def test_describe_default_values(self) -> None:
         from trade_krono_cli.artifact_manifest import describe
 
         s = describe()
@@ -456,7 +456,7 @@ class TestDescribe:
 
 
 class TestExperimentIdStability:
-    def test_same_config_same_id(self):
+    def test_same_config_same_id(self) -> None:
         from trade_krono_cli.artifact_manifest import ArtifactManifest
 
         m1 = ArtifactManifest()
@@ -473,14 +473,14 @@ class TestExperimentIdStability:
 
         assert hashlib.sha256(h1).hexdigest()[:16] == hashlib.sha256(h2).hexdigest()[:16]
 
-    def test_different_model_different_id(self):
+    def test_different_model_different_id(self) -> None:
         from trade_krono_cli.artifact_manifest import ArtifactManifest, ModelArtifact
 
         m1 = ArtifactManifest()
         m2 = ArtifactManifest(model=ModelArtifact(name="kronos-large", device="cuda"))
         assert m1.experiment_id() != m2.experiment_id()
 
-    def test_different_strategy_different_id(self):
+    def test_different_strategy_different_id(self) -> None:
         from trade_krono_cli.artifact_manifest import (
             ArtifactManifest,
             StrategyArtifact,
@@ -490,7 +490,7 @@ class TestExperimentIdStability:
         m2 = ArtifactManifest(strategy=StrategyArtifact(scoring_strategy="multiplicative"))
         assert m1.experiment_id() != m2.experiment_id()
 
-    def test_different_prompt_different_id(self):
+    def test_different_prompt_different_id(self) -> None:
         from trade_krono_cli.artifact_manifest import (
             ArtifactManifest,
             PromptArtifact,

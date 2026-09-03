@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING
 
-from trade_krono_cli.stock_filter import FilterRule
+if TYPE_CHECKING:
+    from trade_krono_cli.stock_filter import FilterRule
 
 
 @dataclass(frozen=False)
@@ -22,22 +23,22 @@ class FilterConfig:
     """是否排除低价股（股价低于阈值）。"""
     low_price_threshold: float = 3.0
     """低价股阈值（元），低于此价的股票被排除。"""
-    min_pb: Optional[float] = None
+    min_pb: float | None = None
     """最低市净率，PB 低于此值视为资不抵债风险，默认不过滤。"""
 
     # ── 基本面过滤 ────────────────────────────────────────
-    market_cap_range: Optional[tuple[float, float]] = None
+    market_cap_range: tuple[float, float] | None = None
     """市值范围（亿元），格式：(min, max)，为 None 时不过滤。"""
-    market_cap_min: Optional[float] = None
+    market_cap_min: float | None = None
     """市值最小值（亿元），低于此值排除。"""
     industry_whitelist: list[str] = field(default_factory=list)
     industry_blacklist: list[str] = field(default_factory=list)
-    pe_range: Optional[tuple[float, float]] = None
-    pb_range: Optional[tuple[float, float]] = None
-    max_risk_score: Optional[float] = None
-    min_volume_ratio: Optional[float] = None
-    min_turnover_rate: Optional[float] = None
-    min_volume: Optional[float] = None
+    pe_range: tuple[float, float] | None = None
+    pb_range: tuple[float, float] | None = None
+    max_risk_score: float | None = None
+    min_volume_ratio: float | None = None
+    min_turnover_rate: float | None = None
+    min_volume: float | None = None
     """最小成交量（手），低于此值排除。"""
 
     # ── 自定义规则（应用于 Universe 和 StockFilter）────────
@@ -46,7 +47,7 @@ class FilterConfig:
     universe_source: str = "akshare"
     """全市场数据源：akshare / baostock / mootdx / tushare。"""
 
-    def merge(self, **overrides) -> "FilterConfig":
+    def merge(self, **overrides) -> FilterConfig:
         current = {k: getattr(self, k) for k in self.__dataclass_fields__}
         current.update(overrides)
         return FilterConfig(**current)

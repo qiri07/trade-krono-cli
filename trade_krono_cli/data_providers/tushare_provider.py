@@ -1,5 +1,4 @@
-"""
-data_providers.tushare_provider — Tushare Pro 数据源实现。
+"""data_providers.tushare_provider — Tushare Pro 数据源实现。
 
 Tushare Pro 是专业的金融数据接口，需要注册获取 token。
 支持 K 线、实时行情、完整基本面数据。
@@ -14,7 +13,7 @@ API 参考：
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -46,9 +45,12 @@ class TushareProvider(DataProvider):
             return
         token = os.getenv("TUSHARE_TOKEN", "")
         if not token:
-            raise RuntimeError(
+            msg = (
                 "Tushare 数据源需要 TUSHARE_TOKEN 环境变量。"
                 "请在 .env 中设置 TUSHARE_TOKEN=your_token"
+            )
+            raise RuntimeError(
+                msg,
             )
         cls._token = token
         try:
@@ -57,8 +59,9 @@ class TushareProvider(DataProvider):
             ts.set_token(cls._token)
             cls._ts = ts
         except ImportError:
+            msg = "tushare 未安装，无法使用 tushare 数据源。请运行: pip install tushare"
             raise RuntimeError(
-                "tushare 未安装，无法使用 tushare 数据源。请运行: pip install tushare"
+                msg,
             )
 
     # ── 核心接口实现 ──────────────────────────────────────────
@@ -70,7 +73,7 @@ class TushareProvider(DataProvider):
         end_date: str,
         frequency: str = "d",
         adjustflag: str = "1",
-    ) -> Optional[KlineData]:
+    ) -> KlineData | None:
         try:
             self._ensure_import()
             # tushare 代码格式: 600519.SH / 000858.SZ
@@ -100,7 +103,7 @@ class TushareProvider(DataProvider):
             logger.warning(f"{self.name} K 线拉取异常 {ticker}: {str(e)[:200]}")
             return None
 
-    def fetch_quote(self, ticker: str) -> Optional[RealtimeQuote]:
+    def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
         try:
             self._ensure_import()
             ts_code = ticker.replace("sh.", ".SH").replace("sz.", ".SZ")
@@ -123,7 +126,7 @@ class TushareProvider(DataProvider):
             logger.debug(f"{self.name} 实时行情异常 {ticker}: {str(e)[:100]}")
             return None
 
-    def fetch_metadata(self, ticker: str) -> Optional[StockMetadata]:
+    def fetch_metadata(self, ticker: str) -> StockMetadata | None:
         try:
             self._ensure_import()
             ts_code = ticker.replace("sh.", ".SH").replace("sz.", ".SZ")
@@ -164,7 +167,8 @@ class TushareProvider(DataProvider):
                 fields="ts_code",
             )
             return df is not None and not df.empty
-        except Exception:
+        except Exception as e:
+            logger.debug(f"tushare health check 异常: {e}")
             return False
 
 
@@ -174,5 +178,6 @@ def pd_notna(value) -> bool:
         import pandas as pd
 
         return not pd.isna(value)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"pandas isna 检查失败，降级处理: {e}")
         return value is not None

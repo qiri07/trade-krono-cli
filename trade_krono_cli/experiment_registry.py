@@ -1,5 +1,4 @@
-"""
-ExperimentRegistry — 实验追踪与比较引擎。
+"""ExperimentRegistry — 实验追踪与比较引擎。
 
 核心职责：
   · 记录每次实验的假设（hypothesis）、配置、数据快照、结果
@@ -24,14 +23,17 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from trade_krono_cli.data_snapshot import DataSnapshot
 from trade_krono_cli.domain.experiment import Hypothesis
 from trade_krono_cli.domain.types import ExperimentType
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from trade_krono_cli.data_snapshot import DataSnapshot
 
 # ═══════════════════════════════════════════════════════
 #  实验记录
@@ -40,8 +42,7 @@ from trade_krono_cli.domain.types import ExperimentType
 
 @dataclass
 class ExperimentRecord:
-    """
-    一次实验的完整记录。
+    """一次实验的完整记录。
 
     字段
     ----
@@ -63,10 +64,10 @@ class ExperimentRecord:
     hypothesis: Hypothesis
     description: str = ""
     config: dict = field(default_factory=dict)
-    data_snapshot_id: Optional[str] = None
+    data_snapshot_id: str | None = None
     run_ids: list[str] = field(default_factory=list)
     result_summary: dict = field(default_factory=dict)
-    passed: Optional[bool] = None
+    passed: bool | None = None
     notes: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -92,7 +93,7 @@ class ExperimentRecord:
         return self.hypothesis.check(metric_val)
 
     def to_dict(self) -> dict:
-        d = {
+        return {
             "experiment_id": self.experiment_id,
             "full_id": self.full_id,
             "experiment_type": self.experiment_type.value,
@@ -113,10 +114,9 @@ class ExperimentRecord:
             "notes": self.notes,
             "created_at": self.created_at,
         }
-        return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> "ExperimentRecord":
+    def from_dict(cls, data: dict) -> ExperimentRecord:
         hyp_data = data.pop("hypothesis", {})
         hyp = (
             Hypothesis(**hyp_data)
@@ -145,8 +145,7 @@ class ExperimentRecord:
 
 
 class ExperimentRegistry:
-    """
-    实验注册中心。
+    """实验注册中心。
 
     功能：
       · register(experiment)     注册新实验
@@ -157,7 +156,7 @@ class ExperimentRegistry:
       · save(path) / load(path)  持久化到 JSON 文件
     """
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None) -> None:
         self._experiments: dict[str, ExperimentRecord] = {}
         self._db_path = db_path
 
@@ -167,8 +166,8 @@ class ExperimentRegistry:
         hypothesis: Hypothesis,
         exp_type: ExperimentType = ExperimentType.ALPHA,
         description: str = "",
-        config: Optional[dict] = None,
-        data_snapshot: Optional[DataSnapshot] = None,
+        config: dict | None = None,
+        data_snapshot: DataSnapshot | None = None,
     ) -> ExperimentRecord:
         """注册新实验。"""
         record = ExperimentRecord(
@@ -181,7 +180,7 @@ class ExperimentRegistry:
         )
         self._experiments[experiment_id] = record
         logger.info(
-            f"📝 实验已注册: {experiment_id} [{exp_type.value}] — {hypothesis.statement[:60]}"
+            f"📝 实验已注册: {experiment_id} [{exp_type.value}] — {hypothesis.statement[:60]}",
         )
         return record
 
@@ -195,8 +194,7 @@ class ExperimentRegistry:
         experiment_id: str,
         summary: dict,
     ) -> tuple[bool, str]:
-        """
-        填入实验结果，自动验证假设。
+        """填入实验结果，自动验证假设。
 
         Parameters
         ----------
@@ -206,9 +204,11 @@ class ExperimentRegistry:
         Returns
         -------
         (passed, explanation)
+
         """
         if experiment_id not in self._experiments:
-            raise KeyError(f"实验不存在: {experiment_id}")
+            msg = f"实验不存在: {experiment_id}"
+            raise KeyError(msg)
         record = self._experiments[experiment_id]
         record.result_summary = summary
         passed, expl = record.evaluate()
@@ -217,13 +217,13 @@ class ExperimentRegistry:
         logger.info(f"📊 实验 {experiment_id}: {status} — {expl}")
         return passed, expl
 
-    def get(self, experiment_id: str) -> Optional[ExperimentRecord]:
+    def get(self, experiment_id: str) -> ExperimentRecord | None:
         return self._experiments.get(experiment_id)
 
     def list_experiments(
         self,
-        exp_type: Optional[ExperimentType] = None,
-        only_passed: Optional[bool] = None,
+        exp_type: ExperimentType | None = None,
+        only_passed: bool | None = None,
     ) -> list[ExperimentRecord]:
         """列出实验，支持按类型和通过状态过滤。"""
         results = list(self._experiments.values())
@@ -234,8 +234,7 @@ class ExperimentRegistry:
         return results
 
     def compare(self, experiment_ids: list[str]) -> dict:
-        """
-        横向比较多个实验的关键指标。
+        """横向比较多个实验的关键指标。
 
         Returns
         -------
@@ -247,6 +246,7 @@ class ExperimentRegistry:
             "passed": ...,
           }
         }
+
         """
         comparison = {}
         for eid in experiment_ids:
@@ -293,11 +293,10 @@ def register_alpha_experiment(
     prediction_threshold: float = 55.0,
     prediction_direction: str = ">",
     description: str = "",
-    config: Optional[dict] = None,
-    data_snapshot: Optional[DataSnapshot] = None,
+    config: dict | None = None,
+    data_snapshot: DataSnapshot | None = None,
 ) -> ExperimentRecord:
-    """
-    快速注册一个 Alpha 假设实验。
+    """快速注册一个 Alpha 假设实验。
 
     示例：
         reg = ExperimentRegistry()

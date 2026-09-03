@@ -1,5 +1,4 @@
-"""
-Prediction Evaluation — 预测评估模块入口。
+"""Prediction Evaluation — 预测评估模块入口。
 
 职责：协调各子模块，对外暴露统一的 PredictionEvaluator / run_evaluation 接口。
 
@@ -18,7 +17,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
-from typing import NamedTuple, Optional, cast
+from typing import NamedTuple, cast
 
 from loguru import logger
 
@@ -54,7 +53,7 @@ from trade_krono_cli.eval_report import (
 from trade_krono_cli.eval_ta import compute_ta_metrics
 
 
-def _get_close_price(ticker: str, date_str: str, **kwargs) -> Optional[float]:
+def _get_close_price(ticker: str, date_str: str, **kwargs) -> float | None:
     """Wrapper: forwards _fetch_kline injection for test compatibility."""
     return get_close_price(ticker, date_str, **kwargs)
 
@@ -72,10 +71,10 @@ class _EvalSignal(NamedTuple):
     job_id: str
     ticker: str
     eval_date: str
-    ta_signal: Optional[str]
-    kronos_direction: Optional[str]
-    composite_score: Optional[float]
-    kronos_change: Optional[float]
+    ta_signal: str | None
+    kronos_direction: str | None
+    composite_score: float | None
+    kronos_change: float | None
 
 
 # ═══════════════════════════════════════════════════════
@@ -84,8 +83,7 @@ class _EvalSignal(NamedTuple):
 
 
 class PredictionEvaluator:
-    """
-    历史预测评估器。
+    """历史预测评估器。
 
     工作流程：
       1. 从 ResearchDatabase 读取历史 jobs + signals
@@ -96,7 +94,7 @@ class PredictionEvaluator:
 
     HORIZONS = [5, 10, 20]
 
-    def __init__(self, max_workers: int = 4):
+    def __init__(self, max_workers: int = 4) -> None:
         from trade_krono_cli.research_db import get_research
 
         self._research = get_research()
@@ -104,16 +102,15 @@ class PredictionEvaluator:
 
     def evaluate(
         self,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-        tickers: Optional[list[str]] = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        tickers: list[str] | None = None,
         store: bool = True,
         backtest: bool = False,
         rebal_mode: str = "fixed_horizon",
         fixed_horizon: int = 5,
     ) -> EvaluationSummary:
-        """
-        执行预测评估。
+        """执行预测评估。
 
         Parameters
         ----------
@@ -135,6 +132,7 @@ class PredictionEvaluator:
         Returns
         -------
         EvaluationSummary
+
         """
         logger.info("📊 开始预测评估...")
         t0 = time.time()
@@ -168,7 +166,7 @@ class PredictionEvaluator:
                         kronos_direction=_sig.get("kronos_direction"),
                         composite_score=_sig.get("composite_score"),
                         kronos_change=_sig.get("kronos_change"),
-                    )
+                    ),
                 )
 
         if not records_to_eval:
@@ -211,7 +209,7 @@ class PredictionEvaluator:
                 entry_blocked = False
                 if entry_prev_close and entry_prev_close > 0:
                     entry_blocked = _is_price_at_limit(
-                        sig.ticker, entry_price, entry_prev_close, direction="up"
+                        sig.ticker, entry_price, entry_prev_close, direction="up",
                     )
                 if entry_blocked:
                     summary.entry_limit_up_blocked += 1
@@ -226,7 +224,7 @@ class PredictionEvaluator:
                 if exit_prev_kline is not None and len(exit_prev_kline) >= 2:
                     exit_prev_close = float(exit_prev_kline["close"].iloc[-2])
                     exit_blocked = _is_price_at_limit(
-                        sig.ticker, exit_price, exit_prev_close, direction="down"
+                        sig.ticker, exit_price, exit_prev_close, direction="down",
                     )
 
                 if exit_blocked:
@@ -268,7 +266,7 @@ class PredictionEvaluator:
                         entry_blocked_limit_up=False,
                         exit_blocked_limit_down=False,
                         cost_bps_applied=cost_bps,
-                    )
+                    ),
                 )
 
             if i % 20 == 0:
@@ -282,7 +280,7 @@ class PredictionEvaluator:
         )
         logger.info(
             f"✅ 评估完成: {len(eval_records)} 条记录, "
-            f"扣成本 {summary.cost_applied_n} 条{blocked_str}, 耗时 {elapsed:.1f}s"
+            f"扣成本 {summary.cost_applied_n} 条{blocked_str}, 耗时 {elapsed:.1f}s",
         )
 
         # 4. 计算统计（委托给子模块）
@@ -301,19 +299,19 @@ class PredictionEvaluator:
             bench_ret = compute_benchmark_returns(bt_result.records, {})
             full_summary.benchmark_curve = bench_ret  # type: ignore[assignment]
             full_summary.benchmark_cum_return_pct = round(
-                float(list(bench_ret.values())[-1][-1] if bench_ret else 0.0), 2
+                float(list(bench_ret.values())[-1][-1] if bench_ret else 0.0), 2,
             )
             if bt_result.total_return_pct != 0.0:
                 full_summary.excess_return_pct = round(
-                    bt_result.total_return_pct - full_summary.benchmark_cum_return_pct, 2
+                    bt_result.total_return_pct - full_summary.benchmark_cum_return_pct, 2,
                 )
-            equity_curve = cast(list[tuple[str, float]], bt_result.equity_curve)
+            equity_curve = cast("list[tuple[str, float]]", bt_result.equity_curve)
             full_summary.excess_curve = (
                 {  # type: ignore[assignment,misc]
                     d: round(float(bt_val - bench_val), 4)  # type: ignore[has-type]
                     for d, (bt_val, bench_val) in zip(
                         [d for d, _ in equity_curve],
-                        [v for _, v in equity_curve],
+                        [v for _, v in equity_curve], strict=False,
                     )
                 }
                 if equity_curve
@@ -333,7 +331,7 @@ class PredictionEvaluator:
             logger.info(
                 f"✅ 回测完成: 总收益 {bt_result.total_return_pct:+.2f}%, "
                 f"夏普 {bt_result.metrics.get('sharpe_ratio', 0):.2f}, "
-                f"最大回撤 {bt_result.metrics.get('max_drawdown_pct', 0):.1f}%"
+                f"最大回撤 {bt_result.metrics.get('max_drawdown_pct', 0):.1f}%",
             )
 
         # 5. 存储到 research DB
@@ -381,8 +379,7 @@ class PredictionEvaluator:
         rebal_mode: str = "fixed_horizon",
         fixed_horizon: int = 5,
     ) -> BacktestResult:
-        """
-        运行回测引擎，基于 EvalRecord 重建交易日序列。
+        """运行回测引擎，基于 EvalRecord 重建交易日序列。
 
         简化版：使用 EvalRecord 中的 entry/exit 价格直接模拟，
         不实时获取 K 线（性能优先），约束通过 is_blocked 字段判断。
@@ -427,14 +424,14 @@ class PredictionEvaluator:
     def _store_summary(
         self,
         summary: EvaluationSummary,
-        eval_date_range: Optional[str],
+        eval_date_range: str | None,
     ) -> None:
         """将评估结果存储到 research database。"""
         db_path = self._research._db_path
         store_summary(summary, str(db_path), eval_date_range)
         logger.info("💾 评估结果已存储到研究数据库")
 
-    def get_latest_evaluation(self) -> Optional[dict]:
+    def get_latest_evaluation(self) -> dict | None:
         """获取最新的评估结果。"""
         db_path = self._research._db_path
         return get_latest_evaluation(str(db_path))
@@ -450,9 +447,9 @@ class PredictionEvaluator:
 
 
 def run_evaluation(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    tickers: Optional[list[str]] = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    tickers: list[str] | None = None,
     latest: bool = False,
     backtest: bool = False,
     rebal_mode: str = "fixed_horizon",
@@ -470,7 +467,7 @@ def run_evaluation(
         logger.info("  📊 最新评估结果")
         logger.info("=" * 60)
         logger.info(
-            f"  评估时间: {datetime.fromtimestamp(result['eval_at']).strftime('%Y-%m-%d %H:%M:%S')}"
+            f"  评估时间: {datetime.fromtimestamp(result['eval_at']).strftime('%Y-%m-%d %H:%M:%S')}",
         )
         logger.info(f"  评估日期范围: {result['eval_date_range'] or '全部'}")
         logger.info(f"  评估记录数: {result['n_records']}")
@@ -518,7 +515,7 @@ def _print_latest_ta(summary: dict) -> None:
         avg_ret = summary.get("ta_buy_avg_return", {}).get(str(h), 0)
         marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
         logger.info(
-            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │"
+            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │",
         )
     logger.info("└" + "─" * 58 + "┘")
     logger.info("")
@@ -535,7 +532,7 @@ def _print_latest_combined(summary: dict) -> None:
         avg_ret = summary.get("combined_buy_up_avg_return", {}).get(str(h), 0)
         marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
         logger.info(
-            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │"
+            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │",
         )
     logger.info("└" + "─" * 58 + "┘")
     logger.info("")

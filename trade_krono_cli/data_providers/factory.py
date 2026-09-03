@@ -1,5 +1,4 @@
-"""
-data_providers.factory — 数据源工厂 + 自动降级路由。
+"""data_providers.factory — 数据源工厂 + 自动降级路由。
 
 职责：
   · 根据配置创建并缓存 Provider 实例（进程级单例）
@@ -22,17 +21,19 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from trade_krono_cli.config import get_settings
-from trade_krono_cli.data_providers.base import (
-    DataProvider,
-    KlineData,
-    RealtimeQuote,
-    StockMetadata,
-)
+
+if TYPE_CHECKING:
+    from trade_krono_cli.data_providers.base import (
+        DataProvider,
+        KlineData,
+        RealtimeQuote,
+        StockMetadata,
+    )
 
 # ═══════════════════════════════════════════════════════
 # 工厂实现
@@ -49,8 +50,7 @@ class _BenchResult:
 
 
 class DataProviderFactory:
-    """
-    数据源工厂，管理 Provider 实例生命周期并实现自动降级。
+    """数据源工厂，管理 Provider 实例生命周期并实现自动降级。
 
     设计要点：
       - 进程级单例缓存，避免重复创建 Provider
@@ -70,35 +70,44 @@ class DataProviderFactory:
     _rank_cache: dict[str, tuple[list[str], float]] = {}
     _rank_lock = threading.Lock()
 
-    # 缓存 TTL：10 分钟
-    _RANK_CACHE_TTL_SEC = 600
-    # 基准测试采样日期（最近 1 个交易日）
-    _BENCH_DATE = "2026-09-01"
-    # 基准测试并发数
-    _BENCH_WORKERS = 3
+    @staticmethod
+    def _rank_cache_ttl_sec() -> int:
+        """Provider 排名缓存 TTL（秒），从 Settings 读取。"""
+        return get_settings().provider_rank_cache_ttl_sec
 
-    def __init__(self, primary: str = "baostock", fallbacks: Optional[list[str]] = None):
-        """
-        Parameters
+    @staticmethod
+    def _bench_workers() -> int:
+        """Benchmark 并发线程数，从 Settings 读取。"""
+        return get_settings().provider_bench_workers
+
+    @classmethod
+    def _bench_date(cls) -> str:
+        """返回用于 benchmark 的采样日期（最近 1 天）。"""
+        from datetime import datetime, timedelta
+
+        return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    def __init__(self, primary: str = "baostock", fallbacks: list[str] | None = None) -> None:
+        """Parameters
         ----------
         primary : str
             主数据源名称，默认 "baostock"
         fallbacks : list[str] | None
             备用数据源列表，按优先级排列
+
         """
         self.primary = primary
         self.fallbacks = fallbacks or self._default_fallbacks()
 
     @staticmethod
     def _default_fallbacks() -> list[str]:
-        """默认降级顺序：baostock → akshare → mootdx → tushare → tonghuashun"""
+        """默认降级顺序：baostock → akshare → mootdx → tushare → tonghuashun."""
         return ["akshare", "mootdx", "tushare", "tonghuashun"]
 
     @property
     def provider_chain(self) -> list[str]:
-        """返回按优先级排列的完整 Provider 链"""
-        chain = [self.primary] + [f for f in self.fallbacks if f != self.primary]
-        return chain
+        """返回按优先级排列的完整 Provider 链."""
+        return [self.primary] + [f for f in self.fallbacks if f != self.primary]
 
     @staticmethod
     def _provider_chain_for_ticker(ticker: str) -> list[str]:
@@ -118,7 +127,7 @@ class DataProviderFactory:
             base_chain.insert(0, "tonghuashun")
 
         # 尝试使用 cached benchmark 结果
-        ticker_type = ticker.split(".")[0] if "." in ticker else ticker
+        ticker_type = ticker.split(".", maxsplit=1)[0] if "." in ticker else ticker
         cached = s._get_cached_ranked_chain(ticker_type)
         if cached is not None:
             ranked_chain = cached[0]
@@ -130,14 +139,14 @@ class DataProviderFactory:
 
     # ── Provider 实例管理 ───────────────────────────────────────────────
 
-    def get_provider(self, name: str) -> Optional[DataProvider]:
-        """
-        获取指定名称的 Provider 实例（进程级缓存）。
+    def get_provider(self, name: str) -> DataProvider | None:
+        """获取指定名称的 Provider 实例（进程级缓存）。
 
         Returns
         -------
         DataProvider | None
             成功返回实例，失败（未安装依赖 / 未配置 key）返回 None
+
         """
         with self._cache_lock:
             if name in self._instance_cache:
@@ -162,14 +171,14 @@ class DataProviderFactory:
         logger.debug(f"✅ Provider {name} 初始化成功")
         return instance
 
-    def get_providers(self, names: Optional[list[str]] = None) -> list[DataProvider]:
-        """
-        批量获取 Provider 实例，过滤掉不可用的。
+    def get_providers(self, names: list[str] | None = None) -> list[DataProvider]:
+        """批量获取 Provider 实例，过滤掉不可用的。
 
         Returns
         -------
         list[DataProvider]
             可用的 Provider 列表（按 names 顺序）
+
         """
         names = names or self.provider_chain
         result = []
@@ -188,15 +197,15 @@ class DataProviderFactory:
         end_date: str,
         frequency: str = "d",
         adjustflag: str = "1",
-    ) -> Optional[KlineData]:
-        """
-        拉取 K 线数据，按优先级尝试各 Provider，失败自动降级。
+    ) -> KlineData | None:
+        """拉取 K 线数据，按优先级尝试各 Provider，失败自动降级。
 
         北交所（bj.）股票由 baostock/mootdx 不支持，强制优先使用 tonghuashun。
 
         Returns
         -------
         KlineData | None
+
         """
         chain = self._provider_chain_for_ticker(ticker)
         for name in chain:
@@ -251,13 +260,13 @@ class DataProviderFactory:
         logger.warning(f"❌ 所有 Provider 均无法获取 K 线: {ticker}")
         return False
 
-    def fetch_quote(self, ticker: str) -> Optional[RealtimeQuote]:
-        """
-        获取实时行情，按优先级尝试各 Provider。
+    def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
+        """获取实时行情，按优先级尝试各 Provider。
 
         Returns
         -------
         RealtimeQuote | None
+
         """
         chain = self._provider_chain_for_ticker(ticker)
         for name in chain:
@@ -278,13 +287,13 @@ class DataProviderFactory:
                 continue
         return None
 
-    def fetch_metadata(self, ticker: str) -> Optional[StockMetadata]:
-        """
-        获取股票元数据，按优先级尝试各 Provider。
+    def fetch_metadata(self, ticker: str) -> StockMetadata | None:
+        """获取股票元数据，按优先级尝试各 Provider。
 
         Returns
         -------
         StockMetadata | None
+
         """
         chain = self._provider_chain_for_ticker(ticker)
         for name in chain:
@@ -313,14 +322,14 @@ class DataProviderFactory:
         frequency: str = "d",
         adjustflag: str = "1",
     ) -> dict:
-        """
-        从不同 Provider 分别获取 K 线 / 行情 / 元数据，合并返回。
+        """从不同 Provider 分别获取 K 线 / 行情 / 元数据，合并返回。
 
         每个维度独立降级，确保最大可用性。
 
         Returns
         -------
         dict with keys: kline, quote, metadata
+
         """
         kline = self.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
         quote = self.fetch_quote(ticker)
@@ -335,11 +344,11 @@ class DataProviderFactory:
     # ── 工具方法 ────────────────────────────────────────────────────────
 
     def available_providers(self) -> list[str]:
-        """返回当前已初始化的可用 Provider 名称列表"""
+        """返回当前已初始化的可用 Provider 名称列表."""
         return [name for name in self.provider_chain if self.get_provider(name) is not None]
 
     def health_check_all(self) -> dict[str, bool]:
-        """检查所有 Provider 的健康状态"""
+        """检查所有 Provider 的健康状态."""
         result = {}
         for name in self.provider_chain:
             provider = self.get_provider(name)
@@ -348,7 +357,8 @@ class DataProviderFactory:
             else:
                 try:
                     result[name] = provider.health_check()
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"{name} health check 异常: {e}")
                     result[name] = False
         return result
 
@@ -361,7 +371,7 @@ class DataProviderFactory:
             return _BenchResult(name=name, latency_ms=float("inf"), success=False)
         try:
             t0 = time.perf_counter()
-            data = provider.fetch_kline(ticker, self._BENCH_DATE, self._BENCH_DATE, "d", "1")
+            data = provider.fetch_kline(ticker, self._bench_date(), self._bench_date(), "d", "1")
             latency_ms = (time.perf_counter() - t0) * 1000
             success = data is not None and not data.is_empty
             return _BenchResult(name=name, latency_ms=latency_ms, success=success)
@@ -375,13 +385,14 @@ class DataProviderFactory:
         Returns
         -------
         (ranked_chain, timestamp) | None
+
         """
         with self._rank_lock:
             cached = self._rank_cache.get(ticker_type)
         if cached is None:
             return None
         ranked_chain, ts = cached
-        if time.time() - ts >= self._RANK_CACHE_TTL_SEC:
+        if time.time() - ts >= self._rank_cache_ttl_sec():
             return None
         return ranked_chain, ts
 
@@ -395,8 +406,7 @@ class DataProviderFactory:
         ticker: str = "sh.600519",
         workers: int | None = None,
     ) -> list[_BenchResult]:
-        """
-        对所有可用 Provider 进行延迟 benchmark，按速度排序。
+        """对所有可用 Provider 进行延迟 benchmark，按速度排序。
 
         Parameters
         ----------
@@ -409,8 +419,9 @@ class DataProviderFactory:
         -------
         list[_BenchResult]
             按 latency_ms 升序排列（越快越靠前），失败的排在末尾
+
         """
-        workers = workers or self._BENCH_WORKERS
+        workers = workers or self._bench_workers()
         names = self.available_providers()
         if not names:
             logger.warning("没有可用的 Provider 进行 benchmark")
@@ -431,13 +442,12 @@ class DataProviderFactory:
         return results
 
     def get_ranked_chain_for_ticker(self, ticker: str) -> list[str]:
-        """
-        获取并缓存按速度排序的 Provider 链（ticker 类型级缓存，TTL 10 分钟）。
+        """获取并缓存按速度排序的 Provider 链（ticker 类型级缓存，TTL 10 分钟）。
 
         同一 ticker 类型（sh/sz/bj）共享缓存。
         北交所（bj.）股票 tonghuashun 始终置顶，不受 benchmark 结果影响。
         """
-        ticker_type = ticker.split(".")[0] if "." in ticker else ticker
+        ticker_type = ticker.split(".", maxsplit=1)[0] if "." in ticker else ticker
         cached = self._get_cached_ranked_chain(ticker_type)
         if cached is not None:
             return cached[0]
@@ -451,11 +461,23 @@ class DataProviderFactory:
         logger.info(f"📊 {ticker} Provider 排序: {' → '.join(ranked_chain)}")
         return ranked_chain
 
+    def invalidate_rank_cache(self, ticker_type: str) -> None:
+        """清除指定 ticker 类型的 Provider 排名缓存。
+
+        Parameters
+        ----------
+        ticker_type : str
+            ticker 前缀，如 "sh"、"sz"、"bj"
+
+        """
+        with self._rank_lock:
+            self._rank_cache.pop(ticker_type, None)
+
     # ── 内部工具 ────────────────────────────────────────────────────────
 
     @classmethod
-    def _get_provider_class(cls, name: str) -> Optional[type[DataProvider]]:
-        """延迟注册：按需导入 Provider 类"""
+    def _get_provider_class(cls, name: str) -> type[DataProvider] | None:
+        """延迟注册：按需导入 Provider 类."""
         registry = cls._PROVIDER_REGISTRY
         if name in registry:
             return registry[name]
@@ -490,7 +512,7 @@ class DataProviderFactory:
             return None
 
     def reset_cache(self) -> None:
-        """清空进程级缓存（用于测试隔离）"""
+        """清空进程级缓存（用于测试隔离）."""
         with self._cache_lock:
             self._instance_cache.clear()
 
@@ -499,13 +521,12 @@ class DataProviderFactory:
 # 模块级单例
 # ═══════════════════════════════════════════════════════
 
-_factory_instance: Optional[DataProviderFactory] = None
+_factory_instance: DataProviderFactory | None = None
 _factory_lock = threading.Lock()
 
 
 def get_data_factory() -> DataProviderFactory:
-    """
-    获取全局 DataProviderFactory 单例。
+    """获取全局 DataProviderFactory 单例。
     自动从 Settings 读取 primary / fallbacks 配置。
     """
     global _factory_instance
@@ -528,7 +549,7 @@ def get_data_factory() -> DataProviderFactory:
 
 
 def reset_data_factory() -> None:
-    """重置全局工厂单例（用于测试隔离）"""
+    """重置全局工厂单例（用于测试隔离）."""
     global _factory_instance
     with _factory_lock:
         _factory_instance = None

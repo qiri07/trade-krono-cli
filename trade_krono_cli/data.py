@@ -1,5 +1,4 @@
-"""
-数据层 — A 股 K 线获取 + Kronos 格式转换。
+"""数据层 — A 股 K 线获取 + Kronos 格式转换。
 
 支持多数据源（baostock / akshare / mootdx / tushare），
 通过 DataProviderFactory 自动降级。
@@ -12,7 +11,6 @@ import threading
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
-from typing import Optional
 
 import pandas as pd
 from loguru import logger
@@ -26,11 +24,11 @@ from trade_krono_cli.security import TokenBucket, retry, validate_date, validate
 _bs = None
 _HAS_BS = False
 _bs_logged_in = False
-_bs_limiter: Optional[TokenBucket] = None
+_bs_limiter: TokenBucket | None = None
 _bs_login_lock = threading.Lock()
 
 
-def _get_limiter(settings: Optional[Settings] = None) -> TokenBucket:
+def _get_limiter(settings: Settings | None = None) -> TokenBucket:
     global _bs_limiter
     if _bs_limiter is None:
         s = settings or get_settings()
@@ -42,8 +40,7 @@ def _get_limiter(settings: Optional[Settings] = None) -> TokenBucket:
 
 
 def clear_baostock_globals() -> None:
-    """
-    重置 baostock 模块级状态，用于测试隔离。
+    """重置 baostock 模块级状态，用于测试隔离。
 
     被清除的状态：
       - _bs             baostock 模块引用
@@ -68,7 +65,8 @@ def _ensure_bs_import() -> None:
         _bs = _bs_mod
         _HAS_BS = True
     except ImportError:
-        raise RuntimeError("baostock 未安装，无法拉取 K 线。请运行: pip install baostock")
+        msg = "baostock 未安装，无法拉取 K 线。请运行: pip install baostock"
+        raise RuntimeError(msg)
 
 
 def _ensure_bs_login() -> None:
@@ -83,7 +81,8 @@ def _ensure_bs_login() -> None:
             return
         lg = _bs.login()  # type: ignore
     if lg.error_code != "0":
-        raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
+        msg = f"baostock 登录失败: {lg.error_msg}"
+        raise RuntimeError(msg)
     _bs_logged_in = True
     logger.info("✅ baostock 登录成功")
 
@@ -102,8 +101,7 @@ def fetch_kline(
     adjustflag: str = "1",
     use_cache: bool = True,
 ) -> pd.DataFrame:
-    """
-    拉取 A 股 K 线并转为 Kronos 标准格式。
+    """拉取 A 股 K 线并转为 Kronos 标准格式。
 
     优先使用 DataProviderFactory（多数据源自动降级），
     失败时回退到原有 baostock 直调逻辑。
@@ -111,6 +109,7 @@ def fetch_kline(
     Returns
     -------
     DataFrame with columns: open, high, low, close, volume, amount, timestamps
+
     """
     ticker = validate_ticker(ticker)
     start_date = validate_date(start_date)
@@ -144,7 +143,7 @@ def fetch_kline(
                 adjustflag=adjustflag,
             )
             logger.debug(
-                f"✅ K 线就绪（via {kline_data.source if hasattr(kline_data, 'source') else 'factory'}）: {ticker} 共 {len(out)} 行"
+                f"✅ K 线就绪（via {kline_data.source if hasattr(kline_data, 'source') else 'factory'}）: {ticker} 共 {len(out)} 行",
             )
             return out
     except Exception as e:
@@ -158,7 +157,7 @@ def fetch_kline(
     bs_code = ticker
 
     logger.debug(
-        f"📥 拉取 K 线（baostock 直调）: {bs_code} {start_date}~{end_date} freq={frequency}"
+        f"📥 拉取 K 线（baostock 直调）: {bs_code} {start_date}~{end_date} freq={frequency}",
     )
 
     rs = _bs.query_history_k_data_plus(  # type: ignore
@@ -171,14 +170,16 @@ def fetch_kline(
     )
 
     if rs.error_code != "0":
-        raise RuntimeError(f"baostock 查询失败 [{bs_code}]: {rs.error_msg}")
+        msg = f"baostock 查询失败 [{bs_code}]: {rs.error_msg}"
+        raise RuntimeError(msg)
 
     rows = []
     while rs.next():
         rows.append(rs.get_row_data())
 
     if not rows:
-        raise RuntimeError(f"空数据: {bs_code} {start_date}~{end_date}")
+        msg = f"空数据: {bs_code} {start_date}~{end_date}"
+        raise RuntimeError(msg)
 
     df = pd.DataFrame(rows, columns=rs.fields)
     df = df.dropna(subset=["close"])
@@ -202,7 +203,7 @@ def fetch_kline(
             "close": df[_close_col].astype(float),
             "volume": df[_volume_col].astype(float),
             "amount": df[_amount_col].astype(float),
-        }
+        },
     ).reset_index(drop=True)
 
     # 写缓存：永久缓存
@@ -231,8 +232,7 @@ def fetch_lookback(
     use_cache: bool = True,
     adjustflag: str = "1",
 ) -> pd.DataFrame:
-    """
-    自动计算 start_date，拉取足够历史数据。
+    """自动计算 start_date，拉取足够历史数据。
 
     若缓存中已有部分数据，仅增量拉取缺失区间（避免重复下载）。
     """
@@ -255,8 +255,9 @@ def fetch_lookback(
         use_cache=use_cache,
     )
     if len(df) < lookback:
+        msg = f"数据不足: {ticker} 仅 {len(df)} 行 < lookback {lookback}（检查停牌/新上市）"
         raise RuntimeError(
-            f"数据不足: {ticker} 仅 {len(df)} 行 < lookback {lookback}（检查停牌/新上市）"
+            msg,
         )
     # 校验数据末尾与评估日期的间隔，防止停牌期间数据过时
     validate_data_freshness(df, end_date, ticker)
@@ -271,8 +272,7 @@ def fetch_kline_incremental(
     adjustflag: str = "1",
     use_cache: bool = True,
 ) -> pd.DataFrame:
-    """
-    增量拉取 K 线数据。
+    """增量拉取 K 线数据。
 
     策略：
       1. 先查本地缓存，判断已有日期覆盖范围
@@ -283,6 +283,7 @@ def fetch_kline_incremental(
     Returns
     -------
     合并后的完整 DataFrame
+
     """
     ticker = validate_ticker(ticker)
     start_date = validate_date(start_date)
@@ -320,23 +321,23 @@ def fetch_kline_incremental(
         if cached_end < start_date:
             fetch_start = start_date
             logger.info(
-                f"🔄 {ticker} 增量拉取: 缓存过期/过期前，重新拉取 {fetch_start} ~ {end_date}"
+                f"🔄 {ticker} 增量拉取: 缓存过期/过期前，重新拉取 {fetch_start} ~ {end_date}",
             )
         elif cached_end >= end_date:
             # 缓存已超出或刚好到达请求范围，无需补拉（但需通过 fetch_kline 限制返回区间）
             fetch_start = start_date
             logger.info(
-                f"🔄 {ticker} 增量拉取: 缓存已覆盖至 {cached_end}，仅返回 {fetch_start} ~ {end_date}"
+                f"🔄 {ticker} 增量拉取: 缓存已覆盖至 {cached_end}，仅返回 {fetch_start} ~ {end_date}",
             )
         else:
             # 缓存与请求范围有重叠，从 cached_end 下一天开始补拉
             next_day = (datetime.strptime(cached_end, "%Y-%m-%d") + timedelta(days=1)).strftime(
-                "%Y-%m-%d"
+                "%Y-%m-%d",
             )
             fetch_start = next_day
             logger.info(
                 f"🔄 {ticker} 增量拉取: 补拉 {fetch_start} ~ {end_date} "
-                f"（已有 {cached_start} ~ {cached_end}）"
+                f"（已有 {cached_start} ~ {cached_end}）",
             )
 
         # 拉取缺失段
@@ -363,7 +364,7 @@ def fetch_kline_incremental(
         merged = _merge_kline_dfs(old_df, new_df)
         logger.info(
             f"✅ {ticker} 增量拉取合并完成: 旧 {len(old_df)} 行 "
-            f"+ 新 {len(new_df)} 行 → 合并后 {len(merged)} 行"
+            f"+ 新 {len(new_df)} 行 → 合并后 {len(merged)} 行",
         )
 
         # 写回缓存（永久）
@@ -391,22 +392,19 @@ def _write_merged_cache(
     frequency: str,
     adjustflag: str = "1",
 ) -> None:
-    """
-    将合并后的 K 线数据写回缓存，全部以永久缓存写入。
-    """
+    """将合并后的 K 线数据写回缓存，全部以永久缓存写入。"""
     from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL
 
     seg_start = df["timestamps"].iloc[0].strftime("%Y-%m-%d")
     seg_end = df["timestamps"].iloc[-1].strftime("%Y-%m-%d")
     cache.set_kline(
-        ticker, seg_start, seg_end, frequency, df, ttl=_KLINE_HISTORICAL_TTL, adjustflag=adjustflag
+        ticker, seg_start, seg_end, frequency, df, ttl=_KLINE_HISTORICAL_TTL, adjustflag=adjustflag,
     )
     logger.debug(f"📦 永久缓存: {ticker} {seg_start}~{seg_end}")
 
 
 def _merge_kline_dfs(old_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    合并新旧 K 线 DataFrame，去重并按时间排序。
+    """合并新旧 K 线 DataFrame，去重并按时间排序。
 
     去重策略：
       - 新数据始终优先（覆盖重叠行）
@@ -433,8 +431,7 @@ def _merge_kline_dfs(old_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame
 
     # 按 timestamps 排序并去重（保留最后一条，即新数据优先）
     merged = merged.sort_values("timestamps").reset_index(drop=True)
-    merged = merged.drop_duplicates(subset=["timestamps"], keep="last").reset_index(drop=True)
-    return merged
+    return merged.drop_duplicates(subset=["timestamps"], keep="last").reset_index(drop=True)
 
 
 def next_business_days(last_date: str, n: int) -> list[pd.Timestamp]:
@@ -451,8 +448,7 @@ def validate_data_freshness(
     ticker: str,
     max_gap_trading_days: int = 10,
 ) -> None:
-    """
-    校验 K 线数据的最后交易日与评估日期的间隔。
+    """校验 K 线数据的最后交易日与评估日期的间隔。
 
     如果数据末尾距离评估日期超过 max_gap_trading_days 个交易日，
     说明股票在评估日前长时间停牌，不应参与预测。
@@ -460,37 +456,42 @@ def validate_data_freshness(
     Raises
     ------
     RuntimeError : 数据过旧或不存在
+
     """
     if "timestamps" not in df.columns:
-        raise RuntimeError(f"数据格式异常，缺少 timestamps 列: {ticker}")
+        msg = f"数据格式异常，缺少 timestamps 列: {ticker}"
+        raise RuntimeError(msg)
 
     last_ts = pd.to_datetime(df["timestamps"].iloc[-1])
     eval_ts = pd.to_datetime(eval_date)
 
     if last_ts > eval_ts:
+        msg = f"数据未来化: {ticker} 数据截止 {last_ts.date()} 晚于评估日期 {eval_ts.date()}"
         raise RuntimeError(
-            f"数据未来化: {ticker} 数据截止 {last_ts.date()} 晚于评估日期 {eval_ts.date()}"
+            msg,
         )
 
     # 计算两个日期之间的实际交易日数
     trading_days_gap = len(pd.bdate_range(start=last_ts, end=eval_ts)) - 1
 
     if trading_days_gap > max_gap_trading_days:
-        raise RuntimeError(
+        msg = (
             f"数据过旧: {ticker} 最后交易日 {last_ts.date()} 与评估日 {eval_ts.date()} "
             f"相差 {trading_days_gap} 个交易日（阈值 {max_gap_trading_days}），"
             f"疑似停牌或退市"
         )
+        raise RuntimeError(
+            msg,
+        )
 
     logger.debug(
         f"✅ 数据新鲜度校验通过: {ticker} 最后交易日={last_ts.date()}, "
-        f"与评估日间隔 {trading_days_gap} 个交易日"
+        f"与评估日间隔 {trading_days_gap} 个交易日",
     )
 
 
-def _safe_float(value: str, default: Optional[float] = None) -> Optional[float]:
-    """
-    安全地将字符串解析为 float，失败时返回 default。
+def _safe_float(value: str, default: float | None = None) -> float | None:
+    """安全地将字符串解析为 float，失败时返回 default。
     腾讯行情接口可能返回空串、'--' 等占位符，不应让整个函数失败。
     """
     if not value:
@@ -515,8 +516,7 @@ _TQ_MIN_FIELDS = 45
 
 
 def fetch_realtime_quote(ticker: str) -> dict:
-    """
-    腾讯财经实时估值（免费、无需 key）。
+    """腾讯财经实时估值（免费、无需 key）。
     返回 {price, pe, pb, market_cap, turnover} 或 {}。
 
     字段均安全解析：字段缺失或非数字时该项为 None，不抛异常。

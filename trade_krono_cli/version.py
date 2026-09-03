@@ -1,5 +1,4 @@
-"""
-版本追踪 — 量化系统可复现性的基石。
+"""版本追踪 — 量化系统可复现性的基石。
 
 每个分析结果必须回答：
   • 用了什么数据？（data_version）
@@ -17,7 +16,6 @@ import hashlib
 import platform
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from loguru import logger
 
@@ -52,9 +50,8 @@ _last_run_id_date: str = ""
 _last_run_id_counter: int = 0
 
 
-def generate_run_id(date: Optional[str] = None) -> str:
-    """
-    生成格式化的 run_id。
+def generate_run_id(date: str | None = None) -> str:
+    """生成格式化的 run_id。
 
     格式: YYYYMMDD-HHMMSS-NNN
     示例: 20260811-143022-001
@@ -92,10 +89,9 @@ _HASH_EXCLUDE_KEYS = {
 
 def compute_config_hash(
     settings,
-    extra: Optional[dict] = None,
+    extra: dict | None = None,
 ) -> str:
-    """
-    对运行时配置计算哈希，用于标识"本次运行用了什么配置"。
+    """对运行时配置计算哈希，用于标识"本次运行用了什么配置"。
 
     排除：API keys、敏感路径等。
     包含：模型选择、采样参数、过滤阈值等策略相关配置。
@@ -145,8 +141,7 @@ def compute_config_hash(
 
 
 def get_data_version(ticker: str, query_date: str, source: str = "baostock") -> str:
-    """
-    生成数据版本字符串，用于标识本次分析使用的数据快照。
+    """生成数据版本字符串，用于标识本次分析使用的数据快照。
 
     格式: {source}-{date}
     例如: baostock-20260811
@@ -209,8 +204,7 @@ def get_ta_prompt_version(
     output_language: str,
     structured_output: bool = True,
 ) -> str:
-    """
-    生成 TA 提示词版本标识。
+    """生成 TA 提示词版本标识。
     实际 prompt 模板版本需从 TradingAgents-astock 获取。
     此处使用关键参数组合作为 proxy。
 
@@ -218,6 +212,7 @@ def get_ta_prompt_version(
     ----------
     structured_output : bool
         是否要求 LLM 返回结构化 JSON 输出。默认为 True。
+
     """
     fmt_tag = "json" if structured_output else "text"
     return f"ta-v{max_debate_rounds}r{max_risk_discuss_rounds}-{output_language.lower()}-{fmt_tag}"
@@ -231,10 +226,9 @@ def get_ta_prompt_version(
 def build_run_snapshot(
     date: str,
     settings,
-    extra: Optional[dict] = None,
+    extra: dict | None = None,
 ) -> dict:
-    """
-    构建单次运行的完整版本快照。
+    """构建单次运行的完整版本快照。
 
     返回：
       run_id           唯一运行标识

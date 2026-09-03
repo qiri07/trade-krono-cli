@@ -22,8 +22,8 @@ def runner():
 
 
 class TestRunStrategyFlags:
-    def test_run_help_shows_strategy_panel(self, runner):
-        """run --help 应显示评分策略面板。"""
+    def test_run_help_shows_strategy_panel(self, runner) -> None:
+        """Run --help 应显示评分策略面板。"""
         result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
         out = _strip_ansi(result.output)
@@ -33,7 +33,7 @@ class TestRunStrategyFlags:
         assert "--risk-boost-multiplier" in out
         assert "--risk-boost-power" in out
 
-    def test_run_passes_scoring_strategy_to_pipeline(self, runner):
+    def test_run_passes_scoring_strategy_to_pipeline(self, runner) -> None:
         """--scoring-strategy multiplicative 应被传入 PipelineConfig。"""
         mock_pipeline = MagicMock()
         mock_pipeline.run_parallel.return_value = []
@@ -61,7 +61,7 @@ class TestRunStrategyFlags:
                 if cfg is not None:
                     assert cfg.scoring_strategy.strategy == "multiplicative"
 
-    def test_run_passes_risk_boost_strategy_to_pipeline(self, runner):
+    def test_run_passes_risk_boost_strategy_to_pipeline(self, runner) -> None:
         """--risk-boost-strategy diminishing_boost 应被传入 PipelineConfig。"""
         mock_pipeline = MagicMock()
         mock_pipeline.run_parallel.return_value = []
@@ -91,7 +91,7 @@ class TestRunStrategyFlags:
                     assert cfg.risk_boost_strategy.strategy == "diminishing_boost"
                     assert cfg.risk_boost_strategy.diminishing_power == 0.3
 
-    def test_run_passes_risk_boost_multiplier(self, runner):
+    def test_run_passes_risk_boost_multiplier(self, runner) -> None:
         """--risk-boost-multiplier 应被传入 PipelineConfig。"""
         mock_pipeline = MagicMock()
         mock_pipeline.run_parallel.return_value = []
@@ -121,7 +121,7 @@ class TestRunStrategyFlags:
                     assert cfg.risk_boost_strategy.strategy == "scaled_boost"
                     assert cfg.risk_boost_strategy.multiplier == 2.5
 
-    def test_run_default_strategy_unchanged(self, runner):
+    def test_run_default_strategy_unchanged(self, runner) -> None:
         """默认参数下 scoring_strategy 保持 linear，risk_boost_strategy 保持 fixed_boost。"""
         mock_pipeline = MagicMock()
         mock_pipeline.run_parallel.return_value = []
@@ -155,7 +155,7 @@ class TestRunStrategyFlags:
 
 
 class TestWarmCache:
-    def test_warm_cache_help(self, runner):
+    def test_warm_cache_help(self, runner) -> None:
         result = runner.invoke(app, ["warm-cache", "--help"])
         assert result.exit_code == 0
         out = _strip_ansi(result.output)
@@ -163,13 +163,13 @@ class TestWarmCache:
         assert "--date" in out
         assert "--lookback" in out
 
-    def test_warm_cache_empty_tickers(self, runner):
+    def test_warm_cache_empty_tickers(self, runner) -> None:
         with patch("trade_krono_cli.cli_commands.core._load_env"):
             result = runner.invoke(app, ["warm-cache", "--date", "2026-08-11"])
             assert result.exit_code != 0
             assert "股票列表为空" in _strip_ansi(result.output)
 
-    def test_warm_cache_with_mock_cache(self, runner):
+    def test_warm_cache_with_mock_cache(self, runner) -> None:
         mock_cache = MagicMock()
         mock_cache.warm_history.return_value = (100, 5)
         with (
@@ -190,7 +190,7 @@ class TestWarmCache:
             assert "预热完成" in _strip_ansi(result.output)
             assert mock_cache.warm_history.call_count == 2
 
-    def test_warm_cache_from_config_file(self, runner, tmp_path):
+    def test_warm_cache_from_config_file(self, runner, tmp_path) -> None:
         config_file = tmp_path / "tickers.txt"
         config_file.write_text("600519\n000858\n")
         mock_cache = MagicMock()
@@ -219,7 +219,7 @@ class TestWarmCache:
 
 
 class TestHistory:
-    def test_history_no_ticker_shows_jobs(self, runner):
+    def test_history_no_ticker_shows_jobs(self, runner) -> None:
         mock_research = MagicMock()
         mock_research.list_jobs.return_value = [
             {
@@ -241,7 +241,7 @@ class TestHistory:
             assert "j1" in result.output
             assert "2026-08-10" in result.output
 
-    def test_history_no_jobs(self, runner):
+    def test_history_no_jobs(self, runner) -> None:
         mock_research = MagicMock()
         mock_research.list_jobs.return_value = []
         with (
@@ -252,7 +252,7 @@ class TestHistory:
             assert result.exit_code == 0
             assert "暂无分析记录" in _strip_ansi(result.output)
 
-    def test_history_with_ticker_shows_records(self, runner):
+    def test_history_with_ticker_shows_records(self, runner) -> None:
         mock_research = MagicMock()
         mock_research.query_history.return_value = [
             {
@@ -265,7 +265,7 @@ class TestHistory:
                 "ta_confidence": 90.0,
                 "kronos_direction": "UP",
                 "kronos_change": 3.5,
-            }
+            },
         ]
         with (
             patch("trade_krono_cli.cli_commands.core._load_env"),
@@ -276,7 +276,7 @@ class TestHistory:
             # 表格输出中日期可能被截断，检查 RUNID 即可
             assert "r1" in result.output
 
-    def test_history_ticker_not_found(self, runner):
+    def test_history_ticker_not_found(self, runner) -> None:
         mock_research = MagicMock()
         mock_research.query_history.return_value = []
         with (
@@ -287,7 +287,7 @@ class TestHistory:
             assert result.exit_code == 0
             assert "未找到" in _strip_ansi(result.output)
 
-    def test_history_limit(self, runner):
+    def test_history_limit(self, runner) -> None:
         mock_research = MagicMock()
         mock_research.list_jobs.return_value = [
             {
@@ -318,7 +318,7 @@ class TestHistory:
 
 
 class TestEvalPredictionVariants:
-    def test_eval_with_backtest_flag(self, runner):
+    def test_eval_with_backtest_flag(self, runner) -> None:
         with (
             patch("trade_krono_cli.cli_commands.core._load_env"),
             patch("trade_krono_cli.prediction_eval.run_evaluation") as mock_eval,
@@ -342,7 +342,7 @@ class TestEvalPredictionVariants:
             assert kwargs["backtest"] is True
             assert kwargs["rebal_mode"] == "rebal_weekly"
 
-    def test_eval_with_tickers_filter(self, runner):
+    def test_eval_with_tickers_filter(self, runner) -> None:
         with (
             patch("trade_krono_cli.cli_commands.core._load_env"),
             patch("trade_krono_cli.prediction_eval.run_evaluation") as mock_eval,
@@ -359,7 +359,7 @@ class TestEvalPredictionVariants:
             kwargs = mock_eval.call_args[1]
             assert kwargs["tickers"] == ["600519", "000858"]
 
-    def test_eval_with_all_options(self, runner):
+    def test_eval_with_all_options(self, runner) -> None:
         with (
             patch("trade_krono_cli.cli_commands.core._load_env"),
             patch("trade_krono_cli.prediction_eval.run_evaluation") as mock_eval,
@@ -396,7 +396,7 @@ class TestEvalPredictionVariants:
 
 
 class TestRepoCommands:
-    def test_repo_doctor_no_issues(self, runner):
+    def test_repo_doctor_no_issues(self, runner) -> None:
         with (
             patch("trade_krono_cli.cli_commands.core._load_env"),
             patch("trade_krono_cli.external.doctor", return_value=[]),
@@ -407,7 +407,7 @@ class TestRepoCommands:
             # 无 repo 时退出非 0
             assert result.exit_code != 0 or "外部 repo" in _strip_ansi(result.output)
 
-    def test_repo_doctor_with_issues(self, runner):
+    def test_repo_doctor_with_issues(self, runner) -> None:
         from trade_krono_cli.external import ExternalRepo
 
         with (
@@ -417,8 +417,8 @@ class TestRepoCommands:
                 "trade_krono_cli.external.status",
                 return_value=[
                     ExternalRepo(
-                        name="kronos", path="/tmp/kronos", branch="main", url="", commit=None
-                    )
+                        name="kronos", path="/tmp/kronos", branch="main", url="", commit=None,
+                    ),
                 ],
             ),
             patch("trade_krono_cli.external.load_lock", return_value={}),
@@ -427,7 +427,7 @@ class TestRepoCommands:
             assert result.exit_code != 0
             assert "检测到以下问题" in _strip_ansi(result.output)
 
-    def test_repo_update(self, runner):
+    def test_repo_update(self, runner) -> None:
         with (
             patch("trade_krono_cli.cli_commands.core._load_env"),
             patch("trade_krono_cli.external.get_repos", return_value=[]),
@@ -436,25 +436,25 @@ class TestRepoCommands:
             result = runner.invoke(app, ["repo", "repo-update"])
             assert result.exit_code == 0
 
-    def test_repo_pin_success(self, runner):
+    def test_repo_pin_success(self, runner) -> None:
         with (
             patch("trade_krono_cli.cli_commands.core._load_env"),
             patch("trade_krono_cli.external.pin") as mock_pin,
         ):
             result = runner.invoke(
-                app, ["repo", "repo-pin", "--name", "tradingagents", "--commit", "abc123def"]
+                app, ["repo", "repo-pin", "--name", "tradingagents", "--commit", "abc123def"],
             )
             assert result.exit_code == 0
             assert "已 pin" in _strip_ansi(result.output)
             mock_pin.assert_called_once_with("tradingagents", "abc123def")
 
-    def test_repo_pin_failure(self, runner):
+    def test_repo_pin_failure(self, runner) -> None:
         with (
             patch("trade_krono_cli.cli_commands.core._load_env"),
             patch("trade_krono_cli.external.pin", side_effect=ValueError("未知 repo: nonexistent")),
         ):
             result = runner.invoke(
-                app, ["repo", "repo-pin", "--name", "nonexistent", "--commit", "abc123"]
+                app, ["repo", "repo-pin", "--name", "nonexistent", "--commit", "abc123"],
             )
             assert result.exit_code != 0
             assert "未知 repo" in _strip_ansi(result.output)
@@ -466,13 +466,13 @@ class TestRepoCommands:
 
 
 class TestLoadTickersEdgeCases:
-    def test_load_tickers_whitespace_only_string(self):
+    def test_load_tickers_whitespace_only_string(self) -> None:
         from trade_krono_cli.cli_commands.core import _load_tickers
 
         tickers = _load_tickers("   ", None)
         assert tickers == []
 
-    def test_load_tickers_empty_config_file(self, tmp_path):
+    def test_load_tickers_empty_config_file(self, tmp_path) -> None:
         from trade_krono_cli.cli_commands.core import _load_tickers
 
         config_file = tmp_path / "empty.txt"
@@ -480,7 +480,7 @@ class TestLoadTickersEdgeCases:
         tickers = _load_tickers(None, str(config_file))
         assert tickers == []
 
-    def test_load_tickers_comments_only(self, tmp_path):
+    def test_load_tickers_comments_only(self, tmp_path) -> None:
         from trade_krono_cli.cli_commands.core import _load_tickers
 
         config_file = tmp_path / "comments.txt"
@@ -488,7 +488,7 @@ class TestLoadTickersEdgeCases:
         tickers = _load_tickers(None, str(config_file))
         assert tickers == []
 
-    def test_load_tickers_mixed_content(self, tmp_path):
+    def test_load_tickers_mixed_content(self, tmp_path) -> None:
         from trade_krono_cli.cli_commands.core import _load_tickers
 
         config_file = tmp_path / "mixed.txt"
@@ -496,13 +496,13 @@ class TestLoadTickersEdgeCases:
         tickers = _load_tickers(None, str(config_file))
         assert tickers == ["600519", "000858", "600036"]
 
-    def test_load_tickers_empty_string_with_commas(self):
+    def test_load_tickers_empty_string_with_commas(self) -> None:
         from trade_krono_cli.cli_commands.core import _load_tickers
 
         tickers = _load_tickers(",,,", None)
         assert tickers == []
 
-    def test_load_tickers_single_trailing_comma(self):
+    def test_load_tickers_single_trailing_comma(self) -> None:
         from trade_krono_cli.cli_commands.core import _load_tickers
 
         tickers = _load_tickers("600519,", None)
@@ -515,14 +515,14 @@ class TestLoadTickersEdgeCases:
 
 
 class TestSanitizePathEdgeCases:
-    def test_sanitize_path_same_dir(self, tmp_path):
+    def test_sanitize_path_same_dir(self, tmp_path) -> None:
         from trade_krono_cli.cli_commands.core import _sanitize_path
 
         p = tmp_path / "result.json"
         result = _sanitize_path(str(p), "Test", tmp_path)
         assert result == p.resolve()
 
-    def test_sanitize_path_nested_subdir(self, tmp_path):
+    def test_sanitize_path_nested_subdir(self, tmp_path) -> None:
         from trade_krono_cli.cli_commands.core import _sanitize_path
 
         sub = tmp_path / "a" / "b" / "c"
@@ -531,7 +531,7 @@ class TestSanitizePathEdgeCases:
         result = _sanitize_path(str(p), "Test", tmp_path)
         assert result == p.resolve()
 
-    def test_sanitize_path_parent_traversal_deep(self, tmp_path):
+    def test_sanitize_path_parent_traversal_deep(self, tmp_path) -> None:
         from typer import Exit
 
         from trade_krono_cli.cli_commands.core import _sanitize_path
@@ -546,19 +546,19 @@ class TestSanitizePathEdgeCases:
 
 
 class TestCliErrorPaths:
-    def test_ta_command_missing_tickers(self, runner):
+    def test_ta_command_missing_tickers(self, runner) -> None:
         with patch("trade_krono_cli.cli_commands.core._load_env"):
             result = runner.invoke(app, ["ta", "--date", "2026-08-11"])
             assert result.exit_code != 0
             assert "股票列表为空" in _strip_ansi(result.output)
 
-    def test_kronos_command_missing_tickers(self, runner):
+    def test_kronos_command_missing_tickers(self, runner) -> None:
         with patch("trade_krono_cli.cli_commands.core._load_env"):
             result = runner.invoke(app, ["kronos", "--date", "2026-08-11"])
             assert result.exit_code != 0
             assert "股票列表为空" in _strip_ansi(result.output)
 
-    def test_run_command_invalid_date_format_accepted(self, runner):
+    def test_run_command_invalid_date_format_accepted(self, runner) -> None:
         """日期格式校验不在 CLI 层做，应由 pipeline 内部处理。"""
         mock_pipeline = MagicMock()
         mock_pipeline.run_parallel.return_value = []
@@ -578,7 +578,7 @@ class TestCliErrorPaths:
             )
             assert result.exit_code == 0
 
-    def test_clear_cache_with_mock(self, runner):
+    def test_clear_cache_with_mock(self, runner) -> None:
         with (
             patch("trade_krono_cli.cli_commands.core._load_env"),
             patch("trade_krono_cli.cache.get_cache") as mock_get_cache,
@@ -595,7 +595,7 @@ class TestCliErrorPaths:
 
 
 class TestCommandsWithConfigFile:
-    def test_ta_with_config_file(self, runner, tmp_path):
+    def test_ta_with_config_file(self, runner, tmp_path) -> None:
         config_file = tmp_path / "tickers.txt"
         config_file.write_text("600519\n")
         mock_pipeline = MagicMock()
@@ -616,7 +616,7 @@ class TestCommandsWithConfigFile:
             )
             assert result.exit_code == 0
 
-    def test_kronos_with_config_file(self, runner, tmp_path):
+    def test_kronos_with_config_file(self, runner, tmp_path) -> None:
         config_file = tmp_path / "tickers.txt"
         config_file.write_text("600519\n")
         mock_pipeline = MagicMock()

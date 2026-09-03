@@ -1,5 +1,4 @@
-"""
-风险引擎主模块 — Risk Engine v2。
+"""风险引擎主模块 — Risk Engine v2。
 
 聚合所有风险维度，输出多维风险指标（VaR/CVaR/Beta/Gap/Event/Valuation），
 并通过 expected_return_adjustment 计算预期收益调整因子。
@@ -43,10 +42,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import TYPE_CHECKING
 
-import numpy as np
-import pandas as pd
 from loguru import logger
 
 from trade_krono_cli.configs.risk import RiskConfig
@@ -67,6 +64,10 @@ from trade_krono_cli.risk.models import (
 from trade_krono_cli.risk.valuation_risk import calc_valuation_risk
 from trade_krono_cli.risk.volatility import calc_volatility_risk
 
+if TYPE_CHECKING:
+    import numpy as np
+    import pandas as pd
+
 # 评分维度权重（从 RiskWeights 映射到 models 键名，beta 除外——它在
 # expected_return_adjustment 中单独处理，不与 total_risk 双重计入）
 _SCORE_WEIGHT_KEYS: tuple[tuple[str, str], ...] = (
@@ -83,8 +84,7 @@ _SCORE_WEIGHT_KEYS: tuple[tuple[str, str], ...] = (
 
 @dataclass
 class RiskScore:
-    """
-    向后兼容的风险评分结果（0-100 综合分）。
+    """向后兼容的风险评分结果（0-100 综合分）。
 
     仅保留原始 5 个维度 + 总分 + 3 个原始值，不含 VaR/Beta/新风险分。
     新架构请使用 RiskMetrics。
@@ -101,9 +101,9 @@ class RiskScore:
 
     total_risk: float = 0.0
 
-    annualized_vol: Optional[float] = None
-    max_drawdown: Optional[float] = None
-    avg_turnover: Optional[float] = None
+    annualized_vol: float | None = None
+    max_drawdown: float | None = None
+    avg_turnover: float | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -127,8 +127,7 @@ class RiskScore:
 
 @dataclass
 class RiskMetrics:
-    """
-    多维度风险指标（新架构输出）。
+    """多维度风险指标（新架构输出）。
 
     包含：
       - VaR / CVaR          尾部风险度量
@@ -142,11 +141,11 @@ class RiskMetrics:
     ticker: str
     date: str
 
-    var_95: Optional[float] = None
-    cvar_95: Optional[float] = None
-    beta: Optional[float] = None
-    annualized_vol: Optional[float] = None
-    max_drawdown: Optional[float] = None
+    var_95: float | None = None
+    cvar_95: float | None = None
+    beta: float | None = None
+    annualized_vol: float | None = None
+    max_drawdown: float | None = None
 
     volatility_score: float = 0.0
     drawdown_score: float = 0.0
@@ -160,7 +159,7 @@ class RiskMetrics:
     total_risk: float = 0.0
     return_adjustment: float = 0.0
 
-    avg_turnover: Optional[float] = None
+    avg_turnover: float | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -215,16 +214,15 @@ class RiskMetrics:
             f"  Market Regime     {self.market_regime_score:>6.0f}",
             f"{'─' * 44}",
             f"  Total Risk        {self.total_risk:>6.1f}",
-            f"  Return Adj        {self.return_adjustment:>6.3f}  "
-            f"({self.return_adjustment * 100:+.1f}%)",
+            (f"  Return Adj        {self.return_adjustment:>6.3f}  "
+            f"({self.return_adjustment * 100:+.1f}%)"),
             f"{'=' * 44}",
         ]
         return "\n".join(lines)
 
 
 class RiskEngine:
-    """
-    风险引擎 v2：多维度风险量化 + VaR/CVaR/Beta + 预期收益调整。
+    """风险引擎 v2：多维度风险量化 + VaR/CVaR/Beta + 预期收益调整。
 
     用法：
         engine = RiskEngine()
@@ -237,7 +235,7 @@ class RiskEngine:
         adjusted = raw_return * (1 + adj)  # ≈ 14.07%
     """
 
-    def __init__(self, risk_config: Optional[RiskConfig] = None):
+    def __init__(self, risk_config: RiskConfig | None = None) -> None:
         self._config = risk_config or RiskConfig()
         # 评分维度权重（不含 beta——beta 已通过 expected_return_adjustment 处理）
         w = self._config.weights
@@ -258,18 +256,18 @@ class RiskEngine:
         ticker: str,
         date: str,
         kline_df: pd.DataFrame,
-        quote_data: Optional[dict] = None,
+        quote_data: dict | None = None,
         ta_result=None,
-        market_returns: Optional[np.ndarray] = None,
+        market_returns: np.ndarray | None = None,
     ) -> tuple[RiskScore, RiskMetrics]:
-        """
-        对单只股票进行全面风险评估。
+        """对单只股票进行全面风险评估。
 
         Returns
         -------
         (RiskScore, RiskMetrics)
           RiskScore  : 向后兼容的 0-100 综合风险分
           RiskMetrics: 详细风险指标（VaR/CVaR/Beta/各风险分/预期收益调整）
+
         """
         close = kline_df["close"].astype(float)
         high = kline_df["high"].astype(float)
@@ -282,7 +280,7 @@ class RiskEngine:
 
         market_cap = quote_data.get("market_cap") if quote_data else None
         liq_score, avg_turnover = calc_liquidity_risk(
-            volume, market_cap, thresholds=self._config.liquidity
+            volume, market_cap, thresholds=self._config.liquidity,
         )
 
         conc_score = calc_concentration_risk(ta_result)
@@ -394,9 +392,9 @@ def assess_risk(
     ticker: str,
     date: str,
     kline_df: pd.DataFrame,
-    quote_data: Optional[dict] = None,
+    quote_data: dict | None = None,
     ta_result=None,
-    risk_config: Optional[RiskConfig] = None,
+    risk_config: RiskConfig | None = None,
 ) -> tuple[RiskScore, RiskMetrics]:
     """便捷函数：单步评估某只股票的风险，返回 (RiskScore, RiskMetrics)。"""
     engine = RiskEngine(risk_config=risk_config)

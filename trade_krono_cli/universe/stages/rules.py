@@ -1,5 +1,4 @@
-"""
-Filter Rules Stage — 自定义规则链过滤。
+"""Filter Rules Stage — 自定义规则链过滤。
 
 将 FilterConfig.filter_rules 中的自定义规则应用到 UniverseTicket 列表，
 作为基本面过滤之后的补充过滤层。
@@ -12,13 +11,17 @@ Filter Rules Stage — 自定义规则链过滤。
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from trade_krono_cli.stock_filter import FilterOp, FilterRule
-from trade_krono_cli.universe.provider import UniverseTicket
 from trade_krono_cli.universe.stages import FilterStage
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from trade_krono_cli.universe.provider import UniverseTicket
 
 # UniverseTicket 字段别名：规则中的常见字段名 → UniverseTicket 实际属性
 _FIELD_ALIAS: dict[str, str] = {
@@ -39,8 +42,7 @@ def _get_field(ticket: UniverseTicket, field: str) -> object:
 
 
 class FilterRulesStage(FilterStage):
-    """
-    自定义规则过滤阶段。
+    """自定义规则过滤阶段。
 
     将 FilterConfig.filter_rules 中定义的规则逐一应用到每只股票，
     任何规则未通过即被排除。None 字段会跳过依赖该字段的规则。
@@ -48,7 +50,7 @@ class FilterRulesStage(FilterStage):
 
     name = "rules"
 
-    def __init__(self, rules: Sequence[FilterRule] | None = None):
+    def __init__(self, rules: Sequence[FilterRule] | None = None) -> None:
         self.rules: list[FilterRule] = list(rules) if rules is not None else []
 
     def filter(self, tickets: list[UniverseTicket]) -> list[UniverseTicket]:
@@ -75,7 +77,7 @@ class FilterRulesStage(FilterStage):
         if self.rules:
             logger.info(
                 f"📋 Rules stage: {len(tickets)} → {len(kept)} "
-                f"(应用 {len(self.rules)} 条规则，排除 {rejected_count} 只)"
+                f"(应用 {len(self.rules)} 条规则，排除 {rejected_count} 只)",
             )
         return kept
 

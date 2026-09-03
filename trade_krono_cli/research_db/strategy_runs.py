@@ -1,6 +1,4 @@
-"""
-研究数据库 — Strategy Runs 表读写。
-"""
+"""研究数据库 — Strategy Runs 表读写。"""
 
 from __future__ import annotations
 
@@ -22,8 +20,7 @@ class StrategyRunsMixin(ResearchDatabase):
         notes: str | None = None,
         config_hash: str | None = None,
     ) -> int:
-        """
-        记录一次评分策略运行结果到 strategy_runs 表。
+        """记录一次评分策略运行结果到 strategy_runs 表。
 
         Parameters
         ----------
@@ -38,6 +35,7 @@ class StrategyRunsMixin(ResearchDatabase):
         Returns
         -------
         int : 插入的行 ID
+
         """
         with self._conn as conn:
             cursor = conn.execute(
@@ -62,8 +60,7 @@ class StrategyRunsMixin(ResearchDatabase):
         strategy: str | None = None,
         limit: int = 20,
     ) -> list[dict]:
-        """
-        查询评分策略历史运行记录。
+        """查询评分策略历史运行记录。
 
         Parameters
         ----------
@@ -73,6 +70,7 @@ class StrategyRunsMixin(ResearchDatabase):
         Returns
         -------
         list[dict] : 按 run_at 降序排列的历史记录
+
         """
         with self._conn as conn:
             if strategy:

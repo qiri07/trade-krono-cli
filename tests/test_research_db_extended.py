@@ -14,7 +14,7 @@ def db(tmp_path):
 
 
 class TestSnapshots:
-    def test_insert_and_get_snapshot(self, db):
+    def test_insert_and_get_snapshot(self, db) -> None:
         db.insert_data_snapshot(
             snapshot_id="snap-1",
             cut_date="2026-01-01",
@@ -29,10 +29,10 @@ class TestSnapshots:
         assert result["sources"] == [{"name": "baostock"}]
         assert result["description"] == "test snapshot"
 
-    def test_get_snapshot_not_found(self, db):
+    def test_get_snapshot_not_found(self, db) -> None:
         assert db.get_data_snapshot("nonexistent") is None
 
-    def test_insert_overwrites_snapshot(self, db):
+    def test_insert_overwrites_snapshot(self, db) -> None:
         db.insert_data_snapshot(
             snapshot_id="snap-1",
             cut_date="2026-01-01",
@@ -54,7 +54,7 @@ class TestSnapshots:
 
 
 class TestWalkforward:
-    def test_insert_and_get_walkforward(self, db):
+    def test_insert_and_get_walkforward(self, db) -> None:
         db.insert_walkforward_run(
             run_id="wf-1",
             experiment_id="exp-1",
@@ -76,7 +76,7 @@ class TestWalkforward:
         assert r["win_rate"] == 0.6
         assert r["sharpe_annual"] == 1.5
 
-    def test_get_walkforward_filtered(self, db):
+    def test_get_walkforward_filtered(self, db) -> None:
         db.insert_walkforward_run(
             run_id="wf-1",
             experiment_id="exp-1",
@@ -107,7 +107,7 @@ class TestWalkforward:
         assert len(rows) == 1
         assert rows[0]["ticker"] == "000858"
 
-    def test_get_walkforward_by_experiment(self, db):
+    def test_get_walkforward_by_experiment(self, db) -> None:
         db.insert_walkforward_run(
             run_id="wf-1",
             experiment_id="exp-A",
@@ -125,7 +125,7 @@ class TestWalkforward:
         assert len(rows) == 1
         assert rows[0]["experiment_id"] == "exp-A"
 
-    def test_get_walkforward_not_found(self, db):
+    def test_get_walkforward_not_found(self, db) -> None:
         assert db.get_walkforward_runs(ticker="ZZZZZZ") == []
 
 
@@ -133,7 +133,7 @@ class TestWalkforward:
 
 
 class TestExperiments:
-    def test_insert_and_get_experiment(self, db):
+    def test_insert_and_get_experiment(self, db) -> None:
         db.insert_experiment(
             experiment_id="exp-1",
             full_id="full-1",
@@ -150,10 +150,10 @@ class TestExperiments:
         assert result["hypothesis"] == {"var": "lr", "value": 0.01}
         assert result["passed"] is True
 
-    def test_get_experiment_not_found(self, db):
+    def test_get_experiment_not_found(self, db) -> None:
         assert db.get_experiment("nonexistent") is None
 
-    def test_list_experiments(self, db):
+    def test_list_experiments(self, db) -> None:
         db.insert_experiment(
             experiment_id="exp-1",
             full_id="full-1",
@@ -171,7 +171,7 @@ class TestExperiments:
         rows = db.list_experiments()
         assert len(rows) == 2
 
-    def test_list_experiments_filtered_by_type(self, db):
+    def test_list_experiments_filtered_by_type(self, db) -> None:
         db.insert_experiment(
             experiment_id="exp-1",
             full_id="full-1",
@@ -190,7 +190,7 @@ class TestExperiments:
         assert len(rows) == 1
         assert rows[0]["experiment_id"] == "exp-1"
 
-    def test_list_experiments_only_passed(self, db):
+    def test_list_experiments_only_passed(self, db) -> None:
         db.insert_experiment(
             experiment_id="exp-1",
             full_id="full-1",
@@ -209,7 +209,7 @@ class TestExperiments:
         assert len(rows) == 1
         assert rows[0]["experiment_id"] == "exp-1"
 
-    def test_insert_with_none_values(self, db):
+    def test_insert_with_none_values(self, db) -> None:
         db.insert_experiment(
             experiment_id="exp-1",
             full_id="full-1",

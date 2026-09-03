@@ -1,6 +1,4 @@
-"""
-CLI repo 子命令 — 外部项目管理（TradingAgents-astock、Kronos 等下游依赖）。
-"""
+"""CLI repo 子命令 — 外部项目管理（TradingAgents-astock、Kronos 等下游依赖）。"""
 
 from __future__ import annotations
 
@@ -63,7 +61,7 @@ def repo_doctor() -> None:
                 console.print(f"  📌 [{e.name}] pinned → {e.commit[:12]}")
             elif e.is_locked and e.lock_commit:
                 console.print(
-                    f"  🔒 [{e.name}] locked  → {e.lock_commit}（未 pinned，跟踪 branch）"
+                    f"  🔒 [{e.name}] locked  → {e.lock_commit}（未 pinned，跟踪 branch）",
                 )
             elif e.branch:
                 console.print(f"  🌿 [{e.name}] tracking → {e.branch}")

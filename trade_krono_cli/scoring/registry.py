@@ -1,5 +1,4 @@
-"""
-scoring.registry — 打分策略与风险加分策略的注册表工厂。
+"""scoring.registry — 打分策略与风险加分策略的注册表工厂。
 
 类似 DataProviderFactory，采用懒加载 + 进程级缓存模式。
 """
@@ -7,11 +6,12 @@ scoring.registry — 打分策略与风险加分策略的注册表工厂。
 from __future__ import annotations
 
 import threading
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from trade_krono_cli.scoring.base import CompositeScorer, RiskBoostStrategy
+if TYPE_CHECKING:
+    from trade_krono_cli.scoring.base import CompositeScorer, RiskBoostStrategy
 
 # ═══════════════════════════════════════════════════════
 # 综合打分器注册表
@@ -31,9 +31,8 @@ class ScorerRegistry:
             self._registry[cls.name] = cls
         logger.debug(f"✅ 打分策略已注册: {cls.name}")
 
-    def get(self, name: str) -> Optional[CompositeScorer]:
-        """
-        获取指定名称的打分策略实例（进程级缓存）。
+    def get(self, name: str) -> CompositeScorer | None:
+        """获取指定名称的打分策略实例（进程级缓存）。
         返回 None 表示未找到。
         """
         with self._lock:
@@ -51,19 +50,19 @@ class ScorerRegistry:
             self._instance_cache[name] = instance
             return instance
 
-    def _lazy_load(self, name: str) -> Optional[type[CompositeScorer]]:
+    def _lazy_load(self, name: str) -> type[CompositeScorer] | None:
         """按需导入内置策略类。"""
         if name == "linear":
             from trade_krono_cli.scoring.scorers import LinearScorer
 
             self.register(LinearScorer)
             return LinearScorer
-        elif name == "multiplicative":
+        if name == "multiplicative":
             from trade_krono_cli.scoring.scorers import MultiplicativeScorer
 
             self.register(MultiplicativeScorer)
             return MultiplicativeScorer
-        elif name == "rank_based":
+        if name == "rank_based":
             from trade_krono_cli.scoring.scorers import RankBasedScorer
 
             self.register(RankBasedScorer)
@@ -97,7 +96,7 @@ class RiskBoostRegistry:
             self._registry[cls.name] = cls
         logger.debug(f"✅ 风险加分策略已注册: {cls.name}")
 
-    def get(self, name: str) -> Optional[RiskBoostStrategy]:
+    def get(self, name: str) -> RiskBoostStrategy | None:
         with self._lock:
             if name in self._instance_cache:
                 return self._instance_cache[name]
@@ -112,19 +111,19 @@ class RiskBoostRegistry:
             self._instance_cache[name] = instance
             return instance
 
-    def _lazy_load(self, name: str) -> Optional[type[RiskBoostStrategy]]:
+    def _lazy_load(self, name: str) -> type[RiskBoostStrategy] | None:
         """按需导入内置策略类。"""
         if name == "fixed_boost":
             from trade_krono_cli.scoring.risk_boosters import FixedBoostBooster
 
             self.register(FixedBoostBooster)
             return FixedBoostBooster
-        elif name == "scaled_boost":
+        if name == "scaled_boost":
             from trade_krono_cli.scoring.risk_boosters import ScaledBoostBooster
 
             self.register(ScaledBoostBooster)
             return ScaledBoostBooster
-        elif name == "diminishing_boost":
+        if name == "diminishing_boost":
             from trade_krono_cli.scoring.risk_boosters import DiminishingBoostBooster
 
             self.register(DiminishingBoostBooster)
@@ -143,8 +142,8 @@ class RiskBoostRegistry:
 # 模块级单例
 # ═══════════════════════════════════════════════════════
 
-_scorer_registry: Optional[ScorerRegistry] = None
-_boost_registry: Optional[RiskBoostRegistry] = None
+_scorer_registry: ScorerRegistry | None = None
+_boost_registry: RiskBoostRegistry | None = None
 _global_lock = threading.Lock()
 
 

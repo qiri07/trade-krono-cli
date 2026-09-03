@@ -1,5 +1,4 @@
-"""
-DataSnapshot — Point-in-Time 数据完整性保障。
+"""DataSnapshot — Point-in-Time 数据完整性保障。
 
 核心问题：
   回测/评估时，如果用了"未来才知道的数据"，就会产生 look-ahead bias（前视偏差）。
@@ -22,6 +21,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from hashlib import sha256
 
+from loguru import logger
+
 # ═══════════════════════════════════════════════════════
 #  单数据源快照
 # ═══════════════════════════════════════════════════════
@@ -29,8 +30,7 @@ from hashlib import sha256
 
 @dataclass(frozen=True)
 class DataSourceSnapshot:
-    """
-    单个数据源在某次实验中的快照。
+    """单个数据源在某次实验中的快照。
 
     字段
     ----
@@ -69,8 +69,7 @@ class DataSourceSnapshot:
 
 @dataclass(frozen=True)
 class DataSnapshot:
-    """
-    某次实验的完整数据快照。
+    """某次实验的完整数据快照。
 
     包含：
       · snapshot_id       唯一标识（SHA-256 of contents）
@@ -99,15 +98,11 @@ class DataSnapshot:
         return sha256(raw.encode()).hexdigest()[:16]
 
     def contains_future_data(self, ticker: str, date_str: str) -> bool:
-        """
-        检查给定日期是否跨越任何数据源的边界。
+        """检查给定日期是否跨越任何数据源的边界。
 
         如果任何 source 的 latest_date < date_str，则视为包含未来数据。
         """
-        for src in self.sources:
-            if src.latest_date < date_str:
-                return True
-        return False
+        return any(src.latest_date < date_str for src in self.sources)
 
     def effective_cut_date(self) -> str:
         """返回所有数据源中最晚的 latest_date，作为实际有效的决策日期。"""
@@ -126,7 +121,7 @@ class DataSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "DataSnapshot":
+    def from_dict(cls, data: dict) -> DataSnapshot:
         sources = tuple(DataSourceSnapshot(**s) for s in data.get("sources", []))
         return cls(
             cut_date=data["cut_date"],
@@ -146,8 +141,7 @@ def filter_kline_to_cut_date(
     cut_date: str,
     date_col: str = "timestamps",
 ) -> object:
-    """
-    将 K 线 DataFrame 截断到 cut_date（不含）。
+    """将 K 线 DataFrame 截断到 cut_date（不含）。
 
     Parameters
     ----------
@@ -158,6 +152,7 @@ def filter_kline_to_cut_date(
     Returns
     -------
     截断后的 DataFrame（copy），若输入为 None 则返回 None
+
     """
     import pandas as pd
 
@@ -167,5 +162,6 @@ def filter_kline_to_cut_date(
         dates = pd.to_datetime(df[date_col])
         cutoff = pd.to_datetime(cut_date)
         return df[dates <= cutoff].copy()
-    except Exception:
+    except Exception as e:
+        logger.debug(f"⚠️  日期列转换失败，返回原始数据: {e}")
         return df

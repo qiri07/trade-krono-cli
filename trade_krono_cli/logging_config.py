@@ -1,5 +1,4 @@
-"""
-结构化日志配置。
+"""结构化日志配置。
 
 支持两种模式：
   - text   : 人类可读（默认，保留现有格式）
@@ -10,19 +9,21 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 # Type stub so mypy knows this attribute exists (set dynamically at runtime).
-_json_sink: Optional[_JsonLogSink] = None
+_json_sink: _JsonLogSink | None = None
 
 
 class _JsonLogSink:
     """JSON 结构化日志 sink，累积记录供测试访问。"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.records: list[str] = []
 
     def write(self, message: str) -> None:
@@ -50,12 +51,11 @@ def _json_format(record: dict) -> str:
 
 def setup_logger(
     level: str = "INFO",
-    log_file: Optional[Path] = None,
+    log_file: Path | None = None,
     json_format: bool = False,
     sink=None,
 ) -> None:
-    """
-    初始化 loguru 日志。
+    """初始化 loguru 日志。
 
     Parameters
     ----------
@@ -63,6 +63,7 @@ def setup_logger(
     log_file : 文件路径（可选）
     json_format : 是否输出 JSON 结构化日志
     sink : 自定义输出目标（测试用，不传则写 stderr）
+
     """
     logger.remove()  # 移除所有默认 handler
 
@@ -79,7 +80,7 @@ def setup_logger(
 
         _mod._json_sink = json_sink
 
-        def _json_handler(record):
+        def _json_handler(record) -> None:
             # record 是 loguru._handler.Message 对象，.record 是原始 dict
             r = record.record
             entry = {

@@ -1,5 +1,4 @@
-"""
-飞书通知模块 — 向飞书群推送消息。
+"""飞书通知模块 — 向飞书群推送消息。
 
 支持两种方式：
 1. WEBHOOK_URL（Incoming Webhook，无需签名）
@@ -42,6 +41,7 @@ def _send_webhook(url: str, content: str, is_markdown: bool = True) -> dict:
     -------
     dict
         API 响应
+
     """
     payload: dict = {
         "msg_type": "post",
@@ -50,8 +50,8 @@ def _send_webhook(url: str, content: str, is_markdown: bool = True) -> dict:
                 "zh_cn": {
                     "title": "投研报告",
                     "content": [[{"tag": "text", "text": content}]],
-                }
-            }
+                },
+            },
         },
     }
     resp = requests.post(url, json=payload, timeout=15)
@@ -84,6 +84,7 @@ def _send_signed_webhook(url: str, content: str, app_id: str, app_secret: str) -
     -------
     dict
         API 响应
+
     """
     timestamp = str(int(time.time()))
     sign = _gen_sign(timestamp, app_secret)
@@ -97,8 +98,8 @@ def _send_signed_webhook(url: str, content: str, app_id: str, app_secret: str) -
                 "zh_cn": {
                     "title": "投研报告",
                     "content": [[{"tag": "text", "text": content}]],
-                }
-            }
+                },
+            },
         },
     }
     resp = requests.post(url, json=payload, timeout=15)
@@ -129,6 +130,7 @@ def send_feishu(
     -------
     bool
         是否发送成功
+
     """
     url = webhook_url or os.getenv("FEISHU_WEBHOOK_URL", "").strip()
     app_id_val = app_id or os.getenv("FEISHU_APP_ID", "").strip()
@@ -147,9 +149,8 @@ def send_feishu(
         if result.get("code") == 0 or result.get("StatusCode") == 0:
             logger.info("✅ 飞书消息发送成功")
             return True
-        else:
-            logger.error(f"❌ 飞书发送失败: {result}")
-            return False
+        logger.error(f"❌ 飞书发送失败: {result}")
+        return False
     except Exception as e:
         logger.error(f"❌ 飞书推送异常: {e}")
         return False

@@ -18,7 +18,7 @@ class DegradationConfig:
 
     VALID_MODES = {"strict", "ta_only_on_kronos_fail", "ta_cache_fallback"}
 
-    def merge(self, **overrides) -> "DegradationConfig":
+    def merge(self, **overrides) -> DegradationConfig:
         current = {k: getattr(self, k) for k in self.__dataclass_fields__}
         current.update(overrides)
         return DegradationConfig(**current)
@@ -28,7 +28,7 @@ class DegradationConfig:
         if self.degrade_mode not in self.VALID_MODES:
             errors.append(
                 f"DEGRADE_MODE={self.degrade_mode} 必须是以下之一: "
-                f"{', '.join(sorted(self.VALID_MODES))}"
+                f"{', '.join(sorted(self.VALID_MODES))}",
             )
         if self.ta_cache_max_age_days < 1:
             errors.append("TA_CACHE_MAX_AGE_DAYS 必须 >= 1")
@@ -38,6 +38,6 @@ class DegradationConfig:
             # Warning returned as empty list; caller handles it as a warning
             errors.append(
                 f"TA_CACHE_FALLBACK_ENABLED=true 但 DEGRADE_MODE={self.degrade_mode}，"
-                f"TA 缓存回退仅在 degrade_mode=ta_cache_fallback 时生效"
+                f"TA 缓存回退仅在 degrade_mode=ta_cache_fallback 时生效",
             )
         return errors

@@ -8,13 +8,13 @@ from trade_krono_cli.configs.output import OutputConfig
 
 
 class TestOutputConfig:
-    def test_default_values(self):
+    def test_default_values(self) -> None:
         cfg = OutputConfig()
         assert cfg.output_dir == Path("outputs")
         assert cfg.json_path == "outputs/results.json"
         assert cfg.html_path == "outputs/report.html"
 
-    def test_custom_paths(self):
+    def test_custom_paths(self) -> None:
         cfg = OutputConfig(
             output_dir=Path("custom_out"),
             json_path="custom_out/result.json",
@@ -24,7 +24,7 @@ class TestOutputConfig:
         assert cfg.json_path == "custom_out/result.json"
         assert cfg.html_path == "custom_out/report.html"
 
-    def test_merge_overrides_json(self):
+    def test_merge_overrides_json(self) -> None:
         cfg = OutputConfig()
         merged = cfg.merge(json_path="outputs/new_results.json")
         assert merged.json_path == "outputs/new_results.json"
@@ -32,7 +32,7 @@ class TestOutputConfig:
         assert merged.output_dir == Path("outputs")
         assert merged.html_path == "outputs/report.html"
 
-    def test_merge_overrides_all(self):
+    def test_merge_overrides_all(self) -> None:
         cfg = OutputConfig(output_dir=Path("data"))
         merged = cfg.merge(
             output_dir=Path("results"),
@@ -43,12 +43,12 @@ class TestOutputConfig:
         assert merged.json_path == "results/out.json"
         assert merged.html_path == "results/out.html"
 
-    def test_merge_empty_does_not_change(self):
+    def test_merge_empty_does_not_change(self) -> None:
         cfg = OutputConfig(output_dir=Path("foo"))
         merged = cfg.merge()
         assert merged.output_dir == Path("foo")
 
-    def test_merge_preserves_non_overridden(self):
+    def test_merge_preserves_non_overridden(self) -> None:
         cfg = OutputConfig(
             output_dir=Path("a"),
             json_path="a/x.json",

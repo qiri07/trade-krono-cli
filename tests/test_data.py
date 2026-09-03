@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def test_cache_creation():
+def test_cache_creation() -> None:
     from trade_krono_cli.cache import Cache
 
     cache = Cache()
@@ -17,7 +17,7 @@ def test_cache_creation():
     assert "cache_kronos_cache" in stats
 
 
-def test_cache_get_set_kline():
+def test_cache_get_set_kline() -> None:
     import pandas as pd
 
     from trade_krono_cli.cache import Cache
@@ -42,7 +42,7 @@ def test_cache_get_set_kline():
             "close": [100.5] * 10,
             "volume": [1000.0] * 10,
             "amount": [100000.0] * 10,
-        }
+        },
     )
     cache.set_kline(ticker, start, end, freq, df, ttl=3600)
 
@@ -61,7 +61,7 @@ def test_cache_get_set_kline():
     ]
 
 
-def test_cache_get_set_ta():
+def test_cache_get_set_ta() -> None:
     from trade_krono_cli.cache import Cache
 
     cache = Cache()
@@ -77,7 +77,7 @@ def test_cache_get_set_ta():
     assert result == data
 
 
-def test_cache_get_set_kronos():
+def test_cache_get_set_kronos() -> None:
     from trade_krono_cli.cache import Cache
 
     cache = Cache()
@@ -94,7 +94,7 @@ def test_cache_get_set_kronos():
     assert result == data
 
 
-def test_cache_clear_all():
+def test_cache_clear_all() -> None:
     from trade_krono_cli.cache import Cache
 
     cache = Cache()
@@ -104,7 +104,7 @@ def test_cache_clear_all():
     assert all(v == 0 for v in stats.values())
 
 
-def test_cache_ttl_expiration():
+def test_cache_ttl_expiration() -> None:
 
     from trade_krono_cli.cache import Cache
 
@@ -123,7 +123,7 @@ def test_cache_ttl_expiration():
 class TestCacheConfigHashInvalidation:
     """配置哈希变更后缓存应失效。"""
 
-    def test_ta_different_config_hash_miss(self):
+    def test_ta_different_config_hash_miss(self) -> None:
         """不同 config_hash 应返回 None（缓存未命中）。"""
         from trade_krono_cli.cache import Cache
 
@@ -141,7 +141,7 @@ class TestCacheConfigHashInvalidation:
             is None
         )
 
-    def test_ta_different_prompt_ver_miss(self):
+    def test_ta_different_prompt_ver_miss(self) -> None:
         """不同 prompt_ver 应返回 None。"""
         from trade_krono_cli.cache import Cache
 
@@ -153,7 +153,7 @@ class TestCacheConfigHashInvalidation:
         assert cache.get_ta(ticker, date, config_hash="h", prompt_ver="v1", model_ver="m") == data
         assert cache.get_ta(ticker, date, config_hash="h", prompt_ver="v2", model_ver="m") is None
 
-    def test_kronos_different_model_ver_miss(self):
+    def test_kronos_different_model_ver_miss(self) -> None:
         """不同 model_ver 应返回 None。"""
         from trade_krono_cli.cache import Cache
 
@@ -166,7 +166,7 @@ class TestCacheConfigHashInvalidation:
         assert cache.get_kronos(ticker, date, pred_len, config_hash="h", model_ver="v1") == data
         assert cache.get_kronos(ticker, date, pred_len, config_hash="h", model_ver="v2") is None
 
-    def test_kronos_different_config_hash_miss(self):
+    def test_kronos_different_config_hash_miss(self) -> None:
         """Kronos 不同 config_hash 应返回 None。"""
         from trade_krono_cli.cache import Cache
 
@@ -185,7 +185,7 @@ class TestCacheConfigHashInvalidation:
 class TestWarmHistory:
     """Cache.warm_history 测试。"""
 
-    def test_warm_history_splits_history_and_recent(self):
+    def test_warm_history_splits_history_and_recent(self) -> None:
         """预热时全部写入永久缓存，不区分历史/近期段。"""
         from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL, Cache
 
@@ -214,7 +214,7 @@ class TestWarmHistory:
                     "close": 100.5,
                     "volume": 1e6,
                     "amount": 1e8,
-                }
+                },
             )
             current += timedelta(days=1)
         df = pd.DataFrame(rows)
@@ -228,13 +228,13 @@ class TestWarmHistory:
         # 全部段应为永久（ttl=0）
         with cache._conn as conn:
             rows_hist = conn.execute(
-                "SELECT ttl FROM kline_cache WHERE ticker=?", (ticker,)
+                "SELECT ttl FROM kline_cache WHERE ticker=?", (ticker,),
             ).fetchall()
             ttls = [r[0] for r in rows_hist]
             assert _KLINE_HISTORICAL_TTL in ttls
             assert all(t == _KLINE_HISTORICAL_TTL for t in ttls)  # 无 1h TTL 段
 
-    def test_warm_history_empty_returns_zero(self):
+    def test_warm_history_empty_returns_zero(self) -> None:
         """无数据时应返回 (0, 0)。"""
         from trade_krono_cli.cache import Cache
 
@@ -265,10 +265,10 @@ class TestValidateDataFreshness:
                 "close": [100.0] * len(dates),
                 "volume": [1e6] * len(dates),
                 "amount": [1e8] * len(dates),
-            }
+            },
         )
 
-    def test_fresh_data_passes(self):
+    def test_fresh_data_passes(self) -> None:
         """数据最后一天是评估日期当天 → 通过。"""
         from trade_krono_cli.data import validate_data_freshness
 
@@ -276,14 +276,14 @@ class TestValidateDataFreshness:
         # 不应抛异常
         validate_data_freshness(df, "2026-08-11", "sh.600519")
 
-    def test_one_day_gap_passes(self):
+    def test_one_day_gap_passes(self) -> None:
         """数据最后一天是评估日期前一天 → 通过。"""
         from trade_krono_cli.data import validate_data_freshness
 
         df = self._make_df(["2026-08-08", "2026-08-11"])  # 周五→周一，间隔1天
         validate_data_freshness(df, "2026-08-11", "sh.600519")
 
-    def test_suspension_raises(self):
+    def test_suspension_raises(self) -> None:
         """数据最后一天距评估日超过 10 个交易日 → 抛异常（疑似停牌）。"""
         from trade_krono_cli.data import validate_data_freshness
 
@@ -291,7 +291,7 @@ class TestValidateDataFreshness:
         with pytest.raises(RuntimeError, match="数据过旧|疑似停牌"):
             validate_data_freshness(df, "2026-08-11", "sh.600519")
 
-    def test_future_data_raises(self):
+    def test_future_data_raises(self) -> None:
         """数据最后一天晚于评估日期 → 抛异常（数据未来化）。"""
         from trade_krono_cli.data import validate_data_freshness
 
@@ -299,7 +299,7 @@ class TestValidateDataFreshness:
         with pytest.raises(RuntimeError, match="数据未来化"):
             validate_data_freshness(df, "2026-08-11", "sh.600519")
 
-    def test_missing_timestamps_column_raises(self):
+    def test_missing_timestamps_column_raises(self) -> None:
         """缺少 timestamps 列 → 抛异常。"""
         import pandas as pd
 
@@ -309,7 +309,7 @@ class TestValidateDataFreshness:
         with pytest.raises(RuntimeError, match="timestamps"):
             validate_data_freshness(df, "2026-08-11", "sh.600519")
 
-    def test_custom_max_gap(self):
+    def test_custom_max_gap(self) -> None:
         """自定义 max_gap_trading_days 时阈值更严格。"""
         from trade_krono_cli.data import validate_data_freshness
 
@@ -333,7 +333,7 @@ class TestFetchRealtimeQuote:
         return resp
 
     @patch("trade_krono_cli.data.urllib.request.urlopen")
-    def test_normal_quote(self, mock_urlopen):
+    def test_normal_quote(self, mock_urlopen) -> None:
         """标准响应：所有字段均有值。"""
         from trade_krono_cli.data import fetch_realtime_quote
 
@@ -358,7 +358,7 @@ class TestFetchRealtimeQuote:
         assert result["pb"] == 18.2
 
     @patch("trade_krono_cli.data.urllib.request.urlopen")
-    def test_empty_fields_become_none(self, mock_urlopen):
+    def test_empty_fields_become_none(self, mock_urlopen) -> None:
         """字段为空字符串时对应值为 None。"""
         from trade_krono_cli.data import fetch_realtime_quote
 
@@ -373,7 +373,7 @@ class TestFetchRealtimeQuote:
         assert result["market_cap"] is None
 
     @patch("trade_krono_cli.data.urllib.request.urlopen")
-    def test_invalid_float_becomes_none(self, mock_urlopen):
+    def test_invalid_float_becomes_none(self, mock_urlopen) -> None:
         """字段为非法数字字符串（如 '--'）时返回 None，不抛异常。"""
         from trade_krono_cli.data import fetch_realtime_quote
 
@@ -387,7 +387,7 @@ class TestFetchRealtimeQuote:
         assert isinstance(result, dict)
 
     @patch("trade_krono_cli.data.urllib.request.urlopen")
-    def test_short_response_returns_empty(self, mock_urlopen):
+    def test_short_response_returns_empty(self, mock_urlopen) -> None:
         """响应字段不足 45 个时返回空字典。"""
         from trade_krono_cli.data import fetch_realtime_quote
 
@@ -396,7 +396,7 @@ class TestFetchRealtimeQuote:
         assert result == {}
 
     @patch("trade_krono_cli.data.urllib.request.urlopen")
-    def test_network_error_returns_empty(self, mock_urlopen):
+    def test_network_error_returns_empty(self, mock_urlopen) -> None:
         """网络异常时返回空字典。"""
         import urllib.error
 
@@ -406,7 +406,7 @@ class TestFetchRealtimeQuote:
         result = fetch_realtime_quote("sh.600519")
         assert result == {}
 
-    def test_safe_float_edge_cases(self):
+    def test_safe_float_edge_cases(self) -> None:
         """_safe_float 处理各种边界值。"""
         from trade_krono_cli.data import _safe_float
 

@@ -1,5 +1,4 @@
-"""
-trade_krono_cli.utils — 共享工具函数。
+"""trade_krono_cli.utils — 共享工具函数。
 
 无外部依赖（仅 stdlib + typing），供 pipeline_config / pipeline.config_loader / cli_commands 等模块使用。
 避免循环导入：所有 consuming 模块直接从这里导入，而非互相引用。
@@ -11,8 +10,10 @@ trade_krono_cli.utils — 共享工具函数。
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 def parse_range(s: str) -> tuple[float, float] | None:
@@ -46,8 +47,7 @@ def parse_float(s: str) -> float | None:
 
 
 def merge_with_nested(obj: Any, overrides: dict) -> Any:  # noqa: ANN401 — type is unknown at merge-time; must accept dataclass | Pydantic BaseModel | plain object
-    """
-    递归合并嵌套 dict 到 dataclass 实例。
+    """递归合并嵌套 dict 到 dataclass 实例。
 
     支持 "__" 嵌套路径，例如 {"risk__weights__volatility": 0.35}。
     """
@@ -61,8 +61,7 @@ def merge_with_nested(obj: Any, overrides: dict) -> Any:  # noqa: ANN401 — typ
             nested.setdefault(outer, {})[inner] = v
         else:
             flat[k] = v
-    merged = obj.merge(**flat, **nested)
-    return merged
+    return obj.merge(**flat, **nested)
 
 
 def safe_float(value) -> float | None:

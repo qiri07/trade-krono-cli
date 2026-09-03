@@ -1,5 +1,4 @@
-"""
-Universe Provider — 全市场股票列表获取接口。
+"""Universe Provider — 全市场股票列表获取接口。
 
 定义 UniverseProvider ABC 以及基于 akshare / mootdx 的实现。
 """
@@ -8,7 +7,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import requests
 from loguru import logger
@@ -18,22 +17,21 @@ from loguru import logger
 
 @dataclass
 class UniverseTicket:
-    """
-    单只股票的宇宙票。
+    """单只股票的宇宙票。
 
     来自数据源的原始数据尽量保留在此处，供后续各阶段消费。
     """
 
     ticker: str  # 归一化格式: sh.600519 / sz.000858
     name: str = ""  # 股票名称
-    price: Optional[float] = None  # 最新价（元）
-    pe: Optional[float] = None  # 市盈率（动态）
-    pb: Optional[float] = None  # 市净率
-    market_cap: Optional[float] = None  # 总市值（亿元， akshare 返回单位）
-    volume_ratio: Optional[float] = None  # 量比
-    turnover_rate: Optional[float] = None  # 换手率（%）
-    volume: Optional[float] = None  # 成交量（手，akshare 单位）
-    industry: Optional[str] = None  # 行业名称（如 "银行"、"食品饮料"）
+    price: float | None = None  # 最新价（元）
+    pe: float | None = None  # 市盈率（动态）
+    pb: float | None = None  # 市净率
+    market_cap: float | None = None  # 总市值（亿元， akshare 返回单位）
+    volume_ratio: float | None = None  # 量比
+    turnover_rate: float | None = None  # 换手率（%）
+    volume: float | None = None  # 成交量（手，akshare 单位）
+    industry: str | None = None  # 行业名称（如 "银行"、"食品饮料"）
     source: str = ""  # 数据来源标识
 
 
@@ -41,8 +39,7 @@ class UniverseTicket:
 
 
 class UniverseProvider(ABC):
-    """
-    全市场股票列表提供者。
+    """全市场股票列表提供者。
 
     子类实现 get_universe() 方法，返回当前 A 股全市场股票列表。
     """
@@ -51,18 +48,18 @@ class UniverseProvider(ABC):
 
     @abstractmethod
     def get_universe(self) -> list[UniverseTicket]:
-        """
-        获取 A 股全市场股票列表。
+        """获取 A 股全市场股票列表。
 
         Returns
         -------
         list[UniverseTicket]
             每只股票一条记录，ticker 已归一化为 sh./sz. 格式
+
         """
         ...
 
     @staticmethod
-    def _safe_float(value) -> Optional[float]:
+    def _safe_float(value) -> float | None:
         """安全地将值转换为 float，处理 None/无效值。"""
         if value is None:
             return None
@@ -87,8 +84,7 @@ class UniverseProvider(ABC):
 
 
 class AkshareUniverseProvider(UniverseProvider):
-    """
-    基于 akshare 的 A 股市场范围提供者。
+    """基于 akshare 的 A 股市场范围提供者。
 
     使用 ak.stock_zh_a_spot_em() 获取全市场实时行情数据，
     包含 PE/PB/市值/量比/换手率 等字段，供后续阶段直接消费。
@@ -131,7 +127,7 @@ class AkshareUniverseProvider(UniverseProvider):
                         volume=self._safe_float(row.get("成交量")),
                         industry=str(row.get("行业", "")) or None,
                         source=self.name,
-                    )
+                    ),
                 )
 
             logger.info(f"📡 {self.name} 全市场获取: {len(tickets)} 只 A 股")
@@ -148,25 +144,12 @@ class AkshareUniverseProvider(UniverseProvider):
             return f"sh.{code}"
         return f"sz.{code}"
 
-    @staticmethod
-    def _safe_float(value) -> Optional[float]:
-        if value is None:
-            return None
-        try:
-            f = float(value)
-            if f != f or f == float("inf") or f == float("-inf"):
-                return None
-            return f
-        except (ValueError, TypeError):
-            return None
-
 
 # ── MootDx Provider ───────────────────────────────────────────────────────────
 
 
 class MootDxUniverseProvider(UniverseProvider):
-    """
-    基于 baostock 获取股票列表 + mootdx 获取实时行情的 Provider。
+    """基于 baostock 获取股票列表 + mootdx 获取实时行情的 Provider。
 
     依赖：baostock（股票列表）、mootdx（实时报价）。
     无需 API Key，完全免费。
@@ -174,12 +157,12 @@ class MootDxUniverseProvider(UniverseProvider):
 
     name = "mootdx"
 
-    def __init__(self, populate_market_cap: bool = False):
-        """
-        Parameters
+    def __init__(self, populate_market_cap: bool = False) -> None:
+        """Parameters
         ----------
         populate_market_cap : bool
             是否通过 mootdx finance API 补充总市值数据（会增加 ~3-4 分钟延迟）。
+
         """
         self._populate_market_cap = populate_market_cap
 
@@ -234,7 +217,7 @@ class MootDxUniverseProvider(UniverseProvider):
         return tickets
 
     @staticmethod
-    def _fetch_stock_codes(rs: Any) -> list[str]:
+    def _fetch_stock_codes(rs: Any) -> list[str]:  # noqa: ANN401 — baostock RecordSet，运行时动态类型
         """从 baostock RecordSet 提取 A 股代码列表。"""
         raw_codes: list[str] = []
         while rs.next():
@@ -251,7 +234,7 @@ class MootDxUniverseProvider(UniverseProvider):
         return raw_codes
 
     @staticmethod
-    def _fetch_industry_map(rs: Any) -> dict[str, str]:
+    def _fetch_industry_map(rs: Any) -> dict[str, str]:  # noqa: ANN401 — baostock RecordSet，运行时动态类型
         """从 baostock RecordSet 构建行业映射。"""
         industry_map: dict[str, str] = {}
         while rs.next():
@@ -262,7 +245,7 @@ class MootDxUniverseProvider(UniverseProvider):
 
     def _fetch_quotes_batch(
         self,
-        q: Any,
+        q: Any,  # noqa: ANN401 — akshare 或 mootdx 的查询对象，运行时动态类型
         raw_codes: list[str],
         industry_map: dict[str, str],
     ) -> list[UniverseTicket]:
@@ -294,11 +277,11 @@ class MootDxUniverseProvider(UniverseProvider):
                                     volume=self._safe_float(row.get("vol")),
                                     industry=industry_map.get(ticker),
                                     source=self.name,
-                                )
+                                ),
                             )
                 fetched = len(df) if df is not None and not df.empty else 0
                 logger.debug(
-                    f"  mootdx batch [{batch_start}:{batch_start + len(batch)}] → {fetched} 行"
+                    f"  mootdx batch [{batch_start}:{batch_start + len(batch)}] → {fetched} 行",
                 )
             except Exception as e:
                 logger.warning(f"mootdx 批量获取失败 (batch {batch_start}): {e}")
@@ -308,7 +291,7 @@ class MootDxUniverseProvider(UniverseProvider):
         logger.info(f"📡 MootDx 全市场获取: {len(tickets)} 只 A 股")
         return tickets
 
-    def _populate_market_caps(self, q: Any, tickets: list[UniverseTicket]) -> list[UniverseTicket]:
+    def _populate_market_caps(self, q: Any, tickets: list[UniverseTicket]) -> list[UniverseTicket]:  # noqa: ANN401 — 数据源查询对象，运行时动态类型
         """通过 mootdx finance API 补充市值数据。"""
         logger.info("📊 正在补充市值数据（mootdx finance）...")
         code_to_ticket = {t.ticker: t for t in tickets}
@@ -326,12 +309,13 @@ class MootDxUniverseProvider(UniverseProvider):
                         # 市值（亿元）= 总股本 × 价格 / 1亿
                         t.market_cap = round(zongguben * price / 1e8, 2)
                         updated += 1
-            except Exception:
+            except Exception as e:
+                logger.debug(f"⚠️  更新 {ticker} 市值失败: {e}")
                 failed += 1
             # 每 50 只打印进度
             if (i + 1) % 50 == 0:
                 logger.debug(
-                    f"  市值数据进度: {i + 1}/{len(tickets)} (已更新={updated}, 失败={failed})"
+                    f"  市值数据进度: {i + 1}/{len(tickets)} (已更新={updated}, 失败={failed})",
                 )
         logger.info(f"📊 市值数据补充完成: {updated}/{len(tickets)} 只成功, {failed} 只失败")
         return tickets
@@ -341,8 +325,7 @@ class MootDxUniverseProvider(UniverseProvider):
 
 
 class TongHuaShunUniverseProvider(UniverseProvider):
-    """
-    基于同花顺（fuyao）REST API 的 A 股宇宙提供者。
+    """基于同花顺（fuyao）REST API 的 A 股宇宙提供者。
 
     依赖 HITHINK_FINANCE_API_KEY 环境变量（兼容 FUYAO_API_KEY）。
     通过 /api/meta/tickers/list 获取全市场 A 股列表，
@@ -352,7 +335,7 @@ class TongHuaShunUniverseProvider(UniverseProvider):
 
     name = "tonghuashun"
 
-    def __init__(self, populate_market_cap: bool = False):
+    def __init__(self, populate_market_cap: bool = False) -> None:
         self._populate_market_cap = populate_market_cap
 
     def get_universe(self) -> list[UniverseTicket]:
@@ -365,7 +348,7 @@ class TongHuaShunUniverseProvider(UniverseProvider):
         )
         if not api_key:
             logger.warning(
-                "HITHINK_FINANCE_API_KEY / FUYAO_API_KEY 未配置，无法使用同花顺 UniverseProvider"
+                "HITHINK_FINANCE_API_KEY / FUYAO_API_KEY 未配置，无法使用同花顺 UniverseProvider",
             )
             return []
 
@@ -385,7 +368,7 @@ class TongHuaShunUniverseProvider(UniverseProvider):
                 body = resp.json()
                 if body.get("code") != 0:
                     logger.warning(
-                        f"同花顺 ticker list code={body.get('code')} msg={body.get('message')}"
+                        f"同花顺 ticker list code={body.get('code')} msg={body.get('message')}",
                     )
                     break
                 items = body.get("data", {}).get("item", [])
@@ -428,7 +411,7 @@ class TongHuaShunUniverseProvider(UniverseProvider):
                                     price=self._safe_float(item.get("last_price")),
                                     volume=self._safe_float(item.get("volume")),
                                     source=self.name,
-                                )
+                                ),
                             )
             except Exception as e:
                 logger.warning(f"同花顺行情批量拉取失败 (batch {i}): {e}")
@@ -439,7 +422,7 @@ class TongHuaShunUniverseProvider(UniverseProvider):
 
     @staticmethod
     def _thscode_to_ticker(thscode: str) -> str:
-        """600519.SH → sh.600519 / 000858.SZ → sz.000858"""
+        """600519.SH → sh.600519 / 000858.SZ → sz.000858."""
         if "." not in thscode:
             return ""
         code, exchange = thscode.rsplit(".", 1)
@@ -462,9 +445,8 @@ _PROVIDER_REGISTRY: dict[str, type[UniverseProvider]] = {
 def get_universe_provider(
     source: str,
     populate_market_cap: bool = False,
-) -> Optional[UniverseProvider]:
-    """
-    根据 source 名称获取对应的 UniverseProvider 实例。
+) -> UniverseProvider | None:
+    """根据 source 名称获取对应的 UniverseProvider 实例。
 
     Parameters
     ----------
@@ -476,6 +458,7 @@ def get_universe_provider(
     Returns
     -------
     UniverseProvider 或 None（不支持时）
+
     """
     cls = _PROVIDER_REGISTRY.get(source)
     if cls is None:
