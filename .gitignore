@@ -26,3 +26,6 @@ pipeline_cache.db-shm
 pipeline_cache.db-wal
 pipeline_cache.db
 raw/
+# Large data files (>100MB, exceed GitHub limit)
+RD-Agent-Work/git_ignore_folder/factor_implementation_source_data/daily_pv.parquet
+RD-Agent-Work/git_ignore_folder/factor_implementation_source_data/daily_pv_debug.parquet
