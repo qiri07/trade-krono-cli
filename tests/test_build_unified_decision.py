@@ -7,6 +7,7 @@
   · to_ta_decision 转换
   · _direction_to_signal 边界情况
 """
+
 from __future__ import annotations
 
 import pytest
