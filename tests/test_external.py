@@ -164,7 +164,7 @@ class TestStatus:
         (repo_dir / ".git").mkdir()  # 标记为 git repo
 
         # mock _git 调用（up_to_date 检查需要额外 2 次调用）
-        with patch("trade_krono_cli.external._git") as mock_git:
+        with patch("trade_krono_cli.external.git_ops._git") as mock_git:
             mock_git.side_effect = [
                 (0, "main", ""),  # branch --show-current
                 (0, "abc123def456", ""),  # rev-parse HEAD
@@ -358,7 +358,7 @@ class TestLockFile:
             tmp_path,
         )
 
-        with patch("trade_krono_cli.external._git") as mock_git:
+        with patch("trade_krono_cli.external.git_ops._git") as mock_git:
             mock_git.side_effect = [
                 (0, "main", ""),  # branch
                 (0, "def456ghi789xyz", ""),  # rev-parse HEAD（与 lock 不同）
