@@ -1,43 +1,26 @@
-"""飞书 Webhook 通知 — 将 GitHub Actions 运行结果推送到飞书群。
+"""飞书推送核心模块 — 支持多种通知模式。
 
-支持多种模式：
-  1. CI 模式：报告 lint / type-check / test 矩阵结果
-  2. Daily 模式：报告投研分析结果摘要
-  3. Buffett 模式：报告巴菲特六闸门筛选结果
-
-调用方式（两种）：
-  # 方式 1：直接使用（原有方式，兼容）
-  python scripts/feishu_notify.py buffett --result-file outputs/results/buffett_screen.txt --url "https://..."
-
-  # 方式 2：通过 CLI 工具（推荐，自动读取本地配置）
-  python scripts/feishu_cli.py buffett --result-file outputs/results/buffett_screen.txt
+本模块提供：
+1. 卡片构建函数（CI/Daily/Buffett/Text）
+2. Webhook 发送函数
+3. 配置管理（从 JSON 文件读取 Webhook URL）
 
 使用方式：
-  # CI 结果
-  python scripts/feishu_notify.py ci \
-    --status success \
-    --branch master \
-    --commit abc123 \
-    --jobs 'lint✅ type-check✅ test✅' \
-    --url "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+    from feishu_core import send_notification, load_config
 
-  # Daily 结果
-  python scripts/feishu_notify.py daily \
-    --status success \
-    --date 2026-08-27 \
-    --tickers "600519,000858" \
-    --run-url "https://github.com/xxx/runs/123" \
-    --url "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+    # 加载配置
+    config = load_config("~/.config/feishu-notify/config.json")
 
-  # 巴菲特筛选结果
-  python scripts/feishu_notify.py buffett \
-    --result-file outputs/results/buffett_screen_20260903.txt \
-    --url "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+    # 发送通知
+    ok = send_notification(
+        mode="buffett",
+        result_file="outputs/results/buffett_screen.txt",
+        config=config
+    )
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 import ssl
@@ -47,21 +30,98 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
-from trade_krono_cli.utils import strip_ticker_prefix
-
 # 飞书北京时间
 _CST = timezone(timedelta(hours=8))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 配置管理
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def load_config(config_path: str | Path = "~/.config/feishu-notify/config.json") -> dict:
+    """加载飞书推送配置。
+
+    Parameters
+    ----------
+    config_path : str | Path
+        配置文件路径，默认 ~/.config/feishu-notify/config.json
+
+    Returns
+    -------
+    dict
+        配置字典，包含 webhook_url、app_id、app_secret、channels 等
+
+    Raises
+    ------
+    FileNotFoundError
+        配置文件不存在
+    json.JSONDecodeError
+        配置文件 JSON 格式错误
+    """
+    path = Path(config_path).expanduser()
+    if not path.exists():
+        raise FileNotFoundError(f"配置文件不存在: {path}")
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+
+    # 验证必需字段
+    if "webhook_url" not in data and not data.get("channels"):
+        raise ValueError("配置文件中必须包含 webhook_url 或 channels")
+
+    return data
+
+
+def get_webhook_url(config: dict, channel: str = "default") -> str:
+    """从配置中获取指定频道的 Webhook URL。
+
+    Parameters
+    ----------
+    config : dict
+        配置字典
+    channel : str
+        频道名称，默认为 "default"
+
+    Returns
+    -------
+    str
+        Webhook URL
+
+    Raises
+    ------
+    ValueError
+        未找到对应频道的 Webhook URL
+    """
+    # 优先从 channels 中查找
+    channels = config.get("channels", {})
+    if channel in channels:
+        return channels[channel]["webhook_url"]
+
+    #  fallback 到根 webhook_url
+    url = config.get("webhook_url", "").strip()
+    if not url:
+        raise ValueError(f"未找到频道 '{channel}' 的 Webhook URL")
+
+    return url
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 卡片构建函数
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 def _now_cn() -> str:
+    """返回北京时间字符串。"""
     return datetime.now(_CST).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _template(status: Literal["success", "failure", "cancelled"]) -> str:
+    """返回状态对应的颜色模板。"""
     return {"success": "green", "failure": "red", "cancelled": "grey"}.get(status, "blue")
 
 
 def _status_emoji(status: Literal["success", "failure", "cancelled"]) -> str:
+    """返回状态对应的 emoji。"""
     return {"success": "✅", "failure": "❌", "cancelled": "⏹️"}.get(status, "⚪")
 
 
@@ -275,8 +335,64 @@ def build_buffett_card(result_file: str) -> dict:
     }
 
 
+def build_text_card(content: str, title: str = "通知") -> dict:
+    """构建通用文本飞书卡片。
+
+    Parameters
+    ----------
+    content : str
+        消息内容（支持多行）
+    title : str
+        卡片标题，默认为 "通知"
+
+    Returns
+    -------
+    dict
+        飞书卡片结构
+    """
+    return {
+        "msg_type": "interactive",
+        "card": {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": f"📢 {title}",
+                },
+                "template": "blue",
+            },
+            "elements": [
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": content,
+                    },
+                },
+            ],
+        },
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Webhook 发送
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 def send_feishu(url: str, payload: dict) -> bool:
-    """发送飞书 Webhook 请求，返回是否成功。"""
+    """发送飞书 Webhook 请求，返回是否成功。
+
+    Parameters
+    ----------
+    url : str
+        Webhook 地址
+    payload : dict
+        飞书消息体
+
+    Returns
+    -------
+    bool
+        是否发送成功
+    """
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -301,87 +417,67 @@ def send_feishu(url: str, payload: dict) -> bool:
         return False
 
 
-def _read_top3_from_results() -> str:
-    """从 outputs/results.json 读取 Top 3 推荐摘要。"""
-    results_path = Path("outputs/results.json")
-    if not results_path.exists():
-        return "（无报告生成）"
-    try:
-        data = json.loads(results_path.read_text(encoding="utf-8"))
-    except Exception:
-        return "（解析结果文件失败）"
-    # 兼容新旧格式：新项目以 dict {project, results} 形式输出
-    if isinstance(data, dict):
-        items = data.get("results", [])
-    elif isinstance(data, list):
-        items = data
-    else:
-        return "（未知结果格式）"
-    if not items:
-        return "（无推荐结果）"
-    parts = []
-    for item in items[:3]:
-        t = strip_ticker_prefix(item.get("ticker", "?"))
-        s = item.get("ta_signal", "?")
-        c = item.get("ranking_score") or item.get("composite_score", "?")
-        parts.append(f"{t}:{s} {c}")
-    return "  /  ".join(parts)
+# ─────────────────────────────────────────────────────────────────────────────
+# 统一发送接口
+# ─────────────────────────────────────────────────────────────────────────────
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="飞书 Webhook 通知")
-    sub = parser.add_subparsers(dest="mode", required=True)
+def send_notification(
+    mode: str,
+    config: dict,
+    **kwargs: object,
+) -> bool:
+    """统一通知发送接口。
 
-    # ci 子命令
-    p_ci = sub.add_parser("ci", help="CI 流水线结果通知")
-    p_ci.add_argument("--status", required=True, choices=["success", "failure", "cancelled"])
-    p_ci.add_argument("--branch", required=True, help="分支名")
-    p_ci.add_argument("--commit", required=True, help="Commit SHA（短）")
-    p_ci.add_argument(
-        "--jobs",
-        required=True,
-        help="各 Job 结果摘要，如 'lint✅ type-check✅ test✅'",
-    )
-    p_ci.add_argument("--run-url", required=True, help="GitHub Runs URL")
-    p_ci.add_argument("--url", required=True, help="飞书 Webhook URL")
+    Parameters
+    ----------
+    mode : str
+        通知模式：ci / daily / buffett / text
+    config : dict
+        配置字典（来自 load_config）
+    **kwargs : object
+        各模式所需参数：
+        - ci: status, branch, commit, jobs, run_url
+        - daily: status, date, tickers, top3, run_url, content
+        - buffett: result_file
+        - text: content, title
 
-    # daily 子命令
-    p_daily = sub.add_parser("daily", help="每日投研分析结果通知")
-    p_daily.add_argument("--status", required=True, choices=["success", "failure", "cancelled"])
-    p_daily.add_argument("--date", required=True, help="分析日期 YYYY-MM-DD")
-    p_daily.add_argument("--tickers", default="", help="股票代码列表")
-    p_daily.add_argument("--top3", default="", help="Top 3 推荐摘要")
-    p_daily.add_argument("--content", default="", help="分析摘要内容（可选，支持多行）")
-    p_daily.add_argument("--run-url", required=True, help="GitHub Runs URL")
-    p_daily.add_argument("--url", required=True, help="飞书 Webhook URL")
+    Returns
+    -------
+    bool
+        是否发送成功
+    """
+    # 获取 Webhook URL
+    channel = str(kwargs.get("channel", "default"))
+    url = get_webhook_url(config, channel)
 
-    # buffett 子命令
-    p_buffett = sub.add_parser("buffett", help="巴菲特六闸门筛选结果通知")
-    p_buffett.add_argument("--result-file", required=True, help="筛选结果文件路径")
-    p_buffett.add_argument("--url", required=True, help="飞书 Webhook URL")
-
-    args = parser.parse_args()
-
-    if args.mode == "ci":
-        payload = build_ci_card(args.status, args.branch, args.commit, args.jobs, args.run_url)
-    elif args.mode == "daily":
-        top3 = args.top3 or _read_top3_from_results()
-        payload = build_daily_card(
-            args.status,
-            args.date,
-            args.tickers,
-            top3,
-            args.run_url,
-            content=args.content,
+    # 根据模式构建卡片
+    if mode == "ci":
+        payload = build_ci_card(
+            status=kwargs["status"],  # type: ignore[arg-type]
+            branch=str(kwargs["branch"]),
+            commit=str(kwargs["commit"]),
+            jobs=str(kwargs["jobs"]),
+            run_url=str(kwargs["run_url"]),
         )
-    elif args.mode == "buffett":
-        payload = build_buffett_card(args.result_file)
+    elif mode == "daily":
+        payload = build_daily_card(
+            status=kwargs["status"],  # type: ignore[arg-type]
+            date=str(kwargs["date"]),
+            tickers=str(kwargs.get("tickers", "")),
+            top3=str(kwargs.get("top3", "")),
+            run_url=str(kwargs["run_url"]),
+            content=str(kwargs.get("content", "")),
+        )
+    elif mode == "buffett":
+        payload = build_buffett_card(str(kwargs["result_file"]))
+    elif mode == "text":
+        payload = build_text_card(
+            content=str(kwargs["content"]),
+            title=str(kwargs.get("title", "通知")),
+        )
     else:
-        payload = {"msg_type": "text", "text": "未知模式"}
+        print(f"❌ 未知模式: {mode}", file=sys.stderr)
+        return False
 
-    ok = send_feishu(args.url, payload)
-    sys.exit(0 if ok else 1)
-
-
-if __name__ == "__main__":
-    main()
+    return send_feishu(url, payload)

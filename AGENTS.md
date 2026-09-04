@@ -84,7 +84,9 @@ trade_krono_cli/
 
 external/TradingAgents-astock | external/Kronos  # 符号链接，gitignore
 tests/buffett_screen.py            # 巴菲特六闸门筛选器（串行版，原始脚本）
-tests/buffett_screen_parallel.py   # 巴菲特六闸门筛选器（并行版，20 并发）
+tests/buffett_screen_parallel.py   # 巴菲特六闸门筛选器（并行版，20 并发 — 主编排入口）
+tests/buffett_cache.py             # 缓存层：SQLite 初始化 / 读写 / TTL / 清理
+tests/buffett_screening.py         # 筛选域：API 客户端、五闸门逻辑、三项深度验证、StockMetrics
 tests/check_cache_integrity.py     # 缓存完整性检查工具
 tests/check_cache_quality.py       # 缓存质量分析工具
 tests/test_sync_whitelist.py       # sync-whitelist / sync-universe 单元测试
@@ -153,6 +155,45 @@ uv run python tests/buffett_screen.py
 - 2026-08-31：全量筛选，38 只通过五闸门（①~⑤），详见 `outputs/results/buffett_screen_20260831.txt`
 - 失败主因：① PE/PB 阈值（91.4%）、② ROE 不达标（7.0%）
 - 闸门⑥ 因同花顺 API 不支持个股历史分位，无法验证
+
+## 飞书推送服务（独立 CLI 工具）
+
+位置：`scripts/feishu_cli.py`（调用核心逻辑 `scripts/feishu_core.py`）
+
+### 使用方式
+```bash
+# 巴菲特筛选结果
+uv run python scripts/feishu_cli.py buffett --result-file outputs/results/buffett_screen.txt
+
+# CI 流水线结果
+uv run python scripts/feishu_cli.py ci --status success --branch master --commit abc123 --jobs 'lint✅ test✅' --run-url "https://github.com/..."
+
+# 每日投研分析
+uv run python scripts/feishu_cli.py daily --status success --date 2026-09-04 --tickers "600519,000858" --top3 "600519:BUY" --run-url "https://github.com/..."
+
+# 通用文本消息
+uv run python scripts/feishu_cli.py text --content "📊 今日分析完成"
+
+# 指定频道（配置文件中定义多个 webhook）
+uv run python scripts/feishu_cli.py buffett --result-file outputs/results/buffett_screen.txt --channel alerts
+```
+
+### 配置
+- 配置文件：`~/.config/feishu-notify/config.json`（权限 600）
+- 模板：`~/.config/feishu-notify/config.json.example`
+- 支持多频道（channels），每个频道可配置独立 webhook URL
+
+### 跨项目调用
+其他项目可通过以下方式调用：
+```bash
+# Shell 脚本中
+uv run python /path/to/trade-krono-cli/scripts/feishu_cli.py buffett --result-file result.txt
+
+# Python 代码中
+from scripts.feishu_core import load_config, send_notification
+config = load_config()
+send_notification(mode="buffett", config=config, result_file="result.txt")
+```
 
 ## 代码风格（Code Style）
 - Linter：ruff（行宽 100，豁免 RUF001/RUF002/RUF003、G004）
