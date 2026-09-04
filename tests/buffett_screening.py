@@ -647,18 +647,30 @@ def process_one_stock(s: dict, vals: dict, conn, cache: dict) -> StockMetrics:
         )
 
     # 先获取必要财务数据做初步筛选
-    fin_latest, _ = _fetch_financials(thscode, "2025-4", conn, cache)
-    fin_prev, _ = _fetch_financials(thscode, "2024-4", conn, cache)
-    income_items, _ = _fetch_income(thscode, conn, cache)
-    cfo, _ = _fetch_cfo(thscode, conn, cache)
+    fin_latest, fin_entry = _fetch_financials(thscode, "2025-4", conn, cache)
+    fin_prev, fin_prev_entry = _fetch_financials(thscode, "2024-4", conn, cache)
+    income_items, income_entry = _fetch_income(thscode, conn, cache)
+    cfo, cfo_entry = _fetch_cfo(thscode, conn, cache)
+    if fin_entry:
+        cache["financials"].update(fin_entry)
+    if fin_prev_entry:
+        cache["financials"].update(fin_prev_entry)
+    if income_entry:
+        cache["income"].update(income_entry)
+    if cfo_entry:
+        cache["cfo"].update(cfo_entry)
 
     # 做初步筛选（五闸门）
     metrics = screen_one(thscode, name, val, fin_latest, fin_prev, income_items, cfo)
 
     # 仅对通过初步筛选的股票做三项深度验证
     if metrics.cfo_ok or (metrics.gate_fail and metrics.gate_fail.startswith("⑥")):
-        roe_history, _ = fetch_roe_history(thscode, conn, cache)
-        cfo_ratio_history, _ = fetch_cfo_ratio_history(thscode, conn, cache)
+        roe_history, roe_entry = fetch_roe_history(thscode, conn, cache)
+        cfo_ratio_history, cfo_ratio_entry = fetch_cfo_ratio_history(thscode, conn, cache)
+        if roe_entry:
+            cache["financials"].update(roe_entry)
+        if cfo_ratio_entry:
+            cache["cfo"].update(cfo_ratio_entry)
         metrics.roe_10y = roe_history
         metrics.cfo_ratio_5y = cfo_ratio_history
         metrics.cagr_is_net_profit = True
