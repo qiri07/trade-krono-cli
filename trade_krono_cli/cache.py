@@ -13,11 +13,12 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 import time
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import pandas as pd
 from loguru import logger
@@ -60,9 +61,33 @@ class Cache:
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
+    def _transaction(self, fn: Callable[..., None]) -> None:
+        """以事务方式执行操作，完成后关闭连接，避免连接泄漏。"""
+        conn = self._conn
+        try:
+            with conn:
+                fn(conn)
+        finally:
+            conn.close()
+
+    def _query_one(self, sql: str, params: tuple = ()) -> tuple | None:
+        """执行查询并返回单行结果，自动关闭连接。"""
+        conn = self._conn
+        try:
+            return conn.execute(sql, params).fetchone()
+        finally:
+            conn.close()
+
+    def _query_all(self, sql: str, params: tuple = ()) -> list[tuple]:
+        """执行查询并返回所有结果，自动关闭连接。"""
+        conn = self._conn
+        try:
+            return conn.execute(sql, params).fetchall()
+        finally:
+            conn.close()
+
     def _init_db(self) -> None:
-        with self._conn as conn:
-            conn.executescript("""
+        self._transaction(lambda conn: conn.executescript("""
                 CREATE TABLE IF NOT EXISTS kline_cache (
                     ticker    TEXT NOT NULL,
                     start     TEXT NOT NULL,
@@ -98,21 +123,25 @@ class Cache:
                     created      REAL NOT NULL,
                     PRIMARY KEY (ticker, date, pred_len, sample_cnt, config_hash, model_ver)
                 );
-            """)
-            # 迁移：为旧表添加新列
-            for col_sql in [
-                "ALTER TABLE ta_cache ADD COLUMN config_hash  TEXT NOT NULL DEFAULT ''",
-                "ALTER TABLE ta_cache ADD COLUMN prompt_ver   TEXT NOT NULL DEFAULT ''",
-                "ALTER TABLE ta_cache ADD COLUMN model_ver    TEXT NOT NULL DEFAULT ''",
-                "ALTER TABLE kronos_cache ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''",
-                "ALTER TABLE kronos_cache ADD COLUMN model_ver   TEXT NOT NULL DEFAULT ''",
-                "ALTER TABLE kline_cache ADD COLUMN adjustflag  TEXT NOT NULL DEFAULT '1'",
-            ]:
-                try:
-                    conn.execute(col_sql)
-                    logger.debug("📦 缓存表迁移: 新增列")
-                except sqlite3.OperationalError:
-                    pass
+            """))
+        # 迁移：为旧表添加新列
+        self._transaction(lambda conn: self._run_migrations(conn))
+
+    def _run_migrations(self, conn: sqlite3.Connection) -> None:
+        """执行缓存表结构迁移（向后兼容）。"""
+        for col_sql in [
+            "ALTER TABLE ta_cache ADD COLUMN config_hash  TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE ta_cache ADD COLUMN prompt_ver   TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE ta_cache ADD COLUMN model_ver    TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE kronos_cache ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE kronos_cache ADD COLUMN model_ver   TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE kline_cache ADD COLUMN adjustflag  TEXT NOT NULL DEFAULT '1'",
+        ]:
+            try:
+                conn.execute(col_sql)
+                logger.debug("📦 缓存表迁移: 新增列")
+            except sqlite3.OperationalError:
+                pass
 
     # ── K 线缓存 ──────────────────────────────────────
 
@@ -124,12 +153,11 @@ class Cache:
         freq: str,
         adjustflag: str = "1",
     ) -> pd.DataFrame | None:
-        with self._conn as conn:
-            row = conn.execute(
-                "SELECT data, created, ttl FROM kline_cache "
-                "WHERE ticker=? AND start=? AND end=? AND freq=? AND adjustflag=?",
-                (ticker, start, end, freq, adjustflag),
-            ).fetchone()
+        row = self._query_one(
+            "SELECT data, created, ttl FROM kline_cache "
+            "WHERE ticker=? AND start=? AND end=? AND freq=? AND adjustflag=?",
+            (ticker, start, end, freq, adjustflag),
+        )
         if row is None:
             return None
         data, created, ttl = row
@@ -156,27 +184,38 @@ class Cache:
         buf = BytesIO()
         df.to_pickle(buf)
         buf.seek(0)
-        with self._conn as conn:
-            if ttl == _KLINE_HISTORICAL_TTL:
-                # 永久缓存：先删除被新段完全覆盖的旧段，再插入新段
-                conn.execute(
-                    "DELETE FROM kline_cache WHERE ticker=? AND freq=? AND adjustflag=? AND end <= ? AND start >= ?",
-                    (ticker, freq, adjustflag, end, start),
-                )
-                conn.execute(
-                    "INSERT INTO kline_cache "
-                    "(ticker, start, end, freq, adjustflag, ttl, data, created) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
-                )
-            else:
-                conn.execute(
-                    "INSERT OR REPLACE INTO kline_cache "
-                    "(ticker, start, end, freq, adjustflag, ttl, data, created) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
-                )
-            conn.commit()
+        self._transaction(lambda conn: self._set_kline(conn, ticker, start, end, freq, buf, ttl, adjustflag))
+
+    def _set_kline(
+        self,
+        conn: sqlite3.Connection,
+        ticker: str,
+        start: str,
+        end: str,
+        freq: str,
+        buf: BytesIO,
+        ttl: float,
+        adjustflag: str,
+    ) -> None:
+        if ttl == _KLINE_HISTORICAL_TTL:
+            # 永久缓存：先删除被新段完全覆盖的旧段，再插入新段
+            conn.execute(
+                "DELETE FROM kline_cache WHERE ticker=? AND freq=? AND adjustflag=? AND end <= ? AND start >= ?",
+                (ticker, freq, adjustflag, end, start),
+            )
+            conn.execute(
+                "INSERT INTO kline_cache "
+                "(ticker, start, end, freq, adjustflag, ttl, data, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
+            )
+        else:
+            conn.execute(
+                "INSERT OR REPLACE INTO kline_cache "
+                "(ticker, start, end, freq, adjustflag, ttl, data, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
+            )
 
     def warm_history(self, ticker: str, end_date: str, lookback_days: int = 730) -> tuple[int, int]:
         """预热 K 线缓存：拉取历史数据，全部以永久缓存写入。"""
@@ -212,12 +251,11 @@ class Cache:
         prompt_ver: str = "",
         model_ver: str = "",
     ) -> dict | None:
-        with self._conn as conn:
-            row = conn.execute(
-                "SELECT data, created, ttl FROM ta_cache "
-                "WHERE ticker=? AND date=? AND config_hash=? AND prompt_ver=? AND model_ver=?",
-                (ticker, date, config_hash, prompt_ver, model_ver),
-            ).fetchone()
+        row = self._query_one(
+            "SELECT data, created, ttl FROM ta_cache "
+            "WHERE ticker=? AND date=? AND config_hash=? AND prompt_ver=? AND model_ver=?",
+            (ticker, date, config_hash, prompt_ver, model_ver),
+        )
         if row is None:
             return None
         data, created, ttl = row
@@ -235,23 +273,21 @@ class Cache:
         model_ver: str = "",
         ttl: float = 86400,
     ) -> None:
-        with self._conn as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO ta_cache "
-                "(ticker, date, config_hash, prompt_ver, model_ver, ttl, data, created) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    ticker,
-                    date,
-                    config_hash,
-                    prompt_ver,
-                    model_ver,
-                    ttl,
-                    json.dumps(result, ensure_ascii=False).encode(),
-                    time.time(),
-                ),
-            )
-            conn.commit()
+        self._transaction(lambda conn: conn.execute(
+            "INSERT OR REPLACE INTO ta_cache "
+            "(ticker, date, config_hash, prompt_ver, model_ver, ttl, data, created) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                ticker,
+                date,
+                config_hash,
+                prompt_ver,
+                model_ver,
+                ttl,
+                json.dumps(result, ensure_ascii=False).encode(),
+                time.time(),
+            ),
+        ))
 
     # ── Kronos 缓存 ───────────────────────────────────
 
@@ -264,13 +300,12 @@ class Cache:
         config_hash: str = "",
         model_ver: str = "",
     ) -> dict | None:
-        with self._conn as conn:
-            row = conn.execute(
-                "SELECT data, created, ttl FROM kronos_cache "
-                "WHERE ticker=? AND date=? AND pred_len=? AND sample_cnt=? "
-                "AND config_hash=? AND model_ver=?",
-                (ticker, date, pred_len, sample_count, config_hash, model_ver),
-            ).fetchone()
+        row = self._query_one(
+            "SELECT data, created, ttl FROM kronos_cache "
+            "WHERE ticker=? AND date=? AND pred_len=? AND sample_cnt=? "
+            "AND config_hash=? AND model_ver=?",
+            (ticker, date, pred_len, sample_count, config_hash, model_ver),
+        )
         if row is None:
             return None
         data, created, ttl = row
@@ -289,24 +324,22 @@ class Cache:
         config_hash: str = "",
         model_ver: str = "",
     ) -> None:
-        with self._conn as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO kronos_cache "
-                "(ticker, date, pred_len, sample_cnt, config_hash, model_ver, ttl, data, created) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    ticker,
-                    date,
-                    pred_len,
-                    sample_count,
-                    config_hash,
-                    model_ver,
-                    ttl,
-                    json.dumps(result, ensure_ascii=False).encode(),
-                    time.time(),
-                ),
-            )
-            conn.commit()
+        self._transaction(lambda conn: conn.execute(
+            "INSERT OR REPLACE INTO kronos_cache "
+            "(ticker, date, pred_len, sample_cnt, config_hash, model_ver, ttl, data, created) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                ticker,
+                date,
+                pred_len,
+                sample_count,
+                config_hash,
+                model_ver,
+                ttl,
+                json.dumps(result, ensure_ascii=False).encode(),
+                time.time(),
+            ),
+        ))
 
     # ── 工具方法 ──────────────────────────────────────
 
@@ -332,11 +365,10 @@ class Cache:
         (start_date, end_date) 或 None
 
         """
-        with self._conn as conn:
-            rows = conn.execute(
-                "SELECT start, end, created, ttl FROM kline_cache WHERE ticker=? AND freq=? AND adjustflag=?",
-                (ticker, freq, adjustflag),
-            ).fetchall()
+        rows = self._query_all(
+            "SELECT start, end, created, ttl FROM kline_cache WHERE ticker=? AND freq=? AND adjustflag=?",
+            (ticker, freq, adjustflag),
+        )
 
         if not rows:
             return None
@@ -367,14 +399,17 @@ class Cache:
 
     def clear_all(self) -> int:
         """清空所有缓存表（kline_cache / ta_cache / kronos_cache），返回删除的行数。"""
-        with self._conn as conn:
-            count = 0
+        count = 0
+
+        def _clear(conn: sqlite3.Connection) -> None:
+            nonlocal count
             for table in _CACHE_TABLES:
                 r = conn.execute(
                     f"DELETE FROM {_validate_table_name(table, _CACHE_TABLES)}",
                 ).rowcount
                 count += r
-            conn.commit()
+
+        self._transaction(_clear)
         logger.info(f"🧹 清除缓存 {count} 条（research 数据不受影响）")
         return count
 
@@ -406,11 +441,10 @@ class Cache:
 
         # ── 读取所有 kline_cache 条目 ──────────────────────────────────────
         rows_raw: list[pd.DataFrame] = []
-        with self._conn as conn:
-            cursor = conn.execute("SELECT ticker, data FROM kline_cache")
-            total = conn.execute("SELECT COUNT(*) FROM kline_cache").fetchone()[0]
+        rows = self._query_all("SELECT ticker, data FROM kline_cache")
+        total = self._query_one("SELECT COUNT(*) FROM kline_cache")[0]  # type: ignore[index]
 
-        for i, (ticker, blob) in enumerate(cursor, 1):
+        for i, (ticker, blob) in enumerate(rows, 1):
             df = pd.read_pickle(BytesIO(blob))
             df["instrument"] = ticker.replace(".", "").upper()
             rows_raw.append(df)
@@ -472,13 +506,14 @@ class Cache:
                         [
                             str(env_py),
                             "-c",
-                            f"import pandas as pd; "
-                            f"df=pd.read_parquet('{parquet_path}'); "
-                            f"df.to_hdf('{h5_path}', key='data', mode='w')",
+                            "import os, pandas as pd; "
+                            "df=pd.read_parquet(os.environ['PARQUET']); "
+                            "df.to_hdf(os.environ['H5'], key='data', mode='w')",
                         ],
                         capture_output=True,
                         text=True,
                         timeout=180,
+                        env={**os.environ, "PARQUET": str(parquet_path), "H5": str(h5_path)},
                     )
                     if r.returncode == 0:
                         h5_size = Path(h5_path).stat().st_size / 1024 / 1024
@@ -526,13 +561,14 @@ class Cache:
                         [
                             str(env_py),
                             "-c",
-                            f"import pandas as pd; "
-                            f"df=pd.read_parquet('{debug_path}'); "
-                            f"df.to_hdf('{debug_h5_path}', key='data', mode='w')",
+                            "import os, pandas as pd; "
+                            "df=pd.read_parquet(os.environ['PARQUET']); "
+                            "df.to_hdf(os.environ['H5'], key='data', mode='w')",
                         ],
                         capture_output=True,
                         text=True,
                         timeout=120,
+                        env={**os.environ, "PARQUET": str(debug_path), "H5": str(debug_h5_path)},
                     )
                     if r.returncode == 0:
                         result["debug_h5_path"] = str(debug_h5_path)
@@ -548,13 +584,12 @@ class Cache:
 
     def stats(self) -> dict:
         """返回各缓存表的记录数，格式为 {"cache_kline_cache": N, ...}。"""
-        with self._conn as conn:
-            return {
-                f"cache_{t}": conn.execute(
-                    f"SELECT COUNT(*) FROM {_validate_table_name(t, _CACHE_TABLES)}",
-                ).fetchone()[0]
-                for t in _CACHE_TABLES
-            }
+        return {
+            f"cache_{t}": self._query_one(
+                f"SELECT COUNT(*) FROM {_validate_table_name(t, _CACHE_TABLES)}",
+            )[0]  # type: ignore[index]
+            for t in _CACHE_TABLES
+        }
 
 
 _cache: Cache | None = None
