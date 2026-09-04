@@ -519,7 +519,13 @@ class TestPriceHelpers:
         from trade_krono_cli.backtest_engine import _Position
 
         engine = BacktestEngine()
-        pos = _Position(ticker="sh.600519", entry_date="2026-01-01", entry_price=100.0, shares=100, direction="UP")
+        pos = _Position(
+            ticker="sh.600519",
+            entry_date="2026-01-01",
+            entry_price=100.0,
+            shares=100,
+            direction="UP",
+        )
         assert engine._can_buy_on_day("sh.600519", "2026-01-02", {"sh.600519": pos}) is False
 
 
@@ -532,8 +538,21 @@ class TestClosePosition:
         from trade_krono_cli.backtest_engine import _Position
 
         engine = BacktestEngine()
-        pos = _Position(ticker="sh.600519", entry_date="2026-01-01", entry_price=100.0, shares=100, direction="UP", cost_bps=3.0)
-        result = engine._close_position(pos, exit_price=105.0, date="2026-01-06", ticker="sh.600519", prev_close_map={"sh.600519": 100.0})
+        pos = _Position(
+            ticker="sh.600519",
+            entry_date="2026-01-01",
+            entry_price=100.0,
+            shares=100,
+            direction="UP",
+            cost_bps=3.0,
+        )
+        result = engine._close_position(
+            pos,
+            exit_price=105.0,
+            date="2026-01-06",
+            ticker="sh.600519",
+            prev_close_map={"sh.600519": 100.0},
+        )
         assert result.blocked is False
         assert result.net_proceeds > 0
         assert result.trade_log["action"] == "SELL"
@@ -544,9 +563,22 @@ class TestClosePosition:
         from trade_krono_cli.backtest_engine import _Position
 
         engine = BacktestEngine()
-        pos = _Position(ticker="sh.600519", entry_date="2026-01-01", entry_price=100.0, shares=100, direction="UP", cost_bps=3.0)
+        pos = _Position(
+            ticker="sh.600519",
+            entry_date="2026-01-01",
+            entry_price=100.0,
+            shares=100,
+            direction="UP",
+            cost_bps=3.0,
+        )
         # 假设前收 100，跌停价约 90，退出价 90 → 应被阻止
-        result = engine._close_position(pos, exit_price=90.0, date="2026-01-06", ticker="sh.600519", prev_close_map={"sh.600519": 100.0})
+        result = engine._close_position(
+            pos,
+            exit_price=90.0,
+            date="2026-01-06",
+            ticker="sh.600519",
+            prev_close_map={"sh.600519": 100.0},
+        )
         assert result.blocked is True
         assert "LIMIT_DOWN" in result.blocked_reason
 
@@ -581,10 +613,46 @@ class TestBenchmarkMultipleTickers:
     def test_multiple_tickers(self) -> None:
         """多只股票的等权组合应产生基准曲线。"""
         records = [
-            BacktestRecord(ticker="sh.600519", date="2026-01-01", signal="BUY", entry_price=100.0, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
-            BacktestRecord(ticker="sh.600519", date="2026-01-06", signal="HOLD", entry_price=105.0, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
-            BacktestRecord(ticker="sz.000858", date="2026-01-01", signal="BUY", entry_price=50.0, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
-            BacktestRecord(ticker="sz.000858", date="2026-01-06", signal="HOLD", entry_price=52.0, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=100.0,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-06",
+                signal="HOLD",
+                entry_price=105.0,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
+            BacktestRecord(
+                ticker="sz.000858",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=50.0,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
+            BacktestRecord(
+                ticker="sz.000858",
+                date="2026-01-06",
+                signal="HOLD",
+                entry_price=52.0,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
         ]
         result = compute_benchmark_returns(records, {})
         assert len(result) >= 2
@@ -594,7 +662,16 @@ class TestBenchmarkMultipleTickers:
     def test_benchmark_missing_price(self) -> None:
         """缺失价格时应使用 entry_price 作为 fallback。"""
         records = [
-            BacktestRecord(ticker="sh.600519", date="2026-01-01", signal="BUY", entry_price=100.0, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=100.0,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
         ]
         result = compute_benchmark_returns(records, {})
         assert "2026-01-01" in result
@@ -631,12 +708,14 @@ class TestBacktestEngineRun:
             ),
         ]
         call_count = 0
+
         def fake_exit(ticker: str, date: str, pm: dict) -> float | None:
             nonlocal call_count
             call_count += 1
             if "01-01" in date or "01-02" in date:
                 return 100.0
             return 105.0
+
         with patch.object(engine, "_get_entry_price", return_value=100.0):
             with patch.object(engine, "_get_exit_price", side_effect=fake_exit):
                 result = engine.run(records)
@@ -656,8 +735,26 @@ class TestBacktestEngineRun:
         engine = BacktestEngine(rebal_mode="rebal_weekly", fixed_horizon=5)
         # 2026-01-01 周四，2026-01-05 周一
         records = [
-            BacktestRecord(ticker="sh.600519", date="2026-01-01", signal="BUY", entry_price=None, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
-            BacktestRecord(ticker="sh.600519", date="2026-01-05", signal="HOLD", entry_price=None, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=None,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-05",
+                signal="HOLD",
+                entry_price=None,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
         ]
         with patch.object(engine, "_get_entry_price", return_value=100.0):
             with patch.object(engine, "_get_exit_price", return_value=102.0):
@@ -669,8 +766,26 @@ class TestBacktestEngineRun:
         engine = BacktestEngine(rebal_mode="rebal_monthly", fixed_horizon=5)
         # 2026-01-01 和 2026-02-01
         records = [
-            BacktestRecord(ticker="sh.600519", date="2026-01-01", signal="BUY", entry_price=None, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
-            BacktestRecord(ticker="sh.600519", date="2026-02-01", signal="HOLD", entry_price=None, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=None,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-02-01",
+                signal="HOLD",
+                entry_price=None,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
         ]
         with patch.object(engine, "_get_entry_price", return_value=100.0):
             with patch.object(engine, "_get_exit_price", return_value=103.0):
@@ -684,7 +799,16 @@ class TestBacktestEngineRun:
         cfg = ConstraintConfig()
         engine = BacktestEngine(config=cfg)
         records = [
-            BacktestRecord(ticker="sh.600519", date="2026-01-01", signal="BUY", entry_price=None, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=None,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
         ]
         # 入场价 = 涨停价 → 应跳过
         with patch.object(engine, "_get_entry_price", return_value=110.0):  # 假设涨停价
@@ -697,8 +821,26 @@ class TestBacktestEngineRun:
         """亏损场景应正确计算负收益。"""
         engine = BacktestEngine(initial_capital=1_000_000.0)
         records = [
-            BacktestRecord(ticker="sh.600519", date="2026-01-01", signal="BUY", entry_price=None, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
-            BacktestRecord(ticker="sh.600519", date="2026-01-06", signal="HOLD", entry_price=None, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=None,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-06",
+                signal="HOLD",
+                entry_price=None,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
         ]
         with patch.object(engine, "_get_entry_price", return_value=100.0):
             with patch.object(engine, "_get_exit_price", return_value=90.0):
@@ -710,7 +852,16 @@ class TestBacktestEngineRun:
         """单天数据无法完成交易，结果应为空。"""
         engine = BacktestEngine()
         records = [
-            BacktestRecord(ticker="sh.600519", date="2026-01-01", signal="BUY", entry_price=None, exit_price=None, horizon_days=5, pred_direction="UP", actual_return_pct=None),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=None,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
         ]
         result = engine.run(records)
         # 只有 1 个交易日，return empty
@@ -720,8 +871,26 @@ class TestBacktestEngineRun:
         """未平仓持仓应按最后交易日估值。"""
         engine = BacktestEngine(initial_capital=1_000_000.0)
         records = [
-            BacktestRecord(ticker="sh.600519", date="2026-01-01", signal="BUY", entry_price=None, exit_price=None, horizon_days=10, pred_direction="UP", actual_return_pct=None),
-            BacktestRecord(ticker="sh.600519", date="2026-01-06", signal="HOLD", entry_price=None, exit_price=None, horizon_days=10, pred_direction="UP", actual_return_pct=None),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-01",
+                signal="BUY",
+                entry_price=None,
+                exit_price=None,
+                horizon_days=10,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-01-06",
+                signal="HOLD",
+                entry_price=None,
+                exit_price=None,
+                horizon_days=10,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
         ]
         with patch.object(engine, "_get_entry_price", return_value=100.0):
             with patch.object(engine, "_get_exit_price", return_value=110.0):
@@ -819,16 +988,30 @@ class TestBuildRecordsEdgeCases:
         """混合 horizon 时只保留目标 horizon。"""
         records = [
             EvalRecord(
-                ticker="sh.600519", eval_date="2026-01-01", horizon_days=5,
-                pred_direction="UP", pred_return_pct=2.0, actual_return_pct=1.5,
-                actual_direction="UP", is_direction_correct=True, error_pct=0.5,
-                ta_signal="BUY", composite_score=80.0,
+                ticker="sh.600519",
+                eval_date="2026-01-01",
+                horizon_days=5,
+                pred_direction="UP",
+                pred_return_pct=2.0,
+                actual_return_pct=1.5,
+                actual_direction="UP",
+                is_direction_correct=True,
+                error_pct=0.5,
+                ta_signal="BUY",
+                composite_score=80.0,
             ),
             EvalRecord(
-                ticker="sh.600519", eval_date="2026-01-01", horizon_days=10,
-                pred_direction="UP", pred_return_pct=4.0, actual_return_pct=3.0,
-                actual_direction="UP", is_direction_correct=True, error_pct=1.0,
-                ta_signal="BUY", composite_score=75.0,
+                ticker="sh.600519",
+                eval_date="2026-01-01",
+                horizon_days=10,
+                pred_direction="UP",
+                pred_return_pct=4.0,
+                actual_return_pct=3.0,
+                actual_direction="UP",
+                is_direction_correct=True,
+                error_pct=1.0,
+                ta_signal="BUY",
+                composite_score=75.0,
             ),
         ]
         bt = build_backtest_records(records, horizon=5)
@@ -839,12 +1022,18 @@ class TestBuildRecordsEdgeCases:
         """horizon=0 时不应匹配任何记录。"""
         records = [
             EvalRecord(
-                ticker="sh.600519", eval_date="2026-01-01", horizon_days=5,
-                pred_direction="UP", pred_return_pct=2.0, actual_return_pct=1.5,
-                actual_direction="UP", is_direction_correct=True, error_pct=0.5,
-                ta_signal="BUY", composite_score=80.0,
+                ticker="sh.600519",
+                eval_date="2026-01-01",
+                horizon_days=5,
+                pred_direction="UP",
+                pred_return_pct=2.0,
+                actual_return_pct=1.5,
+                actual_direction="UP",
+                is_direction_correct=True,
+                error_pct=0.5,
+                ta_signal="BUY",
+                composite_score=80.0,
             ),
         ]
         bt = build_backtest_records(records, horizon=0)
         assert len(bt) == 0
-

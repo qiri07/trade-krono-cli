@@ -47,7 +47,9 @@ class TestSendFeishu:
             patch("trade_krono_cli.notify.feishu.subprocess.run") as mock_run,
         ):
             mock_find.return_value = None
-            mock_result = type("obj", (object,), {"returncode": 1, "stdout": "", "stderr": "error"})()
+            mock_result = type(
+                "obj", (object,), {"returncode": 1, "stdout": "", "stderr": "error"}
+            )()
             mock_run.return_value = mock_result
 
             result = send_feishu("msg")
@@ -98,9 +100,7 @@ class TestFindConfig:
         config_path.write_text("{}")
 
         with patch.dict(os.environ, {}, clear=True):
-            with patch(
-                "trade_krono_cli.notify.feishu._DEFAULT_CONFIG_PATH", config_path
-            ):
+            with patch("trade_krono_cli.notify.feishu._DEFAULT_CONFIG_PATH", config_path):
                 result = _find_config()
                 assert result == config_path
 

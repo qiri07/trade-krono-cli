@@ -87,7 +87,8 @@ class Cache:
             conn.close()
 
     def _init_db(self) -> None:
-        self._transaction(lambda conn: conn.executescript("""
+        self._transaction(
+            lambda conn: conn.executescript("""
                 CREATE TABLE IF NOT EXISTS kline_cache (
                     ticker    TEXT NOT NULL,
                     start     TEXT NOT NULL,
@@ -123,7 +124,8 @@ class Cache:
                     created      REAL NOT NULL,
                     PRIMARY KEY (ticker, date, pred_len, sample_cnt, config_hash, model_ver)
                 );
-            """))
+            """)
+        )
         # 迁移：为旧表添加新列
         self._transaction(lambda conn: self._run_migrations(conn))
 
@@ -184,7 +186,9 @@ class Cache:
         buf = BytesIO()
         df.to_pickle(buf)
         buf.seek(0)
-        self._transaction(lambda conn: self._set_kline(conn, ticker, start, end, freq, buf, ttl, adjustflag))
+        self._transaction(
+            lambda conn: self._set_kline(conn, ticker, start, end, freq, buf, ttl, adjustflag)
+        )
 
     def _set_kline(
         self,
@@ -273,21 +277,23 @@ class Cache:
         model_ver: str = "",
         ttl: float = 86400,
     ) -> None:
-        self._transaction(lambda conn: conn.execute(
-            "INSERT OR REPLACE INTO ta_cache "
-            "(ticker, date, config_hash, prompt_ver, model_ver, ttl, data, created) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                ticker,
-                date,
-                config_hash,
-                prompt_ver,
-                model_ver,
-                ttl,
-                json.dumps(result, ensure_ascii=False).encode(),
-                time.time(),
-            ),
-        ))
+        self._transaction(
+            lambda conn: conn.execute(
+                "INSERT OR REPLACE INTO ta_cache "
+                "(ticker, date, config_hash, prompt_ver, model_ver, ttl, data, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    ticker,
+                    date,
+                    config_hash,
+                    prompt_ver,
+                    model_ver,
+                    ttl,
+                    json.dumps(result, ensure_ascii=False).encode(),
+                    time.time(),
+                ),
+            )
+        )
 
     # ── Kronos 缓存 ───────────────────────────────────
 
@@ -324,22 +330,24 @@ class Cache:
         config_hash: str = "",
         model_ver: str = "",
     ) -> None:
-        self._transaction(lambda conn: conn.execute(
-            "INSERT OR REPLACE INTO kronos_cache "
-            "(ticker, date, pred_len, sample_cnt, config_hash, model_ver, ttl, data, created) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                ticker,
-                date,
-                pred_len,
-                sample_count,
-                config_hash,
-                model_ver,
-                ttl,
-                json.dumps(result, ensure_ascii=False).encode(),
-                time.time(),
-            ),
-        ))
+        self._transaction(
+            lambda conn: conn.execute(
+                "INSERT OR REPLACE INTO kronos_cache "
+                "(ticker, date, pred_len, sample_cnt, config_hash, model_ver, ttl, data, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    ticker,
+                    date,
+                    pred_len,
+                    sample_count,
+                    config_hash,
+                    model_ver,
+                    ttl,
+                    json.dumps(result, ensure_ascii=False).encode(),
+                    time.time(),
+                ),
+            )
+        )
 
     # ── 工具方法 ──────────────────────────────────────
 

@@ -86,21 +86,35 @@ def send_feishu(
     if mode == "text":
         cmd.extend(["--content", str(content)])
     elif mode == "ci":
-        cmd.extend([
-            "--status", str(kwargs.get("status", "success")),
-            "--branch", str(kwargs.get("branch", "")),
-            "--commit", str(kwargs.get("commit", "")),
-            "--jobs", str(kwargs.get("jobs", "")),
-            "--run-url", str(kwargs.get("run_url", "")),
-        ])
+        cmd.extend(
+            [
+                "--status",
+                str(kwargs.get("status", "success")),
+                "--branch",
+                str(kwargs.get("branch", "")),
+                "--commit",
+                str(kwargs.get("commit", "")),
+                "--jobs",
+                str(kwargs.get("jobs", "")),
+                "--run-url",
+                str(kwargs.get("run_url", "")),
+            ]
+        )
     elif mode == "daily":
-        cmd.extend([
-            "--status", str(kwargs.get("status", "success")),
-            "--date", str(kwargs.get("date", "")),
-            "--tickers", str(kwargs.get("tickers", "")),
-            "--top3", str(kwargs.get("top3", "")),
-            "--run-url", str(kwargs.get("run_url", "")),
-        ])
+        cmd.extend(
+            [
+                "--status",
+                str(kwargs.get("status", "success")),
+                "--date",
+                str(kwargs.get("date", "")),
+                "--tickers",
+                str(kwargs.get("tickers", "")),
+                "--top3",
+                str(kwargs.get("top3", "")),
+                "--run-url",
+                str(kwargs.get("run_url", "")),
+            ]
+        )
     elif mode == "buffett":
         result_file = kwargs.get("result_file", "")
         if not result_file:

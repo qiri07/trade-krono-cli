@@ -83,7 +83,9 @@ class TestBuildCards:
 
     def test_build_ci_card(self) -> None:
         """CI 卡片应包含正确结构。"""
-        card = build_ci_card("success", "master", "abc123", "lint✅ test✅", "https://github.com/...")
+        card = build_ci_card(
+            "success", "master", "abc123", "lint✅ test✅", "https://github.com/..."
+        )
         assert card["msg_type"] == "interactive"
         assert "card" in card
         assert "green" in card["card"]["header"]["template"]
@@ -128,7 +130,7 @@ class TestSendNotification:
             mock_send.assert_not_called()
 
     def test_buffett_mode_with_missing_file(self) -> None:
-        """ Buffett 模式处理缺失文件。"""
+        """Buffett 模式处理缺失文件。"""
         config = {"webhook_url": "https://test.webhook"}
         with patch("scripts.feishu_core.send_feishu") as mock_send:
             mock_send.return_value = True

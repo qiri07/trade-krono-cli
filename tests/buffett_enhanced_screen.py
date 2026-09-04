@@ -43,9 +43,7 @@ _TOP_N = 50
 _MIN_ROE_THRESHOLD = 15.0  # 可调整
 
 # ── LLM 可用性检查 ─────────────────────────────────────────────────────────────
-_LLM_AVAILABLE = bool(
-    os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
-)
+_LLM_AVAILABLE = bool(os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""))
 
 # ── 央国企股票代码（来源：国务院国资委官网 + 公开数据）────────────────────────
 _SOE_TICKERS: set[str] = {
@@ -315,9 +313,7 @@ def _is_soe(ticker: str) -> bool:
 # ── AI 核实大股东 ─────────────────────────────────────────────────────────────
 
 
-def _verify_controlling_shareholder(
-    ticker: str, name: str
-) -> tuple[bool, str]:
+def _verify_controlling_shareholder(ticker: str, name: str) -> tuple[bool, str]:
     """调用 LLM 核实大股东是否为央国企控股。
 
     Parameters
@@ -776,22 +772,29 @@ def screen_one(thscode: str, name: str) -> StockMetrics:
     metrics.score = score
 
     # 通过条件：①②⑤⑥ 必须通过，③可放宽（行业龙头✅），④由AI辅助决策
-    gate_1_pass = "①股息率" in metrics.gate_results and metrics.gate_results["①股息率"].startswith("✅")
-    gate_2_pass = "②净利润" in metrics.gate_results and metrics.gate_results["②净利润"].startswith("✅")
+    gate_1_pass = "①股息率" in metrics.gate_results and metrics.gate_results["①股息率"].startswith(
+        "✅"
+    )
+    gate_2_pass = "②净利润" in metrics.gate_results and metrics.gate_results["②净利润"].startswith(
+        "✅"
+    )
     gate_5_pass = "⑤EPS" in metrics.gate_results and metrics.gate_results["⑤EPS"].startswith("✅")
     gate_6_pass = "⑥ROE" in metrics.gate_results and metrics.gate_results["⑥ROE"].startswith("✅")
     # ③可放宽：央国企✅ 或 行业龙头✅
     gate_3_acceptable = any(
-        metrics.gate_results.get("③身份", "").startswith(s)
-        for s in ("✅", "⚠️")
+        metrics.gate_results.get("③身份", "").startswith(s) for s in ("✅", "⚠️")
     )
     # ④ AI 核实大股东：AI 确认央国企控股则通过
-    gate_4_pass = (
-        metrics.is_soe
-        or "✅" in metrics.gate_results.get("④大股东", "")
-    )
+    gate_4_pass = metrics.is_soe or "✅" in metrics.gate_results.get("④大股东", "")
     # 综合判定：①②⑤⑥必须通过，③④可放宽（AI核实通过也算）
-    metrics.passed = gate_1_pass and gate_2_pass and gate_5_pass and gate_6_pass and gate_3_acceptable and gate_4_pass
+    metrics.passed = (
+        gate_1_pass
+        and gate_2_pass
+        and gate_5_pass
+        and gate_6_pass
+        and gate_3_acceptable
+        and gate_4_pass
+    )
     return metrics
 
 

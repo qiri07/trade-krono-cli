@@ -168,7 +168,9 @@ class TestAkShareProvider:
 
         mock_df = pd.DataFrame({"code": ["600519"]})
         with patch.object(provider.__class__, "_ak", create=True):
-            with patch.object(akmod, "_full_market_cache", {"data": mock_df, "timestamp": 9999999999.0}):
+            with patch.object(
+                akmod, "_full_market_cache", {"data": mock_df, "timestamp": 9999999999.0}
+            ):
                 result = provider._get_full_market_cache()
                 assert result is mock_df
 

@@ -26,7 +26,9 @@ class TestParquetPaths:
         paths = ParquetPaths(tmp_path)
         result = paths.prediction_path("sh.600519", "2026-09-04", 30)
 
-        assert result == tmp_path / "predictions" / "2026" / "09" / "sh_600519_2026-09-04_30.parquet"
+        assert (
+            result == tmp_path / "predictions" / "2026" / "09" / "sh_600519_2026-09-04_30.parquet"
+        )
 
     def test_backtest_path_format(self, tmp_path: Path) -> None:
         """backtest_path 应生成正确的路径格式。"""
@@ -107,6 +109,7 @@ class TestDuckDBAvailability:
             import importlib
 
             import trade_krono_cli.analytics_db as mod
+
             importlib.reload(mod)
 
             assert mod._duckdb_available() is True
