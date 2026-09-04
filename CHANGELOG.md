@@ -6,6 +6,19 @@ The changelog is also available in Chinese: [中文版更新日志](./CHANGELOG_
 
 ---
 
+### v0.1.8 — 2026-09-04
+
+**Bug fixes, refactoring & test expansion:**
+
+- **fix(cache)**: Fixed SQLite connection leak in `cache.py` — every DB operation now creates a short-lived connection and closes it automatically via new `_transaction()` / `_query_one()` / `_query_all()` helpers, preventing fd exhaustion during long-running pipelines
+- **refactor(feishu)**: Eliminated duplicate code in scripts layer — extracted 7 shared functions into `scripts/feishu_utils.py`, removed dead code (orphan function body without def header) from `feishu_core.py`, removed duplicate function bodies from `feishu_notify.py`; net reduction of 260 lines
+- **refactor(external)**: Split monolithic `trade_krono_cli/external.py` (557 lines) into a package `trade_krono_cli/external/` with职责分离 modules: `models.py` (data classes), `git_ops.py` (git operations), `config_io.py` (YAML/lock file I/O); `__init__.py` re-exports all public API for backward-compatible imports
+- **refactor(data)**: Migrated `next_business_days()` / `validate_data_freshness()` / `safe_float()` from `trade_krono_cli.data` to `trade_krono_cli.utils.helpers`; data.py re-exports for backward compatibility
+- **fix(pipeline)**: Fixed frozen dataclass in-place mutation bug in `pipeline_core.py` (TAAnalysis is frozen — must create new instance instead of modifying fields); added `html.escape()` XSS protection in `reporter.py`; replaced `ret != ret` NaN check with `math.isnan()` in `merge.py`; fixed interpolation boundary logic in `risk/liquidity.py`
+- **test**: Added 246 new tests across 8 files (test_merge_edge_cases, test_orchestrator, test_akshare_provider, test_tushare_provider, test_version, test_backtest_engine, test_analytics_db, buffett_enhanced_screen); total test count: **2310 passed**
+
+---
+
 ### v0.1.7 — 2026-08-27
 
 **GitHub Actions CI/CD & test coverage expansion:**

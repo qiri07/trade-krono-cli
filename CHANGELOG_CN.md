@@ -6,6 +6,19 @@
 
 ---
 
+### v0.1.8 — 2026-09-04
+
+**Bug 修复、重构与测试扩展：**
+
+- **fix(cache)**：修复 `cache.py` 中的 SQLite 连接泄漏——每次 DB 操作现在创建短生命周期连接并通过新增的 `_transaction()` / `_query_one()` / `_query_all()` 辅助方法自动关闭，防止长时间运行流水线时的 fd 耗尽
+- **refactor(feishu)**：消除 scripts 层重复代码——将 7 个共享函数提取至 `scripts/feishu_utils.py`，删除 `feishu_core.py` 中无 def 头的残留死代码，删除 `feishu_notify.py` 中的重复函数体；净减少 260 行
+- **refactor(external)**：将 557 行的单文件 `trade_krono_cli/external.py` 拆分为包 `trade_krono_cli/external/`，职责分离：`models.py`（数据类）、`git_ops.py`（git 操作）、`config_io.py`（YAML/lock 文件 I/O）；`__init__.py` re-export 所有公共 API，保持向后兼容导入
+- **refactor(data)**：将 `next_business_days()` / `validate_data_freshness()` / `safe_float()` 从 `trade_krono_cli.data` 迁移至 `trade_krono_cli.utils.helpers`；data.py 通过 re-export 保持向后兼容
+- **fix(pipeline)**：修复 `pipeline_core.py` 中 frozen dataclass 原地修改 bug（TAAnalysis 是冻结 dataclass，必须创建新实例而非原地修改字段）；`reporter.py` 新增 `html.escape()` XSS 防护；`merge.py` 将 `ret != ret` NaN 检查改为 `math.isnan()`；`risk/liquidity.py` 修正插值边界逻辑
+- **test**：新增 246 项测试，覆盖 8 个文件（test_merge_edge_cases、test_orchestrator、test_akshare_provider、test_tushare_provider、test_version、test_backtest_engine、test_analytics_db、buffett_enhanced_screen）；测试总数：**2310 项通过**
+
+---
+
 ### v0.1.7 — 2026-08-27
 
 **GitHub Actions CI/CD 与测试覆盖扩展：**
