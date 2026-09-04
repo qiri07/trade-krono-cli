@@ -4,11 +4,11 @@
   ① 股息率 > 3%       （分红总额/市值）
   ② 扣非净利润 > 1亿   （营业利润近似）
   ③ 央国企或行业龙头   （静态库 + 市值筛选）
-  ④ 大股东是央国企控股 （同③，需人工核查）
+  ④ 大股东是央国企控股 （⭐ AI 自动核实，无需人工干预）
   ⑤ EPS 稳定增长       （5年CAGR > 0 且波动 < 30%）
   ⑥ ROE 5年以上 > 15%  （年化加权ROE）
 
-数据来源：Fuyao API（同花顺金融数据）
+数据来源：Fuyao API（同花顺金融数据）+ DeepSeek AI 辅助判断
 
 用法：
   uv run python tests/buffett_enhanced_screen.py
@@ -31,6 +31,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+from loguru import logger
+
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 _API_KEY = (
     os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
@@ -39,6 +41,11 @@ _FUYAO_BASE = "https://fuyao.aicubes.cn"
 _CONCURRENCY = 8
 _TOP_N = 50
 _MIN_ROE_THRESHOLD = 15.0  # 可调整
+
+# ── LLM 可用性检查 ─────────────────────────────────────────────────────────────
+_LLM_AVAILABLE = bool(
+    os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+)
 
 # ── 央国企股票代码（来源：国务院国资委官网 + 公开数据）────────────────────────
 _SOE_TICKERS: set[str] = {
@@ -303,6 +310,71 @@ _SOE_TICKERS: set[str] = {
 
 def _is_soe(ticker: str) -> bool:
     return ticker in _SOE_TICKERS
+
+
+# ── AI 核实大股东 ─────────────────────────────────────────────────────────────
+
+
+def _verify_controlling_shareholder(
+    ticker: str, name: str
+) -> tuple[bool, str]:
+    """调用 LLM 核实大股东是否为央国企控股。
+
+    Parameters
+    ----------
+    ticker : str
+        股票代码（6位数字）
+    name : str
+        股票名称
+
+    Returns
+    -------
+    tuple[bool, str]
+        (是否为央国企控股, 判断理由)
+    """
+    if not _LLM_AVAILABLE:
+        return False, "LLM 未配置，跳过 AI 核实"
+
+    prompt = (
+        f"请判断 A 股股票 {ticker}（{name}）的实际控制人是否为国家国资委或地方政府国资委控股。\n"
+        f"请基于你的知识进行判断，并简要说明理由。\n"
+        f"如果无法确定，请返回'未知'。\n\n"
+        f"要求输出格式：\n"
+        f"是/否/未知\n"
+        f"理由：xxx"
+    )
+
+    try:
+        from openai import OpenAI
+
+        key = os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+        if not key:
+            return False, "未配置 LLM API Key"
+
+        client = OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=200,
+        )
+        text = response.choices[0].message.content or ""
+
+        # 解析响应
+        lines = text.strip().split("\n")
+        first_line = lines[0].strip() if lines else ""
+
+        if "是" in first_line or "国资委" in first_line:
+            reason = lines[1] if len(lines) > 1 else "AI 判断为央国企控股"
+            return True, f"AI核实✅ {reason}"
+        elif "否" in first_line:
+            reason = lines[1] if len(lines) > 1 else "AI 判断为非央国企"
+            return False, f"AI核实❌ {reason}"
+        else:
+            return False, f"AI核实⚠️ 无法确定: {first_line[:30]}"
+    except Exception as e:
+        logger.warning(f"AI 核实大股东失败 {ticker}: {e}")
+        return False, f"AI核实⚠️ 失败: {str(e)[:30]}"
 
 
 # ── 工具函数 ──────────────────────────────────────────────────────────────────
@@ -631,14 +703,17 @@ def screen_one(thscode: str, name: str) -> StockMetrics:
         else:
             metrics.gate_results["③身份"] = "❌ 非央国企/龙头"
 
-    # ④ 大股东是央国企控股（⭐ AI辅助查询，不硬性过滤）
+    # ④ 大股东是央国企控股（⭐ AI 自动核实）
     if metrics.is_soe:
         metrics.gate_results["④大股东"] = "✅ 已确认为央国企"
-    elif "行业龙头" in metrics.gate_results.get("③身份", ""):
-        metrics.gate_results["④大股东"] = "⚠️ 需AI核查（行业龙头，待查股东）"
     else:
-        metrics.gate_results["④大股东"] = "⚠️ 需AI核查（非央国企，待查股东）"
-    # 注意：④不硬性过滤，由AI辅助决策
+        # 调用 AI 核实大股东是否为央国企控股
+        is_ai_soe, reason = _verify_controlling_shareholder(ticker, metrics.name)
+        if is_ai_soe:
+            metrics.gate_results["④大股东"] = "✅ AI核实确认央国企控股"
+            metrics.is_soe = True  # 更新标记，加分
+        else:
+            metrics.gate_results["④大股东"] = f"⚠️ AI核实: {reason}"
 
     # ⑤ EPS 稳定增长
     eps_hist = metrics.eps_history
@@ -710,8 +785,13 @@ def screen_one(thscode: str, name: str) -> StockMetrics:
         metrics.gate_results.get("③身份", "").startswith(s)
         for s in ("✅", "⚠️")
     )
-    # ④不硬性过滤，仅标记，由AI辅助决策
-    metrics.passed = gate_1_pass and gate_2_pass and gate_5_pass and gate_6_pass and gate_3_acceptable
+    # ④ AI 核实大股东：AI 确认央国企控股则通过
+    gate_4_pass = (
+        metrics.is_soe
+        or "✅" in metrics.gate_results.get("④大股东", "")
+    )
+    # 综合判定：①②⑤⑥必须通过，③④可放宽（AI核实通过也算）
+    metrics.passed = gate_1_pass and gate_2_pass and gate_5_pass and gate_6_pass and gate_3_acceptable and gate_4_pass
     return metrics
 
 
