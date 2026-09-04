@@ -27,6 +27,7 @@ from trade_krono_cli.committee import (
 )
 from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.data import fetch_realtime_quote
+from trade_krono_cli.domain.prediction import TAAnalysis
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
 from trade_krono_cli.pipeline.factory import PipelineFactory, _collect_futures
@@ -138,7 +139,7 @@ class QuantPipeline:
         research = get_research()
         max_age_days = self._config.ta_cache_max_age_days
         ta_fallback_count = 0
-        for ta in ta_results:
+        for idx, ta in enumerate(ta_results):
             if ta.error is None:
                 continue
             cached = research.get_latest_ta_for_ticker(
@@ -150,10 +151,16 @@ class QuantPipeline:
                     f"📦 {ta.ticker} TA 失败，回退到 {cached['date']} 的缓存结果 "
                     f"(signal={cached['signal']}, confidence={cached['confidence']})",
                 )
-                ta.signal = cached["signal"]
-                ta.confidence = cached["confidence"]
-                ta.reasoning = cached.get("thesis") or ""
-                ta.error = None
+                # TAAnalysis 是 frozen dataclass，必须创建新实例替代原地修改
+                ta_results[idx] = TAAnalysis(
+                    ticker=ta.ticker,
+                    eval_date=ta.eval_date,
+                    signal=cached["signal"],
+                    confidence=cached["confidence"],
+                    reasoning=cached.get("thesis") or "",
+                    error=None,
+                    elapsed_sec=ta.elapsed_sec,
+                )
                 ta_fallback_count += 1
         if ta_fallback_count:
             logger.info(f"📦 TA 缓存回退完成: {ta_fallback_count}/{len(ta_results)} 只股票")

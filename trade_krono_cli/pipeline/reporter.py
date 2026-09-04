@@ -10,6 +10,7 @@ V0.3: 报告新增 EV 列（expected_value, prob_win, risk_adjusted_ev），
 
 from __future__ import annotations
 
+import html
 import json
 from datetime import datetime
 from pathlib import Path
@@ -107,13 +108,13 @@ def save_html_report(merged: list[dict], path: str, date: str) -> str:
         rows.append(f"""
             <tr>
               <td>{i}</td>
-              <td><b>{m["ticker"]}</b>{badge}</td>
-              <td>{m.get("ta_signal") or "-"}</td>
-              <td>{m.get("ta_confidence") or "-"}</td>
-              <td>{m.get("kronos_direction") or "-"}</td>
+              <td><b>{html.escape(str(m["ticker"]))}</b>{badge}</td>
+              <td>{html.escape(str(m.get("ta_signal") or "-"))}</td>
+              <td>{html.escape(str(m.get("ta_confidence") or "-"))}</td>
+              <td>{html.escape(str(m.get("kronos_direction") or "-"))}</td>
               <td>{m.get("kronos_change_pct") or 0:.2f}%</td>
-              <td>{m.get("kronos_last_close") or "-"}</td>
-              <td>{m.get("kronos_pred_close") or "-"}</td>
+              <td>{html.escape(str(m.get("kronos_last_close") or "-"))}</td>
+              <td>{html.escape(str(m.get("kronos_pred_close") or "-"))}</td>
               <td title="方向评分={dc_str}<br>路径分散={pd_str}<br>综合置信={cs_str}">{cs_str}</td>
               <td title="EV={ev_str}<br>P(win)={pw_str}<br>RA-EV={raev_str}">{rs:.1f}</td>
               <td style="color:#0066cc;font-weight:bold">{ev_str}</td>
@@ -121,7 +122,7 @@ def save_html_report(merged: list[dict], path: str, date: str) -> str:
             </tr>""")
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    html = f"""<!DOCTYPE html>
+    html_content = f"""<!DOCTYPE html>
 <html lang="zh"><head>
 <meta charset="utf-8">
 <title>trade-krono-cli 投研报告 {date}</title>
@@ -155,7 +156,7 @@ tr:hover {{background:#f1f3f5}}
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(html)
+        f.write(html_content)
     logger.info(f"💾 HTML 报告已保存: {path}")
     return path
 

@@ -64,9 +64,15 @@ def calc_liquidity_risk(
     else:
         # 在两个 breakpoint 之间线性插值
         for i in range(len(sorted_bps) - 1):
-            if sorted_bps[i + 1][0] <= log_vol < sorted_bps[i][0]:
-                frac = (log_vol - sorted_bps[i + 1][0]) / (sorted_bps[i][0] - sorted_bps[i + 1][0])
-                risk_score = sorted_bps[i + 1][1] + frac * (sorted_bps[i][1] - sorted_bps[i + 1][1])
+            x_low, y_low = sorted_bps[i + 1]
+            x_high, y_high = sorted_bps[i]
+            if x_low <= log_vol < x_high:
+                if x_high == x_low:
+                    # 相邻 breakpoint 值相同（防御性处理）
+                    frac = 0.0
+                else:
+                    frac = (log_vol - x_low) / (x_high - x_low)
+                risk_score = y_low + frac * (y_high - y_low)
                 break
         else:
             risk_score = sorted_bps[-1][1]

@@ -15,6 +15,7 @@ V0.3 语义升级：
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -76,7 +77,7 @@ def _compute_ev_for_merged(
         return None, None, None, None
     try:
         ret = float(ret)
-        if ret != ret:  # NaN check
+        if math.isnan(ret):  # NaN 检查
             return None, None, None, None
     except (TypeError, ValueError):
         return None, None, None, None
