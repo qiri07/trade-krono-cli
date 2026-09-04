@@ -1,5 +1,9 @@
 """测试 merge.py 边界情况和约束注入行为。"""
 
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
 import pytest
 
 from trade_krono_cli.constraints_config import ConstraintConfig
@@ -289,3 +293,77 @@ class TestMergeCostAdjustment:
         # roundtrip 成本约 17bps，net ≈ 5 * (1 - 0.0017) ≈ 4.99
         # 实际测试得到 4.83（代码用的是不同的成本计算方式）
         assert merged[0]["kronos_change_pct"] > 4.8
+
+
+class TestComputeEVNaN:
+    """_compute_ev_for_merged NaN/无效输入处理。"""
+
+    def test_nan_expected_change_returns_none(self) -> None:
+        """expected_change_pct 为 NaN 时应返回全 None。"""
+        from trade_krono_cli.pipeline.merge import _compute_ev_for_merged
+
+        kr = MagicMock()
+        kr.expected_change_pct = float("nan")
+        result = _compute_ev_for_merged(kr)
+        assert result == (None, None, None, None)
+
+    def test_none_expected_change_returns_none(self) -> None:
+        """expected_change_pct 为 None 时应返回全 None。"""
+        from trade_krono_cli.pipeline.merge import _compute_ev_for_merged
+
+        kr = MagicMock()
+        kr.expected_change_pct = None
+        result = _compute_ev_for_merged(kr)
+        assert result == (None, None, None, None)
+
+    def test_type_error_expected_change_returns_none(self) -> None:
+        """expected_change_pct 无法转为 float 时应返回全 None。"""
+        from trade_krono_cli.pipeline.merge import _compute_ev_for_merged
+
+        kr = MagicMock()
+        kr.expected_change_pct = "not_a_number"
+        result = _compute_ev_for_merged(kr)
+        assert result == (None, None, None, None)
+
+
+class TestRiskAssessmentFallback:
+    """风险评估异常时的降级行为。"""
+
+    def test_risk_exception_fallback_to_neutral(self) -> None:
+        """风险评估抛异常时，应降级到中性分且不应崩溃。"""
+        import pandas as pd
+
+        ta = StockAnalysisResult(
+            ticker="sh.600519",
+            date="2026-08-12",
+            signal="BUY",
+            confidence=80.0,
+        )
+        kronos = KronosForecastResult(
+            ticker="sh.600519",
+            eval_date="2026-08-12",
+            horizon=30,
+            direction="UP",
+            expected_change_pct=2.0,
+        )
+        kline = pd.DataFrame(
+            {
+                "open": [98.0],
+                "high": [100.0],
+                "low": [97.0],
+                "close": [100.0],
+                "volume": [1e7],
+                "amount": [1e9],
+            },
+        )
+        # mock risk engine 抛异常，验证不会崩溃
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "trade_krono_cli.pipeline.merge.run_risk_assessment",
+                lambda *a, **kw: (_ for _ in []).throw(RuntimeError("boom")),
+            )
+            merged = merge_results([ta], [kronos], kline_data={"sh.600519": kline})
+        assert len(merged) == 1
+        assert merged[0]["risk_score_total"] == 50.0
+        assert merged[0]["risk_scores"] == {}
+        assert merged[0]["adjusted_expected_return"] is None

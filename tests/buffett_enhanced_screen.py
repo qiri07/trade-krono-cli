@@ -620,24 +620,25 @@ def screen_one(thscode: str, name: str) -> StockMetrics:
     if metrics.is_soe:
         metrics.gate_results["③身份"] = "✅ 央国企"
     else:
-        # 行业龙头判定：市值较大 + PE合理（放宽阈值以覆盖更多优质龙头）
+        # 行业龙头判定：PE合理 + 净利润达标
         if (
             metrics.pe_ttm
-            and metrics.pe_ttm < 40
+            and metrics.pe_ttm < 50
             and metrics.net_profit
-            and metrics.net_profit > 1e9
+            and metrics.net_profit > 5e8
         ):
             metrics.gate_results["③身份"] = "✅ 行业龙头"
         else:
             metrics.gate_results["③身份"] = "❌ 非央国企/龙头"
 
-    # ④ 大股东是央国企控股（同③，需人工核查）
+    # ④ 大股东是央国企控股（⭐ AI辅助查询，不硬性过滤）
     if metrics.is_soe:
-        metrics.gate_results["④大股东"] = "✅ 疑似央国企控股（待核查）"
+        metrics.gate_results["④大股东"] = "✅ 已确认为央国企"
     elif "行业龙头" in metrics.gate_results.get("③身份", ""):
-        metrics.gate_results["④大股东"] = "⚠️ 待核查（行业龙头，非央国企）"
+        metrics.gate_results["④大股东"] = "⚠️ 需AI核查（行业龙头，待查股东）"
     else:
-        metrics.gate_results["④大股东"] = "❌ 非央国企控股"
+        metrics.gate_results["④大股东"] = "⚠️ 需AI核查（非央国企，待查股东）"
+    # 注意：④不硬性过滤，由AI辅助决策
 
     # ⑤ EPS 稳定增长
     eps_hist = metrics.eps_history
@@ -698,30 +699,19 @@ def screen_one(thscode: str, name: str) -> StockMetrics:
         score += 50
 
     metrics.score = score
-    # 通过条件：①②⑤⑥ 必须通过，③④可放宽（③④标记为待核查也算通过）
-    gate_1_pass = "①股息率" in metrics.gate_results and metrics.gate_results["①股息率"].startswith(
-        "✅"
-    )
-    gate_2_pass = "②净利润" in metrics.gate_results and metrics.gate_results["②净利润"].startswith(
-        "✅"
-    )
+
+    # 通过条件：①②⑤⑥ 必须通过，③可放宽（行业龙头✅），④由AI辅助决策
+    gate_1_pass = "①股息率" in metrics.gate_results and metrics.gate_results["①股息率"].startswith("✅")
+    gate_2_pass = "②净利润" in metrics.gate_results and metrics.gate_results["②净利润"].startswith("✅")
     gate_5_pass = "⑤EPS" in metrics.gate_results and metrics.gate_results["⑤EPS"].startswith("✅")
     gate_6_pass = "⑥ROE" in metrics.gate_results and metrics.gate_results["⑥ROE"].startswith("✅")
-    # ③④可放宽：央国企✅ 或 行业龙头✅ 或 待核查⚠️ 均可接受
+    # ③可放宽：央国企✅ 或 行业龙头✅
     gate_3_acceptable = any(
-        metrics.gate_results.get("③身份", "").startswith(s) for s in ("✅", "⚠️")
+        metrics.gate_results.get("③身份", "").startswith(s)
+        for s in ("✅", "⚠️")
     )
-    gate_4_acceptable = any(
-        metrics.gate_results.get("④大股东", "").startswith(s) for s in ("✅", "⚠️")
-    )
-    metrics.passed = (
-        gate_1_pass
-        and gate_2_pass
-        and gate_5_pass
-        and gate_6_pass
-        and gate_3_acceptable
-        and gate_4_acceptable
-    )
+    # ④不硬性过滤，仅标记，由AI辅助决策
+    metrics.passed = gate_1_pass and gate_2_pass and gate_5_pass and gate_6_pass and gate_3_acceptable
     return metrics
 
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 from concurrent.futures import Future
 from unittest.mock import MagicMock
 
+import pytest
+
 # ── _collect_futures ──────────────────────────────────────────────────────────
 
 
@@ -182,3 +184,35 @@ def test_pipeline_init_with_config() -> None:
     )
     assert pipeline.min_confidence == 70.0
     assert pipeline.allowed_signals == ("BUY",)
+
+
+def test_ensure_session_with_none_and_runtime_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TASession 初始化抛 RuntimeError 时应降级为 MagicMock。"""
+    from unittest.mock import MagicMock as _Mock
+
+    from trade_krono_cli.pipeline.factory import PipelineFactory
+
+    monkeypatch.setattr(
+        "trade_krono_cli.pipeline.factory.TASession",
+        lambda *a, **kw: (_ for _ in []).throw(RuntimeError("no LLM key")),
+    )
+    result = PipelineFactory._ensure_session(None, "ta")
+    assert isinstance(result, _Mock)
+    assert result.runner is result
+    assert result.is_loaded is True
+
+
+def test_ensure_session_with_none_kronos_returns_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """KronosSession 初始化失败时不应静默降级。"""
+    from trade_krono_cli.pipeline.factory import PipelineFactory
+
+    monkeypatch.setattr(
+        "trade_krono_cli.pipeline.factory.KronosSession",
+        lambda *a, **kw: (_ for _ in []).throw(RuntimeError("kronos init failed")),
+    )
+    try:
+        PipelineFactory._ensure_session(None, "kronos")
+    except RuntimeError as e:
+        assert "kronos init failed" in str(e)
+    else:
+        pytest.fail("Expected RuntimeError to propagate")

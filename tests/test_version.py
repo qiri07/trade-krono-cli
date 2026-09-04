@@ -1,5 +1,9 @@
 """测试版本追踪模块 (version.py)。"""
 
+import importlib.metadata
+
+import pytest
+
 from trade_krono_cli.version import (
     build_run_snapshot,
     collect_model_versions,
@@ -19,6 +23,19 @@ def test_get_project_version() -> None:
     assert len(v) > 0
     # 应该是 semver 格式
     assert "." in v or "dev" in v
+
+
+def test_get_project_version_fallback_when_metadata_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """importlib.metadata 失败时回退到 __init__.py 读取。"""
+    from trade_krono_cli.version import get_project_version
+
+    def fake_version(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr("importlib.metadata.version", fake_version)
+    v = get_project_version()
+    assert isinstance(v, str)
+    assert len(v) > 0
 
 
 def test_generate_run_id_format() -> None:
