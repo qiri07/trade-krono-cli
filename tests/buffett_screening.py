@@ -1,6 +1,6 @@
 """buffett_screening — 巴菲特六闸门筛选业务逻辑。
 
-包含：API 客户端、数据获取、StockMetrics 数据模型、五闸门筛选、
+包含：API 客户端、数据获取、StockMetrics 数据模型、六闸门筛选、
 三项深度验证（ROE历史、CFO比率、CAGR确认）、盈利稳定性/现金流质量评估。
 """
 
@@ -16,6 +16,13 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
+from loguru import logger
+
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None  # type: ignore[misc,assignment]
+
 from tests.buffett_cache import (
     TTL_STOCKS,
     cache_get_list,
@@ -28,6 +35,73 @@ _API_KEY = (
 )
 _BASE = "https://fuyao.aicubes.cn"
 _CONCURRENCY = 8
+
+# ── LLM 可用性检查 ─────────────────────────────────────────────────────────────
+_LLM_AVAILABLE = bool(os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""))
+
+
+def _verify_pe_percentile(ticker: str, name: str, pe_ttm: float | None) -> tuple[bool, str]:
+    """调用 LLM 辅助判断 PE 历史分位是否处于低估区间（< 30% 分位）。
+
+    Parameters
+    ----------
+    ticker : str
+        股票代码（6位数字）
+    name : str
+        股票名称
+    pe_ttm : float | None
+        当前 PE_TTM，用于上下文参考
+
+    Returns
+    -------
+    tuple[bool, str]
+        (PE 是否处于安全边际, 判断理由)
+    """
+    if not _LLM_AVAILABLE:
+        return True, "LLM 未配置，默认通过"
+
+    prompt = (
+        f"请判断 A 股股票 {ticker}（{name}）当前 PE_TTM ≈ {pe_ttm} 倍，\n"
+        f"是否处于历史估值的低估区间（大致处于近 10 年 30% 分位以下）？\n"
+        f"请基于你的知识进行判断，并简要说明理由。\n"
+        f"如果无法确定，请返回'未知'。\n\n"
+        f"要求输出格式：\n"
+        f"是/否/未知\n"
+        f"理由：xxx"
+    )
+
+    try:
+        if OpenAI is None:
+            return True, "openai SDK 未安装"
+
+        key = os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+        if not key:
+            return True, "未配置 LLM API Key"
+
+        client = OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
+        response = client.chat.completions.create(
+            model="agnes-2.5-flash",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=200,
+        )
+        text = response.choices[0].message.content or ""
+
+        # 解析响应
+        lines = text.strip().split("\n")
+        first_line = lines[0].strip() if lines else ""
+
+        if "是" in first_line:
+            reason = lines[1] if len(lines) > 1 else "AI 判断为低估区间"
+            return True, f"AI核实✅ {reason}"
+        elif "否" in first_line:
+            reason = lines[1] if len(lines) > 1 else "AI 判断为非低估区间"
+            return False, f"AI核实❌ {reason}"
+        else:
+            return True, f"AI核实⚠️ 无法确定: {first_line[:30]}"
+    except Exception as e:
+        logger.warning(f"AI 核实PE分位失败 {ticker}: {e}")
+        return True, f"AI核实⚠️ 失败: {str(e)[:30]}"
 
 
 def _safe_float(v: object) -> float | None:
@@ -518,7 +592,24 @@ def screen_one(
             gate_fail=f"④CFO={cfo}",
         )
 
-    # ⑥ 安全边际 — 个股无历史 PE 分位接口，标注为未知
+    # ⑥ 安全边际 — 调用 LLM 辅助判断 PE 历史分位是否 < 30%
+    gate6_pass, gate6_reason = _verify_pe_percentile(
+        thscode.replace(".SH", "").replace(".SZ", ""), name, pe
+    )
+    if not gate6_pass:
+        return StockMetrics(
+            ticker=thscode.replace(".SH", "").replace(".SZ", ""),
+            thscode=thscode,
+            name=name,
+            pe_ttm=pe,
+            pb=pb,
+            roe=roe,
+            roe_excl=roe_excl,
+            debt_ratio=debt,
+            cagr_3y=cagr,
+            cfo_ok=True,
+            gate_fail=f"⑥{gate6_reason}",
+        )
     return StockMetrics(
         ticker=thscode.replace(".SH", "").replace(".SZ", ""),
         thscode=thscode,
@@ -530,7 +621,7 @@ def screen_one(
         debt_ratio=debt,
         cagr_3y=cagr,
         cfo_ok=True,
-        gate_fail="⑥无PE历史分位数据",
+        gate_fail=f"⑥{gate6_reason}",
     )
 
 
@@ -657,7 +748,7 @@ def write_result_file(
                 fail_gates[g] = fail_gates.get(g, 0) + 1
         for gate, count in sorted(fail_gates.items(), key=lambda x: -x[1]):
             f.write(f"  {gate}: {count} 只\n")
-        f.write("\n注：闸门⑥（PE历史分位）同花顺 API 仅支持指数，个股无法验证。\n")
+        f.write("\n注：闸门⑥（PE历史分位）通过 agnes-2.5-flash AI 辅助判断。\n")
     print(f"结果已写入：{out_path}", flush=True)
 
 

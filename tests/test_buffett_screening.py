@@ -1,14 +1,16 @@
 """测试 tests/buffett_screening.py — 筛选业务逻辑。
 
-覆盖：_safe_float / screen_one 五闸门 / evaluate_profitability_stability /
-      evaluate_cash_quality / StockMetrics / write_result_file。
+覆盖：_safe_float / screen_one 六闸门 / evaluate_profitability_stability /
+      evaluate_cash_quality / StockMetrics / write_result_file /
+      _verify_pe_percentile（LLM 辅助 Gate ⑥）。
 （API 调用函数通过 mock 覆盖）
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tests.buffett_screening import (
     StockMetrics,
@@ -526,3 +528,88 @@ class TestWriteResultFile:
         pos_b = content.find("B")
         pos_c = content.find("C")
         assert pos_b < pos_c
+
+
+# ── _verify_pe_percentile ───────────────────────────────────────────────────────
+
+
+class TestVerifyPePercentile:
+    """测试 _verify_pe_percentile AI 辅助 PE 历史分位判断。"""
+
+    def test_no_llm_key_returns_default_pass(self) -> None:
+        """_LLM_AVAILABLE=False 时默认通过。"""
+        from tests.buffett_screening import _verify_pe_percentile
+
+        with patch("tests.buffett_screening._LLM_AVAILABLE", False):
+            is_pass, reason = _verify_pe_percentile("600004", "白云机场", 13.83)
+        assert is_pass is True
+        assert "LLM 未配置" in reason
+
+    def test_llm_available_but_no_key_returns_default_pass(self) -> None:
+        """DEEPSEEK_API_KEY 为空字符串时默认通过。"""
+        from tests.buffett_screening import _verify_pe_percentile
+
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "", "OPENAI_API_KEY": ""}, clear=True):
+            is_pass, reason = _verify_pe_percentile("600004", "白云机场", 13.83)
+        assert is_pass is True
+
+    @patch("tests.buffett_screening._LLM_AVAILABLE", True)
+    @patch("tests.buffett_screening.logger")
+    def test_ai_declines_passes_false(self, mock_logger) -> None:
+        """AI 判断为非低估区间时返回 False。"""
+        from tests.buffett_screening import _verify_pe_percentile
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="否\n理由：估值处于中位"))]
+        with patch("tests.buffett_screening.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai.return_value = mock_client
+            with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"}):
+                is_pass, reason = _verify_pe_percentile("603721", "中广天择", 103.38)
+        assert is_pass is False
+        assert "AI核实❌" in reason
+
+    @patch("tests.buffett_screening._LLM_AVAILABLE", True)
+    def test_ai_accepts_returns_true(self) -> None:
+        """AI 判断为低估区间时返回 True。"""
+        from tests.buffett_screening import _verify_pe_percentile
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="是\n理由：处于历史低位"))]
+        with patch("tests.buffett_screening.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai.return_value = mock_client
+            with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"}):
+                is_pass, reason = _verify_pe_percentile("600004", "白云机场", 13.83)
+        assert is_pass is True
+        assert "AI核实✅" in reason
+
+    @patch("tests.buffett_screening._LLM_AVAILABLE", True)
+    def test_ai_undetermined_defaults_to_pass(self) -> None:
+        """AI 无法确定时默认通过（安全降级）。"""
+        from tests.buffett_screening import _verify_pe_percentile
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="未知\n理由：数据不足"))]
+        with patch("tests.buffett_screening.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai.return_value = mock_client
+            with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"}):
+                is_pass, reason = _verify_pe_percentile("600004", "白云机场", 13.83)
+        assert is_pass is True
+        assert "AI核实⚠️" in reason
+
+    @patch("tests.buffett_screening._LLM_AVAILABLE", True)
+    def test_api_error_defaults_to_pass(self) -> None:
+        """API 异常时默认通过（安全降级）。"""
+        from tests.buffett_screening import _verify_pe_percentile
+
+        with patch("tests.buffett_screening.OpenAI") as mock_openai:
+            mock_openai.side_effect = RuntimeError("network error")
+            with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"}):
+                is_pass, reason = _verify_pe_percentile("600004", "白云机场", 13.83)
+        assert is_pass is True
+        assert "AI核实⚠️" in reason
