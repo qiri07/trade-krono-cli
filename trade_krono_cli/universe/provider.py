@@ -210,6 +210,11 @@ class MootDxUniverseProvider(UniverseProvider):
 
         tickets: list[UniverseTicket] = self._fetch_quotes_batch(q, raw_codes, industry_map)
 
+        # ── 若 mootdx 返回空结果，降级使用 baostock 原始代码列表 ─────────
+        if not tickets and raw_codes:
+            logger.warning("mootdx 返回 0 只股票，降级为 baostock 原始列表")
+            tickets = [UniverseTicket(ticker=c, source=self.name) for c in raw_codes]
+
         # ── 补充 market_cap：通过 mootdx finance 获取总股本，计算市值 ──────
         if self._populate_market_cap:
             tickets = self._populate_market_caps(q, tickets)
