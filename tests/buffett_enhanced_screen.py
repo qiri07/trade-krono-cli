@@ -8,7 +8,7 @@
   ⑤ EPS 稳定增长       （5年CAGR > 0 且波动 < 30%）
   ⑥ ROE 5年以上 > 15%  （年化加权ROE）
 
-数据来源：Fuyao API（同花顺金融数据）+ DeepSeek AI 辅助判断
+数据来源：Fuyao API（同花顺金融数据）+ agnes-2.5-flash AI 辅助判断
 
 用法：
   uv run python tests/buffett_enhanced_screen.py
@@ -349,7 +349,7 @@ def _verify_controlling_shareholder(ticker: str, name: str) -> tuple[bool, str]:
 
         client = OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
         response = client.chat.completions.create(
-            model="deepseek-chat",
+            model="agnes-2.5-flash",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=200,
