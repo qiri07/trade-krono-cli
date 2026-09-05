@@ -53,6 +53,7 @@ def _resolve_tickers(raw: str) -> list[str]:
 
 # ── 超时保护 ──────────────────────────────────────────────────────────────────
 
+
 class _FetchTimeoutError(RuntimeError):
     """单只股票 K 线拉取超时。"""
 

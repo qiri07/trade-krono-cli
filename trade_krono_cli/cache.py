@@ -481,6 +481,14 @@ class Cache:
         df.index.names = ["date", "instrument"]
         df = df[["$open", "$close", "$high", "$low", "$volume", "$factor"]]
 
+        # 去重：同一 (date, instrument) 可能因缓存重复条目而产生冗余行
+        before = len(df)
+        df = df[~df.index.duplicated(keep="first")]
+        if len(df) < before:
+            logger.warning(
+                f"导出去重: {before:,} → {len(df):,} 行（移除 {before - len(df):,} 重复行）"
+            )
+
         stocks = int(df.index.get_level_values("instrument").nunique())
         date_min = df.index.get_level_values("date").min().strftime("%Y-%m-%d")
         date_max = df.index.get_level_values("date").max().strftime("%Y-%m-%d")
