@@ -6,6 +6,18 @@ The changelog is also available in Chinese: [中文版更新日志](./CHANGELOG_
 
 ---
 
+### v0.1.9 — 2026-09-05
+
+**Sync reliability fixes & cron schedule update:**
+
+- **fix(config)**: Fixed double-database issue where empty `TRADING_KRONO_CACHE_DIR=""` was resolved as `Path("")` → current directory, causing cache to be written to two separate SQLite databases; now explicitly checks `.strip()` before using env var value
+- **fix(sync)**: Added 30-second per-stock timeout protection via `signal.alarm` (`_fetch_with_timeout`) — prevents sync from hanging indefinitely on unresponsive data providers (mootdx/baostock); timed-out stocks are logged and skipped gracefully
+- **fix(sync)**: Changed auto-export after sync from `debug_insts=100` to `debug_insts=0` — now exports full dataset (all stocks) to `daily_pv.parquet` instead of a 100-stock debug subset
+- **chore(cron)**: Updated sync schedule from 10:00/16:00 to 10:00/15:30; delayed RD-Agent pipeline from 15:30 to 16:00 to ensure sync completes before pipeline runs
+- **test**: Added 2 new tests for `_fetch_with_timeout` and `_FetchTimeoutError` in `test_sync_whitelist.py`
+
+---
+
 ### v0.1.8 — 2026-09-04
 
 **Bug fixes, refactoring & test expansion:**

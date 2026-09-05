@@ -247,3 +247,35 @@ class TestSyncUniverseWhitelist:
             out = _strip_ansi(result.output)
             assert "✅ 同步完成" in out
             assert "白名单" not in out
+
+
+# ═══════════════════════════════════════════════════════
+# 超时保护单元测试
+# ═══════════════════════════════════════════════════════
+
+
+class TestFetchTimeout:
+    """测试 _fetch_with_timeout 和 _FetchTimeoutError。"""
+
+    def test_fetch_timeout_with_mocked_alarm(self) -> None:
+        """验证 _fetch_with_timeout 在模拟超时时正确传播 _FetchTimeoutError。"""
+        from trade_krono_cli.cli_commands.maintenance_sync import (
+            _fetch_with_timeout,
+            _FetchTimeoutError,
+        )
+
+        def _always_timeout(*args, **kwargs):
+            raise _FetchTimeoutError("模拟超时")
+
+        with pytest.raises(_FetchTimeoutError, match="模拟超时"):
+            _fetch_with_timeout(_always_timeout, arg1="value")
+
+    def test_fetch_timeout_success_case(self) -> None:
+        """验证正常函数调用能正确返回结果。"""
+        from trade_krono_cli.cli_commands.maintenance_sync import _fetch_with_timeout
+
+        def _fast_func(x: int) -> int:
+            return x * 2
+
+        result = _fetch_with_timeout(_fast_func, 21)
+        assert result == 42

@@ -6,6 +6,18 @@
 
 ---
 
+### v0.1.9 — 2026-09-05
+
+**同步可靠性修复与定时任务调整：**
+
+- **fix(config)**：修复双数据库问题——空字符串 `TRADING_KRONO_CACHE_DIR=""` 被 `Path("")` 解析为当前目录，导致缓存同时写入两个独立 SQLite 数据库；现在显式检查 `.strip()` 后再使用环境变量值
+- **fix(sync)**：新增单只股票 30 秒超时保护（`_fetch_with_timeout` + `signal.alarm`）——防止 sync 在无响应数据源（mootdx/baostock）上无限卡死；超时股票记录日志并跳过
+- **fix(sync)**：同步完成后自动导出由 `debug_insts=100` 改为 `debug_insts=0`——现导出全量数据集到 `daily_pv.parquet`，而非仅 100 只股票的 debug 子集
+- **chore(cron)**：sync 定时任务从 10:00/16:00 调整为 10:00/15:30；RD-Agent pipeline 从 15:30 延后至 16:00，确保 sync 完成后才运行
+- **test**：在 `test_sync_whitelist.py` 新增 2 项超时保护单元测试
+
+---
+
 ### v0.1.8 — 2026-09-04
 
 **Bug 修复、重构与测试扩展：**

@@ -5,6 +5,7 @@ from __future__ import annotations
 import signal
 import time
 from datetime import datetime, timedelta
+from typing import Any, Callable
 
 import typer
 from loguru import logger
@@ -60,7 +61,7 @@ def _fetch_timeout_handler(signum: int, frame: object) -> None:
     raise _FetchTimeoutError(f"K 线拉取超时（>{_STOCK_FETCH_TIMEOUT}s）")
 
 
-def _fetch_with_timeout(func, *args, **kwargs):
+def _fetch_with_timeout(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     """带超时的函数调用（仅 Unix）。"""
     old_handler = signal.signal(signal.SIGALRM, _fetch_timeout_handler)
     signal.alarm(_STOCK_FETCH_TIMEOUT)
