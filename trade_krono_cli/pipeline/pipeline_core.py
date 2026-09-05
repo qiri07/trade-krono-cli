@@ -339,8 +339,8 @@ class QuantPipeline:
         }
 
         # 构建 StockMeta 并注入异常标记，用于过滤
-        filtered_ta_list: list = []
-        rejected_ta: list = []
+        filtered_ta_list: list[Any] = []
+        rejected_ta: list[Any] = []
         for r in filtered_ta:
             if r.error is not None:
                 continue

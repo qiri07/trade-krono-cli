@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -225,8 +226,6 @@ def batch_valuations(
             result.update(batch_result)
             new_entries[batch_key] = batch_result
 
-        if (idx + 1) % 10 == 0:
-            pass
         time.sleep(0.02)
     return result, new_entries
 
@@ -762,6 +761,199 @@ def write_result_file(
             f.write(f"  {gate}: {count} 只\n")
         f.write("\n注：闸门⑥（PE历史分位）通过 agnes-2.5-flash AI 辅助判断。\n")
     print(f"结果已写入：{out_path}", flush=True)
+
+
+# ── AI 结果核实 ─────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class AiVerificationResult:
+    """AI 核实结果数据模型。
+
+    存储 agnes-2.5-flash 对 Buffett 筛选结果的完整分析，
+    包含行业分布、风险提示、Top 推荐等结构化字段，
+    以及用于飞书卡片渲染的 Markdown 摘要文本。
+
+    Attributes
+    ----------
+    date : str
+        筛选日期（YYYY-MM-DD）
+    total : int
+        筛选总股票数
+    pass_count : int
+        通过五闸门的股票数量
+    fail_count : int
+        未通过的股票数量
+    analysis_summary : str
+        整体概况摘要（一句话）
+    sector_analysis : str
+        行业与风格特征分析
+    risk_alerts : str
+        主要风险点提示
+    top_picks : str
+        Top 3 推荐及简短理由
+    conclusion : str
+        对本次筛选结果的简要评价
+    raw_response : str | None
+        LLM 原始响应文本（JSON 提取前）
+    """
+
+    date: str
+    total: int
+    pass_count: int
+    fail_count: int
+    analysis_summary: str = ""
+    sector_analysis: str = ""
+    risk_alerts: str = ""
+    top_picks: str = ""
+    conclusion: str = ""
+    raw_response: str | None = None
+
+    @property
+    def full_summary_text(self) -> str:
+        """组装供飞书卡片使用的 Markdown 摘要。"""
+        parts = [
+            f"**🤖 AI 核实摘要** — {self.analysis_summary}" if self.analysis_summary else "",
+            f"**📊 行业与风格分析**\n{self.sector_analysis}" if self.sector_analysis else "",
+            f"**⚠️ 风险提示**\n{self.risk_alerts}" if self.risk_alerts else "",
+            f"**⭐ Top 3 推荐**\n{self.top_picks}" if self.top_picks else "",
+            f"**📝 结论**\n{self.conclusion}" if self.conclusion else "",
+        ]
+        return "\n\n".join(p for p in parts if p)
+
+    @classmethod
+    def empty(cls, date_str: str, total: int, pass_count: int, fail_count: int) -> "AiVerificationResult":
+        return cls(
+            date=date_str,
+            total=total,
+            pass_count=pass_count,
+            fail_count=fail_count,
+            analysis_summary="LLM 未配置，跳过 AI 核实",
+        )
+
+
+def _extract_json_from_response(raw: str) -> str:
+    """从 LLM 响应中提取 JSON 字符串，支持 ```json ... ``` 代码块。"""
+    # 优先直接解析
+    try:
+        json.loads(raw)
+        return raw
+    except json.JSONDecodeError:
+        pass
+    # 从代码块中提取
+    block_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", raw, re.DOTALL)
+    if block_match:
+        return block_match.group(1)
+    return raw
+
+
+def _sanitize_feishu_md(text: str) -> str:
+    """移除可能破坏飞书卡片的危险 Markdown 模式（图片引用等）。"""
+    return re.sub(r"!\[.*?\]\(.*?\)", "", text)
+
+
+def run_ai_verification(
+    results_pass: list[StockMetrics],
+    results_fail: list[StockMetrics],
+    total_stocks: int,
+    date_str: str,
+) -> AiVerificationResult:
+    """调用 agnes-2.5-flash 对筛选结果进行整体核实与分析。
+
+    Parameters
+    ----------
+    results_pass : list[StockMetrics]
+        通过五闸门的股票列表（含三项深度验证数据）
+    results_fail : list[StockMetrics]
+        未通过的股票列表（含失败原因）
+    total_stocks : int
+        筛选总股票数
+    date_str : str
+        筛选日期字符串（YYYY-MM-DD）
+
+    Returns
+    -------
+    AiVerificationResult
+        AI 核实结果，包含完整分析与摘要
+    """
+    api_key = os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+    if not api_key or not api_key.strip():
+        return AiVerificationResult.empty(date_str, total_stocks, len(results_pass), len(results_fail))
+
+    try:
+        from openai import OpenAI  # 局部导入，避免无 openai 时模块加载失败
+
+        client = OpenAI(api_key=api_key.strip(), base_url="https://api.deepseek.com/v1")
+
+        # ── 构建输入数据（只含核心字段，控制 prompt 长度）──────────────────────
+        pass_lines: list[str] = []
+        for r in results_pass:
+            roe_str = f"{r.roe:.1f}" if r.roe is not None else "N/A"
+            roe_excl_str = f"{r.roe_excl:.1f}" if r.roe_excl is not None else "N/A"
+            debt_str = f"{r.debt_ratio:.1f}" if r.debt_ratio is not None else "N/A"
+            cagr_str = f"{r.cagr_3y:.1f}" if r.cagr_3y is not None else "N/A"
+            stability = r.profitability_stability or "数据不足"
+            cash_qual = r.cash_quality_rating or "数据不足"
+            pass_lines.append(
+                f"  • {r.ticker} {r.name}  PE={r.pe_ttm:.1f}  PB={r.pb:.2f}  "
+                f"ROE={roe_str}%  扣非ROE={roe_excl_str}%  负债率={debt_str}%  "
+                f"CAGR={cagr_str}%  稳定性={stability}  现金流={cash_qual}"
+            )
+        pass_text = "\n".join(pass_lines) if pass_lines else "  （无）"
+
+        fail_counts: dict[str, int] = {}
+        for r in results_fail:
+            g = r.gate_fail
+            if g:
+                fail_counts[g] = fail_counts.get(g, 0) + 1
+        fail_lines = [f"  {k}: {v} 只" for k, v in sorted(fail_counts.items(), key=lambda x: -x[1])[:10]]
+        fail_text = "\n".join(fail_lines) if fail_lines else "  （无）"
+
+        prompt = (
+            "你是一名资深A股价值投资分析师。请对以下巴菲特六闸门筛选结果进行全面核实分析。\n\n"
+            f"【筛选日期】{date_str}\n"
+            f"【筛选范围】全市场共 {total_stocks} 只股票\n"
+            f"【五闸门通过】{len(results_pass)} 只\n"
+            f"【五闸门失败】{len(results_fail)} 只\n\n"
+            "【五闸门规则】①PE_TTM<16且PB<3  ②ROE>15%且扣非ROE>12%  ③资产负债率<50%\n"
+            "            ④经营现金流净额>0  ⑤3年净利CAGR>0\n\n"
+            f"【通过股票详情】\n{pass_text}\n\n"
+            f"【失败分布（Top 10原因）】\n{fail_text}\n\n"
+            "请按以下格式输出JSON（严格合法JSON，不要有任何额外文字）：\n"
+            "{\n"
+            '  "analysis_summary": "本次筛选整体概况，一句话总结",\n'
+            '  "sector_analysis": "通过股票的行业和风格特征分析，如有明显集中趋势则指出",\n'
+            '  "risk_alerts": "需要关注的主要风险点，如无特殊风险写"无明显异常风险",\n'
+            '  "top_picks": "综合各项指标，推荐Top 3股票，附简短理由",\n'
+            '  "conclusion": "对本次筛选结果的简要评价（1-2句话）"\n'
+            "}"
+        )
+
+        response = client.chat.completions.create(
+            model="agnes-2.5-flash",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=1000,
+        )
+        raw = (response.choices[0].message.content or "").strip()
+        json_str = _extract_json_from_response(raw)
+        analysis = json.loads(json_str)
+    except Exception as e:
+        logger.warning(f"AI 核实调用失败: {e}")
+        return AiVerificationResult.empty(date_str, total_stocks, len(results_pass), len(results_fail))
+
+    return AiVerificationResult(
+        date=date_str,
+        total=total_stocks,
+        pass_count=len(results_pass),
+        fail_count=len(results_fail),
+        analysis_summary=_sanitize_feishu_md(analysis.get("analysis_summary", "")),
+        sector_analysis=_sanitize_feishu_md(analysis.get("sector_analysis", "")),
+        risk_alerts=_sanitize_feishu_md(analysis.get("risk_alerts", "")),
+        top_picks=_sanitize_feishu_md(analysis.get("top_picks", "")),
+        conclusion=_sanitize_feishu_md(analysis.get("conclusion", "")),
+        raw_response=raw,
+    )
 
 
 def build_ticker_list(results_pass: list[StockMetrics]) -> list[str]:

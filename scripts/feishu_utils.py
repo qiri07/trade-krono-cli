@@ -9,11 +9,12 @@ from __future__ import annotations
 import json
 import re
 import ssl
-import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 from urllib import request as _urllib_request
+
+from loguru import logger
 
 _CST = timezone(timedelta(hours=8))
 
@@ -116,8 +117,21 @@ def build_daily_card(
     }
 
 
-def build_buffett_card(result_file: str) -> dict:
-    """从巴菲特筛选结果文件构建飞书卡片。"""
+def build_buffett_card(result_file: str, ai_summary: str = "") -> dict:
+    """从巴菲特筛选结果文件构建飞书卡片，可选择追加 AI 核实摘要。
+
+    Parameters
+    ----------
+    result_file : str
+        筛选结果文件路径
+    ai_summary : str, optional
+        AI 核实摘要文本（Markdown 格式），追加到卡片末尾
+
+    Returns
+    -------
+    dict
+        飞书卡片结构
+    """
     path = Path(result_file)
     if not path.exists():
         return {
@@ -192,6 +206,22 @@ def build_buffett_card(result_file: str) -> dict:
     date_match = re.search(r"(\d{4}-\d{2}-\d{2})", header)
     date_str = date_match.group(1) if date_match else _now_cn()[:10]
 
+    # 构建主内容
+    main_content = (
+        f"**筛选日期：** {date_str}  "
+        f"**通过数量：** {pass_count} 只\n\n"
+        f"**通过股票：**\n{stock_text}\n\n"
+        f"**失败分布：**\n{fail_text}"
+    )
+
+    # 追加 AI 核实摘要
+    if ai_summary and ai_summary.strip():
+        main_content += (
+            f"\n\n{'─' * 30}\n"
+            f"**🤖 AI 核实分析（agnes-2.5-flash）**\n"
+            f"{ai_summary}"
+        )
+
     return {
         "msg_type": "interactive",
         "card": {
@@ -207,12 +237,7 @@ def build_buffett_card(result_file: str) -> dict:
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": (
-                            f"**筛选日期：** {date_str}  "
-                            f"**通过数量：** {pass_count} 只\n\n"
-                            f"**通过股票：**\n{stock_text}\n\n"
-                            f"**失败分布：**\n{fail_text}"
-                        ),
+                        "content": main_content,
                     },
                 },
             ],
@@ -236,10 +261,10 @@ def send_feishu(url: str, payload: dict) -> bool:
             result = json.loads(body)
             ok = result.get("code") == 0 or result.get("StatusCode") == 0
             if not ok:
-                print(f"⚠️ 飞书返回错误: {result}", file=sys.stderr)
+                logger.warning(f"飞书返回错误: {result}")
             else:
-                print("✅ 飞书推送成功")
+                logger.info("飞书推送成功")
             return ok
     except Exception as e:
-        print(f"❌ 飞书推送失败: {e}", file=sys.stderr)
+        logger.opt(exception=True).error(f"飞书推送失败: {e}")
         return False
