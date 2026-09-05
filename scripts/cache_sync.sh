@@ -1,10 +1,10 @@
 #!/bin/bash
 # A 股数据缓存检查与同步 - Cron 包装脚本
-# 每天 10:00 和 16:00 执行
+# 每天 10:00 和 15:30 执行
 #
 # 安装 cron 任务:
 #   crontab -e
-#   添加: 0 10,16 * * 1-5 /path/to/trade-krono-cli/scripts/cache_sync.sh
+#   添加: 0 10,30 15 * * 1-5 /path/to/trade-krono-cli/scripts/cache_sync.sh
 
 set -euo pipefail
 

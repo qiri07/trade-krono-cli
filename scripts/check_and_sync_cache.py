@@ -6,7 +6,7 @@
   2. 若未更新，自动执行增量同步
 
 触发方式：
-  - cron 定时任务（每天 10:00 和 16:00）
+  - cron 定时任务（每天 10:00 和 15:30）
   - 手动运行：python scripts/check_and_sync_cache.py
 
 用法：
