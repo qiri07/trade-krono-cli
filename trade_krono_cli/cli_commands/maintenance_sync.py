@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import signal
 import time
 from datetime import datetime, timedelta
 
@@ -12,6 +13,9 @@ from rich.console import Console
 from trade_krono_cli.cli_commands.core import _load_env
 
 console = Console()
+
+# 单只股票 K 线拉取超时（秒）
+_STOCK_FETCH_TIMEOUT: int = 30
 
 _EXCHANGE_PREFIX: dict[str, str] = {
     "6": "sh.",  # 上交所主板 + 科创板
@@ -43,6 +47,28 @@ def _resolve_tickers(raw: str) -> list[str]:
         if ticker not in seen:
             seen.add(ticker)
             result.append(ticker)
+    return result
+
+
+# ── 超时保护 ──────────────────────────────────────────────────────────────────
+
+class _FetchTimeoutError(RuntimeError):
+    """单只股票 K 线拉取超时。"""
+
+
+def _fetch_timeout_handler(signum: int, frame: object) -> None:
+    raise _FetchTimeoutError(f"K 线拉取超时（>{_STOCK_FETCH_TIMEOUT}s）")
+
+
+def _fetch_with_timeout(func, *args, **kwargs):
+    """带超时的函数调用（仅 Unix）。"""
+    old_handler = signal.signal(signal.SIGALRM, _fetch_timeout_handler)
+    signal.alarm(_STOCK_FETCH_TIMEOUT)
+    try:
+        result = func(*args, **kwargs)
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
     return result
 
 
@@ -141,7 +167,8 @@ def sync_universe(
             console.print(f"  [{i}/{total}] {ticker} ...", end="\r")
 
         try:
-            df = fetch_kline_incremental(
+            df = _fetch_with_timeout(
+                fetch_kline_incremental,
                 ticker=ticker,
                 start_date=start_date,
                 end_date=date,
@@ -153,6 +180,11 @@ def sync_universe(
             success_count += 1
             if show_progress:
                 console.print(f"  [{i}/{total}] {ticker} ✅ {n_rows}行", end="\r")
+        except _FetchTimeoutError:
+            fail_tickers.append(ticker)
+            logger.warning(f"⏱️  {ticker} K 线拉取超时（>{_STOCK_FETCH_TIMEOUT}s），已跳过")
+            if show_progress:
+                console.print(f"  [{i}/{total}] {ticker} ⏱️ 超时跳过", end="\r")
         except Exception as e:
             fail_tickers.append(ticker)
             logger.debug(f"⚠️  {ticker} K 线拉取失败: {e}")
@@ -261,7 +293,8 @@ def sync_whitelist(
             console.print(f"  [{i}/{total}] {ticker} ...", end="\r")
 
         try:
-            df = fetch_kline_incremental(
+            df = _fetch_with_timeout(
+                fetch_kline_incremental,
                 ticker=ticker,
                 start_date=start_date,
                 end_date=date,
@@ -273,6 +306,11 @@ def sync_whitelist(
             success_count += 1
             if show_progress:
                 console.print(f"  [{i}/{total}] {ticker} ✅ {n_rows}行", end="\r")
+        except _FetchTimeoutError:
+            fail_tickers.append(ticker)
+            logger.warning(f"⏱️  {ticker} K 线拉取超时（>{_STOCK_FETCH_TIMEOUT}s），已跳过")
+            if show_progress:
+                console.print(f"  [{i}/{total}] {ticker} ⏱️ 超时跳过", end="\r")
         except Exception as e:
             fail_tickers.append(ticker)
             logger.debug(f"⚠️  {ticker} K 线拉取失败: {e}")

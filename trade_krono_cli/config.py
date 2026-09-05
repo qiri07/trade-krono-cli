@@ -32,7 +32,9 @@ class Settings:
     """结果目录，可通过环境变量 TRADING_KRONO_RESULTS_DIR 覆盖（测试隔离用）。"""
     cache_dir: Path = field(
         default_factory=lambda: (
-            Path(os.getenv("TRADING_KRONO_CACHE_DIR", "")) or (_PROJECT_ROOT / "outputs" / "cache")
+            _PROJECT_ROOT / "outputs" / "cache"
+            if not (v := os.getenv("TRADING_KRONO_CACHE_DIR", "")).strip()
+            else Path(v)
         ),
     )
     """缓存目录，可通过环境变量 TRADING_KRONO_CACHE_DIR 覆盖（测试隔离用）。"""
