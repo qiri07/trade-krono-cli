@@ -36,6 +36,7 @@ _API_KEY = (
 )
 _BASE = "https://fuyao.aicubes.cn"
 _CONCURRENCY = 8
+_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "agnes-2.5-flash")
 
 # ── LLM 可用性检查 ─────────────────────────────────────────────────────────────
 _LLM_AVAILABLE = bool(os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""))
@@ -81,7 +82,7 @@ def _verify_pe_percentile(ticker: str, name: str, pe_ttm: float | None) -> tuple
 
         client = OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
         response = client.chat.completions.create(
-            model="agnes-2.5-flash",
+            model=_AI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=200,
@@ -188,45 +189,77 @@ def get_all_stocks(conn) -> list[dict]:
     return all_stocks
 
 
+def _fetch_one_val_batch(batch: list[str], cache: dict | None) -> tuple[dict[str, dict], dict[str, dict]]:
+    """获取单批估值数据（带缓存），线程安全。"""
+    batch_key = "val_batch_" + ",".join(sorted(batch))
+
+    # 先查缓存
+    cached = cache.get(batch_key) if cache else None
+    if cached is not None:
+        return cached, {}
+
+    # 缓存未命中，请求 API
+    data = _api_get(
+        "/api/a-share/valuations/snapshot",
+        {"thscodes": ",".join(batch)},
+        timeout=15,
+    )
+    batch_result: dict[str, dict] = {}
+    new_entries: dict[str, dict] = {}
+    if data and data.get("code") == 0:
+        for item in data.get("data", {}).get("item", []):
+            thscode = item["thscode"]
+            entry = {
+                "pe_ttm": _safe_float(item.get("pe_ttm")),
+                "pb_mrq": _safe_float(item.get("pb_mrq")),
+                "name": item.get("name", ""),
+            }
+            batch_result[thscode] = entry
+            new_entries[f"val_{thscode}"] = entry
+
+        batch_result = dict(batch_result)  # 副本，线程安全返回
+        new_entries = dict(new_entries)
+    return batch_result, new_entries
+
+
 def batch_valuations(
     thscodes: list[str], conn, cache: dict | None = None
 ) -> tuple[dict[str, dict], dict[str, dict]]:
-    """批量获取估值快照（带缓存，返回 (结果, 新缓存条目)）。"""
+    """批量获取估值快照（带缓存，返回 (结果, 新缓存条目)）。
+
+    缓存命中的批次立即返回；缓存未命中的批次通过线程池并行请求，
+    默认并发 4 路，大幅缩短全量估值拉取耗时。
+    """
     result: dict[str, dict] = {}
     new_entries: dict[str, dict] = {}
+    total = len(thscodes)
 
-    for idx, i in enumerate(range(0, len(thscodes), 50)):
-        batch = thscodes[i : i + 50]
+    # 将 batches 拆分为"命中缓存"和"需请求"两类
+    pending_batches: list[list[str]] = []
+    for i in range(0, total, 50):
+        batch = thscodes[i: i + 50]
         batch_key = "val_batch_" + ",".join(sorted(batch))
-
-        # 先查缓存
         cached = cache.get(batch_key) if cache else None
         if cached is not None:
             result.update(cached)
-            continue
+        else:
+            pending_batches.append(batch)
 
-        # 缓存未命中，请求 API
-        data = _api_get(
-            "/api/a-share/valuations/snapshot",
-            {"thscodes": ",".join(batch)},
-            timeout=15,
-        )
-        batch_result: dict[str, dict] = {}
-        if data and data.get("code") == 0:
-            for item in data.get("data", {}).get("item", []):
-                thscode = item["thscode"]
-                entry = {
-                    "pe_ttm": _safe_float(item.get("pe_ttm")),
-                    "pb_mrq": _safe_float(item.get("pb_mrq")),
-                    "name": item.get("name", ""),
-                }
-                batch_result[thscode] = entry
-                new_entries[f"val_{thscode}"] = entry
+    # 并行请求缓存未命中的批次（默认 4 并发，避免同花顺 API 限流）
+    if pending_batches:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-            result.update(batch_result)
-            new_entries[batch_key] = batch_result
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(_fetch_one_val_batch, b, cache): b for b in pending_batches}
+            for future in as_completed(futures):
+                batch_result, batch_new = future.result()
+                result.update(batch_result)
+                new_entries.update(batch_new)
 
-        time.sleep(0.02)
+        if pending_batches:
+            logger.debug(f"估值并行拉取完成：{len(pending_batches)} 批次")
+
+    time.sleep(0.02)
     return result, new_entries
 
 
@@ -930,7 +963,7 @@ def run_ai_verification(
         )
 
         response = client.chat.completions.create(
-            model="agnes-2.5-flash",
+            model=_AI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=1000,
