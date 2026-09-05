@@ -221,7 +221,7 @@ def sync_universe(
         result = cache.export_daily_pv(
             parquet_path=str(parquet_main),
             h5_path=str(h5_main),
-            debug_insts=100,
+            debug_insts=0,  # 完整导出，不过滤股票数量
         )
         console.print(
             f"[bold green]✅ 已自动导出 daily_pv: {result['stocks']:,} 只, "
