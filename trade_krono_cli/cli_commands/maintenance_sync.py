@@ -54,8 +54,33 @@ def _get_global_semaphore() -> threading.Semaphore:
         return _global_semaphore
 
 
+def _update_usable_providers(
+    usable_providers: list[str],
+    locked_providers: list[str],
+) -> list[str]:
+    """重新检测 Provider 健康状态，动态更新可用列表。
+
+    返回新的 usable_providers 列表，若与健康状态变化则打印日志。
+    """
+    health = _check_provider_health()
+    from trade_krono_cli.data_providers.factory import get_data_factory
+
+    factory = get_data_factory()
+    ranked = factory.get_ranked_chain_for_ticker("sh.600519")
+    new_providers = [p for p in ranked if health.get(p, False)]
+    if new_providers != locked_providers:
+        logger.info(f"Provider 状态变化: {locked_providers} → {new_providers}")
+        console.print(
+            f"[dim]⚡ Provider 更新: {[p + ('✅' if p in new_providers else '❌') for p in ranked]}[/dim]"
+        )
+    return new_providers if new_providers else locked_providers
+
+
 # 全局请求间隔（秒），用于在批次之间分散请求
 _BETWEEN_REQUEST_DELAY: float = 0.1
+# 周期性健康检查：每处理 N 只股票或间隔 M 秒重新检测一次 Provider 健康状态
+_HEALTH_CHECK_INTERVAL_TICKERS: int = 200
+_HEALTH_CHECK_MIN_INTERVAL_SEC: float = 60.0
 _EXCHANGE_PREFIX: dict[str, str] = {
     "6": "sh.",  # 上交所主板 + 科创板
     "0": "sz.",  # 深交所主板
@@ -260,12 +285,44 @@ def sync_universe(
     row_counts: dict[str, int] = {}
     provider_map: dict[str, str | None] = {}
 
+    # 动态健康检查共享状态
+    _health_state: dict = {
+        "usable_providers": list(usable_providers),
+        "last_check_time": time.monotonic(),
+        "tickers_since_check": 0,
+        "lock": threading.Lock(),
+    }
+
+    def _health_monitor() -> None:
+        """后台线程：定期重新检测 Provider 健康状态。"""
+        while True:
+            time.sleep(5.0)
+            with _health_state["lock"]:
+                elapsed = time.monotonic() - _health_state["last_check_time"]
+                tickers_done = _health_state["tickers_since_check"]
+            if elapsed >= _HEALTH_CHECK_MIN_INTERVAL_SEC or tickers_done >= _HEALTH_CHECK_INTERVAL_TICKERS:
+                with _health_state["lock"]:
+                    _health_state["last_check_time"] = time.monotonic()
+                    _health_state["tickers_since_check"] = 0
+                new_providers = _update_usable_providers(
+                    _health_state["usable_providers"],
+                    _health_state["usable_providers"],
+                )
+                with _health_state["lock"]:
+                    _health_state["usable_providers"] = new_providers
+
+    _monitor_thread = threading.Thread(target=_health_monitor, daemon=True)
+    _monitor_thread.start()
+
     def _process(ticker: str) -> tuple[str, int, str | None]:
         # 全局限流：等待许可后再开始拉取
         _get_global_semaphore().acquire()
         try:
             # 随机小抖动，避免所有线程同时发起请求
             time.sleep(random.uniform(0, _BETWEEN_REQUEST_DELAY))
+            with _health_state["lock"]:
+                providers = list(_health_state["usable_providers"])
+                _health_state["tickers_since_check"] += 1
             rows, provider_name = _fetch_ticker_parallel(
                 ticker=ticker,
                 start_date=start_date,
@@ -273,7 +330,7 @@ def sync_universe(
                 frequency="d",
                 adjustflag="1",
                 use_cache=True,
-                providers=usable_providers,
+                providers=providers,
             )
             return ticker, rows, provider_name
         finally:
@@ -430,10 +487,46 @@ def sync_whitelist(
     logger.info(f"白名单可用 Provider: {usable_providers}")
 
     # ── 并发拉取 ─────────────────────────────────────────────────────────────
+    total = len(whitelist_tickers)
+    workers = min(workers, total)
+    success_count = 0
+
+    # 动态健康检查共享状态
+    _health_state: dict = {
+        "usable_providers": list(usable_providers),
+        "last_check_time": time.monotonic(),
+        "tickers_since_check": 0,
+        "lock": threading.Lock(),
+    }
+
+    def _health_monitor() -> None:
+        """后台线程：定期重新检测 Provider 健康状态。"""
+        while True:
+            time.sleep(5.0)
+            with _health_state["lock"]:
+                elapsed = time.monotonic() - _health_state["last_check_time"]
+                tickers_done = _health_state["tickers_since_check"]
+            if elapsed >= _HEALTH_CHECK_MIN_INTERVAL_SEC or tickers_done >= _HEALTH_CHECK_INTERVAL_TICKERS:
+                with _health_state["lock"]:
+                    _health_state["last_check_time"] = time.monotonic()
+                    _health_state["tickers_since_check"] = 0
+                new_providers = _update_usable_providers(
+                    _health_state["usable_providers"],
+                    _health_state["usable_providers"],
+                )
+                with _health_state["lock"]:
+                    _health_state["usable_providers"] = new_providers
+
+    _monitor_thread = threading.Thread(target=_health_monitor, daemon=True)
+    _monitor_thread.start()
+
     def _process(ticker: str) -> tuple[str, int, str | None]:
         _get_global_semaphore().acquire()
         try:
             time.sleep(random.uniform(0, _BETWEEN_REQUEST_DELAY))
+            with _health_state["lock"]:
+                providers = list(_health_state["usable_providers"])
+                _health_state["tickers_since_check"] += 1
             rows, provider_name = _fetch_ticker_parallel(
                 ticker=ticker,
                 start_date=start_date,
@@ -441,7 +534,7 @@ def sync_whitelist(
                 frequency="d",
                 adjustflag="1",
                 use_cache=True,
-                providers=usable_providers,
+                providers=providers,
             )
             return ticker, rows, provider_name
         finally:
