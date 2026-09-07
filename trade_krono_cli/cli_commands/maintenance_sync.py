@@ -57,9 +57,11 @@ def _get_global_semaphore() -> threading.Semaphore:
 def _update_usable_providers(
     usable_providers: list[str],
     locked_providers: list[str],
+    failure_counts: dict[str, int],
 ) -> list[str]:
-    """重新检测 Provider 健康状态，动态更新可用列表。
+    """重新检测 Provider 健康状态，动态更新可用列表（带滞环防抖）。
 
+    使用连续失败/成功次数阈值，避免间歇性抖动导致 Provider 频繁切换。
     返回新的 usable_providers 列表，若与健康状态变化则打印日志。
     """
     health = _check_provider_health()
@@ -67,13 +69,36 @@ def _update_usable_providers(
 
     factory = get_data_factory()
     ranked = factory.get_ranked_chain_for_ticker("sh.600519")
-    new_providers = [p for p in ranked if health.get(p, False)]
-    if new_providers != locked_providers:
-        logger.info(f"Provider 状态变化: {locked_providers} → {new_providers}")
+    new_providers: set[str] = set(locked_providers)  # 基于当前可用列表修改
+
+    for p in ranked:
+        is_healthy = health.get(p, False)
+        if p in locked_providers:
+            # 当前可用：连续失败才剔除
+            if is_healthy:
+                failure_counts[p] = 0
+            else:
+                failure_counts[p] = failure_counts.get(p, 0) + 1
+                if failure_counts[p] >= _HEALTH_REMOVE_THRESHOLD:
+                    new_providers.discard(p)
+                    logger.warning(f"Provider {p} 连续 {failure_counts[p]} 次健康检查失败，已剔除")
+        else:
+            # 当前不可用：连续成功才恢复
+            if is_healthy:
+                failure_counts[p] = failure_counts.get(p, 0) + 1
+                if failure_counts[p] >= _HEALTH_RESTORE_THRESHOLD:
+                    new_providers.add(p)
+                    logger.info(f"Provider {p} 连续 {_HEALTH_RESTORE_THRESHOLD} 次健康检查通过，已恢复")
+            else:
+                failure_counts[p] = 0
+
+    result = sorted(new_providers)
+    if result != locked_providers:
+        logger.info(f"Provider 状态变化: {locked_providers} → {result}")
         console.print(
-            f"[dim]⚡ Provider 更新: {[p + ('✅' if p in new_providers else '❌') for p in ranked]}[/dim]"
+            f"[dim]⚡ Provider 更新: {[p + ('✅' if p in result else '❌') for p in ranked]}[/dim]"
         )
-    return new_providers if new_providers else locked_providers
+    return result
 
 
 # 全局请求间隔（秒），用于在批次之间分散请求
@@ -81,6 +106,9 @@ _BETWEEN_REQUEST_DELAY: float = 0.1
 # 周期性健康检查：每处理 N 只股票或间隔 M 秒重新检测一次 Provider 健康状态
 _HEALTH_CHECK_INTERVAL_TICKERS: int = 200
 _HEALTH_CHECK_MIN_INTERVAL_SEC: float = 60.0
+# 滞环阈值：连续失败多少次才剔除 Provider，连续成功多少次才恢复
+_HEALTH_REMOVE_THRESHOLD: int = 3
+_HEALTH_RESTORE_THRESHOLD: int = 2
 _EXCHANGE_PREFIX: dict[str, str] = {
     "6": "sh.",  # 上交所主板 + 科创板
     "0": "sz.",  # 深交所主板
@@ -290,6 +318,7 @@ def sync_universe(
         "usable_providers": list(usable_providers),
         "last_check_time": time.monotonic(),
         "tickers_since_check": 0,
+        "failure_counts": {},
         "lock": threading.Lock(),
     }
 
@@ -307,6 +336,7 @@ def sync_universe(
                 new_providers = _update_usable_providers(
                     _health_state["usable_providers"],
                     _health_state["usable_providers"],
+                    _health_state["failure_counts"],
                 )
                 with _health_state["lock"]:
                     _health_state["usable_providers"] = new_providers
@@ -496,6 +526,7 @@ def sync_whitelist(
         "usable_providers": list(usable_providers),
         "last_check_time": time.monotonic(),
         "tickers_since_check": 0,
+        "failure_counts": {},
         "lock": threading.Lock(),
     }
 
@@ -513,6 +544,7 @@ def sync_whitelist(
                 new_providers = _update_usable_providers(
                     _health_state["usable_providers"],
                     _health_state["usable_providers"],
+                    _health_state["failure_counts"],
                 )
                 with _health_state["lock"]:
                     _health_state["usable_providers"] = new_providers
