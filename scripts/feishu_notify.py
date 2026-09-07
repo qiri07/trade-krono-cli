@@ -42,6 +42,10 @@ import json
 import sys
 from pathlib import Path
 
+# 确保脚本所在目录的父目录（仓库根）在 sys.path 中，
+# 使 from scripts.xxx 模式在直接执行时也能正常工作
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 # 共享函数（避免重复）
 from scripts.feishu_utils import (
     build_buffett_card,
