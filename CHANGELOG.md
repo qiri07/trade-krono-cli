@@ -6,6 +6,24 @@ The changelog is also available in Chinese: [中文版更新日志](./CHANGELOG_
 
 ---
 
+### v0.1.10 — 2026-09-07
+
+**Parallel K-line sync with rate limiting & provider health check:**
+
+- **feat(sync)**: `sync-universe` / `sync-whitelist` now run with parallel execution — `ThreadPoolExecutor(max_workers=N)`, default 16 workers
+- **feat(sync)**: Per-stock multi-provider concurrent fetch (`_fetch_ticker_parallel`) — tries multiple providers in parallel, first success wins
+- **feat(sync)**: Provider health check runs before sync starts — prints table of available / unavailable providers
+- **feat(sync)**: Semaphore-based rate limiting — per-provider concurrency caps (`mootdx:5, baostock:3, ...`) + global cap of 20 to prevent IP bans
+- **feat(sync)**: Random jitter delay (`0~100ms`) between requests to smooth traffic spikes
+- **feat(sync)**: Added `--workers` option (default 16), removed deprecated `--delay`
+- **feat(sync)**: Shows Provider usage distribution stats after sync completion
+- **feat(feishu)**: Added `--ai-summary` argument to `feishu_cli.py buffett` for AI analysis text
+- **feat(buffett)**: Parallel screening now supports AI verification integration and Feishu push with summary
+- **test**: Rewrote sync whitelist tests to match new parallel architecture; added `TestFetchTickerParallel`; removed obsolete timeout-protection tests (`_fetch_with_timeout` / `_FetchTimeoutError` removed)
+- **fix(data)**: Added `DataProviderFactory` import and proper type annotation for `_try_provider_single`
+
+---
+
 ### v0.1.9 — 2026-09-05
 
 **Sync reliability fixes & cron schedule update:**

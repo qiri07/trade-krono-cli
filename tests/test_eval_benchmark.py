@@ -112,7 +112,7 @@ class TestComputeBenchmarkMetrics:
             )
 
     def test_constant_prices_sharpe_zero(self) -> None:
-        kline = [("2026-01-{:02d}".format(d), 100.0) for d in range(1, 11)]
+        kline = [(f"2026-01-{d:02d}", 100.0) for d in range(1, 11)]
         with patch("trade_krono_cli.eval_benchmark.fetch_benchmark_kline", return_value=kline):
             result = compute_benchmark_metrics("sh.000300", "CSI300", "2026-01-01", "2026-01-10")
         assert result is not None
@@ -149,7 +149,7 @@ class TestComputeBenchmarkMetrics:
 
 class TestComputePortfolioMetrics:
     def test_basic(self) -> None:
-        equity = [("2026-01-{:02d}".format(d), 100.0 + d * 2.0) for d in range(1, 11)]
+        equity = [(f"2026-01-{d:02d}", 100.0 + d * 2.0) for d in range(1, 11)]
         trades = [
             {"action": "BUY", "pnl": 0.0},
             {"action": "SELL", "pnl": 10.0},
@@ -172,22 +172,20 @@ class TestComputePortfolioMetrics:
         assert result == {}
 
     def test_all_wins_profit_factor(self) -> None:
-        equity = [("2026-01-{:02d}".format(d), 100.0 + d * 5.0) for d in range(1, 6)]
+        equity = [(f"2026-01-{d:02d}", 100.0 + d * 5.0) for d in range(1, 6)]
         trades = [{"action": "SELL", "pnl": 10.0}, {"action": "SELL", "pnl": 20.0}]
         result = compute_portfolio_metrics(equity, trades)
         assert result["profit_factor"] > 1.0
 
     def test_no_wins_profit_factor(self) -> None:
-        equity = [("2026-01-{:02d}".format(d), 100.0 - d) for d in range(1, 6)]
+        equity = [(f"2026-01-{d:02d}", 100.0 - d) for d in range(1, 6)]
         trades = [{"action": "SELL", "pnl": -5.0}, {"action": "SELL", "pnl": -3.0}]
         result = compute_portfolio_metrics(equity, trades)
         assert result["profit_factor"] == pytest.approx(0.0, abs=0.01)
 
     def test_sortino_vs_sharpe(self) -> None:
         """Sortino 应 ≤ Sharpe（只惩罚下行波动）。"""
-        equity = [
-            ("2026-01-{:02d}".format(d), 100.0 + (1 if d % 2 == 0 else -2)) for d in range(1, 21)
-        ]
+        equity = [(f"2026-01-{d:02d}", 100.0 + (1 if d % 2 == 0 else -2)) for d in range(1, 21)]
         result = compute_portfolio_metrics(equity, [])
         if result.get("sortino_ratio") and result.get("sharpe_ratio"):
             assert result["sortino_ratio"] <= result["sharpe_ratio"] + 0.01

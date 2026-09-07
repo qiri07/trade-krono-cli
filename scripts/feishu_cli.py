@@ -90,6 +90,7 @@ def main() -> None:
     # buffett 子命令
     p_buffett = sub.add_parser("buffett", help="巴菲特筛选结果通知")
     p_buffett.add_argument("--result-file", required=True, help="筛选结果文件路径")
+    p_buffett.add_argument("--ai-summary", default="", help="AI 核实摘要文本（Markdown）")
 
     # text 子命令
     p_text = sub.add_parser("text", help="通用文本通知")

@@ -6,6 +6,24 @@
 
 ---
 
+### v0.1.10 — 2026-09-07
+
+**并行 K 线同步 + 速率限制 + Provider 健康检查：**
+
+- **feat(sync)**：`sync-universe` / `sync-whitelist` 改为并行执行 — `ThreadPoolExecutor(max_workers=N)`，默认 16 并发
+- **feat(sync)**：单只股票多 Provider 并发拉取（`_fetch_ticker_parallel`）— 同时尝试多个数据源，首个成功即返回
+- **feat(sync)**：同步前自动检测各 Provider 健康状态 — 打印可用/不可用 Provider 表格
+- **feat(sync)**：信号量限流 — 每 Provider 最大并发数（`mootdx:5, baostock:3` 等）+ 全局上限 20，防止 IP 被封
+- **feat(sync)**：请求间随机抖动延迟（0~100ms），平滑流量突刺
+- **feat(sync)**：新增 `--workers` 选项（默认 16），移除已弃用的 `--delay`
+- **feat(sync)**：同步完成后打印 Provider 使用分布统计
+- **feat(feishu)**：`feishu_cli.py buffett` 新增 `--ai-summary` 参数，支持传入 AI 分析文本
+- **feat(buffett)**：并行筛选器新增 AI 验证集成和飞书推送摘要支持
+- **test**：重写同步白名单测试以适配新并行架构；新增 `TestFetchTickerParallel`；移除已删除的超时保护测试（`_fetch_with_timeout` / `_FetchTimeoutError` 已移除）
+- **fix(data)**：补充 `DataProviderFactory` 导入及 `_try_provider_single` 正确类型注解
+
+---
+
 ### v0.1.9 — 2026-09-05
 
 **同步可靠性修复与定时任务调整：**

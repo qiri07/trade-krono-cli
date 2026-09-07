@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import signal
+import random
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Any, Callable
 
 import typer
 from loguru import logger
 from rich.console import Console
+from rich.table import Table
 
 from trade_krono_cli.cli_commands.core import _load_env
 
@@ -18,6 +20,42 @@ console = Console()
 # 单只股票 K 线拉取超时（秒）
 _STOCK_FETCH_TIMEOUT: int = 30
 
+# 每个 Provider 的最大并发请求数（防止被限流/拉黑）
+# mootdx 实测限制：单 IP 约 10 并发；baostock 已被拉黑，仅作备用
+_PROVIDER_CONCURRENCY: dict[str, int] = {
+    "mootdx": 5,
+    "baostock": 3,
+    "akshare": 3,
+    "tushare": 3,
+    "tonghuashun": 3,
+}
+
+# 模块级：每个 Provider 的并发信号量
+_provider_semaphores: dict[str, threading.Semaphore] = {}
+_semaphores_lock = threading.Lock()
+
+# 全局并发上限（所有 Provider 合计），防止整体流量过大
+_global_semaphore = threading.Semaphore(20)
+_global_sem_lock = threading.Lock()
+
+
+def _get_provider_semaphore(provider: str) -> threading.Semaphore:
+    """获取（或创建）指定 Provider 的并发信号量。"""
+    with _semaphores_lock:
+        if provider not in _provider_semaphores:
+            limit = _PROVIDER_CONCURRENCY.get(provider, 3)
+            _provider_semaphores[provider] = threading.Semaphore(limit)
+        return _provider_semaphores[provider]
+
+
+def _get_global_semaphore() -> threading.Semaphore:
+    """获取全局并发信号量，首次调用时根据可用 Provider 数量动态调整。"""
+    with _global_sem_lock:
+        return _global_semaphore
+
+
+# 全局请求间隔（秒），用于在批次之间分散请求
+_BETWEEN_REQUEST_DELAY: float = 0.1
 _EXCHANGE_PREFIX: dict[str, str] = {
     "6": "sh.",  # 上交所主板 + 科创板
     "0": "sz.",  # 深交所主板
@@ -51,27 +89,71 @@ def _resolve_tickers(raw: str) -> list[str]:
     return result
 
 
-# ── 超时保护 ──────────────────────────────────────────────────────────────────
+def _check_provider_health() -> dict[str, bool]:
+    """检查所有 Provider 的健康状态，返回 {name: is_healthy}。"""
+    from trade_krono_cli.data_providers import get_data_factory
 
-
-class _FetchTimeoutError(RuntimeError):
-    """单只股票 K 线拉取超时。"""
-
-
-def _fetch_timeout_handler(signum: int, frame: object) -> None:
-    raise _FetchTimeoutError(f"K 线拉取超时（>{_STOCK_FETCH_TIMEOUT}s）")
-
-
-def _fetch_with_timeout(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """带超时的函数调用（仅 Unix）。"""
-    old_handler = signal.signal(signal.SIGALRM, _fetch_timeout_handler)
-    signal.alarm(_STOCK_FETCH_TIMEOUT)
-    try:
-        result = func(*args, **kwargs)
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+    factory = get_data_factory()
+    result: dict[str, bool] = {}
+    for name in factory.provider_chain:
+        provider = factory.get_provider(name)
+        if provider is None:
+            result[name] = False
+            continue
+        try:
+            result[name] = provider.health_check()
+        except Exception:
+            result[name] = False
     return result
+
+
+def _fetch_ticker_parallel(
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    frequency: str,
+    adjustflag: str,
+    use_cache: bool,
+    providers: list[str],
+) -> tuple[int, str | None]:
+    """并发尝试多个 Provider 拉取单只股票的增量 K 线。
+
+    受全局信号量 + 每 Provider 信号量双重限流，防止触发接口限制。
+
+    Returns
+    -------
+    (行数, provider名称) 或 (0, None) 表示失败
+    """
+    from trade_krono_cli.data import fetch_kline_incremental
+    from trade_krono_cli.data_providers import get_data_factory
+
+    def _single(ticker_: str, provider_: str) -> tuple[int, str | None]:
+        # 获取该 Provider 的信号量，限制并发请求数
+        provider_sema = _get_provider_semaphore(provider_)
+        with provider_sema:
+            old_primary = get_data_factory().primary
+            old_fallbacks = list(get_data_factory().fallbacks)
+            try:
+                get_data_factory().primary = provider_
+                get_data_factory().fallbacks = []
+                df = fetch_kline_incremental(
+                    ticker_, start_date, end_date, frequency, adjustflag, use_cache
+                )
+                return (len(df), provider_) if df is not None and len(df) > 0 else (0, None)
+            except Exception as e:
+                logger.debug(f"  {ticker_} ← {provider_} 失败: {e}")
+                return (0, None)
+            finally:
+                get_data_factory().primary = old_primary
+                get_data_factory().fallbacks = old_fallbacks
+
+    with ThreadPoolExecutor(max_workers=len(providers)) as pool:
+        futures = {pool.submit(_single, ticker, p): p for p in providers}
+        for future in as_completed(futures):
+            rows, provider_name = future.result()
+            if rows > 0:
+                return rows, provider_name
+    return 0, None
 
 
 def sync_universe(
@@ -88,10 +170,11 @@ def sync_universe(
         help="基准日期 YYYY-MM-DD（默认今天）",
     ),
     lookback: int = typer.Option(730, "--lookback", "-l", help="回溯天数，默认 730（约 2 年）"),
-    delay: float = typer.Option(
-        0.05,
-        "--delay",
-        help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）",
+    workers: int = typer.Option(
+        16,
+        "--workers",
+        "-w",
+        help="并发拉取线程数（默认 16）",
     ),
     show_progress: bool = typer.Option(
         True,
@@ -116,7 +199,6 @@ def sync_universe(
     _load_env()
 
     from trade_krono_cli.config import get_settings
-    from trade_krono_cli.data import fetch_kline_incremental
 
     settings = get_settings()
     whitelist_tickers: list[str] = _resolve_tickers(settings.sync_whitelist)
@@ -154,50 +236,82 @@ def sync_universe(
     if whitelist_tickers:
         logger.info(f"📌 白名单 {len(whitelist_tickers)} 只优先拉取")
 
+    # ── 检查 Provider 健康状态 ───────────────────────────────────────────────
+    console.print("[bold cyan]🔍 检查数据线路健康状态...[/bold cyan]")
+    health = _check_provider_health()
+    health_table = Table(title="Provider 健康状态")
+    health_table.add_column("Provider", style="cyan")
+    health_table.add_column("状态", style="green")
+    for name, ok in health.items():
+        health_table.add_row(name, "✅ 可用" if ok else "❌ 不可用")
+    console.print(health_table)
+
+    from trade_krono_cli.data_providers.factory import get_data_factory
+    factory = get_data_factory()
+    ranked = factory.get_ranked_chain_for_ticker("sh.600519")
+    usable_providers = [p for p in ranked if health.get(p, False)]
+    logger.info(f"可用 Provider: {usable_providers}")
+
+    # ── 并发拉取 ─────────────────────────────────────────────────────────────
     total = len(ordered_tickers)
+    workers = min(workers, total)
     success_count = 0
     fail_tickers: list[str] = []
+    row_counts: dict[str, int] = {}
+    provider_map: dict[str, str | None] = {}
 
-    console.print(
-        f"[bold green]🔥 全量 K 线缓存同步[/bold green] "
-        f"来源={source} 股票数={total} 日期={start_date}~{date}"
-        + (f" 白名单={len(whitelist_tickers)}只优先" if whitelist_tickers else ""),
-    )
-
-    for i, ticker in enumerate(ordered_tickers, 1):
-        if show_progress:
-            console.print(f"  [{i}/{total}] {ticker} ...", end="\r")
-
+    def _process(ticker: str) -> tuple[str, int, str | None]:
+        # 全局限流：等待许可后再开始拉取
+        _get_global_semaphore().acquire()
         try:
-            df = _fetch_with_timeout(
-                fetch_kline_incremental,
+            # 随机小抖动，避免所有线程同时发起请求
+            time.sleep(random.uniform(0, _BETWEEN_REQUEST_DELAY))
+            rows, provider_name = _fetch_ticker_parallel(
                 ticker=ticker,
                 start_date=start_date,
                 end_date=date,
                 frequency="d",
                 adjustflag="1",
                 use_cache=True,
+                providers=usable_providers,
             )
-            n_rows = len(df) if df is not None else 0
-            success_count += 1
-            if show_progress:
-                console.print(f"  [{i}/{total}] {ticker} ✅ {n_rows}行", end="\r")
-        except _FetchTimeoutError:
-            fail_tickers.append(ticker)
-            logger.warning(f"⏱️  {ticker} K 线拉取超时（>{_STOCK_FETCH_TIMEOUT}s），已跳过")
-            if show_progress:
-                console.print(f"  [{i}/{total}] {ticker} ⏱️ 超时跳过", end="\r")
-        except Exception as e:
-            fail_tickers.append(ticker)
-            logger.debug(f"⚠️  {ticker} K 线拉取失败: {e}")
-            if show_progress:
-                console.print(f"  [{i}/{total}] {ticker} ❌ {str(e)[:40]}", end="\r")
+            return ticker, rows, provider_name
+        finally:
+            _get_global_semaphore().release()
 
-        if delay > 0 and i < total:
-            time.sleep(delay)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_process, t): t for t in ordered_tickers}
+        for future in as_completed(futures):
+            ticker = futures[future]
+            try:
+                t, rows, provider_name = future.result()
+                row_counts[ticker] = rows
+                provider_map[ticker] = provider_name
+                if rows > 0:
+                    success_count += 1
+                    if show_progress:
+                        console.print(
+                            f"  ✅ [{success_count}/{total}] {ticker} {rows}行 ← {provider_name or '?'}",
+                            soft_wrap=True,
+                        )
+                else:
+                    fail_tickers.append(ticker)
+                    logger.warning(f"⚠️  {ticker} 无数据返回（所有 Provider 均失败）")
+                    if show_progress:
+                        console.print(
+                            f"  ❌ [{success_count + len(fail_tickers)}/{total}] {ticker} 无数据",
+                            soft_wrap=True,
+                        )
+            except Exception as e:
+                fail_tickers.append(ticker)
+                logger.debug(f"⚠️  {ticker} K 线拉取失败: {e}")
+                if show_progress:
+                    console.print(
+                        f"  ❌ [{success_count + len(fail_tickers)}/{total}] {ticker} {str(e)[:40]}",
+                        soft_wrap=True,
+                    )
 
-    if show_progress:
-        console.print()  # 换行，清除进度行
+    console.print()
 
     console.print(
         f"[bold green]✅ 同步完成[/bold green] "
@@ -207,6 +321,13 @@ def sync_universe(
         console.print(f"[yellow]⚠️  失败股票（可稍后重试）: {', '.join(fail_tickers[:20])}[/yellow]")
         if len(fail_tickers) > 20:
             console.print(f"[dim]   … 还有 {len(fail_tickers) - 20} 只[/dim]")
+        # 打印各 Provider 使用分布
+        prov_counts: dict[str, int] = {}
+        for p in provider_map.values():
+            if p:
+                prov_counts[p] = prov_counts.get(p, 0) + 1
+        if prov_counts:
+            console.print(f"[dim]Provider 分布: {', '.join(f'{k}:{v}' for k, v in sorted(prov_counts.items(), key=lambda x: -x[1]))}[/dim]")
 
     # ── 自动导出 daily_pv 供 RD-Agent 使用 ─────────────────────────────
     try:
@@ -241,10 +362,11 @@ def sync_whitelist(
         help="基准日期 YYYY-MM-DD（默认今天）",
     ),
     lookback: int = typer.Option(730, "--lookback", "-l", help="回溯天数，默认 730（约 2 年）"),
-    delay: float = typer.Option(
-        0.05,
-        "--delay",
-        help="每只股票之间的延迟秒数（默认 0.05，用于限流保护）",
+    workers: int = typer.Option(
+        16,
+        "--workers",
+        "-w",
+        help="并发拉取线程数（默认 16）",
     ),
     show_progress: bool = typer.Option(
         True,
@@ -266,7 +388,6 @@ def sync_whitelist(
     _load_env()
 
     from trade_krono_cli.config import get_settings
-    from trade_krono_cli.data import fetch_kline_incremental
 
     settings = get_settings()
     whitelist_raw = settings.sync_whitelist.strip()
@@ -283,47 +404,81 @@ def sync_whitelist(
     start_date = (end_date - timedelta(days=lookback * 2)).strftime("%Y-%m-%d")
 
     total = len(whitelist_tickers)
+    workers = min(workers, total)
     success_count = 0
     fail_tickers: list[str] = []
+    provider_map: dict[str, str | None] = {}
 
     console.print(
         f"[bold green]🔥 白名单 K 线缓存同步[/bold green] 股票数={total} 日期={start_date}~{date}",
     )
 
-    for i, ticker in enumerate(whitelist_tickers, 1):
-        if show_progress:
-            console.print(f"  [{i}/{total}] {ticker} ...", end="\r")
+    # ── 检查 Provider 健康状态 ───────────────────────────────────────────────
+    console.print("[bold cyan]🔍 检查数据线路健康状态...[/bold cyan]")
+    health = _check_provider_health()
+    health_table = Table(title="Provider 健康状态")
+    health_table.add_column("Provider", style="cyan")
+    health_table.add_column("状态", style="green")
+    for name, ok in health.items():
+        health_table.add_row(name, "✅ 可用" if ok else "❌ 不可用")
+    console.print(health_table)
 
+    from trade_krono_cli.data_providers.factory import get_data_factory
+    factory = get_data_factory()
+    ranked = factory.get_ranked_chain_for_ticker("sh.600519")
+    usable_providers = [p for p in ranked if health.get(p, False)]
+    logger.info(f"白名单可用 Provider: {usable_providers}")
+
+    # ── 并发拉取 ─────────────────────────────────────────────────────────────
+    def _process(ticker: str) -> tuple[str, int, str | None]:
+        _get_global_semaphore().acquire()
         try:
-            df = _fetch_with_timeout(
-                fetch_kline_incremental,
+            time.sleep(random.uniform(0, _BETWEEN_REQUEST_DELAY))
+            rows, provider_name = _fetch_ticker_parallel(
                 ticker=ticker,
                 start_date=start_date,
                 end_date=date,
                 frequency="d",
                 adjustflag="1",
                 use_cache=True,
+                providers=usable_providers,
             )
-            n_rows = len(df) if df is not None else 0
-            success_count += 1
-            if show_progress:
-                console.print(f"  [{i}/{total}] {ticker} ✅ {n_rows}行", end="\r")
-        except _FetchTimeoutError:
-            fail_tickers.append(ticker)
-            logger.warning(f"⏱️  {ticker} K 线拉取超时（>{_STOCK_FETCH_TIMEOUT}s），已跳过")
-            if show_progress:
-                console.print(f"  [{i}/{total}] {ticker} ⏱️ 超时跳过", end="\r")
-        except Exception as e:
-            fail_tickers.append(ticker)
-            logger.debug(f"⚠️  {ticker} K 线拉取失败: {e}")
-            if show_progress:
-                console.print(f"  [{i}/{total}] {ticker} ❌ {str(e)[:40]}", end="\r")
+            return ticker, rows, provider_name
+        finally:
+            _get_global_semaphore().release()
 
-        if delay > 0 and i < total:
-            time.sleep(delay)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_process, t): t for t in whitelist_tickers}
+        for future in as_completed(futures):
+            ticker = futures[future]
+            try:
+                _, rows, provider_name = future.result()
+                provider_map[ticker] = provider_name
+                if rows > 0:
+                    success_count += 1
+                    if show_progress:
+                        console.print(
+                            f"  ✅ [{success_count}/{total}] {ticker} {rows}行 ← {provider_name or '?'}",
+                            soft_wrap=True,
+                        )
+                else:
+                    fail_tickers.append(ticker)
+                    logger.warning(f"⚠️  {ticker} 无数据返回")
+                    if show_progress:
+                        console.print(
+                            f"  ❌ [{success_count + len(fail_tickers)}/{total}] {ticker} 无数据",
+                            soft_wrap=True,
+                        )
+            except Exception as e:
+                fail_tickers.append(ticker)
+                logger.debug(f"⚠️  {ticker} K 线拉取失败: {e}")
+                if show_progress:
+                    console.print(
+                        f"  ❌ [{success_count + len(fail_tickers)}/{total}] {ticker} {str(e)[:40]}",
+                        soft_wrap=True,
+                    )
 
-    if show_progress:
-        console.print()
+    console.print()
 
     console.print(
         f"[bold green]✅ 同步完成[/bold green] "
@@ -331,6 +486,12 @@ def sync_whitelist(
     )
     if fail_tickers:
         console.print(f"[yellow]⚠️  失败股票: {', '.join(fail_tickers)}[/yellow]")
+        prov_counts: dict[str, int] = {}
+        for p in provider_map.values():
+            if p:
+                prov_counts[p] = prov_counts.get(p, 0) + 1
+        if prov_counts:
+            console.print(f"[dim]Provider 分布: {', '.join(f'{k}:{v}' for k, v in sorted(prov_counts.items(), key=lambda x: -x[1]))}[/dim]")
 
 
 def rank_providers(

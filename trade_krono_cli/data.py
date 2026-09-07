@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -17,7 +18,7 @@ from loguru import logger
 
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.config import Settings, get_settings
-from trade_krono_cli.data_providers import get_data_factory
+from trade_krono_cli.data_providers import DataProviderFactory, get_data_factory
 from trade_krono_cli.security import TokenBucket, retry, validate_date, validate_ticker
 from trade_krono_cli.utils.helpers import (
     next_business_days,  # noqa: F401
@@ -443,6 +444,118 @@ def _merge_kline_dfs(old_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame
     # 按 timestamps 排序并去重（保留最后一条，即新数据优先）
     merged = merged.sort_values("timestamps").reset_index(drop=True)
     return merged.drop_duplicates(subset=["timestamps"], keep="last").reset_index(drop=True)
+
+
+def fetch_kline_parallel(
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    frequency: str = "d",
+    adjustflag: str = "1",
+    use_cache: bool = True,
+    workers: int = 3,
+) -> tuple[pd.DataFrame | None, str]:
+    """并发尝试多个 Provider 拉取 K 线，任一成功即返回。
+
+    用于批量同步场景，避免单 Provider 慢导致的整体阻塞。
+
+    Parameters
+    ----------
+    ticker : str
+        股票代码（带交易所前缀，如 sh.600519）
+    start_date : str
+        起始日期 YYYY-MM-DD
+    end_date : str
+        结束日期 YYYY-MM-DD
+    frequency : str
+        频率，默认 "d"（日 K）
+    adjustflag : str
+        复权方式，默认 "1"（前复权）
+    use_cache : bool
+        是否使用缓存，默认 True
+    workers : int
+        并发尝试的 Provider 数量，默认 3
+
+    Returns
+    -------
+    tuple[pd.DataFrame | None, str]
+        (数据, provider名称)；全部失败时返回 (None, "")
+    """
+    ticker = validate_ticker(ticker)
+    start_date = validate_date(start_date)
+    end_date = validate_date(end_date)
+
+    factory = get_data_factory()
+    chain = factory._provider_chain_for_ticker(ticker)
+    # 过滤出有 K 线能力的 Provider
+    candidate_names = [
+        name for name in chain
+        if factory.get_provider(name) is not None
+        and getattr(factory.get_provider(name), "supports_kline", False)
+    ]
+    if not candidate_names:
+        logger.warning(f"❌ {ticker} 无可用的 K 线 Provider")
+        return None, ""
+
+    # 取前 workers 个 Provider
+    names_to_try = candidate_names[:workers]
+    logger.debug(f"🔀 {ticker} 并发尝试 Provider: {names_to_try}")
+
+    results: list[tuple[str, pd.DataFrame | None, Exception | None]] = []
+
+    with ThreadPoolExecutor(max_workers=len(names_to_try)) as pool:
+        future_to_name = {
+            pool.submit(
+                _try_provider_single,
+                factory, name, ticker, start_date, end_date, frequency, adjustflag, use_cache,
+            ): name
+            for name in names_to_try
+        }
+        for future in as_completed(future_to_name):
+            name = future_to_name[future]
+            try:
+                df, err = future.result()
+                results.append((name, df, err))
+            except Exception as e:
+                results.append((name, None, e))
+
+    # 找出首个成功的结果
+    for name, df, err in results:
+        if df is not None and len(df) > 0:
+            logger.info(f"✅ K 线获取成功（并发）: {ticker} ← {name} ({len(df)} 条)")
+            return df, name
+
+    # 汇总失败原因
+    fail_reasons = [
+        f"{name}({type(e).__name__}: {str(e)[:60]})"
+        for name, df, err in results
+        for e in [err] if e is not None
+    ] or [f"{name}: no data" for name, df, _ in results if df is None]
+    logger.warning(f"❌ {ticker} 所有并发 Provider 均失败: {', '.join(fail_reasons[:2])}")
+    return None, ""
+
+
+def _try_provider_single(
+    factory: DataProviderFactory,
+    name: str,
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    frequency: str,
+    adjustflag: str,
+    use_cache: bool,
+) -> tuple[pd.DataFrame | None, Exception | None]:
+    """单个 Provider 的 K 线拉取（供并发调用）。"""
+    try:
+        provider = factory.get_provider(name)
+        if provider is None:
+            return None, RuntimeError(f"{name}: provider 未初始化")
+        data = provider.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
+        if data is not None and not data.is_empty:
+            return data.to_dataframe(), None
+        return None, None  # 无数据，非异常
+    except Exception as e:
+        return None, e
 
 
 # 腾讯财经接口字段索引（qt.gtimg.cn 协议）

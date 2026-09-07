@@ -2,18 +2,23 @@
 
 覆盖：_safe_float / screen_one 六闸门 / evaluate_profitability_stability /
       evaluate_cash_quality / StockMetrics / write_result_file /
-      _verify_pe_percentile（LLM 辅助 Gate ⑥）。
+      _verify_pe_percentile（LLM 辅助 Gate ⑥）/
+      run_ai_verification / AiVerificationResult / _extract_json_from_response。
 （API 调用函数通过 mock 覆盖）
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tests.buffett_screening import (
+    AiVerificationResult,
     StockMetrics,
+    _extract_json_from_response,
+    _sanitize_feishu_md,
     batch_valuations,
     evaluate_cash_quality,
     evaluate_profitability_stability,
@@ -613,3 +618,192 @@ class TestVerifyPePercentile:
                 is_pass, reason = _verify_pe_percentile("600004", "白云机场", 13.83)
         assert is_pass is True
         assert "AI核实⚠️" in reason
+
+
+# ── AiVerificationResult ────────────────────────────────────────────────────────
+
+class TestAiVerificationResult:
+    """AiVerificationResult dataclass 单元测试。"""
+
+    def test_empty_default_fields(self) -> None:
+        """空结果 analysis_summary 含降级提示，full_summary_text 包含该提示。"""
+        result = AiVerificationResult.empty("2026-09-05", 4966, 36, 4930)
+        assert result.date == "2026-09-05"
+        assert result.total == 4966
+        assert result.pass_count == 36
+        assert result.fail_count == 4930
+        assert result.analysis_summary == "LLM 未配置，跳过 AI 核实"
+        assert result.sector_analysis == ""
+        assert result.risk_alerts == ""
+        assert result.top_picks == ""
+        assert result.conclusion == ""
+        assert result.raw_response is None
+        # full_summary_text 包含降级提示
+        assert "LLM 未配置" in result.full_summary_text
+
+    def test_full_summary_text_all_blank(self) -> None:
+        """所有文本字段均为空时 full_summary_text 返回空字符串。"""
+        result = AiVerificationResult(
+            date="2026-09-05", total=100, pass_count=0, fail_count=100
+        )
+        assert result.full_summary_text == ""
+
+    def test_full_summary_text_assembled(self) -> None:
+        """有内容时 full_summary_text 组装各段落。"""
+        result = AiVerificationResult(
+            date="2026-09-05",
+            total=4966,
+            pass_count=36,
+            fail_count=4930,
+            analysis_summary="整体概况：36只优质股通过",
+            sector_analysis="集中在制造业和周期股",
+            risk_alerts="关注高估值板块",
+            top_picks="1. 600519 贵州茅台 2. 000858 五粮液",
+            conclusion="筛选结果符合价值投资标准",
+        )
+        summary = result.full_summary_text
+        assert "整体概况" in summary
+        assert "制造业和周期股" in summary
+        assert "高估值" in summary
+        assert "贵州茅台" in summary
+        assert "符合价值投资" in summary
+
+    def test_full_summary_text_empty_when_blank(self) -> None:
+        """所有文本字段为空时 full_summary_text 返回空字符串。"""
+        result = AiVerificationResult(
+            date="2026-09-05", total=100, pass_count=0, fail_count=100
+        )
+        assert result.full_summary_text == ""
+
+    def test_full_summary_text_skips_empty_sections(self) -> None:
+        """跳过空的段落，不出现空标题行。"""
+        result = AiVerificationResult(
+            date="2026-09-05",
+            total=100,
+            pass_count=5,
+            fail_count=95,
+            analysis_summary="概况",
+            # sector_analysis, risk_alerts, top_picks, conclusion 均为默认空
+        )
+        summary = result.full_summary_text
+        assert "概况" in summary
+        # 不应包含空段落的标题
+        assert "行业与风格分析" not in summary
+        assert "风险提示" not in summary
+
+
+# ── _extract_json_from_response ─────────────────────────────────────────────────
+
+class TestExtractJsonFromResponse:
+    """_extract_json_from_response 单元测试。"""
+
+    def test_direct_json(self) -> None:
+        """纯 JSON 响应直接返回。"""
+        raw = '{"a": 1, "b": "hello"}'
+        assert _extract_json_from_response(raw) == raw
+
+    def test_code_block_with_lang(self) -> None:
+        """```json ... ``` 代码块提取内部 JSON。"""
+        raw = "```json\n{\"x\": 42}\n```"
+        assert _extract_json_from_response(raw) == '{"x": 42}'
+
+    def test_code_block_without_lang(self) -> None:
+        """纯 ``` 代码块也能提取。"""
+        raw = "```\n{\"y\": true}\n```"
+        assert _extract_json_from_response(raw) == '{"y": true}'
+
+    def test_unparseable_returns_raw(self) -> None:
+        """非 JSON 且无代码块时返回原始字符串。"""
+        raw = "这段文字不是 JSON"
+        assert _extract_json_from_response(raw) == raw
+
+
+# ── _sanitize_feishu_md ─────────────────────────────────────────────────────────
+
+class TestSanitizeFeishuMd:
+    """_sanitize_feishu_md 单元测试。"""
+
+    def test_removes_image_refs(self) -> None:
+        """移除图片引用 ![](url)。"""
+        text = "正常文本 ![logo](https://example.com/logo.png) 更多文字"
+        result = _sanitize_feishu_md(text)
+        assert "!" not in result
+        assert "正常文本" in result
+        assert "更多文字" in result
+
+    def test_leaves_plain_text_unchanged(self) -> None:
+        """无图片引用时原文返回。"""
+        text = "这是一段纯文本描述"
+        assert _sanitize_feishu_md(text) == text
+
+    def test_handles_empty_string(self) -> None:
+        """空字符串返回空字符串。"""
+        assert _sanitize_feishu_md("") == ""
+
+
+# ── run_ai_verification ─────────────────────────────────────────────────────────
+
+def _make_mock_openai(side_effect: Exception | None = None) -> MagicMock:
+    """为 run_ai_verification 创建可用的 mock openai 模块。"""
+    mock_mod = MagicMock()
+    mock_cls = MagicMock()
+    if side_effect:
+        mock_cls.side_effect = side_effect
+    mock_mod.OpenAI = mock_cls
+    return mock_mod
+
+
+class TestRunAiVerification:
+    """run_ai_verification 单元测试。"""
+
+    @patch.dict(os.environ, {"DEEPSEEK_API_KEY": "", "OPENAI_API_KEY": ""}, clear=True)
+    def test_no_api_key_returns_empty(self) -> None:
+        """无 API Key 时返回空结果。"""
+        from tests.buffett_screening import run_ai_verification
+
+        result = run_ai_verification([], [], 100, "2026-09-05")
+        assert isinstance(result, AiVerificationResult)
+        assert result.analysis_summary == "LLM 未配置，跳过 AI 核实"
+        # full_summary_text 包含降级提示文本
+        assert "LLM 未配置" in result.full_summary_text
+
+    @patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"})
+    @patch.dict(sys.modules, {"openai": MagicMock()})
+    def test_api_error_returns_empty(self) -> None:
+        """API 调用异常时返回空结果。"""
+        from tests.buffett_screening import run_ai_verification
+
+        mock_mod = sys.modules["openai"]
+        mock_mod.OpenAI.side_effect = RuntimeError("connection refused")
+
+        result = run_ai_verification([], [], 100, "2026-09-05")
+        assert isinstance(result, AiVerificationResult)
+        assert result.analysis_summary == "LLM 未配置，跳过 AI 核实"
+
+    @patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"})
+    @patch.dict(sys.modules, {"openai": MagicMock()})
+    def test_successful_call_assembles_result(self) -> None:
+        """成功调用时返回含分析内容的 AiVerificationResult。"""
+        from tests.buffett_screening import run_ai_verification
+
+        mock_mod = sys.modules["openai"]
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content='{"analysis_summary":"概况","sector_analysis":"制造业集中","risk_alerts":"无","top_picks":"600519","conclusion":"好"}'
+                )
+            )
+        ]
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_mod.OpenAI.return_value = mock_client
+
+        result = run_ai_verification([], [], 100, "2026-09-05")
+
+        assert isinstance(result, AiVerificationResult)
+        assert result.analysis_summary == "概况"
+        assert result.sector_analysis == "制造业集中"
+        assert result.top_picks == "600519"
+        assert result.total == 100
+        assert result.full_summary_text != ""

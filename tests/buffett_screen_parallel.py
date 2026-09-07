@@ -12,11 +12,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 from tests.buffett_cache import (
     cache_clean,
@@ -26,24 +28,29 @@ from tests.buffett_cache import (
 )
 from tests.buffett_screening import (
     _CONCURRENCY,
+    AiVerificationResult,
     batch_valuations,
     get_all_stocks,
+    run_ai_verification,
     run_screening,
     write_result_file,
 )
 
 
-def _notify_feishu(result_file: str, pass_count: int, fail_count: int) -> None:
-    """推送巴菲特筛选结果到飞书（失败不中断主流程）。"""
+def _notify_feishu(result_file: str, pass_count: int, fail_count: int, ai_summary: str = "") -> None:
     try:
+        # 构建完整提示：原始结果 + AI 分析
+        prompt_args: list[str] = [
+            sys.executable,
+            "scripts/feishu_cli.py",
+            "buffett",
+            "--result-file",
+            result_file,
+        ]
+        if ai_summary:
+            prompt_args += ["--ai-summary", ai_summary]
         result = subprocess.run(
-            [
-                sys.executable,
-                "scripts/feishu_cli.py",
-                "buffett",
-                "--result-file",
-                result_file,
-            ],
+            prompt_args,
             capture_output=True,
             text=True,
             timeout=15,
@@ -54,6 +61,37 @@ def _notify_feishu(result_file: str, pass_count: int, fail_count: int) -> None:
             print(f"飞书推送失败：{result.stderr.strip()}", flush=True)
     except Exception as e:
         print(f"飞书通知异常（不影响结果）：{e}", flush=True)
+
+
+def _save_ai_result(ai_result: AiVerificationResult, result_txt_path: str) -> None:
+    """将 AI 核实结果写入 JSON 文件，并追加摘要到文本结果文件末尾。
+
+    Parameters
+    ----------
+    ai_result : AiVerificationResult
+        run_ai_verification 返回的分析结果
+    result_txt_path : str
+        原始文本结果文件路径，AI 摘要将追加在此文件末尾
+    """
+    results_dir = Path(result_txt_path).parent
+    results_dir.mkdir(parents=True, exist_ok=True)
+    json_path = results_dir / f"buffett_screen_{Path(result_txt_path).stem}_ai.json"
+
+    # 写入 JSON（完整数据，供后续查阅）
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(ai_result.__dict__, f, ensure_ascii=False, indent=2)
+    print(f"  AI 核实结果已保存：{json_path}", flush=True)
+
+    # 追加摘要到文本结果文件末尾
+    summary = ai_result.full_summary_text.strip()
+    if summary:
+        with open(result_txt_path, "a", encoding="utf-8") as f:
+            f.write(f"\n{'=' * 60}\n")
+            f.write(f"🤖 AI 核实分析（agnes-2.5-flash）— {ai_result.date}\n")
+            f.write(f"{'=' * 60}\n\n")
+            f.write(summary)
+            f.write("\n")
+        print(f"  AI 摘要已追加至：{result_txt_path}", flush=True)
 
 
 def main() -> None:
@@ -79,7 +117,7 @@ def main() -> None:
 
     try:
         # 1. 获取全量 A 股列表
-        print("步骤 1/4：获取股票列表...", flush=True)
+        print("步骤 1/5：获取股票列表...", flush=True)
         t0 = time.time()
         stocks = get_all_stocks(conn)
         elapsed = time.time() - t0
@@ -101,7 +139,7 @@ def main() -> None:
         print(f"  过滤后 {len(filtered)} 只（排除ST/次新）", flush=True)
 
         # 2. 批量获取估值快照
-        print("步骤 2/4：获取估值数据...", flush=True)
+        print("步骤 2/5：获取估值数据...", flush=True)
         t0 = time.time()
         thscodes = [s["thscode"] for s in filtered]
         vals, val_new_entries = batch_valuations(thscodes, conn, cache)
@@ -114,7 +152,7 @@ def main() -> None:
         )
 
         # 3. 并行筛选
-        print("步骤 3/4：并行筛选...", flush=True)
+        print("步骤 3/5：并行筛选...", flush=True)
         results_pass, results_fail, skipped_no_val, elapsed = run_screening(
             filtered, vals, conn, cache, concurrency=_CONCURRENCY
         )
@@ -124,12 +162,22 @@ def main() -> None:
         out_path = f"outputs/results/buffett_screen_{date_str}.txt"
         write_result_file(out_path, results_pass, results_fail)
 
-        # 5. 保存缓存到数据库
+        # 5. AI 核实与分析
+        print("步骤 4/5：AI 核实...", flush=True)
+        ai_result = run_ai_verification(results_pass, results_fail, len(filtered), date_str)
+        _save_ai_result(ai_result, out_path)
+        ai_summary = ai_result.full_summary_text
+        if ai_summary:
+            print(f"  AI 核实完成：{ai_result.analysis_summary}", flush=True)
+        else:
+            print("  AI 核实：未执行（LLM 未配置或调用失败）", flush=True)
+
+        # 6. 保存缓存到数据库
         saved = save_cache_to_db(conn, cache)
         print(f"缓存已保存：{saved} 条新记录", flush=True)
 
-        # 6. 推送飞书通知
-        _notify_feishu(out_path, len(results_pass), len(results_fail))
+        # 7. 推送飞书通知（含 AI 分析摘要）
+        _notify_feishu(out_path, len(results_pass), len(results_fail), ai_summary=ai_summary)
 
     finally:
         conn.close()

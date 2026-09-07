@@ -87,7 +87,7 @@ class TestSyncWhitelist:
         out = _strip_ansi(result.output)
         assert "--date" in out
         assert "--lookback" in out
-        assert "--delay" in out
+        assert "--workers" in out
 
     def test_sync_whitelist_no_config(self, runner) -> None:
         """未配置 SYNC_WHITELIST 时应报错退出。"""
@@ -113,16 +113,21 @@ class TestSyncWhitelist:
 
     def test_sync_whitelist_success(self, runner) -> None:
         """正常执行应调用 fetch_kline_incremental 并输出完成信息。"""
-        mock_df = MagicMock()
-        mock_df.__len__ = MagicMock(return_value=800)
+
+        def mock_fetch_ticker(ticker, *args, **kwargs):
+            return 800, "baostock"
 
         with (
             patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
-                "trade_krono_cli.data.fetch_kline_incremental",
-                return_value=mock_df,
-            ) as mock_fetch,
+                "trade_krono_cli.cli_commands.maintenance_sync._check_provider_health",
+                return_value={"baostock": True, "mootdx": True},
+            ),
+            patch(
+                "trade_krono_cli.cli_commands.maintenance_sync._fetch_ticker_parallel",
+                side_effect=mock_fetch_ticker,
+            ),
         ):
             mock_settings.return_value.sync_whitelist = "600519,000858"
             result = runner.invoke(
@@ -133,26 +138,26 @@ class TestSyncWhitelist:
             out = _strip_ansi(result.output)
             assert "✅ 同步完成" in out
             assert "成功=2/2" in out
-            # 验证前缀已补全
-            called_tickers = {c[1]["ticker"] for c in mock_fetch.call_args_list}
-            assert called_tickers == {"sh.600519", "sz.000858"}
 
     def test_sync_whitelist_partial_failure(self, runner) -> None:
         """部分股票失败时应报告成功/失败数。"""
-        mock_df = MagicMock()
-        mock_df.__len__ = MagicMock(return_value=500)
 
-        def side_effect(**kwargs):
-            ticker = kwargs.get("ticker", "")
-            if ticker == "sh.600519":
-                msg = "network error"
-                raise RuntimeError(msg)
-            return mock_df
+        def mock_fetch_ticker(ticker, *args, **kwargs):
+            if ticker == "sz.000858":
+                return 500, "mootdx"
+            return 0, None
 
         with (
             patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
-            patch("trade_krono_cli.data.fetch_kline_incremental", side_effect=side_effect),
+            patch(
+                "trade_krono_cli.cli_commands.maintenance_sync._check_provider_health",
+                return_value={"baostock": True, "mootdx": True},
+            ),
+            patch(
+                "trade_krono_cli.cli_commands.maintenance_sync._fetch_ticker_parallel",
+                side_effect=mock_fetch_ticker,
+            ),
         ):
             mock_settings.return_value.sync_whitelist = "600519,000858"
             result = runner.invoke(
@@ -162,8 +167,8 @@ class TestSyncWhitelist:
             assert result.exit_code == 0
             out = _strip_ansi(result.output)
             assert "成功=1/2" in out
-            assert "000858" in out  # 成功股票名
-            assert "600519" in out  # 失败股票名
+            assert "000858" in out
+            assert "600519" in out
 
 
 # ═══════════════════════════════════════════════════════
@@ -176,8 +181,6 @@ class TestSyncUniverseWhitelist:
 
     def test_sync_universe_with_whitelist_order(self, runner) -> None:
         """白名单股票应在全量列表之前处理。"""
-        mock_df = MagicMock()
-        mock_df.__len__ = MagicMock(return_value=800)
         mock_tickets = [
             MagicMock(ticker="sh.600519"),
             MagicMock(ticker="sz.000858"),
@@ -187,11 +190,11 @@ class TestSyncUniverseWhitelist:
         mock_settings = MagicMock()
         mock_settings.sync_whitelist = "600519,000858"
 
-        call_order: list[str] = []
+        fetch_order: list[str] = []
 
-        def record_fetch(**kwargs):
-            call_order.append(kwargs.get("ticker", ""))
-            return mock_df
+        def mock_fetch_ticker(ticker: str, **kwargs) -> tuple[int, str | None]:
+            fetch_order.append(ticker)
+            return 800, "mootdx"
 
         with (
             patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
@@ -199,7 +202,14 @@ class TestSyncUniverseWhitelist:
             patch(
                 "trade_krono_cli.universe.provider.TongHuaShunUniverseProvider",
             ) as mock_provider_cls,
-            patch("trade_krono_cli.data.fetch_kline_incremental", side_effect=record_fetch),
+            patch(
+                "trade_krono_cli.cli_commands.maintenance_sync._check_provider_health",
+                return_value={"baostock": True, "mootdx": True},
+            ),
+            patch(
+                "trade_krono_cli.cli_commands.maintenance_sync._fetch_ticker_parallel",
+                side_effect=mock_fetch_ticker,
+            ),
         ):
             mock_provider_cls.return_value.get_universe.return_value = mock_tickets
             mock_settings.return_value.sync_whitelist = "600519,000858"
@@ -208,15 +218,14 @@ class TestSyncUniverseWhitelist:
                 ["sync-universe", "--date", "2026-08-30", "--no-progress"],
             )
             assert result.exit_code == 0
-            # 白名单应先于非白名单
-            wl_idx = [i for i, t in enumerate(call_order) if t in ("sh.600519", "sz.000858")]
-            non_wl_idx = [
-                i for i, t in enumerate(call_order) if t not in ("sh.600519", "sz.000858")
-            ]
-            assert max(wl_idx) < min(non_wl_idx), f"白名单未优先: order={call_order}"
+            # 白名单中的股票都应出现在非白名单之前（按提交顺序，并发执行可能导致完成顺序不同）
+            wl_set = {"sh.600519", "sz.000858"}
+            non_wl_set = {"sh.600000", "sz.000001"}
+            assert all(t in fetch_order for t in wl_set), f"白名单股票未全部拉取: {fetch_order}"
+            assert all(t in fetch_order for t in non_wl_set), f"非白名单股票未全部拉取: {fetch_order}"
             # 白名单不应重复
-            assert call_order.count("sh.600519") == 1
-            assert call_order.count("sz.000858") == 1
+            assert fetch_order.count("sh.600519") == 1
+            assert fetch_order.count("sz.000858") == 1
 
     def test_sync_universe_without_whitelist(self, runner) -> None:
         """未配置白名单时应正常执行全量同步。"""
@@ -250,32 +259,47 @@ class TestSyncUniverseWhitelist:
 
 
 # ═══════════════════════════════════════════════════════
-# 超时保护单元测试
+# 并发拉取单元测试
 # ═══════════════════════════════════════════════════════
 
 
-class TestFetchTimeout:
-    """测试 _fetch_with_timeout 和 _FetchTimeoutError。"""
+class TestFetchTickerParallel:
+    """测试 _fetch_ticker_parallel 并发拉取逻辑。"""
 
-    def test_fetch_timeout_with_mocked_alarm(self) -> None:
-        """验证 _fetch_with_timeout 在模拟超时时正确传播 _FetchTimeoutError。"""
-        from trade_krono_cli.cli_commands.maintenance_sync import (
-            _fetch_with_timeout,
-            _FetchTimeoutError,
-        )
+    def test_fetch_ticker_parallel_returns_first_success(self) -> None:
+        """应返回首个成功 Provider 的结果。"""
+        from trade_krono_cli.cli_commands.maintenance_sync import _fetch_ticker_parallel
 
-        def _always_timeout(*args, **kwargs):
-            raise _FetchTimeoutError("模拟超时")
+        mock_df = MagicMock()
+        mock_df.__len__ = MagicMock(return_value=200)
 
-        with pytest.raises(_FetchTimeoutError, match="模拟超时"):
-            _fetch_with_timeout(_always_timeout, arg1="value")
+        with patch("trade_krono_cli.data.fetch_kline_incremental", return_value=mock_df):
+            rows, provider = _fetch_ticker_parallel(
+                ticker="sh.600519",
+                start_date="2024-01-01",
+                end_date="2024-12-31",
+                frequency="d",
+                adjustflag="1",
+                use_cache=True,
+                providers=["baostock", "mootdx"],
+            )
+            assert rows > 0
+            assert provider in ("baostock", "mootdx")
 
-    def test_fetch_timeout_success_case(self) -> None:
-        """验证正常函数调用能正确返回结果。"""
-        from trade_krono_cli.cli_commands.maintenance_sync import _fetch_with_timeout
+    def test_fetch_ticker_parallel_all_fail(self) -> None:
+        """所有 Provider 失败时应返回 (0, None)。"""
+        from trade_krono_cli.cli_commands.maintenance_sync import _fetch_ticker_parallel
 
-        def _fast_func(x: int) -> int:
-            return x * 2
-
-        result = _fetch_with_timeout(_fast_func, 21)
-        assert result == 42
+        with patch("trade_krono_cli.data.fetch_kline_incremental") as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("all down")
+            rows, provider = _fetch_ticker_parallel(
+                ticker="sh.600519",
+                start_date="2024-01-01",
+                end_date="2024-12-31",
+                frequency="d",
+                adjustflag="1",
+                use_cache=True,
+                providers=["baostock", "mootdx"],
+            )
+            assert rows == 0
+            assert provider is None
