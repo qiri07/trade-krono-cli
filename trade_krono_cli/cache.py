@@ -202,10 +202,13 @@ class Cache:
         adjustflag: str,
     ) -> None:
         if ttl == _KLINE_HISTORICAL_TTL:
-            # 永久缓存：先删除被新段完全覆盖的旧段，再插入新段
+            # 永久缓存：先删除与新段有重叠的旧段，再插入新段
+            # 条件：旧段 end > 新段 start AND 旧段 start < 新段 end
             conn.execute(
-                "DELETE FROM kline_cache WHERE ticker=? AND freq=? AND adjustflag=? AND end <= ? AND start >= ?",
-                (ticker, freq, adjustflag, end, start),
+                "DELETE FROM kline_cache "
+                "WHERE ticker=? AND freq=? AND adjustflag=? "
+                "AND end > ? AND start < ?",
+                (ticker, freq, adjustflag, start, end),
             )
             conn.execute(
                 "INSERT INTO kline_cache "

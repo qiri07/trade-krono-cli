@@ -132,6 +132,11 @@ def main() -> int:
         choices=["mootdx", "akshare", "tonghuashun"],
         help="数据源（默认 tonghuashun）",
     )
+    parser.add_argument(
+        "--force-sync",
+        action="store_true",
+        help="即使全局最大日期已达标，也对滞后的个股执行增量补拉",
+    )
     args = parser.parse_args()
 
     # 获取期望日期
@@ -140,7 +145,8 @@ def main() -> int:
     # 检查缓存状态
     latest_date = get_cache_latest_date()
 
-    if latest_date and latest_date >= expected_date:
+    if latest_date and latest_date >= expected_date and not args.force_sync:
+        logger.info(f"✅ 缓存已更新至 {latest_date}，无需同步")
         return 0
 
     # 需要同步
