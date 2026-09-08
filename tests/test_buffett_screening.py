@@ -622,6 +622,7 @@ class TestVerifyPePercentile:
 
 # ── AiVerificationResult ────────────────────────────────────────────────────────
 
+
 class TestAiVerificationResult:
     """AiVerificationResult dataclass 单元测试。"""
 
@@ -643,9 +644,7 @@ class TestAiVerificationResult:
 
     def test_full_summary_text_all_blank(self) -> None:
         """所有文本字段均为空时 full_summary_text 返回空字符串。"""
-        result = AiVerificationResult(
-            date="2026-09-05", total=100, pass_count=0, fail_count=100
-        )
+        result = AiVerificationResult(date="2026-09-05", total=100, pass_count=0, fail_count=100)
         assert result.full_summary_text == ""
 
     def test_full_summary_text_assembled(self) -> None:
@@ -670,9 +669,7 @@ class TestAiVerificationResult:
 
     def test_full_summary_text_empty_when_blank(self) -> None:
         """所有文本字段为空时 full_summary_text 返回空字符串。"""
-        result = AiVerificationResult(
-            date="2026-09-05", total=100, pass_count=0, fail_count=100
-        )
+        result = AiVerificationResult(date="2026-09-05", total=100, pass_count=0, fail_count=100)
         assert result.full_summary_text == ""
 
     def test_full_summary_text_skips_empty_sections(self) -> None:
@@ -694,6 +691,7 @@ class TestAiVerificationResult:
 
 # ── _extract_json_from_response ─────────────────────────────────────────────────
 
+
 class TestExtractJsonFromResponse:
     """_extract_json_from_response 单元测试。"""
 
@@ -704,12 +702,12 @@ class TestExtractJsonFromResponse:
 
     def test_code_block_with_lang(self) -> None:
         """```json ... ``` 代码块提取内部 JSON。"""
-        raw = "```json\n{\"x\": 42}\n```"
+        raw = '```json\n{"x": 42}\n```'
         assert _extract_json_from_response(raw) == '{"x": 42}'
 
     def test_code_block_without_lang(self) -> None:
         """纯 ``` 代码块也能提取。"""
-        raw = "```\n{\"y\": true}\n```"
+        raw = '```\n{"y": true}\n```'
         assert _extract_json_from_response(raw) == '{"y": true}'
 
     def test_unparseable_returns_raw(self) -> None:
@@ -719,6 +717,7 @@ class TestExtractJsonFromResponse:
 
 
 # ── _sanitize_feishu_md ─────────────────────────────────────────────────────────
+
 
 class TestSanitizeFeishuMd:
     """_sanitize_feishu_md 单元测试。"""
@@ -742,6 +741,7 @@ class TestSanitizeFeishuMd:
 
 
 # ── run_ai_verification ─────────────────────────────────────────────────────────
+
 
 def _make_mock_openai(side_effect: Exception | None = None) -> MagicMock:
     """为 run_ai_verification 创建可用的 mock openai 模块。"""

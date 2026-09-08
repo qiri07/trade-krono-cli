@@ -88,7 +88,9 @@ def _update_usable_providers(
                 failure_counts[p] = failure_counts.get(p, 0) + 1
                 if failure_counts[p] >= _HEALTH_RESTORE_THRESHOLD:
                     new_providers.add(p)
-                    logger.info(f"Provider {p} 连续 {_HEALTH_RESTORE_THRESHOLD} 次健康检查通过，已恢复")
+                    logger.info(
+                        f"Provider {p} 连续 {_HEALTH_RESTORE_THRESHOLD} 次健康检查通过，已恢复"
+                    )
             else:
                 failure_counts[p] = 0
 
@@ -300,6 +302,7 @@ def sync_universe(
     console.print(health_table)
 
     from trade_krono_cli.data_providers.factory import get_data_factory
+
     factory = get_data_factory()
     ranked = factory.get_ranked_chain_for_ticker("sh.600519")
     usable_providers = [p for p in ranked if health.get(p, False)]
@@ -329,7 +332,10 @@ def sync_universe(
             with _health_state["lock"]:
                 elapsed = time.monotonic() - _health_state["last_check_time"]
                 tickers_done = _health_state["tickers_since_check"]
-            if elapsed >= _HEALTH_CHECK_MIN_INTERVAL_SEC or tickers_done >= _HEALTH_CHECK_INTERVAL_TICKERS:
+            if (
+                elapsed >= _HEALTH_CHECK_MIN_INTERVAL_SEC
+                or tickers_done >= _HEALTH_CHECK_INTERVAL_TICKERS
+            ):
                 with _health_state["lock"]:
                     _health_state["last_check_time"] = time.monotonic()
                     _health_state["tickers_since_check"] = 0
@@ -414,7 +420,9 @@ def sync_universe(
             if p:
                 prov_counts[p] = prov_counts.get(p, 0) + 1
         if prov_counts:
-            console.print(f"[dim]Provider 分布: {', '.join(f'{k}:{v}' for k, v in sorted(prov_counts.items(), key=lambda x: -x[1]))}[/dim]")
+            console.print(
+                f"[dim]Provider 分布: {', '.join(f'{k}:{v}' for k, v in sorted(prov_counts.items(), key=lambda x: -x[1]))}[/dim]"
+            )
 
     # ── 自动导出 daily_pv 供 RD-Agent 使用 ─────────────────────────────
     try:
@@ -511,6 +519,7 @@ def sync_whitelist(
     console.print(health_table)
 
     from trade_krono_cli.data_providers.factory import get_data_factory
+
     factory = get_data_factory()
     ranked = factory.get_ranked_chain_for_ticker("sh.600519")
     usable_providers = [p for p in ranked if health.get(p, False)]
@@ -537,7 +546,10 @@ def sync_whitelist(
             with _health_state["lock"]:
                 elapsed = time.monotonic() - _health_state["last_check_time"]
                 tickers_done = _health_state["tickers_since_check"]
-            if elapsed >= _HEALTH_CHECK_MIN_INTERVAL_SEC or tickers_done >= _HEALTH_CHECK_INTERVAL_TICKERS:
+            if (
+                elapsed >= _HEALTH_CHECK_MIN_INTERVAL_SEC
+                or tickers_done >= _HEALTH_CHECK_INTERVAL_TICKERS
+            ):
                 with _health_state["lock"]:
                     _health_state["last_check_time"] = time.monotonic()
                     _health_state["tickers_since_check"] = 0
@@ -616,7 +628,9 @@ def sync_whitelist(
             if p:
                 prov_counts[p] = prov_counts.get(p, 0) + 1
         if prov_counts:
-            console.print(f"[dim]Provider 分布: {', '.join(f'{k}:{v}' for k, v in sorted(prov_counts.items(), key=lambda x: -x[1]))}[/dim]")
+            console.print(
+                f"[dim]Provider 分布: {', '.join(f'{k}:{v}' for k, v in sorted(prov_counts.items(), key=lambda x: -x[1]))}[/dim]"
+            )
 
 
 def rank_providers(

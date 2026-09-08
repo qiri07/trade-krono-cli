@@ -489,7 +489,8 @@ def fetch_kline_parallel(
     chain = factory._provider_chain_for_ticker(ticker)
     # 过滤出有 K 线能力的 Provider
     candidate_names = [
-        name for name in chain
+        name
+        for name in chain
         if factory.get_provider(name) is not None
         and getattr(factory.get_provider(name), "supports_kline", False)
     ]
@@ -507,7 +508,14 @@ def fetch_kline_parallel(
         future_to_name = {
             pool.submit(
                 _try_provider_single,
-                factory, name, ticker, start_date, end_date, frequency, adjustflag, use_cache,
+                factory,
+                name,
+                ticker,
+                start_date,
+                end_date,
+                frequency,
+                adjustflag,
+                use_cache,
             ): name
             for name in names_to_try
         }
@@ -529,7 +537,8 @@ def fetch_kline_parallel(
     fail_reasons = [
         f"{name}({type(e).__name__}: {str(e)[:60]})"
         for name, df, err in results
-        for e in [err] if e is not None
+        for e in [err]
+        if e is not None
     ] or [f"{name}: no data" for name, df, _ in results if df is None]
     logger.warning(f"❌ {ticker} 所有并发 Provider 均失败: {', '.join(fail_reasons[:2])}")
     return None, ""

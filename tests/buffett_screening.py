@@ -189,7 +189,9 @@ def get_all_stocks(conn) -> list[dict]:
     return all_stocks
 
 
-def _fetch_one_val_batch(batch: list[str], cache: dict | None) -> tuple[dict[str, dict], dict[str, dict]]:
+def _fetch_one_val_batch(
+    batch: list[str], cache: dict | None
+) -> tuple[dict[str, dict], dict[str, dict]]:
     """获取单批估值数据（带缓存），线程安全。"""
     batch_key = "val_batch_" + ",".join(sorted(batch))
 
@@ -237,7 +239,7 @@ def batch_valuations(
     # 将 batches 拆分为"命中缓存"和"需请求"两类
     pending_batches: list[list[str]] = []
     for i in range(0, total, 50):
-        batch = thscodes[i: i + 50]
+        batch = thscodes[i : i + 50]
         batch_key = "val_batch_" + ",".join(sorted(batch))
         cached = cache.get(batch_key) if cache else None
         if cached is not None:
@@ -855,7 +857,9 @@ class AiVerificationResult:
         return "\n\n".join(p for p in parts if p)
 
     @classmethod
-    def empty(cls, date_str: str, total: int, pass_count: int, fail_count: int) -> "AiVerificationResult":
+    def empty(
+        cls, date_str: str, total: int, pass_count: int, fail_count: int
+    ) -> "AiVerificationResult":
         return cls(
             date=date_str,
             total=total,
@@ -911,7 +915,9 @@ def run_ai_verification(
     """
     api_key = os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
     if not api_key or not api_key.strip():
-        return AiVerificationResult.empty(date_str, total_stocks, len(results_pass), len(results_fail))
+        return AiVerificationResult.empty(
+            date_str, total_stocks, len(results_pass), len(results_fail)
+        )
 
     try:
         from openai import OpenAI  # 局部导入，避免无 openai 时模块加载失败
@@ -939,7 +945,9 @@ def run_ai_verification(
             g = r.gate_fail
             if g:
                 fail_counts[g] = fail_counts.get(g, 0) + 1
-        fail_lines = [f"  {k}: {v} 只" for k, v in sorted(fail_counts.items(), key=lambda x: -x[1])[:10]]
+        fail_lines = [
+            f"  {k}: {v} 只" for k, v in sorted(fail_counts.items(), key=lambda x: -x[1])[:10]
+        ]
         fail_text = "\n".join(fail_lines) if fail_lines else "  （无）"
 
         prompt = (
@@ -973,7 +981,9 @@ def run_ai_verification(
         analysis = json.loads(json_str)
     except Exception as e:
         logger.warning(f"AI 核实调用失败: {e}")
-        return AiVerificationResult.empty(date_str, total_stocks, len(results_pass), len(results_fail))
+        return AiVerificationResult.empty(
+            date_str, total_stocks, len(results_pass), len(results_fail)
+        )
 
     return AiVerificationResult(
         date=date_str,

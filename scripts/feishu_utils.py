@@ -218,11 +218,7 @@ def build_buffett_card(result_file: str, ai_summary: str = "") -> dict:
     # 追加 AI 核实摘要
     if ai_summary and ai_summary.strip():
         model_name = os.getenv("AI_VERIFICATION_MODEL", "agnes-2.5-flash")
-        main_content += (
-            f"\n\n{'─' * 30}\n"
-            f"**🤖 AI 核实分析（{model_name}）**\n"
-            f"{ai_summary}"
-        )
+        main_content += f"\n\n{'─' * 30}\n**🤖 AI 核实分析（{model_name}）**\n{ai_summary}"
 
     return {
         "msg_type": "interactive",

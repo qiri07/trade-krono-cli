@@ -37,7 +37,9 @@ from tests.buffett_screening import (
 )
 
 
-def _notify_feishu(result_file: str, pass_count: int, fail_count: int, ai_summary: str = "") -> None:
+def _notify_feishu(
+    result_file: str, pass_count: int, fail_count: int, ai_summary: str = ""
+) -> None:
     try:
         # 构建完整提示：原始结果 + AI 分析
         prompt_args: list[str] = [

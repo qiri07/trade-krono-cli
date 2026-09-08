@@ -222,7 +222,9 @@ class TestSyncUniverseWhitelist:
             wl_set = {"sh.600519", "sz.000858"}
             non_wl_set = {"sh.600000", "sz.000001"}
             assert all(t in fetch_order for t in wl_set), f"白名单股票未全部拉取: {fetch_order}"
-            assert all(t in fetch_order for t in non_wl_set), f"非白名单股票未全部拉取: {fetch_order}"
+            assert all(t in fetch_order for t in non_wl_set), (
+                f"非白名单股票未全部拉取: {fetch_order}"
+            )
             # 白名单不应重复
             assert fetch_order.count("sh.600519") == 1
             assert fetch_order.count("sz.000858") == 1
