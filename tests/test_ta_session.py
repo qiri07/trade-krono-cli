@@ -30,7 +30,9 @@ class TestTASession:
 
     def test_is_loaded_initially_false(self) -> None:
         """初始状态 adapter 应为 None。"""
-        session = TASession()
+        with patch("trade_krono_cli.models.ta_session.TradingAgentsRunner") as MockRunner:
+            MockRunner.return_value = MagicMock()
+            session = TASession()
         assert session.is_loaded is False
 
     def test_clear_cache_clears_singleton(self) -> None:
