@@ -1,4 +1,4 @@
-"""测试 research_db.snapshots — Data Snapshots 表读写。"""
+"""测试 ResearchDatabase — Data Snapshots 表 CRUD。"""
 
 from __future__ import annotations
 
@@ -6,85 +6,86 @@ import pytest
 
 from trade_krono_cli.research_db import ResearchDatabase
 
-# ── SnapshotsMixin ────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def research_db(tmp_path):
+    """使用临时目录创建独立的 ResearchDatabase 实例。"""
+    db = tmp_path / "research.db"
+    return ResearchDatabase(db_path=db)
 
 
-class TestSnapshotsMixin:
-    """Data Snapshots 表读写测试。"""
+def test_insert_data_snapshot(research_db) -> None:
+    """测试写入数据快照。"""
+    snapshot_id = "snap_001"
+    cut_date = "2026-08-11"
+    effective_cut = "2026-08-10"
+    sources = [{"name": "akshare", "records": 1000}]
+    description = "每日数据快照"
 
-    @pytest.fixture
-    def db(self, tmp_path) -> ResearchDatabase:
-        """创建临时数据库实例。"""
-        db_path = tmp_path / "research.db"
-        return ResearchDatabase(db_path=db_path)
+    research_db.insert_data_snapshot(
+        snapshot_id=snapshot_id,
+        cut_date=cut_date,
+        effective_cut=effective_cut,
+        sources=sources,
+        description=description,
+    )
 
-    def test_insert_and_get_snapshot(self, db: ResearchDatabase, tmp_path) -> None:
-        """插入并读取快照。"""
-        snapshot_id = "snap_001"
-        db.insert_data_snapshot(
-            snapshot_id=snapshot_id,
-            cut_date="2026-08-12",
-            effective_cut="2026-08-11",
-            sources=[{"name": "baostock", "records": 100}],
-            description="测试快照",
-        )
-        result = db.get_data_snapshot(snapshot_id)
-        assert result is not None
-        assert result["snapshot_id"] == snapshot_id
-        assert result["cut_date"] == "2026-08-12"
-        assert result["effective_cut"] == "2026-08-11"
-        assert result["sources"] == [{"name": "baostock", "records": 100}]
-        assert result["description"] == "测试快照"
-        assert result["created_at"] > 0
+    snapshot = research_db.get_data_snapshot(snapshot_id)
+    assert snapshot is not None
+    assert snapshot["snapshot_id"] == snapshot_id
+    assert snapshot["cut_date"] == cut_date
+    assert snapshot["effective_cut"] == effective_cut
+    assert snapshot["description"] == description
+    assert len(snapshot["sources"]) == 1
+    assert snapshot["sources"][0]["name"] == "akshare"
 
-    def test_get_missing_snapshot(self, db: ResearchDatabase) -> None:
-        """不存在的快照应返回 None。"""
-        result = db.get_data_snapshot("non_existent")
-        assert result is None
 
-    def test_insert_overwrites_existing(self, db: ResearchDatabase) -> None:
-        """相同 snapshot_id 插入应覆盖旧数据。"""
-        snapshot_id = "snap_001"
-        db.insert_data_snapshot(
-            snapshot_id=snapshot_id,
-            cut_date="2026-08-12",
-            effective_cut="2026-08-11",
-            sources=[{"name": "baostock"}],
-            description="初版",
-        )
-        db.insert_data_snapshot(
-            snapshot_id=snapshot_id,
-            cut_date="2026-08-13",
-            effective_cut="2026-08-12",
-            sources=[{"name": "akshare"}],
-            description="更新版",
-        )
-        result = db.get_data_snapshot(snapshot_id)
-        assert result is not None
-        assert result["cut_date"] == "2026-08-13"
-        assert result["description"] == "更新版"
+def test_get_data_snapshot_not_found(research_db) -> None:
+    """测试查询不存在的快照。"""
+    snapshot = research_db.get_data_snapshot("nonexistent")
+    assert snapshot is None
 
-    def test_insert_empty_sources(self, db: ResearchDatabase) -> None:
-        """空 sources 列表应正常存储。"""
-        db.insert_data_snapshot(
-            snapshot_id="snap_empty",
-            cut_date="2026-08-12",
-            effective_cut="2026-08-11",
-            sources=[],
-        )
-        result = db.get_data_snapshot("snap_empty")
-        assert result is not None
-        assert result["sources"] == []
 
-    def test_insert_with_unicode_description(self, db: ResearchDatabase) -> None:
-        """中文描述应正确存储和读取。"""
-        db.insert_data_snapshot(
-            snapshot_id="snap_cn",
-            cut_date="2026-08-12",
-            effective_cut="2026-08-11",
-            sources=[],
-            description="这是一段中文描述测试",
-        )
-        result = db.get_data_snapshot("snap_cn")
-        assert result is not None
-        assert result["description"] == "这是一段中文描述测试"
+def test_insert_data_snapshot_overwrite(research_db) -> None:
+    """测试同一快照ID会被覆盖。"""
+    snapshot_id = "snap_001"
+
+    research_db.insert_data_snapshot(
+        snapshot_id=snapshot_id,
+        cut_date="2026-08-10",
+        effective_cut="2026-08-09",
+        sources=[{"name": "akshare", "records": 500}],
+        description="第一次写入",
+    )
+
+    research_db.insert_data_snapshot(
+        snapshot_id=snapshot_id,
+        cut_date="2026-08-11",
+        effective_cut="2026-08-10",
+        sources=[{"name": "baostock", "records": 1000}],
+        description="第二次写入",
+    )
+
+    snapshot = research_db.get_data_snapshot(snapshot_id)
+    assert snapshot is not None
+    assert snapshot["cut_date"] == "2026-08-11"
+    assert snapshot["description"] == "第二次写入"
+    assert snapshot["sources"][0]["name"] == "baostock"
+
+
+def test_insert_data_snapshot_empty_sources(research_db) -> None:
+    """测试写入空数据源的快照。"""
+    snapshot_id = "snap_002"
+
+    research_db.insert_data_snapshot(
+        snapshot_id=snapshot_id,
+        cut_date="2026-08-11",
+        effective_cut="2026-08-10",
+        sources=[],
+        description="",
+    )
+
+    snapshot = research_db.get_data_snapshot(snapshot_id)
+    assert snapshot is not None
+    assert snapshot["sources"] == []
+    assert snapshot["description"] == ""

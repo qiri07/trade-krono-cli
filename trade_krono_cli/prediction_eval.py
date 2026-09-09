@@ -21,16 +21,16 @@ from typing import NamedTuple, cast
 
 from loguru import logger
 
-from trade_krono_cli.backtest_engine import (
-    BacktestEngine,
+from trade_krono_cli.backtest_benchmarks import (
     build_backtest_records,
     compute_benchmark_returns,
 )
+from trade_krono_cli.backtest_engine import BacktestEngine
 from trade_krono_cli.constraints_config import ConstraintConfig
+from trade_krono_cli.data import fetch_kline  # noqa: F401
 
 # ── 向后兼容别名（测试通过 patch("trade_krono_cli.prediction_eval.*") 使用）──
 # fetch_kline 是测试直接 patch 的模块级依赖，需在此重新绑定
-from trade_krono_cli.data import fetch_kline  # noqa: F401
 from trade_krono_cli.eval_combined import compute_combined_metrics, compute_high_conf_metrics
 from trade_krono_cli.eval_data import (
     BacktestResult,
@@ -51,6 +51,21 @@ from trade_krono_cli.eval_report import (
     store_summary,
 )
 from trade_krono_cli.eval_ta import compute_ta_metrics
+from trade_krono_cli.prediction_eval_report import (
+    print_backtest_report as _print_backtest_report,
+)
+from trade_krono_cli.prediction_eval_report import (
+    print_latest_backtest as _print_latest_backtest,
+)
+from trade_krono_cli.prediction_eval_report import (
+    print_latest_combined as _print_latest_combined,
+)
+from trade_krono_cli.prediction_eval_report import (
+    print_latest_kronos as _print_latest_kronos,
+)
+from trade_krono_cli.prediction_eval_report import (
+    print_latest_ta as _print_latest_ta,
+)
 
 
 def _get_close_price(ticker: str, date_str: str, **kwargs) -> float | None:
@@ -503,109 +518,3 @@ def run_evaluation(
     if backtest and summary.backtest:
         _print_backtest_report(summary)
 
-
-def _print_latest_kronos(summary: dict) -> None:
-    logger.info("┌─ Kronos 方向准确率 ─────────────────────────────────┐")
-    logger.info(f"│  样本数: {summary.get('kronos_n', 0)}                              │")
-    for h in [5, 10, 20]:
-        acc = summary.get("kronos_dir_accuracy", {}).get(str(h), 0)
-        marker = "✅" if acc > 55 else "⚠️" if acc > 50 else "❌"
-        logger.info(f"│  {marker} {h}D 准确率: {acc:5.1f}%                       │")
-    logger.info("└" + "─" * 58 + "┘")
-    logger.info("")
-
-
-def _print_latest_ta(summary: dict) -> None:
-    logger.info("┌─ TA BUY 信号表现 ───────────────────────────────────┐")
-    ta_buy_n = sum(1 for r in summary.get("records", []) if r.ta_signal == "BUY")
-    logger.info(f"│  样本数: {ta_buy_n}                             │")
-    for h in [5, 10, 20]:
-        wr = summary.get("ta_buy_win_rate", {}).get(str(h), 0)
-        avg_ret = summary.get("ta_buy_avg_return", {}).get(str(h), 0)
-        marker = "✅" if wr > 55 else "⚠️" if wr > 50 else "❌"
-        logger.info(
-            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │",
-        )
-    logger.info("└" + "─" * 58 + "┘")
-    logger.info("")
-
-
-def _print_latest_combined(summary: dict) -> None:
-    logger.info("┌─ 综合信号（TA BUY + Kronos UP）─────────────────────┐")
-    combined_n = sum(
-        1 for r in summary.get("records", []) if r.ta_signal == "BUY" and r.pred_direction == "UP"
-    )
-    logger.info(f"│  样本数: {combined_n}                          │")
-    for h in [5, 10, 20]:
-        wr = summary.get("combined_buy_up_win_rate", {}).get(str(h), 0)
-        avg_ret = summary.get("combined_buy_up_avg_return", {}).get(str(h), 0)
-        marker = "✅" if wr > 60 else "⚠️" if wr > 55 else "❌"
-        logger.info(
-            f"│  {marker} {h}D 胜率: {wr:5.1f}%  平均收益: {avg_ret:+.2f}%                    │",
-        )
-    logger.info("└" + "─" * 58 + "┘")
-    logger.info("")
-
-
-# ── 回测报告打印 ─────────────────────────────────────────────────────────────
-
-
-def _print_backtest_report(summary: EvaluationSummary) -> None:
-    """打印回测绩效报告。"""
-    bt = summary.backtest
-    if not bt:
-        return
-    m = bt.metrics
-
-    logger.info("")
-    logger.info("╔══════════════════════════════════════════════════════════╗")
-    logger.info("║              📈 回测绩效报告（增强版）                    ║")
-    logger.info("╠══════════════════════════════════════════════════════════╣")
-    logger.info(f"║  模式: {bt.rebal_mode:<44} ║")
-    logger.info(f"║  交易次数: {bt.n_trades:<45} ║")
-    logger.info(f"║  交易日数: {m.get('n_days', 0):<45} ║")
-    logger.info("╠══════════════════════════════════════════════════════════╣")
-    logger.info(f"║  总收益率:   {m.get('total_return_pct', 0):>+7.2f}%{'':>30} ║")
-    logger.info(f"║  年化收益:   {m.get('annualized_return_pct', 0):>+7.2f}%{'':>30} ║")
-    logger.info(f"║  波动率(年): {m.get('volatility_annual_pct', 0):>7.2f}%{'':>30} ║")
-    logger.info("╠══════════════════════════════════════════════════════════╣")
-    logger.info(f"║  夏普比率:   {m.get('sharpe_ratio', 0):>7.3f}{'':>30} ║")
-    logger.info(f"║  卡玛比率:   {m.get('calmar_ratio', 0):>7.3f}{'':>30} ║")
-    logger.info(f"║  最大回撤:   {m.get('max_drawdown_pct', 0):>+7.2f}%{'':>30} ║")
-    logger.info("╠══════════════════════════════════════════════════════════╣")
-    logger.info(f"║  胜率:       {m.get('win_rate_pct', 0):>7.1f}%{'':>30} ║")
-    logger.info(f"║  盈亏比:     {m.get('profit_factor', 0):>7.3f}{'':>30} ║")
-    logger.info(f"║  平均盈利:   {m.get('avg_win', 0):>+7.2f}%{'':>30} ║")
-    logger.info(f"║  平均亏损:   {m.get('avg_loss', 0):>+7.2f}%{'':>30} ║")
-    logger.info("╠══════════════════════════════════════════════════════════╣")
-    logger.info(f"║  收益偏度:   {m.get('skewness', 0):>7.3f}{'':>30} ║")
-    logger.info(f"║  收益峰度:   {m.get('kurtosis', 0):>7.3f}{'':>30} ║")
-    logger.info(f"║  最佳日:     {m.get('best_day_pct', 0):>+7.2f}%{'':>30} ║")
-    logger.info(f"║  最差日:     {m.get('worst_day_pct', 0):>+7.2f}%{'':>30} ║")
-    logger.info("╠══════════════════════════════════════════════════════════╣")
-    if summary.benchmark_cum_return_pct != 0.0:
-        logger.info(f"║  基准累计收益: {summary.benchmark_cum_return_pct:>+7.2f}%{'':>24} ║")
-        logger.info(f"║  超额收益:    {summary.excess_return_pct:>+7.2f}%{'':>24} ║")
-    else:
-        logger.info(f"║  基准收益: 无数据{'':>40} ║")
-    logger.info("╚══════════════════════════════════════════════════════════╝")
-    logger.info("")
-
-
-def _print_latest_backtest(summary: dict) -> None:
-    """打印最新评估中的回测报告（dict 格式）。"""
-    bt = summary.get("backtest")
-    if not bt:
-        return
-    m = bt.get("metrics", {})
-    logger.info("")
-    logger.info("╔══════════════════════════════════════════════════════════╗")
-    logger.info("║              📈 回测绩效报告                              ║")
-    logger.info("╠══════════════════════════════════════════════════════════╣")
-    logger.info(f"║  总收益率:   {m.get('total_return_pct', 0):>+7.2f}%{'':>30} ║")
-    logger.info(f"║  年化收益:   {m.get('annualized_return_pct', 0):>+7.2f}%{'':>30} ║")
-    logger.info(f"║  夏普比率:   {m.get('sharpe_ratio', 0):>7.3f}{'':>30} ║")
-    logger.info(f"║  最大回撤:   {m.get('max_drawdown_pct', 0):>+7.2f}%{'':>30} ║")
-    logger.info(f"║  胜率:       {m.get('win_rate_pct', 0):>7.1f}%{'':>30} ║")
-    logger.info(f"║  盈亏比:     {m.get('profit_factor', 0):>7.3f}{'':>30} ║")
-    logger.info("╚══════════════════════════════════════════════════════════╝")

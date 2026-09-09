@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import threading
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,82 +15,22 @@ from datetime import datetime, timedelta
 import pandas as pd
 from loguru import logger
 
+# ── baostock 会话管理（已提取到 bs_session.py）──────────────────────────────
+from trade_krono_cli.bs_session import (  # noqa: F401
+    _bs,
+    _ensure_bs_import,
+    _ensure_bs_login,
+    _get_limiter,
+    clear_baostock_globals,
+)
 from trade_krono_cli.cache import get_cache
-from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.data_providers import DataProviderFactory, get_data_factory
-from trade_krono_cli.security import TokenBucket, retry, validate_date, validate_ticker
+from trade_krono_cli.security import retry, validate_date, validate_ticker
 from trade_krono_cli.utils.helpers import (
     next_business_days,  # noqa: F401
     validate_data_freshness,  # noqa: F401
 )
 from trade_krono_cli.utils.helpers import safe_float as _safe_float  # noqa: F401
-
-# baostock 惰性导入
-_bs = None
-_HAS_BS = False
-_bs_logged_in = False
-_bs_limiter: TokenBucket | None = None
-_bs_login_lock = threading.Lock()
-
-
-def _get_limiter(settings: Settings | None = None) -> TokenBucket:
-    global _bs_limiter
-    if _bs_limiter is None:
-        s = settings or get_settings()
-        _bs_limiter = TokenBucket(
-            rate=1.0 / s.baostock_sleep_sec,
-            capacity=5.0,
-        )
-    return _bs_limiter
-
-
-def clear_baostock_globals() -> None:
-    """重置 baostock 模块级状态，用于测试隔离。
-
-    被清除的状态：
-      - _bs             baostock 模块引用
-      - _HAS_BS         baostock 是否已导入
-      - _bs_logged_in   baostock 是否已登录
-      - _bs_limiter     速率限制器
-    """
-    global _bs, _HAS_BS, _bs_logged_in, _bs_limiter
-    _bs = None
-    _HAS_BS = False
-    _bs_logged_in = False
-    _bs_limiter = None
-
-
-def _ensure_bs_import() -> None:
-    global _bs, _HAS_BS
-    if _HAS_BS:
-        return
-    try:
-        import baostock as _bs_mod  # type: ignore
-
-        _bs = _bs_mod
-        _HAS_BS = True
-    except ImportError:
-        msg = "baostock 未安装，无法拉取 K 线。请运行: pip install baostock"
-        raise RuntimeError(msg)
-
-
-def _ensure_bs_login() -> None:
-    global _bs_logged_in
-    if not _HAS_BS:
-        _ensure_bs_import()
-    if _bs_logged_in:
-        return
-    with _bs_login_lock:
-        # 双重检查：另一线程可能已在此等待锁期间完成登录
-        if _bs_logged_in:
-            return
-        lg = _bs.login()  # type: ignore
-    if lg.error_code != "0":
-        msg = f"baostock 登录失败: {lg.error_msg}"
-        raise RuntimeError(msg)
-    _bs_logged_in = True
-    logger.info("✅ baostock 登录成功")
-
 
 # ═══════════════════════════════════════════════════════
 # 核心：拉取 K 线
@@ -428,16 +367,23 @@ def _merge_kline_dfs(old_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame
     if new_df is None or len(new_df) == 0:
         return old_df.copy()
 
-    old_ts = pd.to_datetime(old_df["timestamps"])
-    new_ts = pd.to_datetime(new_df["timestamps"])
+    # 统一 timestamps 类型（来源可能返回 str 或 Timestamp）
+    old_df = old_df.copy()
+    new_df = new_df.copy()
+    old_df["timestamps"] = pd.to_datetime(old_df["timestamps"])
+    new_df["timestamps"] = pd.to_datetime(new_df["timestamps"])
+
+    old_ts = old_df["timestamps"]
+    new_ts = new_df["timestamps"]
 
     max_new_ts = new_ts.max()
 
-    # 保留旧数据中在「新数据最大时间之前」的部分（新数据未覆盖的前段）
+    # 保留旧数据中严格早于新数据最大时间的部分
+    # （等值行由 drop_duplicates keep="last" 保证新数据优先）
     keep_old = old_ts < max_new_ts
     keep_old_df = old_df[keep_old] if keep_old.any() else pd.DataFrame()
 
-    # 组合：旧前段 + 全部新数据（新数据在重叠区间优先，通过 drop_duplicates 保证）
+    # 组合：旧前段 + 全部新数据
     parts = [keep_old_df, new_df]
     merged = pd.concat([p for p in parts if len(p) > 0], ignore_index=True)
 
