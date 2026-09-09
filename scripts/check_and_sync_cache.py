@@ -48,9 +48,11 @@ def get_expected_date() -> str:
     """获取期望的缓存日期（最近的交易日，优先昨天，周末则回退到周五）。"""
     today = datetime.now()
     yesterday = today - timedelta(days=1)
-    # 如果昨天是周末，回退到周五
-    if yesterday.weekday() >= 5:  # 5=周六, 6=周日
-        yesterday = yesterday - timedelta(days=yesterday.weekday() - 4)
+    # 如果今天是周末，回退到周五
+    if today.weekday() >= 5:  # 5=周六, 6=周日
+        # 回退到本周五：周六减1天，周日减2天
+        days_back = today.weekday() - 4  # 周六→1, 周日→2
+        yesterday = today - timedelta(days=days_back)
     return yesterday.strftime("%Y-%m-%d")
 
 

@@ -22,7 +22,7 @@ class TestSyncStale:
 
     @patch("scripts.sync_stale._load_env")
     @patch("scripts.sync_stale.get_expected_date", return_value="2026-09-07")
-    @patch("scripts.sync_stale.fetch_kline_incremental")
+    @patch("sync_stale.fetch_kline_incremental")
     def test_sync_single_ticker_success(
         self, mock_fetch: MagicMock, mock_get_date: MagicMock, mock_load_env: MagicMock
     ) -> None:
@@ -46,7 +46,7 @@ class TestSyncStale:
 
     @patch("scripts.sync_stale._load_env")
     @patch("scripts.sync_stale.get_expected_date", return_value="2026-09-07")
-    @patch("scripts.sync_stale.fetch_kline_incremental")
+    @patch("sync_stale.fetch_kline_incremental")
     def test_sync_ticker_failure(
         self, mock_fetch: MagicMock, mock_get_date: MagicMock, mock_load_env: MagicMock
     ) -> None:
@@ -67,7 +67,7 @@ class TestSyncStale:
 
     @patch("scripts.sync_stale._load_env")
     @patch("scripts.sync_stale.get_expected_date", return_value="2026-09-07")
-    @patch("scripts.sync_stale.fetch_kline_incremental")
+    @patch("sync_stale.fetch_kline_incremental")
     def test_sync_mixed_result(
         self, mock_fetch: MagicMock, mock_get_date: MagicMock, mock_load_env: MagicMock
     ) -> None:
@@ -98,7 +98,7 @@ class TestSyncStale:
 
     @patch("scripts.sync_stale._load_env")
     @patch("scripts.sync_stale.get_expected_date", return_value="2026-09-07")
-    @patch("scripts.sync_stale.fetch_kline_incremental")
+    @patch("sync_stale.fetch_kline_incremental")
     def test_sync_high_failure_rate(
         self, mock_fetch: MagicMock, mock_get_date: MagicMock, mock_load_env: MagicMock
     ) -> None:
@@ -142,7 +142,7 @@ class TestSyncStale:
             patch("sys.argv", ["sync_stale.py", str(ticker_file)]),
             patch("scripts.sync_stale._load_env"),
             patch("scripts.sync_stale.get_expected_date"),
-            patch("scripts.sync_stale.fetch_kline_incremental") as mock_fetch,
+            patch("sync_stale.fetch_kline_incremental") as mock_fetch,
         ):
             mock_df = MagicMock()
             mock_df.__len__ = MagicMock(return_value=100)
@@ -154,7 +154,7 @@ class TestSyncStale:
 
     @patch("scripts.sync_stale._load_env")
     @patch("scripts.sync_stale.get_expected_date", return_value="2026-09-07")
-    @patch("scripts.sync_stale.fetch_kline_incremental")
+    @patch("sync_stale.fetch_kline_incremental")
     def test_exception_handling(
         self, mock_fetch: MagicMock, mock_get_date: MagicMock, mock_load_env: MagicMock
     ) -> None:

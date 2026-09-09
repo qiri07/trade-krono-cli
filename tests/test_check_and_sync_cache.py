@@ -30,25 +30,31 @@ class TestGetExpectedDate:
 
     def test_weekday_returns_yesterday(self) -> None:
         """工作日返回昨天。"""
-        # 2026-09-08 是周二，昨天是周一 2026-09-07
-        result = get_expected_date()
-        assert result == "2026-09-07"
-
-    def test_saturday_returns_friday(self) -> None:
-        """周六时返回周五。"""
-        with patch("scripts.check_and_sync_cache.datetime") as mock_dt:
-            # 模拟今天是周六
-            today = datetime(2026, 9, 6)  # 周六
+        with patch("check_and_sync_cache.datetime") as mock_dt:
+            # 模拟今天是周三 2026-09-09
+            today = datetime(2026, 9, 9)  # 周三
             mock_dt.now.return_value = today
             mock_dt.timedelta = timedelta
 
             result = get_expected_date()
-            assert result == "2026, 9, 5"  # 周五
+            assert result == "2026-09-08"  # 昨天是周二
+
+    def test_saturday_returns_friday(self) -> None:
+        """周六时返回周五。"""
+        with patch("check_and_sync_cache.datetime") as mock_dt:
+            # 2026-09-05 是周六
+            today = datetime(2026, 9, 5)  # 周六
+            mock_dt.now.return_value = today
+            mock_dt.timedelta = timedelta
+
+            result = get_expected_date()
+            assert result == "2026-09-04"  # 周五
 
     def test_sunday_returns_friday(self) -> None:
         """周日时返回周五。"""
-        with patch("scripts.check_and_sync_cache.datetime") as mock_dt:
-            today = datetime(2026, 9, 7)  # 周日
+        with patch("check_and_sync_cache.datetime") as mock_dt:
+            # 2026-09-06 是周日
+            today = datetime(2026, 9, 6)  # 周日
             mock_dt.now.return_value = today
             mock_dt.timedelta = timedelta
 
@@ -61,7 +67,7 @@ class TestGetCacheLatestDate:
 
     def test_returns_none_when_db_missing(self, tmp_path: Path) -> None:
         """数据库不存在时返回 None。"""
-        with patch("scripts.check_and_sync_cache.CACHE_DB", tmp_path / "nonexistent.db"):
+        with patch("check_and_sync_cache.CACHE_DB", tmp_path / "nonexistent.db"):
             result = get_cache_latest_date()
             assert result is None
 
@@ -81,7 +87,7 @@ class TestGetCacheLatestDate:
         conn.commit()
         conn.close()
 
-        with patch("scripts.check_and_sync_cache.CACHE_DB", db):
+        with patch("check_and_sync_cache.CACHE_DB", db):
             result = get_cache_latest_date()
             assert result == "2026-09-07"
 
@@ -90,7 +96,7 @@ class TestGetCacheLatestDate:
         db = tmp_path / "test.db"
         db.write_bytes(b"invalid sqlite")
 
-        with patch("scripts.check_and_sync_cache.CACHE_DB", db):
+        with patch("check_and_sync_cache.CACHE_DB", db):
             result = get_cache_latest_date()
             assert result is None
 
@@ -100,7 +106,8 @@ class TestIsCacheUpToDate:
 
     def test_returns_false_when_no_cache(self) -> None:
         """无缓存时返回 False。"""
-        assert is_cache_up_to_date("2026-09-07") is False
+        with patch("check_and_sync_cache.get_cache_latest_date", return_value=None):
+            assert is_cache_up_to_date("2026-09-07") is False
 
     def test_returns_true_when_up_to_date(self, tmp_path: Path) -> None:
         """缓存已更新时返回 True。"""
@@ -114,7 +121,7 @@ class TestIsCacheUpToDate:
         conn.commit()
         conn.close()
 
-        with patch("scripts.check_and_sync_cache.CACHE_DB", db):
+        with patch("check_and_sync_cache.CACHE_DB", db):
             assert is_cache_up_to_date("2026-09-07") is True
 
     def test_returns_false_when_behind(self, tmp_path: Path) -> None:
@@ -129,18 +136,17 @@ class TestIsCacheUpToDate:
         conn.commit()
         conn.close()
 
-        with patch("scripts.check_and_sync_cache.CACHE_DB", db):
+        with patch("check_and_sync_cache.CACHE_DB", db):
             assert is_cache_up_to_date("2026-09-07") is False
 
 
 class TestRunSync:
     """测试 run_sync 函数。"""
 
-    def test_dry_run_returns_true(self) -> bool:
+    def test_dry_run_returns_true(self) -> None:
         """dry_run 模式直接返回 True。"""
         result = run_sync(dry_run=True)
         assert result is True
-        return result  # type: ignore[return-value]
 
     @patch("scripts.check_and_sync_cache.subprocess.run")
     def test_sync_success(self, mock_run: MagicMock) -> None:
@@ -166,7 +172,7 @@ class TestRunSync:
 class TestRunSyncWithFallback:
     """测试 run_sync_with_fallback 函数。"""
 
-    @patch("scripts.check_and_sync_cache.run_sync")
+    @patch("check_and_sync_cache.run_sync")
     def test_first_source_succeeds(self, mock_run_sync: MagicMock) -> None:
         """第一个源成功时返回 True。"""
         mock_run_sync.return_value = True
@@ -175,7 +181,7 @@ class TestRunSyncWithFallback:
         assert result is True
         mock_run_sync.assert_called_once_with(source="tonghuashun", dry_run=True)
 
-    @patch("scripts.check_and_sync_cache.run_sync")
+    @patch("check_and_sync_cache.run_sync")
     def test_all_sources_fail(self, mock_run_sync: MagicMock) -> None:
         """所有源失败时返回 False。"""
         mock_run_sync.return_value = False

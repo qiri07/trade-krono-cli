@@ -43,7 +43,7 @@ class TestHelpers:
         result = _now_cn()
         assert isinstance(result, str)
         assert len(result) > 0
-        # 格式应类似 "2026-09-08 12:00:00"
+        # 格式应类似 "2026-09-09 12:00:00"
         assert "-" in result and ":" in result
 
 
@@ -82,7 +82,7 @@ class TestBuildDailyCard:
 
     def test_card_structure(self) -> None:
         card = build_daily_card(
-            "success", "2026-09-08", "600519,000858", "600519:BUY 0.85", "https://run/1"
+            "success", "2026-09-09", "600519,000858", "600519:BUY 0.85", "https://run/1"
         )
         assert card["msg_type"] == "interactive"
         assert "card" in card
@@ -90,12 +90,12 @@ class TestBuildDailyCard:
         assert "📊" in header["title"]["content"]
         assert header["template"] == "green"
         text = card["card"]["elements"][0]["text"]["content"]
-        assert "2026-09-08" in text
+        assert "2026-09-09" in text
         assert "600519,000858" in text
         assert "600519:BUY 0.85" in text
 
     def test_failure_daily_card(self) -> None:
-        card = build_daily_card("failure", "2026-09-08", "600519", "N/A", "")
+        card = build_daily_card("failure", "2026-09-09", "600519", "N/A", "")
         assert card["card"]["header"]["template"] == "red"
 
 
@@ -119,7 +119,7 @@ class TestBuildBuffettCard:
         elements = card["card"]["elements"]
         assert len(elements) >= 1
         text_content = elements[0]["text"]["content"]
-        assert "2026-09-08" in text_content
+        assert "2026-09-09" in text_content
 
     def test_failure_card(self, tmp_path) -> None:
         result_file = tmp_path / "buffett_fail.txt"
