@@ -11,24 +11,35 @@
 from __future__ import annotations
 
 # 延迟导入以避免循环依赖
-__all__ = ("KronosPredictor", "DataPreparator", "ResultParser", "StreamingPredictor", "KronosCacheManager")
+__all__ = (
+    "KronosPredictor",
+    "DataPreparator",
+    "ResultParser",
+    "StreamingPredictor",
+    "KronosCacheManager",
+)
 
 
 def __getattr__(name: str):
     """延迟导入以支持 from trade_krono_cli.kronos_predictor import XXX。"""
     if name == "KronosPredictor":
         from trade_krono_cli.kronos_predictor.predictor import KronosPredictor
+
         return KronosPredictor
     if name == "DataPreparator":
         from trade_krono_cli.kronos_predictor.data_prep import DataPreparator
+
         return DataPreparator
     if name == "ResultParser":
         from trade_krono_cli.kronos_predictor.result_parser import ResultParser
+
         return ResultParser
     if name == "StreamingPredictor":
         from trade_krono_cli.kronos_predictor.streaming import StreamingPredictor
+
         return StreamingPredictor
     if name == "KronosCacheManager":
         from trade_krono_cli.kronos_predictor.cache import KronosCacheManager
+
         return KronosCacheManager
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

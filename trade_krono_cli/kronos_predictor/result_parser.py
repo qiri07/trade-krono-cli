@@ -134,9 +134,15 @@ class ResultParser:
             stacked = avg_close.reshape(1, -1)
 
         if n_samples > 1:
-            change_pct, direction, vol, path_dispersion, direction_score, conf_score, percentiles = (
-                compute_multi_sample(avg_close, stacked, last_close)
-            )
+            (
+                change_pct,
+                direction,
+                vol,
+                path_dispersion,
+                direction_score,
+                conf_score,
+                percentiles,
+            ) = compute_multi_sample(avg_close, stacked, last_close)
             res.predicted_close_mean = round(float(np.mean(avg_close)), 4)
             res.predicted_close_final = round(float(avg_close[-1]), 4)
             res.expected_change_pct = change_pct

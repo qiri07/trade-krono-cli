@@ -133,15 +133,25 @@ class KronosRunner:
     def _adapter(self) -> Any:
         return self._predictor_ref if self._predictor_ref else self
 
-    def predict(self, df: pd.DataFrame, x_timestamp: pd.Series, y_timestamp: pd.Series,
-                pred_len: int, T: float = 1.0, top_p: float = 0.9, sample_count: int = 1) -> pd.DataFrame:
+    def predict(
+        self,
+        df: pd.DataFrame,
+        x_timestamp: pd.Series,
+        y_timestamp: pd.Series,
+        pred_len: int,
+        T: float = 1.0,
+        top_p: float = 0.9,
+        sample_count: int = 1,
+    ) -> pd.DataFrame:
         """兼容接口：供 StreamingPredictor 和 run_predict 调用。
 
         在生产环境中，_adapter 指向 KronosSession 的适配器（实际模型）。
         此方法仅在无 session 的测试/兼容场景下调用。
         """
         # 此方法不应在生产中被调用；测试中应 mock 或使用有 session 的 runner
-        raise RuntimeError("predict() should be called via KronosSession adapter, not directly on KronosRunner")
+        raise RuntimeError(
+            "predict() should be called via KronosSession adapter, not directly on KronosRunner"
+        )
 
     @property
     def use_cache(self) -> bool:
@@ -189,10 +199,10 @@ class KronosRunner:
             msg = f"数据不足: {ticker} 仅 {len(df)} 行 < {self._settings_obj.kronos_lookback}"
             raise RuntimeError(msg)
 
-        x_df = df.iloc[-self._settings_obj.kronos_lookback:][
+        x_df = df.iloc[-self._settings_obj.kronos_lookback :][
             ["open", "high", "low", "close", "volume", "amount"]
         ].reset_index(drop=True)
-        x_ts = df.iloc[-self._settings_obj.kronos_lookback:]["timestamps"].reset_index(drop=True)
+        x_ts = df.iloc[-self._settings_obj.kronos_lookback :]["timestamps"].reset_index(drop=True)
         last_close = float(x_df["close"].iloc[-1])
 
         future = next_business_days(eval_date, self._settings_obj.kronos_pred_len)
@@ -205,9 +215,7 @@ class KronosRunner:
         self, pred_df: pd.DataFrame, last_close: float, sample_count: int = 1
     ) -> dict:
         """解析预测 DataFrame。"""
-        return self._predictor._result_parser.parse_pred_df(
-            pred_df, last_close, sample_count
-        )
+        return self._predictor._result_parser.parse_pred_df(pred_df, last_close, sample_count)
 
     def _pred_df_to_dict(self, pred_df: pd.DataFrame) -> dict:
         """将预测 DataFrame 转为字典。"""
@@ -271,6 +279,7 @@ class KronosRunner:
                     setattr(res, k, v)
                 if isinstance(res.prediction_uncertainty, dict):
                     from trade_krono_cli.prediction_distribution import PredictionDistribution
+
                     res.prediction_uncertainty = PredictionDistribution.from_dict(
                         res.prediction_uncertainty,
                     )
@@ -310,9 +319,7 @@ class KronosRunner:
         res: KronosForecastResult,
     ) -> None:
         """执行单次预测。"""
-        self._predictor._result_parser.run_predict(
-            self, x_df, x_ts, y_ts, last_close, res
-        )
+        self._predictor._result_parser.run_predict(self, x_df, x_ts, y_ts, last_close, res)
 
     def predict_batch(
         self,
@@ -346,7 +353,10 @@ class KronosRunner:
                         setattr(res, k, v)
                     if isinstance(res.prediction_uncertainty, dict):
                         from trade_krono_cli.prediction_distribution import PredictionDistribution
-                        res.prediction_uncertainty = PredictionDistribution.from_dict(res.prediction_uncertainty)
+
+                        res.prediction_uncertainty = PredictionDistribution.from_dict(
+                            res.prediction_uncertainty
+                        )
                     res.elapsed_sec = 0.0
                     results.append(res)
                     continue

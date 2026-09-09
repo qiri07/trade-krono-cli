@@ -64,13 +64,18 @@ def test_query_history_after_insert(research_db) -> None:
     research_db.insert_ta(job_id, result)
 
     # 插入信号（必需字段）
-    research_db.insert_signals(job_id, [{
-        "ticker": "sh.600519",
-        "rank": 1,
-        "composite_score": 85.0,
-        "ta_signal": "BUY",
-        "ta_confidence": 85.0,
-    }])
+    research_db.insert_signals(
+        job_id,
+        [
+            {
+                "ticker": "sh.600519",
+                "rank": 1,
+                "composite_score": 85.0,
+                "ta_signal": "BUY",
+                "ta_confidence": 85.0,
+            }
+        ],
+    )
 
     history = research_db.query_history("sh.600519")
     assert len(history) >= 1

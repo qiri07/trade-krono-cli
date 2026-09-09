@@ -452,4 +452,3 @@ class BacktestEngine:
             "n_trades": len(trades),
             "n_days": n_days,
         }
-

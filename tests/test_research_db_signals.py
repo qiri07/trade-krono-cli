@@ -107,7 +107,9 @@ def test_insert_signals_overwrite(research_db) -> None:
     job_id = research_db.create_job("2026-08-11", ["sh.600519"])
 
     items1 = [{"ticker": "sh.600519", "rank": 1, "composite_score": 85.0, "ta_signal": "BUY"}]
-    items2 = [{"ticker": "sh.600519", "rank": 1, "composite_score": 90.0, "ta_signal": "STRONG_BUY"}]
+    items2 = [
+        {"ticker": "sh.600519", "rank": 1, "composite_score": 90.0, "ta_signal": "STRONG_BUY"}
+    ]
 
     research_db.insert_signals(job_id, items1)
     research_db.insert_signals(job_id, items2)

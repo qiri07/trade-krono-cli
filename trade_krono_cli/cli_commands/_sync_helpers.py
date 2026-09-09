@@ -74,6 +74,7 @@ def _get_global_semaphore() -> threading.Semaphore:
 
 # ── 股票解析 ─────────────────────────────────────────────────────────────────
 
+
 def _resolve_tickers(raw: str) -> list[str]:
     """将逗号分隔的6位股票代码转为带交易所前缀的 ticker 列表。
 
@@ -100,6 +101,7 @@ def _resolve_tickers(raw: str) -> list[str]:
 
 
 # ── Provider 健康检查 ────────────────────────────────────────────────────────
+
 
 def _check_provider_health() -> dict[str, bool]:
     """检查所有 Provider 的健康状态，返回 {name: is_healthy}。"""
@@ -169,6 +171,7 @@ def _update_usable_providers(
 
 
 # ── 并发拉取 ─────────────────────────────────────────────────────────────────
+
 
 def _fetch_ticker_parallel(
     ticker: str,

@@ -39,7 +39,9 @@ class TestKronosSampleCount:
     def test_predict_one_calls_cache_with_sample_count(self) -> None:
         """predict_one 的缓存查询包含 sample_count。"""
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
-            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
+            with patch(
+                "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
+            ) as mock_prepare:
                 mock_prepare.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
                 runner = KronosRunner(no_cache=False, sample_count=5)
                 runner._cache = MagicMock()
@@ -86,8 +88,12 @@ class TestKronosSampleCount:
             pred_df_1 = pd.DataFrame({"close": [101.0, 102.0]})
             pred_df_5 = pd.DataFrame({"close": [101.0, 102.0]})
 
-            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_p1:
-                with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_p2:
+            with patch(
+                "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
+            ) as mock_p1:
+                with patch(
+                    "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
+                ) as mock_p2:
                     mock_p1.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
                     mock_p2.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
 

@@ -72,14 +72,9 @@ class DataPreparator:
         return pad_rows.tail(target_len)
 
     @staticmethod
-    def split_batches(
-        items: list[tuple], batch_size: int
-    ) -> list[list[tuple]]:
+    def split_batches(items: list[tuple], batch_size: int) -> list[list[tuple]]:
         """将 items 列表分割为多个批次。"""
-        return [
-            items[i : i + batch_size]
-            for i in range(0, len(items), batch_size)
-        ]
+        return [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
 
     @staticmethod
     def prepare_from_df(

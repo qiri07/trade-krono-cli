@@ -18,6 +18,7 @@
 
 Per-Provider 串行，但多 Provider 之间并行执行。
 """
+
 from __future__ import annotations
 
 import queue
@@ -69,13 +70,16 @@ CACHE_DB = Path("/run/media/onai/MyDisk/Work/trade-krono-cli/outputs/cache/pipel
 def get_stale_tickers(conn: sqlite3.Connection) -> list[tuple[str, str]]:
     """获取所有 end < END_DATE 的股票 (ticker, start_date)，按 MAX(end) 去重。"""
     cur = conn.cursor()
-    cur.execute('''
+    cur.execute(
+        """
         SELECT ticker, MIN(start) AS start
         FROM kline_cache
         GROUP BY ticker
         HAVING MAX(end) < ?
         ORDER BY ticker
-    ''', (END_DATE,))
+    """,
+        (END_DATE,),
+    )
     return cur.fetchall()
 
 
@@ -100,14 +104,9 @@ class _HealthTracker:
         with self._lock:
             self._successes[name] = 0
             self._failures[name] = self._failures.get(name, 0) + 1
-            if (
-                self._failures[name] >= FAILURE_THRESHOLD
-                and name not in self._disabled
-            ):
+            if self._failures[name] >= FAILURE_THRESHOLD and name not in self._disabled:
                 self._disabled.add(name)
-                logger.warning(
-                    f"  ⛔ Provider {name} 连续失败 {FAILURE_THRESHOLD} 次，暂时禁用"
-                )
+                logger.warning(f"  ⛔ Provider {name} 连续失败 {FAILURE_THRESHOLD} 次，暂时禁用")
 
     def is_available(self, name: str) -> bool:
         with self._lock:
@@ -189,7 +188,9 @@ class _ProviderWorker(threading.Thread):
             except queue.Empty:
                 continue
             if item is None:  # 终止信号
-                logger.info(f"  ⏹️  [{self._name}] worker 收到终止信号，退出 (共处理 {processed} 只)")
+                logger.info(
+                    f"  ⏹️  [{self._name}] worker 收到终止信号，退出 (共处理 {processed} 只)"
+                )
                 break
 
             ticker, start = item
@@ -201,7 +202,9 @@ class _ProviderWorker(threading.Thread):
                 ok = df is not None and len(df) > 0
                 processed += 1
                 if processed % 10 == 0 or processed == 1:
-                    logger.info(f"  [{self._name}] 进度: {processed}/?, 最近={ticker} {'✅' if ok else '❌'}")
+                    logger.info(
+                        f"  [{self._name}] 进度: {processed}/?, 最近={ticker} {'✅' if ok else '❌'}"
+                    )
                 self._result_queue.put(_WorkerResult(ticker=ticker, ok=ok))  # type: ignore[misc]
                 if ok:
                     _health.record_success(self._name)
@@ -235,12 +238,8 @@ def process_batch(
     logger.info(f"  📡 可用 Provider: {available_providers}")
 
     # 初始化各 Provider 的队列和 worker
-    task_queues: dict[str, queue.Queue] = {
-        name: queue.Queue() for name in available_providers
-    }
-    result_queues: dict[str, queue.Queue] = {
-        name: queue.Queue() for name in available_providers
-    }
+    task_queues: dict[str, queue.Queue] = {name: queue.Queue() for name in available_providers}
+    result_queues: dict[str, queue.Queue] = {name: queue.Queue() for name in available_providers}
     workers: dict[str, _ProviderWorker] = {}
     for name in available_providers:
         workers[name] = _ProviderWorker(
@@ -285,12 +284,9 @@ def process_batch(
                 fail_count += 1
 
     elapsed = time.time() - t_start
-    stats_str = "  ".join(
-        f"{k}={v}" for k, v in provider_stats.items() if v > 0
-    )
+    stats_str = "  ".join(f"{k}={v}" for k, v in provider_stats.items() if v > 0)
     logger.info(
-        f"  ✅ 批次完成: 成功={success_count} 失败={fail_count} "
-        f"耗时={elapsed:.1f}s  ({stats_str})"
+        f"  ✅ 批次完成: 成功={success_count} 失败={fail_count} 耗时={elapsed:.1f}s  ({stats_str})"
     )
 
     return success_count, fail_count, provider_stats
@@ -362,12 +358,12 @@ def main() -> int:
     rate = total_success / elapsed * 60 if elapsed > 0 else 0
 
     cur = conn.cursor()
-    cur.execute('SELECT COUNT(*) FROM kline_cache WHERE end >= ?', (END_DATE,))
+    cur.execute("SELECT COUNT(*) FROM kline_cache WHERE end >= ?", (END_DATE,))
     final_up = cur.fetchone()[0]
-    cur.execute('SELECT COUNT(*) FROM kline_cache')
+    cur.execute("SELECT COUNT(*) FROM kline_cache")
     final_total = cur.fetchone()[0]
     cur.execute(
-        'SELECT COUNT(ticker) FROM kline_cache GROUP BY ticker HAVING MAX(end) < ?',
+        "SELECT COUNT(ticker) FROM kline_cache GROUP BY ticker HAVING MAX(end) < ?",
         (END_DATE,),
     )
     final_stale = len(cur.fetchall())

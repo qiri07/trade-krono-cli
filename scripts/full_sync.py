@@ -7,6 +7,7 @@
   - 断点续传：跳过已保存到数据库的股票
   - 批次间休息避免 API 限流
 """
+
 from __future__ import annotations
 
 import sys
@@ -39,6 +40,7 @@ def _get_saved_tickers() -> set[str]:
     if not CACHE_DB.exists():
         return set()
     import sqlite3
+
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
     cur.execute("SELECT DISTINCT ticker FROM kline_cache")
@@ -58,6 +60,7 @@ def _load_known_tickers() -> list[str]:
                     tickers.append(t)
         return sorted(set(tickers))
     from trade_krono_cli.universe.provider import TongHuaShunUniverseProvider
+
     provider = TongHuaShunUniverseProvider()
     tickets = provider.get_universe()
     return sorted({t.ticker for t in tickets if t.ticker})
@@ -73,8 +76,7 @@ def _fetch_with_timeout(factory, ticker: str, healthy: list[str]) -> tuple[str, 
             for provider_name in healthy:
                 try:
                     result = factory.fetch_kline(
-                        ticker, START_DATE, END_DATE,
-                        frequency="d", adjustflag="1"
+                        ticker, START_DATE, END_DATE, frequency="d", adjustflag="1"
                     )
                     if result is None or result.is_empty:
                         continue
@@ -82,13 +84,16 @@ def _fetch_with_timeout(factory, ticker: str, healthy: list[str]) -> tuple[str, 
                     if len(df) == 0:
                         continue
                     from trade_krono_cli.cache import get_cache
+
                     cache = get_cache()
                     ts = pd.to_datetime(df["timestamps"])
                     cache.set_kline(
                         ticker,
                         ts.min().strftime("%Y-%m-%d"),
                         ts.max().strftime("%Y-%m-%d"),
-                        "d", df, ttl=86400 * 365 * 10
+                        "d",
+                        df,
+                        ttl=86400 * 365 * 10,
                     )
                     result_container.append((ticker, len(df), provider_name))
                     return
@@ -124,7 +129,9 @@ def main() -> None:
     # 断点续传
     saved = _get_saved_tickers()
     if saved:
-        logger.info(f"📌 断点续传：跳过已保存的 {len(saved)} 只，剩余 {len(all_tickers) - len(saved)} 只")
+        logger.info(
+            f"📌 断点续传：跳过已保存的 {len(saved)} 只，剩余 {len(all_tickers) - len(saved)} 只"
+        )
         tickers = [t for t in all_tickers if t not in saved]
     else:
         tickers = all_tickers
@@ -155,7 +162,7 @@ def main() -> None:
     start_time = time.time()
 
     for batch_start in range(0, total, BATCH_SIZE):
-        batch = tickers[batch_start:batch_start + BATCH_SIZE]
+        batch = tickers[batch_start : batch_start + BATCH_SIZE]
         batch_num = batch_start // BATCH_SIZE + 1
         logger.info(f"📦 批次 {batch_num} [{batch_start + 1}~{batch_start + len(batch)}/{total}]")
 
@@ -184,7 +191,7 @@ def main() -> None:
     logger.info(f"\n{'=' * 60}")
     logger.info("✅ 同步完成!")
     logger.info(f"  成功: {success}, 失败: {len(failed)}, 超时: {len(timeouts)}")
-    logger.info(f"  耗时: {elapsed_total:.1f}s ({elapsed_total/60:.1f}min)")
+    logger.info(f"  耗时: {elapsed_total:.1f}s ({elapsed_total / 60:.1f}min)")
     logger.info(f"  速率: {success / elapsed_total * 60:.1f} 只/分钟")
     if timeouts:
         logger.warning(f"  超时股票 ({len(timeouts)}): {', '.join(timeouts[:10])}")

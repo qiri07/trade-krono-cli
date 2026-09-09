@@ -517,4 +517,3 @@ def run_evaluation(
     evaluator.print_report(summary)
     if backtest and summary.backtest:
         _print_backtest_report(summary)
-

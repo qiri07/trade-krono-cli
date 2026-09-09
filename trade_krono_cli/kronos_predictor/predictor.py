@@ -117,9 +117,7 @@ class KronosPredictor:
         try:
             self._runner._load()  # type: ignore
             x_df, x_ts, y_ts, last_close = self._data_prep.prepare(ticker, eval_date)
-            self._result_parser.run_predict(
-                self._runner, x_df, x_ts, y_ts, last_close, res
-            )
+            self._result_parser.run_predict(self._runner, x_df, x_ts, y_ts, last_close, res)
         except DataError as e:
             res.error = f"{type(e).__name__}: {e}"
             logger.error(f"❌ 数据准备失败 {ticker}: {sanitize_for_log(str(e))}")

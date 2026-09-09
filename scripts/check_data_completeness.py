@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """检查 K 线缓存数据的完整性和每日覆盖情况。"""
+
 from __future__ import annotations
 
 import pickle
@@ -148,8 +149,8 @@ def _print_status(total: int, end_counter: Counter[str]) -> None:
     )
     stale = total - up_to_date
     print("\n【达标状态】")
-    print(f"  ✅ 达标 (end >= {TARGET_DATE}): {up_to_date} 只 ({up_to_date*100//total}%)")
-    print(f"  ❌ 滞后 (end < {TARGET_DATE}):  {stale} 只 ({stale*100//total}%)")
+    print(f"  ✅ 达标 (end >= {TARGET_DATE}): {up_to_date} 只 ({up_to_date * 100 // total}%)")
+    print(f"  ❌ 滞后 (end < {TARGET_DATE}):  {stale} 只 ({stale * 100 // total}%)")
 
 
 def _print_recent_coverage(recent_coverage: dict[str, int], total: int) -> None:

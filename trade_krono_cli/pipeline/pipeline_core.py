@@ -530,7 +530,9 @@ class QuantPipeline:
             self.kronos.save_results(results, output)
         return results
 
-    def _run_committee(self, research, job_id: str, date: str, ta_results: list, kronos_results: list) -> None:
+    def _run_committee(
+        self, research, job_id: str, date: str, ta_results: list, kronos_results: list
+    ) -> None:
         """对每只 TA 分析过的股票运行 Investment Committee 审议。"""
         orchestrator = CommitteeOrchestrator(research)
         orchestrator.run(job_id, date, ta_results, kronos_results)

@@ -135,17 +135,21 @@ class TestKronosRunnerPredictBatch:
         settings = make_mock_settings()
         runner = KronosRunner(no_cache=True, sample_count=1, settings=settings)
 
-        mock_df = pd.DataFrame({
-            "timestamps": pd.date_range("2025-01-01", periods=400, freq="B"),
-            "open": [100.0] * 400,
-            "high": [101.0] * 400,
-            "low": [99.0] * 400,
-            "close": [100.0] * 400,
-            "volume": [1e6] * 400,
-            "amount": [1e8] * 400,
-        })
+        mock_df = pd.DataFrame(
+            {
+                "timestamps": pd.date_range("2025-01-01", periods=400, freq="B"),
+                "open": [100.0] * 400,
+                "high": [101.0] * 400,
+                "low": [99.0] * 400,
+                "close": [100.0] * 400,
+                "volume": [1e6] * 400,
+                "amount": [1e8] * 400,
+            }
+        )
 
-        with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
+        with patch(
+            "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
+        ) as mock_prepare:
             mock_prepare.return_value = (mock_df, MagicMock(), MagicMock(), 100.0)
             mock_adapter = MagicMock()
             mock_adapter.predict_batch.side_effect = RuntimeError("batch failed")
@@ -267,7 +271,9 @@ class TestKronosBatchInference:
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=True, sample_count=1, batch_size=8, settings=settings)
             mock_df = self._make_mock_df(400)
-            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
+            with patch(
+                "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
+            ) as mock_prepare:
                 mock_prepare.return_value = (
                     mock_df,
                     self._make_mock_ts(400),
@@ -297,7 +303,9 @@ class TestKronosBatchInference:
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=True, sample_count=1, batch_size=2, settings=settings)
             mock_df = self._make_mock_df(400)
-            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
+            with patch(
+                "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
+            ) as mock_prepare:
                 mock_prepare.return_value = (
                     mock_df,
                     self._make_mock_ts(400),
@@ -334,7 +342,9 @@ class TestKronosBatchInference:
             runner = KronosRunner(no_cache=True, sample_count=1, batch_size=4, settings=settings)
             long_df = self._make_mock_df(400)
             short_df = self._make_mock_df(300)
-            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
+            with patch(
+                "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
+            ) as mock_prepare:
                 mock_prepare.side_effect = [
                     (
                         long_df,
@@ -375,7 +385,9 @@ class TestKronosBatchInference:
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=True, sample_count=1, batch_size=8, settings=settings)
             mock_df = self._make_mock_df(400)
-            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
+            with patch(
+                "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
+            ) as mock_prepare:
                 mock_prepare.return_value = (
                     mock_df,
                     self._make_mock_ts(400),

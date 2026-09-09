@@ -134,44 +134,106 @@ class Cache:
 
     def get_kline(self, ticker: str, start: str, end: str, freq: str, adjustflag: str = "1") -> Any:  # noqa: ANN401
         from trade_krono_cli.cache.kline import KlineCache
+
         return KlineCache(self).get_kline(ticker, start, end, freq, adjustflag)
 
-    def set_kline(self, ticker: str, start: str, end: str, freq: str, df: Any, ttl: float = 86400, adjustflag: str = "1") -> None:  # noqa: ANN401
+    def set_kline(
+        self,
+        ticker: str,
+        start: str,
+        end: str,
+        freq: str,
+        df: Any,
+        ttl: float = 86400,
+        adjustflag: str = "1",
+    ) -> None:  # noqa: ANN401
         from trade_krono_cli.cache.kline import KlineCache
+
         KlineCache(self).set_kline(ticker, start, end, freq, df, ttl, adjustflag)
 
     def warm_history(self, ticker: str, end_date: str, lookback_days: int = 730) -> tuple[int, int]:
         from trade_krono_cli.cache.kline import KlineCache
+
         return KlineCache(self).warm_history(ticker, end_date, lookback_days)
 
-    def get_ta(self, ticker: str, date: str, config_hash: str = "", prompt_ver: str = "", model_ver: str = "") -> dict | None:
+    def get_ta(
+        self,
+        ticker: str,
+        date: str,
+        config_hash: str = "",
+        prompt_ver: str = "",
+        model_ver: str = "",
+    ) -> dict | None:
         from trade_krono_cli.cache.ta import TADataCache
+
         return TADataCache(self).get_ta(ticker, date, config_hash, prompt_ver, model_ver)
 
-    def set_ta(self, ticker: str, date: str, result: dict, config_hash: str = "", prompt_ver: str = "", model_ver: str = "", ttl: float = 86400) -> None:
+    def set_ta(
+        self,
+        ticker: str,
+        date: str,
+        result: dict,
+        config_hash: str = "",
+        prompt_ver: str = "",
+        model_ver: str = "",
+        ttl: float = 86400,
+    ) -> None:
         from trade_krono_cli.cache.ta import TADataCache
+
         TADataCache(self).set_ta(ticker, date, result, config_hash, prompt_ver, model_ver, ttl)
 
-    def get_kronos(self, ticker: str, date: str, pred_len: int, sample_count: int = 1, config_hash: str = "", model_ver: str = "") -> dict | None:
+    def get_kronos(
+        self,
+        ticker: str,
+        date: str,
+        pred_len: int,
+        sample_count: int = 1,
+        config_hash: str = "",
+        model_ver: str = "",
+    ) -> dict | None:
         from trade_krono_cli.cache.kronos import KronosCache
-        return KronosCache(self).get_kronos(ticker, date, pred_len, sample_count, config_hash, model_ver)
 
-    def set_kronos(self, ticker: str, date: str, pred_len: int, result: dict, ttl: float = 86400, sample_count: int = 1, config_hash: str = "", model_ver: str = "") -> None:
+        return KronosCache(self).get_kronos(
+            ticker, date, pred_len, sample_count, config_hash, model_ver
+        )
+
+    def set_kronos(
+        self,
+        ticker: str,
+        date: str,
+        pred_len: int,
+        result: dict,
+        ttl: float = 86400,
+        sample_count: int = 1,
+        config_hash: str = "",
+        model_ver: str = "",
+    ) -> None:
         from trade_krono_cli.cache.kronos import KronosCache
-        KronosCache(self).set_kronos(ticker, date, pred_len, result, ttl, sample_count, config_hash, model_ver)
+
+        KronosCache(self).set_kronos(
+            ticker, date, pred_len, result, ttl, sample_count, config_hash, model_ver
+        )
 
     def clear_all(self) -> int:
         from trade_krono_cli.cache.queries import CacheQueries
+
         return CacheQueries(self).clear_all()
 
-    def export_daily_pv(self, parquet_path: str, h5_path: str | None = None, debug_insts: int = 0) -> dict:
+    def export_daily_pv(
+        self, parquet_path: str, h5_path: str | None = None, debug_insts: int = 0
+    ) -> dict:
         from trade_krono_cli.cache.queries import CacheQueries
+
         return CacheQueries(self).export_daily_pv(parquet_path, h5_path, debug_insts)
 
     def stats(self) -> dict:
         from trade_krono_cli.cache.queries import CacheQueries
+
         return CacheQueries(self).stats()
 
-    def get_cached_date_range(self, ticker: str, freq: str = "d", adjustflag: str = "1") -> tuple[str, str] | None:
+    def get_cached_date_range(
+        self, ticker: str, freq: str = "d", adjustflag: str = "1"
+    ) -> tuple[str, str] | None:
         from trade_krono_cli.cache.kline import KlineCache
+
         return KlineCache(self).get_cached_date_range(ticker, freq, adjustflag)

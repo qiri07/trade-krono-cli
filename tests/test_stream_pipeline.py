@@ -261,7 +261,9 @@ class TestKronosRunnerStreamPredictOne:
         df = _make_df(400)
 
         with patch("trade_krono_cli.kronos_runner.fetch_lookback") as mock_fetch:
-            with patch("trade_krono_cli.kronos_predictor.streaming.StreamingPredictor.predict") as mock_predict:
+            with patch(
+                "trade_krono_cli.kronos_predictor.streaming.StreamingPredictor.predict"
+            ) as mock_predict:
                 mock_predict.return_value = MagicMock()
                 _result = runner.stream_predict_one("sh.600519", "2026-08-12", df)
                 mock_fetch.assert_not_called()
@@ -288,7 +290,9 @@ class TestKronosRunnerStreamPredictOne:
 
         df = _make_df(400)
 
-        with patch("trade_krono_cli.kronos_predictor.streaming.StreamingPredictor.predict") as mock_predict:
+        with patch(
+            "trade_krono_cli.kronos_predictor.streaming.StreamingPredictor.predict"
+        ) as mock_predict:
             mock_result = _mock_kr_result()
             mock_predict.return_value = mock_result
             result = runner.stream_predict_one("sh.600519", "2026-08-12", df)
