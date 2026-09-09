@@ -243,12 +243,14 @@ CREATE_SCRIPT = """
                 CREATE INDEX IF NOT EXISTS idx_kronos_forecast_ticker ON kronos_forecast(ticker);
                 CREATE INDEX IF NOT EXISTS idx_signals_job_id ON signals(job_id);
                 CREATE INDEX IF NOT EXISTS idx_signals_ticker ON signals(ticker);
+                CREATE INDEX IF NOT EXISTS idx_signals_job_ticker ON signals(job_id, ticker);
                 CREATE INDEX IF NOT EXISTS idx_decisions_job_id ON decisions(job_id);
                 CREATE INDEX IF NOT EXISTS idx_decisions_ticker ON decisions(ticker);
                 CREATE INDEX IF NOT EXISTS idx_raw_reports_job_id ON raw_reports(job_id);
                 CREATE INDEX IF NOT EXISTS idx_raw_reports_ticker ON raw_reports(ticker);
                 CREATE INDEX IF NOT EXISTS idx_signal_history_ticker ON signal_history(ticker);
                 CREATE INDEX IF NOT EXISTS idx_signal_history_date ON signal_history(date);
+                CREATE INDEX IF NOT EXISTS idx_signal_history_ticker_date ON signal_history(ticker, date);
                 CREATE INDEX IF NOT EXISTS idx_committee_ticker ON committee_deliberations(ticker);
                 CREATE INDEX IF NOT EXISTS idx_committee_job_id ON committee_deliberations(job_id);
                 CREATE INDEX IF NOT EXISTS idx_backtest_results_job_id ON backtest_results(job_id);

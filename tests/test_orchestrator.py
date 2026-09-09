@@ -12,7 +12,7 @@ import pytest
 
 def test_collect_futures_both_success() -> None:
     """两个 Future 都成功时返回各自的结果。"""
-    from trade_krono_cli.pipeline.orchestrator import _collect_futures
+    from trade_krono_cli.pipeline.factory import _collect_futures
 
     ta_fut = Future()
     kr_fut = Future()
@@ -25,7 +25,7 @@ def test_collect_futures_both_success() -> None:
 
 def test_collect_futures_ta_exception() -> None:
     """TA Future 异常时降级为空列表，Kronos 正常返回。"""
-    from trade_krono_cli.pipeline.orchestrator import _collect_futures
+    from trade_krono_cli.pipeline.factory import _collect_futures
 
     ta_fut = Future()
     kr_fut = Future()
@@ -38,7 +38,7 @@ def test_collect_futures_ta_exception() -> None:
 
 def test_collect_futures_kronos_exception() -> None:
     """Kronos Future 异常时降级为空列表，TA 正常返回。"""
-    from trade_krono_cli.pipeline.orchestrator import _collect_futures
+    from trade_krono_cli.pipeline.factory import _collect_futures
 
     ta_fut = Future()
     kr_fut = Future()
@@ -51,7 +51,7 @@ def test_collect_futures_kronos_exception() -> None:
 
 def test_collect_futures_kronos_none() -> None:
     """kronos_future=None 时只返回 TA 结果。"""
-    from trade_krono_cli.pipeline.orchestrator import _collect_futures
+    from trade_krono_cli.pipeline.factory import _collect_futures
 
     ta_fut = Future()
     ta_fut.set_result([MagicMock()])
@@ -62,7 +62,7 @@ def test_collect_futures_kronos_none() -> None:
 
 def test_collect_futures_both_exception() -> None:
     """两个 Future 都异常时均降级为空列表。"""
-    from trade_krono_cli.pipeline.orchestrator import _collect_futures
+    from trade_krono_cli.pipeline.factory import _collect_futures
 
     ta_fut = Future()
     kr_fut = Future()
@@ -78,7 +78,7 @@ def test_collect_futures_both_exception() -> None:
 
 def test_factory_create_with_skip_kronos() -> None:
     """skip_kronos=True 时 kronos_session 应为 None。"""
-    from trade_krono_cli.pipeline.orchestrator import PipelineFactory
+    from trade_krono_cli.pipeline.factory import PipelineFactory
     from trade_krono_cli.pipeline_config import PipelineConfig
 
     mock_ta = MagicMock()
@@ -94,7 +94,7 @@ def test_factory_create_with_skip_kronos() -> None:
 
 def test_factory_create_with_both_sessions() -> None:
     """同时传入 ta_session 和 kronos_session 时应原样返回。"""
-    from trade_krono_cli.pipeline.orchestrator import PipelineFactory
+    from trade_krono_cli.pipeline.factory import PipelineFactory
     from trade_krono_cli.pipeline_config import PipelineConfig
 
     mock_ta = MagicMock()
@@ -112,7 +112,7 @@ def test_factory_create_with_both_sessions() -> None:
 
 def test_factory_create_with_mock_runner() -> None:
     """传入非 session 的 runner 对象时应包装为 MagicMock。"""
-    from trade_krono_cli.pipeline.orchestrator import PipelineFactory
+    from trade_krono_cli.pipeline.factory import PipelineFactory
     from trade_krono_cli.pipeline_config import PipelineConfig
 
     runner = MagicMock()
@@ -130,7 +130,7 @@ def test_factory_create_with_mock_runner() -> None:
 
 def test_factory_build_universe_engine_manual() -> None:
     """universe_source='manual' 时应返回 None。"""
-    from trade_krono_cli.pipeline.orchestrator import PipelineFactory
+    from trade_krono_cli.pipeline.factory import PipelineFactory
     from trade_krono_cli.pipeline_config import PipelineConfig
 
     config = PipelineConfig.default()
@@ -141,7 +141,7 @@ def test_factory_build_universe_engine_manual() -> None:
 
 def test_factory_build_universe_engine_empty() -> None:
     """universe_source='' 时应返回 None。"""
-    from trade_krono_cli.pipeline.orchestrator import PipelineFactory
+    from trade_krono_cli.pipeline.factory import PipelineFactory
     from trade_krono_cli.pipeline_config import PipelineConfig
 
     config = PipelineConfig.default()

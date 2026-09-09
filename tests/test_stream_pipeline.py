@@ -261,11 +261,11 @@ class TestKronosRunnerStreamPredictOne:
         df = _make_df(400)
 
         with patch("trade_krono_cli.kronos_runner.fetch_lookback") as mock_fetch:
-            with patch.object(runner, "_run_predict") as mock_fill:
-                mock_fill.return_value = None
+            with patch("trade_krono_cli.kronos_predictor.streaming.StreamingPredictor.predict") as mock_predict:
+                mock_predict.return_value = MagicMock()
                 _result = runner.stream_predict_one("sh.600519", "2026-08-12", df)
                 mock_fetch.assert_not_called()
-                mock_fill.assert_called_once()
+                mock_predict.assert_called_once()
 
     def test_stream_predict_one_returns_result(self) -> None:
         """stream_predict_one 应返回 KronosForecastResult。"""
@@ -288,8 +288,9 @@ class TestKronosRunnerStreamPredictOne:
 
         df = _make_df(400)
 
-        with patch.object(runner, "_run_predict") as mock_fill:
-            mock_fill.return_value = None
+        with patch("trade_krono_cli.kronos_predictor.streaming.StreamingPredictor.predict") as mock_predict:
+            mock_result = _mock_kr_result()
+            mock_predict.return_value = mock_result
             result = runner.stream_predict_one("sh.600519", "2026-08-12", df)
 
         assert isinstance(result, KronosForecastResult)

@@ -658,30 +658,57 @@ trade-krono-cli
 │   ├── cli.py                  # Typer CLI entry (run / ta / kronos / status / history / eval-prediction / repo / clear-cache)
 │   ├── config.py               # Configuration management (.env → Settings singleton)
 │   ├── config_validator.py     # Settings validation (15 checks, errors vs warnings)
-│   ├── data.py                 # K-line data fetching (baostock)
+│   ├── data.py                 # K-line data fetching (multi-provider + cache)
 │   ├── security.py             # Key validation + input validation + retry + rate limiting
 │   ├── health.py               # Health checks (LLM API, Kronos import, DB, disk)
-│   ├── cache.py                # Cache (TTL performance cache) + ResearchDatabase (persistent records)
+│   ├── cache/                  # Cache layer — TTL-driven SQLite performance cache
+│   │   ├── base.py             # Cache singleton + transaction management (thread-local connections)
+│   │   ├── kline.py            # K-line cache (DataFrame pickle, permanent)
+│   │   ├── kronos.py           # Kronos prediction cache (JSON, config-hash invalidated)
+│   │   ├── ta.py               # TA analysis cache (JSON, config-hash invalidated)
+│   │   └── queries.py          # Cache stats / export_daily_pv / clear_all
 │   ├── logger.py               # Logging configuration
 │   ├── logging_config.py       # Structured log sinks (text + JSON)
 │   ├── globals.py              # Global state cleanup
 │   ├── ta_decision.py          # Investment decision standardization (Signal / InvestmentDecision / DecisionAdapter)
 │   ├── ta_runner.py            # TradingAgents wrapper (with save_raw_reports three-tier storage)
-│   ├── kronos_runner.py        # Kronos prediction wrapper (with prediction_uncertainty module)
+│   ├── kronos_runner.py        # Kronos prediction wrapper → delegates to kronos_predictor/
 │   ├── prediction_eval.py      # Prediction evaluation (Kronos/TA/combined signal win rate validation)
-│   ├── pipeline_config.py      # PipelineConfig dataclass + run configuration
+│   ├── pipeline_config/        # PipelineConfig package (composite config + YAML/JSON I/O)
+│   │   ├── __init__.py         # PipelineConfig class with property delegation to sub-configs
+│   │   ├── io.py               # JSON/YAML load/save serialization
+│   │   └── compat.py           # Backward-compatible property delegation
+│   ├── kronos_predictor/       # Kronos prediction sub-modules (split from kronos_runner.py)
+│   │   ├── predictor.py        # KronosPredictor: predict_one / predict_batch (core logic)
+│   │   ├── data_prep.py        # DataPreparator: fetch_lookback, x/y construction, batch splitting
+│   │   ├── result_parser.py    # ResultParser: prediction DataFrame → KronosForecastResult
+│   │   ├── streaming.py        # StreamingPredictor: direct inference without cache check
+│   │   └── cache.py            # KronosCacheManager: per-stock result caching
 │   ├── external.py             # External repo management (repo status/doctor/update/pin)
+│   ├── cli_commands/           # CLI command implementations
+│   │   ├── core.py             # Thin wrapper re-exporting run/ta/kronos + shared helpers
+│   │   ├── _core_commands.py   # run/ta/kronos command implementations
+│   │   ├── _core_helpers.py    # Shared utilities: _load_env, _load_tickers, _sanitize_path
+│   │   ├── _sync_helpers.py    # Sync utilities: health check, provider selection
+│   │   ├── sync_universe.py    # sync-universe command
+│   │   ├── sync_whitelist.py   # sync-whitelist command
+│   │   └── rank_providers.py   # rank-providers command
 │   ├── pipeline/               # Pipeline package — unified orchestration entry
 │   │   ├── orchestrator.py     # QuantPipeline + PipelineFactory (ThreadPoolExecutor parallel TA+Kronos)
+│   │   ├── factory.py          # _collect_futures + PipelineFactory (moved from orchestrator.py)
+│   │   ├── pipeline_core.py    # QuantPipeline core (streaming + batching orchestration)
 │   │   ├── data_fetcher.py     # Parallel K-line fetching + cache write
 │   │   ├── merge.py            # merge_results / filter_pool / default_scorer / run_risk_assessment
-│   │   └── reporter.py         # save_json_report / save_html_report / print_results_table / print_results_summary
+│   │   ├── reporter.py         # save_json_report / save_html_report / print_results_table / print_results_summary
+│   │   ├── stream_pipeline.py  # StreamPipeline (streaming K-line → Kronos predict)
+│   │   ├── resource_manager.py # ResourceManager: CPU/IO/GPU/LLM resource lifecycle
+│   │   └── resource_pool.py    # ResourcePool (legacy, kept for backward compat tests)
 │   ├── models/                 # Session state models
 │   │   ├── kronos_session.py   # Kronos model session lifecycle (lazy-load, device selection)
 │   │   └── ta_session.py       # TradingAgents session state (provider, debate rounds)
 │   ├── batch/                  # Batch prediction
 │   │   └── batch_runner.py     # Async semaphore-based batch Kronos predictions
-│   └── risk/                   # Risk engine (volatility/drawdown/liquidity/concentration/regime/gap/event/valuation)
+│   ├── risk/                   # Risk engine (volatility/drawdown/liquidity/concentration/regime/gap/event/valuation)
 │   ├── domain/                 # Domain model layer (SignalAssessment / InvestmentDecision / Experiment / Evaluation)
 │   │   ├── types.py            # Shared enums (Direction, Signal, ExperimentType)
 │   │   ├── signal.py           # SignalAssessment + signal conflict detection + EV calculation
@@ -701,23 +728,46 @@ trade-krono-cli
 │   │       ├── fundamental.py  # FundamentalFilterStage: PE/PB/market-cap/industry filtering
 │   │       ├── factor.py       # FactorFilterStage: liquidity/volume-ratio/turnover filtering
 │   │       └── rules.py        # FilterRulesStage: user-defined rule chain
-│   ├── pipeline/               # Pipeline package — unified orchestration entry
-│   │   ├── orchestrator.py     # QuantPipeline + PipelineFactory (ThreadPoolExecutor parallel TA+Kronos)
-│   │   ├── data_fetcher.py     # Parallel K-line fetching + cache write
-│   │   ├── merge.py            # merge_results / filter_pool / default_scorer / run_risk_assessment
-│   │   ├── reporter.py         # save_json_report / save_html_report / print_results_table / print_results_summary
-│   │   ├── resource_manager.py # Per-stock resource lifecycle manager
-│   │   └── resource_pool.py    # Shared resource pool (LLM clients, GPU sessions)
-│   ├── models/                 # Session state models
-│   │   ├── kronos_session.py   # Kronos model session lifecycle (lazy-load, device selection)
-│   │   └── ta_session.py       # TradingAgents session state (provider, debate rounds)
-│   ├── batch/                  # Batch prediction
-│   │   └── batch_runner.py     # Async semaphore-based batch Kronos predictions
+│   ├── research_db/            # Research database (persistent records)
+│   │   ├── base.py             # ResearchDatabase base class (connection management, migrations)
+│   │   ├── schema.py           # CREATE TABLE SQL + table whitelist + composite indexes
+│   │   ├── jobs.py             # Jobs table CRUD
+│   │   ├── ta_analysis.py      # TA Analysis table
+│   │   ├── kronos_forecast.py  # Kronos Forecast table
+│   │   ├── signals.py          # Signals table
+│   │   ├── decisions.py        # Decisions + Reports tables
+│   │   ├── stats.py            # Stats + query_history + latest_signal_for_ticker
+│   │   ├── committee.py        # Committee Deliberations table
+│   │   ├── strategy_runs.py    # Strategy Runs table
+│   │   ├── snapshots.py        # Data Snapshots table
+│   │   ├── walkforward.py      # Walk-Forward Runs table
+│   │   └── experiments.py      # Experiments table
+│   ├── retry_policy/           # Smart retry with error classification
+│   │   ├── policy.py           # smart_retry decorator + backoff strategies
+│   │   ├── classifier.py       # Error classification (network/timeout/rate_limit/server_5xx/...)
+│   │   ├── store.py            # Failure persistence store
+│   │   └── exceptions.py       # Typed exceptions (NetworkError, RateLimitError, ...)
+│   └── scoring/                # Composite scoring plugins
+│       ├── base.py             # ScoringPlugin ABC
+│       ├── scorers.py          # Built-in scorers (confidence/TA/Kronos combined)
+│       └── registry.py         # Scoring plugin registry
 ├── scripts/
 │   └── install.sh              # One-click install script
-├── tests/                      # Test suite (2065 tests, mypy clean)
+├── tests/                      # Test suite (2391 tests, ruff + mypy clean)
 └── external/                   # External project configs (repos.yaml + repo.lock)
 ```
+
+### Module Refactoring History
+
+Large monolithic files have been split into focused packages for maintainability:
+
+| Original File | New Structure | Rationale |
+|---|---|---|
+| `cache.py` (636 lines) | `cache/` package | Separated core logic (base), per-type caches (kline/kronos/ta), and analytics (queries) |
+| `pipeline_config.py` (719 lines) | `pipeline_config/` package | Separated config class (`__init__.py`), I/O serialization (`io.py`), and backward-compat delegation (`compat.py`) |
+| `cli_commands/core.py` (620 lines) | `core.py` + `_core_commands.py` + `_core_helpers.py` | Separated CLI commands from shared utility functions |
+| `kronos_runner.py` (706→396 lines) | `kronos_runner.py` + `kronos_predictor/` package | Separated session orchestration (runner) from prediction execution (predictor) |
+| `pipeline/pipeline_core.py` (545 lines) | `pipeline_core.py` + `factory.py` | Separated QuantPipeline from PipelineFactory |
 
 ### Cache vs Research Database
 

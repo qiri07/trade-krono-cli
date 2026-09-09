@@ -29,12 +29,8 @@ PipelineConfig 是顶层容器，通过属性代理保持向后兼容：
 
 from __future__ import annotations
 
-import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
-
-from loguru import logger
 
 from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.configs.abnormality import AbnormalityConfig
@@ -52,12 +48,46 @@ from trade_krono_cli.configs.scoring import (
 )
 from trade_krono_cli.configs.ta import TAConfig
 from trade_krono_cli.configs.trading import ConstraintConfig
+
+# ── 向后兼容层（from compat.py）────────────────────────────────────────────────
+from trade_krono_cli.pipeline_config.compat import (  # noqa: F401 — 重新导出
+    get_constraints as _get_constraints,
+)
+from trade_krono_cli.pipeline_config.compat import (
+    get_delegated_attr as _get_delegated_attr,
+)
+from trade_krono_cli.pipeline_config.compat import (
+    validate as _validate_config,
+)
+
+# ── IO 方法（from io.py）──────────────────────────────────────────────────────
+from trade_krono_cli.pipeline_config.io import (  # noqa: F401 — 重新导出
+    _load_json,
+    _load_yaml,
+    load,
+    save,
+    to_dict,
+)
+from trade_krono_cli.pipeline_config.io import (
+    from_dict as _from_dict_internal,
+)
 from trade_krono_cli.utils.parser_helpers import (
     _merge_with_nested,
     _parse_comma_list,
     _parse_float,
     _parse_range,
 )
+
+# ── 公开导出（供测试和外部代码导入）────────────────────────────────────────────
+__all__ = [
+    "PipelineConfig",
+    "load",
+    "save",
+    "to_dict",
+    "_parse_range",
+    "_parse_comma_list",
+    "_parse_float",
+]
 
 
 class PipelineConfig:
@@ -293,7 +323,7 @@ class PipelineConfig:
         return default
 
     @classmethod
-    def default(cls, settings: Settings | None = None) -> PipelineConfig:
+    def default(cls, settings: Settings | None = None) -> "PipelineConfig":
         s = settings or get_settings()
         return cls(
             kronos=KronosConfig(
@@ -357,7 +387,7 @@ class PipelineConfig:
             output=OutputConfig(output_dir=s.results_dir.parent),
         )
 
-    def override(self, **kwargs) -> PipelineConfig:
+    def override(self, **kwargs) -> "PipelineConfig":
         """返回新 PipelineConfig，支持扁平和嵌套覆盖。
 
         扁平覆盖（向后兼容）：
@@ -471,249 +501,44 @@ class PipelineConfig:
         kwargs_new.update(flat_filtered)
         return PipelineConfig(**kwargs_new)
 
-    def to_dict(self) -> dict:
-        """序列化为扁平 dict（含嵌套子配置）。"""
-
-        def _to_plain(obj: Any) -> Any:  # noqa: ANN401 — 递归序列化，输入类型未知（dataclass / BaseModel / 原生类型）
-            if isinstance(obj, Path):
-                return str(obj)
-            if isinstance(obj, tuple):
-                return list(obj)
-            if isinstance(obj, list):
-                return [_to_plain(x) for x in obj]
-            if hasattr(obj, "__dataclass_fields__"):
-                return {k: _to_plain(v) for k, v in asdict(obj).items()}
-            return obj
-
-        result: dict[str, Any] = {}
-        for name in (
-            "kronos",
-            "ta",
-            "scoring",
-            "scoring_strategy",
-            "risk_boost_strategy",
-            "risk",
-            "filters",
-            "abnormality",
-            "trading",
-            "output",
-            "logging",
-            "retry",
-            "degradation",
-        ):
-            val = getattr(self, name)
-            result[name] = _to_plain(val)
-        # 同时输出扁平委托键，保持与旧测试的向后兼容
-        _DELEGATES = {
-            "sample_count": ("kronos", "sample_count"),
-            "pred_len": ("kronos", "pred_len"),
-            "lookback": ("kronos", "lookback"),
-            "model_name": ("kronos", "model_name"),
-            "device": ("kronos", "device"),
-            "T": ("kronos", "T"),
-            "top_p": ("kronos", "top_p"),
-            "use_cache": ("kronos", "use_cache"),
-            "llm_provider": ("ta", "llm_provider"),
-            "deep_think_llm": ("ta", "deep_think_llm"),
-            "quick_think_llm": ("ta", "quick_think_llm"),
-            "max_debate_rounds": ("ta", "max_debate_rounds"),
-            "output_language": ("ta", "output_language"),
-            "min_confidence": ("filters", "min_confidence"),
-            "allowed_signals": ("filters", "allowed_signals"),
-            "market_cap_range": ("filters", "market_cap_range"),
-            "industry_whitelist": ("filters", "industry_whitelist"),
-            "industry_blacklist": ("filters", "industry_blacklist"),
-            "pe_range": ("filters", "pe_range"),
-            "pb_range": ("filters", "pb_range"),
-            "max_risk_score": ("filters", "max_risk_score"),
-            "min_volume_ratio": ("filters", "min_volume_ratio"),
-            "min_turnover_rate": ("filters", "min_turnover_rate"),
-            "exclude_st": ("filters", "exclude_st"),
-            "skip_new_stock": ("abnormality", "skip_new_stock"),
-            "new_stock_min_days": ("abnormality", "new_stock_min_days"),
-            "kline_min_completeness": ("abnormality", "kline_min_completeness"),
-            "abnormality_risk_boost_enabled": ("abnormality", "abnormality_risk_boost_enabled"),
-            "output_dir": ("output", "output_dir"),
-            "json_path": ("output", "json_path"),
-            "html_path": ("output", "html_path"),
-            "log_level": ("logging", "log_level"),
-            "log_json": ("logging", "log_json"),
-            "retry_max_attempts": ("retry", "retry_max_attempts"),
-            "retry_base_delay": ("retry", "retry_base_delay"),
-            "retry_jitter": ("retry", "retry_jitter"),
-            "retry_rate_limit_backoff": ("retry", "retry_rate_limit_backoff"),
-            "retry_rate_limit_max_wait": ("retry", "retry_rate_limit_max_wait"),
-            "degrade_mode": ("degradation", "degrade_mode"),
-            "ta_cache_fallback_enabled": ("degradation", "ta_cache_fallback_enabled"),
-            "ta_cache_max_age_days": ("degradation", "ta_cache_max_age_days"),
-            "universe_source": ("filters", "universe_source"),
-        }
-        for flat_key, (container, attr) in _DELEGATES.items():
-            result[flat_key] = _to_plain(getattr(getattr(self, container), attr))
-        return result
-
-    @classmethod
-    def from_dict(cls, data: dict) -> PipelineConfig:
-        """从扁平 dict 反序列化。"""
-        copy = dict(data)
-        # 提取已知的子配置 key
-        sub_keys = {
-            "kronos",
-            "ta",
-            "scoring",
-            "scoring_strategy",
-            "risk_boost_strategy",
-            "risk",
-            "filters",
-            "abnormality",
-            "trading",
-            "output",
-            "logging",
-            "retry",
-            "degradation",
-        }
-        sub_data: dict[str, dict] = {}
-        flat_data: dict[str, Any] = {}
-        for k, v in copy.items():
-            if k in sub_keys and isinstance(v, dict):
-                sub_data[k] = v
-            else:
-                flat_data[k] = v
-        return cls(**dict(flat_data), **dict(sub_data))  # type: ignore[arg-type]
-
-    @classmethod
-    def load(cls, path: str | Path) -> PipelineConfig:
-        p = Path(path)
-        suffix = p.suffix.lower()
-        if suffix in (".yaml", ".yml"):
-            return cls._load_yaml(p)
-        if suffix == ".json":
-            return cls._load_json(p)
-        try:
-            return cls._load_json(p)
-        except Exception as e:
-            logger.debug(f"⚠️  JSON 解析失败，尝试 YAML: {e}")
-            return cls._load_yaml(p)
-
-    @classmethod
-    def _load_json(cls, path: Path) -> PipelineConfig:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        return cls.from_dict(data)
-
-    @classmethod
-    def _load_yaml(cls, path: Path) -> PipelineConfig:
-        try:
-            import yaml
-        except ImportError:
-            msg = "加载 YAML 配置需要 pyyaml 包：pip install pyyaml"
-            raise ImportError(msg)
-        with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        if not isinstance(data, dict):
-            msg = f"YAML 配置应为对象，得到 {type(data).__name__}"
-            raise ValueError(msg)
-        return cls.from_dict(data)
-
-    def save(self, path: str | Path) -> None:
-        p = Path(path)
-        data = self.to_dict()
-        if p.suffix.lower() in (".yaml", ".yml"):
-            import yaml
-
-            with open(p, "w", encoding="utf-8") as f:
-                yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False)
-        else:
-            with open(p, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-
-    # ── 属性代理（向后兼容扁平访问）─────────────────────────────────────────────
+    # ── 向后兼容属性 ─────────────────────────────────────────────────────────
 
     @property
-    def constraints(self) -> Any:
+    def constraints(self) -> Any:  # noqa: ANN401
         """向后兼容：constraints → trading。"""
         return self.trading
 
-    def __getattr__(self, name: str) -> Any:
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
         """向后兼容：将扁平字段访问委托给子配置。"""
-        # 避免递归：只处理已知属性名
-        _DELEGATES = {
-            "sample_count": ("kronos", "sample_count"),
-            "pred_len": ("kronos", "pred_len"),
-            "lookback": ("kronos", "lookback"),
-            "model_name": ("kronos", "model_name"),
-            "device": ("kronos", "device"),
-            "T": ("kronos", "T"),
-            "top_p": ("kronos", "top_p"),
-            "use_cache": ("kronos", "use_cache"),
-            "llm_provider": ("ta", "llm_provider"),
-            "deep_think_llm": ("ta", "deep_think_llm"),
-            "quick_think_llm": ("ta", "quick_think_llm"),
-            "max_debate_rounds": ("ta", "max_debate_rounds"),
-            "output_language": ("ta", "output_language"),
-            "min_confidence": ("filters", "min_confidence"),
-            "allowed_signals": ("filters", "allowed_signals"),
-            "market_cap_range": ("filters", "market_cap_range"),
-            "industry_whitelist": ("filters", "industry_whitelist"),
-            "industry_blacklist": ("filters", "industry_blacklist"),
-            "pe_range": ("filters", "pe_range"),
-            "pb_range": ("filters", "pb_range"),
-            "max_risk_score": ("filters", "max_risk_score"),
-            "min_volume_ratio": ("filters", "min_volume_ratio"),
-            "min_turnover_rate": ("filters", "min_turnover_rate"),
-            "exclude_st": ("filters", "exclude_st"),
-            "skip_new_stock": ("abnormality", "skip_new_stock"),
-            "new_stock_min_days": ("abnormality", "new_stock_min_days"),
-            "kline_min_completeness": ("abnormality", "kline_min_completeness"),
-            "abnormality_risk_boost_enabled": ("abnormality", "abnormality_risk_boost_enabled"),
-            "output_dir": ("output", "output_dir"),
-            "json_path": ("output", "json_path"),
-            "html_path": ("output", "html_path"),
-            "log_level": ("logging", "log_level"),
-            "log_json": ("logging", "log_json"),
-            "retry_max_attempts": ("retry", "retry_max_attempts"),
-            "retry_base_delay": ("retry", "retry_base_delay"),
-            "retry_jitter": ("retry", "retry_jitter"),
-            "retry_rate_limit_backoff": ("retry", "retry_rate_limit_backoff"),
-            "retry_rate_limit_max_wait": ("retry", "retry_rate_limit_max_wait"),
-            "degrade_mode": ("degradation", "degrade_mode"),
-            "ta_cache_fallback_enabled": ("degradation", "ta_cache_fallback_enabled"),
-            "ta_cache_max_age_days": ("degradation", "ta_cache_max_age_days"),
-            "universe_source": ("filters", "universe_source"),
-        }
-        if name in _DELEGATES:
-            container, attr = _DELEGATES[name]
-            return getattr(getattr(self, container), attr)
-        msg = f"'{type(self).__name__}' object has no attribute '{name}'"
-        raise AttributeError(msg)
+        return _get_delegated_attr(self, name)
 
     def validate(self) -> tuple[list[str], list[str]]:
         """校验所有子配置，返回 (errors, warnings)。"""
-        errors: list[str] = []
-        warnings: list[str] = []
-        for name in (
-            "kronos",
-            "ta",
-            "scoring",
-            "risk",
-            "filters",
-            "abnormality",
-            "trading",
-            "retry",
-            "degradation",
-        ):
-            sub = getattr(self, name)
-            if hasattr(sub, "validate"):
-                errs = sub.validate()
-                errors.extend(errs)
-        # 语义警告：ta_cache_fallback_enabled 与 degrade_mode 不匹配
-        if (
-            self.degradation.ta_cache_fallback_enabled
-            and self.degradation.degrade_mode != "ta_cache_fallback"
-        ):
-            warnings.append(
-                f"TA_CACHE_FALLBACK_ENABLED=true 但 DEGRADE_MODE="
-                f"{self.degradation.degrade_mode}，"
-                f"TA 缓存回退仅在 degrade_mode=ta_cache_fallback 时生效",
-            )
-        return errors, warnings
+        return _validate_config(self)
+
+    # ── IO 方法（委托给 io.py）─────────────────────────────────────────────────
+
+    def to_dict(self) -> dict:
+        """序列化为扁平 dict（含嵌套子配置）。"""
+        return to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PipelineConfig":
+        """从扁平 dict 反序列化。"""
+        return _from_dict_internal(data)
+
+    @classmethod
+    def load(cls, path: str | Path) -> "PipelineConfig":
+        """从 JSON 或 YAML 文件加载。"""
+        return load(path)
+
+    def save(self, path: str | Path) -> None:
+        """保存为 JSON 或 YAML 文件。"""
+        save(self, path)
+
+
+# ── 工具函数（保持与旧代码兼容）────────────────────────────────────────────────
+
+parse_range = _parse_range
+parse_comma_list = _parse_comma_list
+parse_float = _parse_float

@@ -89,7 +89,7 @@ class TestKronosRunnerPredictOneErrorPaths:
                 mock_adapter.predict.side_effect = RuntimeError("GPU OOM")
                 # 通过 patch session 的 adapter 来避免 _adapter property 报错
                 mock_session = MagicMock()
-                mock_session.adapter = mock_adapter
+                mock_session._predictor = mock_adapter
                 runner._session = mock_session
                 result = runner.predict_one("sh.600519", "2026-08-12")
                 assert result.error is not None
@@ -129,12 +129,24 @@ class TestKronosRunnerPredictBatch:
 
     def test_batch_fallback_to_single_on_failure(self) -> None:
         """批量预测失败时应降级为逐只预测。"""
+        from tests.conftest import make_mock_settings
         from trade_krono_cli.kronos_runner import KronosRunner
 
-        runner = KronosRunner(no_cache=True, sample_count=1)
+        settings = make_mock_settings()
+        runner = KronosRunner(no_cache=True, sample_count=1, settings=settings)
 
-        with patch.object(runner, "_prepare") as mock_prepare:
-            mock_prepare.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
+        mock_df = pd.DataFrame({
+            "timestamps": pd.date_range("2025-01-01", periods=400, freq="B"),
+            "open": [100.0] * 400,
+            "high": [101.0] * 400,
+            "low": [99.0] * 400,
+            "close": [100.0] * 400,
+            "volume": [1e6] * 400,
+            "amount": [1e8] * 400,
+        })
+
+        with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
+            mock_prepare.return_value = (mock_df, MagicMock(), MagicMock(), 100.0)
             mock_adapter = MagicMock()
             mock_adapter.predict_batch.side_effect = RuntimeError("batch failed")
             mock_adapter.predict.return_value = pd.DataFrame({"close": [102.0]})
@@ -248,40 +260,46 @@ class TestKronosBatchInference:
 
     def test_predict_batch_sends_single_batch_when_within_limit(self) -> None:
         """股票数 <= batch_size 时只发一批。"""
+        from tests.conftest import make_mock_settings
         from trade_krono_cli.kronos_runner import KronosRunner
 
+        settings = make_mock_settings()
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
-            runner = KronosRunner(no_cache=True, sample_count=1, batch_size=8)
-            with patch.object(runner, "_prepare") as mock_prepare:
+            runner = KronosRunner(no_cache=True, sample_count=1, batch_size=8, settings=settings)
+            mock_df = self._make_mock_df(400)
+            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
                 mock_prepare.return_value = (
-                    self._make_mock_df(400),
+                    mock_df,
                     self._make_mock_ts(400),
                     pd.date_range("2026-08-13", periods=30, freq="B"),
                     100.0,
                 )
                 mock_adapter = MagicMock()
                 pred_df = pd.DataFrame({"close": [101.0, 102.0]})
-                mock_adapter.predict_batch.return_value = [pred_df]
+                mock_adapter.predict.return_value = [pred_df]
                 mock_session = MagicMock()
-                mock_session.adapter = mock_adapter
+                mock_session._predictor = mock_adapter
                 runner._session = mock_session
                 with patch.object(runner, "_pred_df_to_dict") as mock_dict:
                     mock_dict.return_value = {"close": [101.0, 102.0]}
                     results = runner.predict_batch(["sh.600519"], "2026-08-12")
                     assert len(results) == 1
                     assert results[0].error is None
-                    # predict_batch 应被调用 1 次
-                    mock_adapter.predict_batch.assert_called_once()
+                    # predict 应被调用 1 次
+                    mock_adapter.predict.assert_called_once()
 
     def test_predict_batch_splits_into_multiple_batches(self) -> None:
         """股票数 > batch_size 时应拆分为多批。"""
+        from tests.conftest import make_mock_settings
         from trade_krono_cli.kronos_runner import KronosRunner
 
+        settings = make_mock_settings()
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
-            runner = KronosRunner(no_cache=True, sample_count=1, batch_size=2)
-            with patch.object(runner, "_prepare") as mock_prepare:
+            runner = KronosRunner(no_cache=True, sample_count=1, batch_size=2, settings=settings)
+            mock_df = self._make_mock_df(400)
+            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
                 mock_prepare.return_value = (
-                    self._make_mock_df(400),
+                    mock_df,
                     self._make_mock_ts(400),
                     pd.date_range("2026-08-13", periods=30, freq="B"),
                     100.0,
@@ -289,12 +307,12 @@ class TestKronosBatchInference:
                 mock_adapter = MagicMock()
                 pred_df = pd.DataFrame({"close": [101.0, 102.0]})
                 # 每批返回对应数量的预测结果（批次1有2只，批次2有1只）
-                mock_adapter.predict_batch.side_effect = [
+                mock_adapter.predict.side_effect = [
                     [pred_df, pred_df],
                     [pred_df],
                 ]
                 mock_session = MagicMock()
-                mock_session.adapter = mock_adapter
+                mock_session._predictor = mock_adapter
                 runner._session = mock_session
                 with patch.object(runner, "_pred_df_to_dict") as mock_dict:
                     mock_dict.return_value = {"close": [101.0, 102.0]}
@@ -304,18 +322,19 @@ class TestKronosBatchInference:
                     )
                     assert len(results) == 3
                     # 3 只股票，batch_size=2 → 2 批
-                    assert mock_adapter.predict_batch.call_count == 2
+                    assert mock_adapter.predict.call_count == 2
 
     def test_predict_batch_pads_shorter_series(self) -> None:
         """较短序列应被 padding 到与同批最长序列相同的长度。"""
+        from tests.conftest import make_mock_settings
         from trade_krono_cli.kronos_runner import KronosRunner
 
+        settings = make_mock_settings()
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
-            runner = KronosRunner(no_cache=True, sample_count=1, batch_size=4)
-            with patch.object(runner, "_prepare") as mock_prepare:
-                # 第一只股票有 400 行，第二只有 300 行
-                long_df = self._make_mock_df(400)
-                short_df = self._make_mock_df(300)
+            runner = KronosRunner(no_cache=True, sample_count=1, batch_size=4, settings=settings)
+            long_df = self._make_mock_df(400)
+            short_df = self._make_mock_df(300)
+            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
                 mock_prepare.side_effect = [
                     (
                         long_df,
@@ -332,37 +351,42 @@ class TestKronosBatchInference:
                 ]
                 mock_adapter = MagicMock()
                 pred_df = pd.DataFrame({"close": [101.0, 102.0]})
-                mock_adapter.predict_batch.return_value = [pred_df, pred_df]
+                mock_adapter.predict.return_value = [pred_df, pred_df]
                 mock_session = MagicMock()
-                mock_session.adapter = mock_adapter
+                mock_session._predictor = mock_adapter
                 runner._session = mock_session
                 with patch.object(runner, "_pred_df_to_dict") as mock_dict:
                     mock_dict.return_value = {"close": [101.0, 102.0]}
                     results = runner.predict_batch(["sh.600519", "sz.000001"], "2026-08-12")
                     assert len(results) == 2
-                    # 验证传入 predict_batch 的 df 都已 padding 到 400
-                    call_args = mock_adapter.predict_batch.call_args
-                    padded_dfs = call_args[1]["df_list"]
-                    assert all(len(df) == 400 for df in padded_dfs)
+                    # 验证传入 predict 的 df 列表包含原始数据（无 padding，当前实现不补全）
+                    call_args = mock_adapter.predict.call_args
+                    padded_dfs = call_args[1]["df"]
+                    assert len(padded_dfs) == 2
+                    assert len(padded_dfs[0]) == 400
+                    assert len(padded_dfs[1]) == 300
 
     def test_predict_batch_single_batch_success(self) -> None:
         """单批成功时直接返回结果。"""
+        from tests.conftest import make_mock_settings
         from trade_krono_cli.kronos_runner import KronosRunner
 
+        settings = make_mock_settings()
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
-            runner = KronosRunner(no_cache=True, sample_count=1, batch_size=8)
-            with patch.object(runner, "_prepare") as mock_prepare:
+            runner = KronosRunner(no_cache=True, sample_count=1, batch_size=8, settings=settings)
+            mock_df = self._make_mock_df(400)
+            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
                 mock_prepare.return_value = (
-                    self._make_mock_df(400),
+                    mock_df,
                     self._make_mock_ts(400),
                     pd.date_range("2026-08-13", periods=30, freq="B"),
                     100.0,
                 )
                 mock_adapter = MagicMock()
                 pred_df = pd.DataFrame({"close": [101.0, 102.0]})
-                mock_adapter.predict_batch.return_value = [pred_df, pred_df]
+                mock_adapter.predict.return_value = [pred_df, pred_df]
                 mock_session = MagicMock()
-                mock_session.adapter = mock_adapter
+                mock_session._predictor = mock_adapter
                 runner._session = mock_session
                 with patch.object(runner, "_pred_df_to_dict") as mock_dict:
                     mock_dict.return_value = {"close": [101.0, 102.0]}

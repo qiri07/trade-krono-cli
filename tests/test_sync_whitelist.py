@@ -92,7 +92,7 @@ class TestSyncWhitelist:
     def test_sync_whitelist_no_config(self, runner) -> None:
         """未配置 SYNC_WHITELIST 时应报错退出。"""
         with (
-            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+            patch("trade_krono_cli.cli_commands.sync_whitelist._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
         ):
             mock_settings.return_value.sync_whitelist = ""
@@ -103,7 +103,7 @@ class TestSyncWhitelist:
     def test_sync_whitelist_invalid_codes(self, runner) -> None:
         """白名单全为无效代码时应报错退出。"""
         with (
-            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+            patch("trade_krono_cli.cli_commands.sync_whitelist._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
         ):
             mock_settings.return_value.sync_whitelist = "abc,xyz"
@@ -118,14 +118,14 @@ class TestSyncWhitelist:
             return 800, "baostock"
 
         with (
-            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+            patch("trade_krono_cli.cli_commands.sync_whitelist._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
-                "trade_krono_cli.cli_commands.maintenance_sync._check_provider_health",
+                "trade_krono_cli.cli_commands._sync_helpers._check_provider_health",
                 return_value={"baostock": True, "mootdx": True},
             ),
             patch(
-                "trade_krono_cli.cli_commands.maintenance_sync._fetch_ticker_parallel",
+                "trade_krono_cli.cli_commands._sync_helpers._fetch_ticker_parallel",
                 side_effect=mock_fetch_ticker,
             ),
         ):
@@ -148,14 +148,14 @@ class TestSyncWhitelist:
             return 0, None
 
         with (
-            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+            patch("trade_krono_cli.cli_commands.sync_whitelist._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
-                "trade_krono_cli.cli_commands.maintenance_sync._check_provider_health",
+                "trade_krono_cli.cli_commands._sync_helpers._check_provider_health",
                 return_value={"baostock": True, "mootdx": True},
             ),
             patch(
-                "trade_krono_cli.cli_commands.maintenance_sync._fetch_ticker_parallel",
+                "trade_krono_cli.cli_commands._sync_helpers._fetch_ticker_parallel",
                 side_effect=mock_fetch_ticker,
             ),
         ):
@@ -197,17 +197,17 @@ class TestSyncUniverseWhitelist:
             return 800, "mootdx"
 
         with (
-            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+            patch("trade_krono_cli.cli_commands.sync_universe._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
                 "trade_krono_cli.universe.provider.TongHuaShunUniverseProvider",
             ) as mock_provider_cls,
             patch(
-                "trade_krono_cli.cli_commands.maintenance_sync._check_provider_health",
+                "trade_krono_cli.cli_commands._sync_helpers._check_provider_health",
                 return_value={"baostock": True, "mootdx": True},
             ),
             patch(
-                "trade_krono_cli.cli_commands.maintenance_sync._fetch_ticker_parallel",
+                "trade_krono_cli.cli_commands._sync_helpers._fetch_ticker_parallel",
                 side_effect=mock_fetch_ticker,
             ),
         ):
@@ -241,7 +241,7 @@ class TestSyncUniverseWhitelist:
         mock_settings.sync_whitelist = ""
 
         with (
-            patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+            patch("trade_krono_cli.cli_commands.sync_universe._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
                 "trade_krono_cli.universe.provider.TongHuaShunUniverseProvider",
@@ -270,7 +270,7 @@ class TestFetchTickerParallel:
 
     def test_fetch_ticker_parallel_returns_first_success(self) -> None:
         """应返回首个成功 Provider 的结果。"""
-        from trade_krono_cli.cli_commands.maintenance_sync import _fetch_ticker_parallel
+        from trade_krono_cli.cli_commands._sync_helpers import _fetch_ticker_parallel
 
         mock_df = MagicMock()
         mock_df.__len__ = MagicMock(return_value=200)
@@ -290,7 +290,7 @@ class TestFetchTickerParallel:
 
     def test_fetch_ticker_parallel_all_fail(self) -> None:
         """所有 Provider 失败时应返回 (0, None)。"""
-        from trade_krono_cli.cli_commands.maintenance_sync import _fetch_ticker_parallel
+        from trade_krono_cli.cli_commands._sync_helpers import _fetch_ticker_parallel
 
         with patch("trade_krono_cli.data.fetch_kline_incremental") as mock_fetch:
             mock_fetch.side_effect = RuntimeError("all down")

@@ -39,7 +39,7 @@ class TestKronosSampleCount:
     def test_predict_one_calls_cache_with_sample_count(self) -> None:
         """predict_one 的缓存查询包含 sample_count。"""
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
-            with patch.object(KronosRunner, "_prepare") as mock_prepare:
+            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_prepare:
                 mock_prepare.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
                 runner = KronosRunner(no_cache=False, sample_count=5)
                 runner._cache = MagicMock()
@@ -55,10 +55,12 @@ class TestKronosSampleCount:
                 mock_adapter.predict.return_value = pred_df
 
                 mock_session = MagicMock()
-                mock_session.adapter = mock_adapter
+                mock_session._predictor = mock_adapter
                 runner._session = mock_session
 
-                _result = runner.predict_one("sh.600519", "2026-08-12")
+                with patch.object(runner, "_pred_df_to_dict") as mock_dict:
+                    mock_dict.return_value = {"close": [101.0, 102.0]}
+                    _result = runner.predict_one("sh.600519", "2026-08-12")
 
                 # 验证缓存查询传入了 sample_count=5
                 runner._cache.get_kronos.assert_called_once()
@@ -84,15 +86,15 @@ class TestKronosSampleCount:
             pred_df_1 = pd.DataFrame({"close": [101.0, 102.0]})
             pred_df_5 = pd.DataFrame({"close": [101.0, 102.0]})
 
-            with patch.object(runner_1, "_prepare") as mock_p1:
-                with patch.object(runner_5, "_prepare") as mock_p2:
+            with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_p1:
+                with patch("trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare") as mock_p2:
                     mock_p1.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
                     mock_p2.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
 
                     mock_ad1 = MagicMock()
                     mock_ad1.predict.return_value = pred_df_1
                     mock_session_1 = MagicMock()
-                    mock_session_1.adapter = mock_ad1
+                    mock_session_1._predictor = mock_ad1
                     runner_1._session = mock_session_1
 
                     with patch.object(runner_1, "_pred_df_to_dict") as mock_dict1:
@@ -102,17 +104,17 @@ class TestKronosSampleCount:
                     mock_ad5 = MagicMock()
                     mock_ad5.predict.return_value = pred_df_5
                     mock_session_5 = MagicMock()
-                    mock_session_5.adapter = mock_ad5
+                    mock_session_5._predictor = mock_ad5
                     runner_5._session = mock_session_5
 
                     with patch.object(runner_5, "_pred_df_to_dict") as mock_dict5:
                         mock_dict5.return_value = {"close": [101.0, 102.0]}
                         _r5 = runner_5.predict_one("sh.600519", "2026-08-12")
 
-                    # 两次缓存写入应使用不同的 sample_count
-                    write_calls_1 = runner_1._cache.set_kronos.call_args_list
-                    write_calls_5 = runner_5._cache.set_kronos.call_args_list
-                    assert len(write_calls_1) == 1
-                    assert len(write_calls_5) == 1
-                    assert write_calls_1[0][1]["sample_count"] == 1
-                    assert write_calls_5[0][1]["sample_count"] == 5
+                    # 两次缓存查询应使用不同的 sample_count
+                    read_calls_1 = runner_1._cache.get.call_args_list
+                    read_calls_5 = runner_5._cache.get.call_args_list
+                    assert len(read_calls_1) == 1
+                    assert len(read_calls_5) == 1
+                    assert read_calls_1[0][0][3] == 1  # sample_count
+                    assert read_calls_5[0][0][3] == 5  # sample_count

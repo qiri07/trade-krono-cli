@@ -229,37 +229,6 @@ class DataProviderFactory:
         logger.warning(f"❌ 所有 Provider 均无法获取 K 线: {ticker}")
         return None
 
-    def _try_kline_support(
-        self,
-        ticker: str,
-        start_date: str,
-        end_date: str,
-        frequency: str,
-        adjustflag: str,
-    ) -> bool:
-        """尝试从各 Provider 拉取 K 线，返回是否成功。"""
-        chain = self._provider_chain_for_ticker(ticker)
-        for name in chain:
-            provider = self.get_provider(name)
-            if provider is None:
-                continue
-            if not provider.supports_kline:
-                logger.debug(f"{name}: 不支持 K 线，跳过")
-                continue
-            if not provider.health_check():
-                logger.debug(f"{name}: 健康检查未通过，跳过")
-                continue
-            try:
-                data = provider.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
-                if data is not None and not data.is_empty:
-                    logger.info(f"✅ K 线获取成功: {ticker} ← {name} ({len(data.timestamps)} 条)")
-                    return True
-            except Exception as e:
-                logger.warning(f"{name} K 线拉取异常 {ticker}: {str(e)[:100]}")
-                continue
-        logger.warning(f"❌ 所有 Provider 均无法获取 K 线: {ticker}")
-        return False
-
     def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
         """获取实时行情，按优先级尝试各 Provider。
 

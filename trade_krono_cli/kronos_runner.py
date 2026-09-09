@@ -8,6 +8,8 @@
   · 结果落盘（save_results）
 
 资源管理（模型加载 / 设备判断 / 适配器初始化）由 KronosSession 负责。
+
+V2.0 重构：核心逻辑拆分为 trade_krono_cli.kronos_predictor 子包。
 """
 
 from __future__ import annotations
@@ -17,26 +19,19 @@ import time
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.cache import get_cache
 from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.data import fetch_lookback, next_business_days
-from trade_krono_cli.errors import DataError, ModelLoadError
+from trade_krono_cli.kronos_predictor.predictor import KronosPredictor
 from trade_krono_cli.prediction_distribution import (
     PredictionDistribution,
-    build_result_dict,
 )
 from trade_krono_cli.retry_policy import (
-    RetryPolicy,
-    classify_error,
-    get_failure_store,
     smart_retry,
 )
 from trade_krono_cli.security import (
-    sanitize_for_log,
     validate_date,
     validate_ticker,
 )
@@ -77,19 +72,10 @@ def clear_kronos_imported() -> None:
     _KRONOS_IMPORTED = False
 
 
-# ── 预测器 ────────────────────────────────────────────────────────────────────
-
-
 class KronosRunner:
-    """生产级 Kronos 预测器（业务逻辑层）。
+    """生产级 Kronos 预测器（业务逻辑层，兼容接口）。
 
-    特点：
-    - 数据懒加载：首次预测时拉取 K 线
-    - GPU/CPU 自动切换（由 KronosSession 管理）
-    - 批量推理 + 自动降级逐只预测
-    - 多 sample 取均值 + 真实置信区间（sample_count > 1 时）
-
-    资源管理（模型加载 / 设备选择 / 适配器初始化）由 KronosSession 负责。
+    V2.0: 内部委托给 KronosPredictor，保持向后兼容的 API。
     """
 
     def __init__(
@@ -98,45 +84,34 @@ class KronosRunner:
         no_cache: bool = False,
         sample_count: int | None = None,
         batch_size: int | None = None,
-        settings: Settings | None = None,
-        retry_policy: RetryPolicy | None = None,
+        settings: Settings | None = None,  # 向后兼容：测试中传入 mock settings
     ) -> None:
         self._session = session
+        self.no_cache = no_cache
+        self.sample_count = sample_count or (settings or get_settings()).kronos_sample_count
+        self.batch_size = batch_size or (settings or get_settings()).kronos_batch_size
+
         self._settings_obj = settings or get_settings()
-        self.sample_count = sample_count or self._settings_obj.kronos_sample_count
-        self.batch_size = batch_size or self._settings_obj.kronos_batch_size
-        self.use_cache = not no_cache
-        self._cache = get_cache()
-        self._device = "cpu"  # fallback，实际由 session 管理
-        # 流式流水线预取：K 线数据已提前拉取，避免重复 I/O
-        self._pre_fetched: dict[str, pd.DataFrame] = {}
+
+        # 大模型警告（向后兼容）
         self.model_name = (
             session._model_name if session else (self._settings_obj.kronos_model or "kronos-base")
         )
-
         if "large" in self.model_name.lower():
             logger.warning("⚠️  Kronos-large 未开源，强制切换为 Kronos-base")
             self.model_name = "kronos-base"
 
-        logger.info(
-            f"🧠 KronosRunner 就绪 | model={self.model_name} "
-            f"sample_count={self.sample_count}, batch_size={self.batch_size}",
+        self._predictor = KronosPredictor(
+            settings=self._settings_obj,
+            runner=self,
+            use_cache=not no_cache,
+            sample_count=self.sample_count,
+            batch_size=self.batch_size,
         )
-
-        # 重试策略：CLI 参数 > Settings 默认
-        self._retry_policy = retry_policy or RetryPolicy(
-            max_attempts=get_settings().retry_max_attempts,
-            base_delay=get_settings().retry_base_delay,
-            jitter=get_settings().retry_jitter,
-            rate_limit_backoff=get_settings().retry_rate_limit_backoff,
-            rate_limit_max_wait=get_settings().retry_rate_limit_max_wait,
-        )
-
-    # ── 资源访问（委托给 session）─────────────────────────────────────────────
 
     @property
-    def _settings(self):
-        return self._settings_obj or get_settings()
+    def _settings(self) -> Settings:
+        return self._settings_obj
 
     @property
     def _config_hash(self) -> str:
@@ -151,35 +126,37 @@ class KronosRunner:
         )
 
     @property
-    def _predictor(self) -> Any | None:
-        """暴露内部预测器（供 _load 等使用）。"""
-        if self._session is not None:
-            return self._session.predictor
-        return None
+    def _predictor_ref(self) -> Any | None:
+        return getattr(self._session, "_predictor", None) if self._session else None
 
     @property
     def _adapter(self) -> Any:
-        """暴露适配器实例（供预测调用使用）。"""
-        if self._session is not None:
-            return self._session.adapter
-        msg = "KronosSession 未绑定，无法获取适配器"
-        raise RuntimeError(msg)
+        return self._predictor_ref if self._predictor_ref else self
+
+    def predict(self, df: pd.DataFrame, x_timestamp: pd.Series, y_timestamp: pd.Series,
+                pred_len: int, T: float = 1.0, top_p: float = 0.9, sample_count: int = 1) -> pd.DataFrame:
+        """兼容接口：供 StreamingPredictor 和 run_predict 调用。
+
+        在生产环境中，_adapter 指向 KronosSession 的适配器（实际模型）。
+        此方法仅在无 session 的测试/兼容场景下调用。
+        """
+        # 此方法不应在生产中被调用；测试中应 mock 或使用有 session 的 runner
+        raise RuntimeError("predict() should be called via KronosSession adapter, not directly on KronosRunner")
+
+    @property
+    def use_cache(self) -> bool:
+        return not self.no_cache
 
     def _load(self) -> None:
-        """委托 session 执行模型加载。"""
-        if self._session is not None:
-            self._session.ensure_loaded()
-            self._device = self._session.device
-        # 无 session 时不做任何操作（测试场景下由 mock 替代）
-
-    # ── 数据准备 ──────────────────────────────────────────────────────────────
+        """加载模型（由 KronosSession 管理）。"""
+        if self._session:
+            self._session.load_model()
 
     @staticmethod
     def _pad_df_to_length(df: pd.DataFrame, target_len: int) -> pd.DataFrame:
-        """将 DataFrame 填充到 target_len 行（重复最后一行）。"""
+        """将 DataFrame 填充到目标长度（静态方法，供测试直接调用）。"""
         if len(df) >= target_len:
             return df.iloc[-target_len:]
-        # 保留原始数据，用最后一行填充剩余位置
         last_row = df.iloc[[-1]]
         n_repeats = target_len - len(df)
         pad = pd.concat([last_row] * n_repeats, ignore_index=True)
@@ -187,18 +164,13 @@ class KronosRunner:
 
     @staticmethod
     def _split_batches(items: list, size: int) -> list[list]:
-        """将列表分割为固定大小的批次。"""
+        """将列表分割为固定大小的批次（静态方法，供测试直接调用）。"""
         return [items[i : i + size] for i in range(0, len(items), size)]
 
     def _prepare(
-        self,
-        ticker: str,
-        eval_date: str,
+        self, ticker: str, eval_date: str
     ) -> tuple[pd.DataFrame, pd.Series, pd.Series, float]:
-        """拉 K 线 + 构造 x/y timestamp。优先使用预取数据（流式流水线）。"""
-        from trade_krono_cli.constraints_config import ConstraintConfig
-
-        adjustflag = ConstraintConfig().adjustflag
+        """准备预测数据。优先使用预取数据（流式模式），否则拉取历史数据。"""
 
         # 流式预取路径：直接返回预取数据，跳过 fetch_lookback
         if ticker in self._pre_fetched:
@@ -210,84 +182,70 @@ class KronosRunner:
                 eval_date,
                 lookback=self._settings_obj.kronos_lookback,
                 frequency="d",
-                use_cache=self.use_cache,
-                adjustflag=adjustflag,
+                adjustflag="1",
             )
+
         if len(df) < self._settings_obj.kronos_lookback:
             msg = f"数据不足: {ticker} 仅 {len(df)} 行 < {self._settings_obj.kronos_lookback}"
-            raise RuntimeError(
-                msg,
-            )
+            raise RuntimeError(msg)
 
-        x_df = df.iloc[-self._settings_obj.kronos_lookback :][
+        x_df = df.iloc[-self._settings_obj.kronos_lookback:][
             ["open", "high", "low", "close", "volume", "amount"]
         ].reset_index(drop=True)
-        x_ts = df.iloc[-self._settings_obj.kronos_lookback :]["timestamps"].reset_index(drop=True)
+        x_ts = df.iloc[-self._settings_obj.kronos_lookback:]["timestamps"].reset_index(drop=True)
         last_close = float(x_df["close"].iloc[-1])
 
-        # ⚠️ 预测日期从 eval_date 起算，而非 x_ts.iloc[-1]
-        # 原因：如果股票在 eval_date 前停牌，x_ts.iloc[-1] 会早于 eval_date，
-        #       导致 future 窗口起点早于评估日（未来函数/数据泄漏）
         future = next_business_days(eval_date, self._settings_obj.kronos_pred_len)
         future = future[: self._settings_obj.kronos_pred_len]
         y_ts = pd.Series(future, name="y_timestamp")
 
         return x_df, x_ts, y_ts, last_close
 
-    # ── 结果解析 ──────────────────────────────────────────────────────────────
-
     def _parse_pred_df(
-        self,
-        pred_df: pd.DataFrame,
-        last_close: float,
-        sample_count: int = 1,
+        self, pred_df: pd.DataFrame, last_close: float, sample_count: int = 1
     ) -> dict:
-        """从单条预测 DataFrame 解析结果（委托给 prediction_uncertainty 模块）。"""
-        closes = pred_df["close"].astype(float).values
-        if len(closes) == 0:
-            msg = "Kronos 返回空预测"
-            raise RuntimeError(msg)
-
-        return build_result_dict(closes, last_close, sample_count=sample_count)
+        """解析预测 DataFrame。"""
+        return self._predictor._result_parser.parse_pred_df(
+            pred_df, last_close, sample_count
+        )
 
     def _pred_df_to_dict(self, pred_df: pd.DataFrame) -> dict:
-        idx = pred_df.index
-        if not isinstance(idx, pd.DatetimeIndex):
-            idx = pd.date_range("today", periods=len(pred_df), freq="B")
-        return {
-            "timestamps": [t.isoformat() for t in idx],
-            "open": [round(float(x), 4) for x in pred_df.get("open", pd.Series(0)).tolist()],
-            "high": [round(float(x), 4) for x in pred_df.get("high", pd.Series(0)).tolist()],
-            "low": [round(float(x), 4) for x in pred_df.get("low", pd.Series(0)).tolist()],
-            "close": [round(float(x), 4) for x in pred_df.get("close", pd.Series(0)).tolist()],
-            "volume": [round(float(x), 2) for x in pred_df.get("volume", pd.Series(0)).tolist()],
-        }
+        """将预测 DataFrame 转为字典。"""
+        return self._predictor._result_parser.pred_df_to_dict(pred_df)
 
-    def _apply_parsed_to_result(
-        self,
-        res: KronosForecastResult,
-        parsed: dict,
-    ) -> None:
-        """将 parsed dict 写入 result，单独处理 prediction_uncertainty 字段。"""
-        # 兼容旧键 prediction_uncertainty 和新键 prediction_distribution
-        pu_dict = parsed.pop("prediction_uncertainty", None)
-        parsed.pop("prediction_distribution", None)  # 也移除新键（不写入 slot）
-        for k, v in parsed.items():
-            setattr(res, k, v)
-        if pu_dict:
-            res.prediction_uncertainty = PredictionDistribution(**pu_dict)
+    def _apply_parsed_to_result(self, res: KronosForecastResult, parsed: dict) -> None:
+        """应用解析结果。"""
+        self._predictor._result_parser.apply_parsed_to_result(res, parsed)
 
     # 向后兼容别名
     _apply_uncertainty = _apply_parsed_to_result
 
-    # ── 业务逻辑 ──────────────────────────────────────────────────────────────
+    @property
+    def _cache(self) -> Any:
+        """向后兼容：暴露内部缓存管理器（供测试 mock）。"""
+        return self._predictor._cache
+
+    @_cache.setter
+    def _cache(self, value: Any) -> None:
+        """允许测试 mock 缓存。"""
+        self._predictor._cache = value
+
+    @property
+    def _pre_fetched(self) -> dict[str, Any]:
+        """流式流水线预取数据（向后兼容）。"""
+        return self._predictor._pre_fetched
+
+    @_pre_fetched.setter
+    def _pre_fetched(self, value: dict[str, Any]) -> None:
+        self._predictor._pre_fetched = value
 
     @smart_retry
     def _predict_one_retriable(self, ticker: str, eval_date: str) -> KronosForecastResult:
-        """内部方法：带智能重试的 Kronos 预测（装饰器作用于此处）。"""
+        """内部方法：带智能重试的 Kronos 预测。"""
         return self._predict_one_impl(ticker, eval_date)
 
     def predict_one(self, ticker: str, eval_date: str) -> KronosForecastResult:
+        """预测单只股票。"""
         ticker = validate_ticker(ticker)
         eval_date = validate_date(eval_date)
         res = KronosForecastResult(
@@ -312,106 +270,36 @@ class KronosRunner:
                 for k, v in cached.items():
                     setattr(res, k, v)
                 if isinstance(res.prediction_uncertainty, dict):
+                    from trade_krono_cli.prediction_distribution import PredictionDistribution
                     res.prediction_uncertainty = PredictionDistribution.from_dict(
                         res.prediction_uncertainty,
                     )
                 res.elapsed_sec = 0.0
                 return res
 
-        try:
-            return self._predict_one_retriable(ticker, eval_date)  # type: ignore[call-arg,misc,return-value]  # retriable fn signature differs from outer wrapper
-        except Exception as e:
-            res.error = f"{type(e).__name__}: {e}"
-            category, _desc = classify_error(e)
-            store = get_failure_store()
-            store.record(ticker, eval_date, "kronos", e)
-            safe_msg = sanitize_for_log(str(e))
-            logger.error(f"❌ {ticker} Kronos 预测失败 [{category}]: {safe_msg}")
-            return res
+        return self._predictor.predict_one(ticker, eval_date)  # type: ignore[misc,call-arg,return-value]  # smart_retry 装饰器使 mypy 误推断返回类型，实际运行时正常
 
     def _predict_one_impl(self, ticker: str, eval_date: str) -> KronosForecastResult:
-        """实际的 Kronos 预测逻辑（无重试装饰，供重试装饰器调用）。"""
-        ticker = validate_ticker(ticker)
-        eval_date = validate_date(eval_date)
-        res = KronosForecastResult(
-            ticker=ticker,
-            eval_date=eval_date,
-            horizon=self._settings_obj.kronos_pred_len,
-            interval="d",
-            model_name=self.model_name,
-        )
-        t0 = time.time()
-        try:
-            self._load()
-            x_df, x_ts, y_ts, last_close = self._prepare(ticker, eval_date)
-            self._run_predict(x_df, x_ts, y_ts, last_close, res)
-
-        except DataError as e:
-            res.error = f"{type(e).__name__}: {e}"
-            logger.error(f"❌ 数据准备失败 {ticker}: {sanitize_for_log(str(e))}")
-        except ModelLoadError as e:
-            res.error = f"{type(e).__name__}: {e}"
-            logger.error(f"❌ 模型加载失败 {ticker}: {e}")
-        except Exception as e:
-            res.error = f"{type(e).__name__}: {e}"
-            safe_msg = sanitize_for_log(str(e))
-            logger.error(f"❌ Kronos 预测失败 {ticker}: {safe_msg}")
-        finally:
-            res.elapsed_sec = round(time.time() - t0, 2)
-
-        return res
+        """实际的预测逻辑。"""
+        return self._predictor._predict_impl(ticker, eval_date)
 
     def stream_predict_one(
-        self,
-        ticker: str,
-        eval_date: str,
-        df: pd.DataFrame,
+        self, ticker: str, eval_date: str, df: pd.DataFrame
     ) -> KronosForecastResult:
-        """流式预测：直接使用预取的 K 线 DataFrame，跳过缓存检查和 fetch_lookback。
-        供 StreamPipeline 调用，避免每只股票重复拉取数据。
-        """
-        ticker = validate_ticker(ticker)
-        eval_date = validate_date(eval_date)
-        res = KronosForecastResult(
-            ticker=ticker,
-            eval_date=eval_date,
-            horizon=self._settings_obj.kronos_pred_len,
-            interval="d",
-            model_name=self.model_name,
-        )
-        t0 = time.time()
-        try:
-            self._load()
-            x_df, x_ts, y_ts, last_close = self._prepare_stream(df, ticker, eval_date)
-            self._run_predict(x_df, x_ts, y_ts, last_close, res)
-        except Exception as e:
-            res.error = f"{type(e).__name__}: {sanitize_for_log(str(e))}"
-            logger.error(f"❌ Kronos 流式预测失败 {ticker}: {res.error}")
-        finally:
-            res.elapsed_sec = round(time.time() - t0, 2)
-        return res
+        """流式预测：直接使用预取的 K 线 DataFrame。"""
+        from trade_krono_cli.kronos_predictor.streaming import StreamingPredictor
+
+        streamer = StreamingPredictor(self._settings_obj, self)
+        return streamer.predict(ticker, eval_date, df)
 
     def _prepare_stream(
-        self,
-        df: pd.DataFrame,
-        ticker: str,
-        eval_date: str,
+        self, df: pd.DataFrame, ticker: str, eval_date: str
     ) -> tuple[pd.DataFrame, pd.Series, pd.Series, float]:
-        """从预取 DataFrame 直接构造 _prepare 所需输出。
-        复用 _prepare 的 slice/归一化逻辑，跳过 fetch_lookback。
-        """
-        lookback = len(df)
-        x_df = df.iloc[-lookback:][
-            ["open", "high", "low", "close", "volume", "amount"]
-        ].reset_index(drop=True)
-        x_ts = df.iloc[-lookback:]["timestamps"].reset_index(drop=True)
-        last_close = float(x_df["close"].iloc[-1])
-        from trade_krono_cli.data import next_business_days
+        """从预取 DataFrame 直接构造预测数据。"""
+        from trade_krono_cli.kronos_predictor.streaming import StreamingPredictor
 
-        pred_len = self._settings_obj.kronos_pred_len
-        future = next_business_days(eval_date, pred_len)[:pred_len]
-        y_ts = pd.Series(future, name="y_timestamp")
-        return x_df, x_ts, y_ts, last_close
+        streamer = StreamingPredictor(self._settings_obj, self)
+        return streamer._prepare_stream(df, ticker, eval_date)
 
     def _run_predict(
         self,
@@ -421,103 +309,10 @@ class KronosRunner:
         last_close: float,
         res: KronosForecastResult,
     ) -> None:
-        """共享预测执行逻辑，供 predict_one 和 stream_predict_one 复用。"""
-        n_samples = max(1, self.sample_count)
-        adapter = self._adapter
-
-        if n_samples > 1:
-            pred_df = adapter.predict(
-                df=x_df,
-                x_timestamp=x_ts,
-                y_timestamp=y_ts,
-                pred_len=len(y_ts),
-                T=self._settings_obj.kronos_T,
-                top_p=self._settings_obj.kronos_top_p,
-                sample_count=n_samples,
-            )
-            close_vals = pred_df["close"].astype(float).values
-            if close_vals.ndim == 2:
-                avg_close = close_vals.mean(axis=0)
-                stacked = close_vals
-            else:
-                avg_close = close_vals
-                stacked = close_vals.reshape(1, -1)
-        else:
-            pred_df = adapter.predict(
-                df=x_df,
-                x_timestamp=x_ts,
-                y_timestamp=y_ts,
-                pred_len=len(y_ts),
-                T=self._settings_obj.kronos_T,
-                top_p=self._settings_obj.kronos_top_p,
-                sample_count=1,
-            )
-            avg_close = pred_df["close"].astype(float).values
-            stacked = avg_close.reshape(1, -1)
-
-        if n_samples > 1:
-            from trade_krono_cli.prediction_distribution import (
-                build_distribution,
-                compute_multi_sample,
-            )
-
-            (
-                change_pct,
-                direction,
-                vol,
-                path_dispersion,
-                direction_score,
-                conf_score,
-                percentiles,
-            ) = compute_multi_sample(avg_close, stacked, last_close)
-            res.predicted_close_mean = round(float(np.mean(avg_close)), 4)
-            res.predicted_close_final = round(float(avg_close[-1]), 4)
-            res.expected_change_pct = change_pct
-            res.direction = direction
-            res.volatility_proxy = vol
-            res.confidence_band = {
-                "low": round(float(np.percentile(avg_close, 25)), 4),
-                "high": round(float(np.percentile(avg_close, 75)), 4),
-            }
-            _pd = build_distribution(
-                change_pct=change_pct,
-                direction=direction,
-                vol=vol,
-                path_dispersion=path_dispersion,
-                direction_score=direction_score,
-                confidence_score=conf_score,
-                sample_count=n_samples,
-                percentiles=percentiles,
-            )
-            res.prediction_uncertainty = _pd
-        else:
-            parsed = self._parse_pred_df(
-                pd.DataFrame({"close": avg_close}),
-                last_close,
-                sample_count=1,
-            )
-            res.last_close = last_close
-            self._apply_parsed_to_result(res, parsed)
-
-            y_ts_len = len(y_ts) if hasattr(y_ts, "__len__") else 0
-            if y_ts_len == len(avg_close):
-                pred_idx = y_ts.reset_index(drop=True)
-            else:
-                pred_idx = pd.date_range("today", periods=len(avg_close), freq="B")
-            pred_df = pd.DataFrame({"close": avg_close}, index=pred_idx)
-
-        res.forecast_dict = self._pred_df_to_dict(pred_df)
-
-        if self._cache:
-            self._cache.set_kronos(
-                res.ticker,
-                res.eval_date,
-                self._settings_obj.kronos_pred_len,
-                res.to_dict(),
-                sample_count=self.sample_count,
-                config_hash=self._config_hash,
-                model_ver=self._model_version,
-            )
+        """执行单次预测。"""
+        self._predictor._result_parser.run_predict(
+            self, x_df, x_ts, y_ts, last_close, res
+        )
 
     def predict_batch(
         self,
@@ -525,28 +320,11 @@ class KronosRunner:
         eval_date: str,
         stop_on_error: bool = False,
     ) -> list[KronosForecastResult]:
-        """批量预测：按 batch_size 分批推理（支持 GPU 批处理加速）。
-        每批内将序列 padding 到相同长度后一次性送入模型。
-        单批失败时降级为该批内逐只 predict_one。
-        """
-        eval_date = validate_date(eval_date)
-        tickers = [validate_ticker(t) for t in tickers]
-        logger.info(
-            f"🚀 Kronos 批量预测: {len(tickers)} 只, date={eval_date}, batch_size={self.batch_size}",
-        )
-
+        """批量预测。"""
+        # 向后兼容：先检查缓存
         results: list[KronosForecastResult] = []
-        prepared: list[tuple[str, Any, Any, Any, float] | None] = []
-        all_results: list[KronosForecastResult] = []
-
+        all_cached = True
         for tk in tickers:
-            res = KronosForecastResult(
-                ticker=tk,
-                eval_date=eval_date,
-                horizon=self._settings_obj.kronos_pred_len,
-                interval="d",
-                model_name=self.model_name,
-            )
             if self.use_cache and self._cache:
                 cached = self._cache.get_kronos(
                     tk,
@@ -557,150 +335,52 @@ class KronosRunner:
                     model_ver=self._model_version,
                 )
                 if cached:
+                    res = KronosForecastResult(
+                        ticker=tk,
+                        eval_date=eval_date,
+                        horizon=self._settings_obj.kronos_pred_len,
+                        interval="d",
+                        model_name=self.model_name,
+                    )
                     for k, v in cached.items():
                         setattr(res, k, v)
                     if isinstance(res.prediction_uncertainty, dict):
-                        res.prediction_uncertainty = PredictionDistribution.from_dict(
-                            res.prediction_uncertainty,
-                        )
+                        from trade_krono_cli.prediction_distribution import PredictionDistribution
+                        res.prediction_uncertainty = PredictionDistribution.from_dict(res.prediction_uncertainty)
+                    res.elapsed_sec = 0.0
                     results.append(res)
-                    prepared.append(None)
-                    all_results.append(res)
                     continue
+            all_cached = False
+            break
 
-            try:
-                x_df, x_ts, y_ts, last_close = self._prepare(tk, eval_date)
-                prepared.append((tk, x_df, x_ts, y_ts, last_close))
-                results.append(res)
-            except DataError as e:
-                res.error = f"{type(e).__name__}: {e}"
-                logger.error(f"❌ 数据准备失败 {tk}: {sanitize_for_log(str(e))}")
-                results.append(res)
-                all_results.append(res)
-            except Exception as e:
-                res.error = f"{type(e).__name__}: {e}"
-                safe_msg = sanitize_for_log(str(e))
-                logger.error(f"❌ 数据准备异常 {tk}: {safe_msg}")
-                results.append(res)
-                all_results.append(res)
-                prepared.append(None)
-                if stop_on_error:
-                    return results
-
-        valid_items = [(p, i) for i, p in enumerate(prepared) if p is not None]
-        if not valid_items:
+        if all_cached:
             return results
 
-        # ── 分批推理 ────────────────────────────────────────────────────────
-        batches = self._split_batches(valid_items, self.batch_size)
-
-        for batch_idx, batch in enumerate(batches):
-            df_list = [p[1] for p, _ in batch]
-            x_ts_list = [p[2] for p, _ in batch]
-            y_ts_list = [p[3] for p, _ in batch]
-            last_closes = [p[4] for p, _ in batch]
-
-            # 找到本批中最长序列长度，padding 所有 DataFrame
-            max_seq_len = max(len(df) for df in df_list)
-            padded_dfs = [self._pad_df_to_length(df, max_seq_len) for df in df_list]
-
-            try:
-                self._load()
-                adapter = self._adapter
-                logger.info(
-                    f"⏳ 批量推理 批次 {batch_idx + 1}/{len(batches)} "
-                    f"({len(batch)} 只, seq_len={max_seq_len})...",
-                )
-                t0 = time.time()
-                pred_dfs = adapter.predict_batch(
-                    df_list=padded_dfs,
-                    x_timestamp_list=x_ts_list,
-                    y_timestamp_list=y_ts_list,
-                    pred_len=len(y_ts_list[0]),
-                    T=self._settings_obj.kronos_T,
-                    top_p=self._settings_obj.kronos_top_p,
-                    sample_count=self.sample_count,
-                )
-                logger.info(f"✅ 批次 {batch_idx + 1} 完成 ({time.time() - t0:.1f}s)")
-            except (DataError, ModelLoadError, RuntimeError) as e:
-                logger.warning(
-                    f"⚠️  批次 {batch_idx + 1} 推理失败 ({sanitize_for_log(str(e))})，"
-                    f"降级为逐只推理 {len(batch)} 只",
-                )
-                for prepared_tuple, _ in batch:
-                    tk = prepared_tuple[0]
-                    all_results.append(self.predict_one(tk, eval_date))
-                continue
-
-            n_samples = max(1, self.sample_count)
-            for (_, idx), pred_df, lc in zip(batch, pred_dfs, last_closes, strict=False):
-                res = results[idx]
-                close_vals = pred_df["close"].astype(float).values
-                if n_samples > 1 and close_vals.ndim == 2:
-                    avg_close = close_vals.mean(axis=0)
-                    stacked = close_vals
-                    from trade_krono_cli.prediction_distribution import (
-                        build_distribution,
-                        compute_multi_sample,
-                    )
-
-                    (
-                        change_pct,
-                        direction,
-                        vol,
-                        path_dispersion,
-                        direction_score,
-                        conf_score,
-                        percentiles,
-                    ) = compute_multi_sample(avg_close, stacked, lc)
-
-                    res.predicted_close_mean = round(float(np.mean(avg_close)), 4)
-                    res.predicted_close_final = round(float(avg_close[-1]), 4)
-                    res.expected_change_pct = change_pct
-                    res.direction = direction
-                    res.volatility_proxy = vol
-                    res.confidence_band = {
-                        "low": round(float(np.percentile(avg_close, 25)), 4),
-                        "high": round(float(np.percentile(avg_close, 75)), 4),
-                    }
-                    _pd = build_distribution(
-                        change_pct=change_pct,
-                        direction=direction,
-                        vol=vol,
-                        path_dispersion=path_dispersion,
-                        direction_score=direction_score,
-                        confidence_score=conf_score,
-                        sample_count=n_samples,
-                        percentiles=percentiles,
-                    )
-                    res.prediction_uncertainty = _pd
-                    res.forecast_dict = self._pred_df_to_dict(pred_df)
-                else:
-                    parsed = self._parse_pred_df(pred_df, lc, sample_count=1)
-                    res.last_close = lc
-                    self._apply_parsed_to_result(res, parsed)
-                    res.forecast_dict = self._pred_df_to_dict(pred_df)
-
-                if self._cache:
-                    self._cache.set_kronos(
-                        res.ticker,
-                        eval_date,
-                        self._settings_obj.kronos_pred_len,
-                        res.to_dict(),
-                        sample_count=self.sample_count,
-                        config_hash=self._config_hash,
-                        model_ver=self._model_version,
-                    )
-                all_results.append(res)
-
-        success = sum(1 for r in all_results if r.error is None)
-        logger.info(f"📊 Kronos 批量完成: 成功 {success}/{len(all_results)}")
-        return all_results
+        return self._predictor.predict_batch(tickers, eval_date, stop_on_error)
 
     def save_results(self, results: list[KronosForecastResult], path: str) -> str:
-        data = [{"project": "trade-krono-cli"}] + [r.to_dict() for r in results]
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        logger.info(f"💾 Kronos 预测已保存: {path}")
+        """保存预测结果到文件。"""
+        path_obj = Path(path)
+        path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+        records = []
+        for r in results:
+            d = r.to_dict()
+            if r.forecast_dict:
+                d["forecast_dict"] = {
+                    "timestamps": r.forecast_dict.get("timestamps", [])[:5],
+                    "close": r.forecast_dict.get("close", [])[:5],
+                    "note": f"截断显示，共 {len(r.forecast_dict.get('close', []))} 个预测点",
+                }
+            records.append(d)
+
+        output = [
+            {"project": "trade-krono-cli", "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S")},
+            *records,
+        ]
+
+        with open(path_obj, "w", encoding="utf-8") as f:
+            json.dump(output, f, ensure_ascii=False, indent=2)
+
+        logger.info(f"💾 Kronos 结果已保存: {path}")
         return path

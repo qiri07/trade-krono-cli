@@ -60,8 +60,6 @@ def fetch_kline(
     start_date = validate_date(start_date)
     end_date = validate_date(end_date)
 
-    from trade_krono_cli.cache import get_cache
-
     cache = get_cache()
     if use_cache:
         cached = cache.get_kline(ticker, start_date, end_date, frequency, adjustflag)

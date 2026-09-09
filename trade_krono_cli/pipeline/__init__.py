@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
-from trade_krono_cli.pipeline.orchestrator import PipelineFactory, QuantPipeline
+from trade_krono_cli.pipeline.factory import PipelineFactory
+from trade_krono_cli.pipeline.orchestrator import CommitteeOrchestrator, ReportIndexer
+from trade_krono_cli.pipeline.pipeline_core import QuantPipeline
 
-__all__ = ["PipelineFactory", "QuantPipeline"]
+__all__ = ["PipelineFactory", "QuantPipeline", "CommitteeOrchestrator", "ReportIndexer"]

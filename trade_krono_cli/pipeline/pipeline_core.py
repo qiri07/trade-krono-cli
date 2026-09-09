@@ -6,10 +6,8 @@
 
 from __future__ import annotations
 
-import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -21,10 +19,6 @@ from trade_krono_cli.abnormal_stock import (
     check_kline_completeness,
     precheck_stock_status,
 )
-from trade_krono_cli.committee import (
-    InvestmentCommittee,
-    build_committee_input,
-)
 from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.data import fetch_realtime_quote
 from trade_krono_cli.domain.prediction import TAAnalysis
@@ -32,13 +26,13 @@ from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
 from trade_krono_cli.pipeline.factory import PipelineFactory, _collect_futures
 from trade_krono_cli.pipeline.merge import filter_pool, merge_results
+from trade_krono_cli.pipeline.orchestrator import CommitteeOrchestrator, ReportIndexer
 from trade_krono_cli.pipeline.reporter import (
     save_html_report,
     save_json_report,
 )
 from trade_krono_cli.pipeline_config import PipelineConfig
 from trade_krono_cli.research_db import get_research
-from trade_krono_cli.security import sanitize_for_log
 from trade_krono_cli.stock_filter import StockFilter, StockMeta
 from trade_krono_cli.trading_constraints import T1Tracker
 
@@ -536,107 +530,13 @@ class QuantPipeline:
             self.kronos.save_results(results, output)
         return results
 
+    def _run_committee(self, research, job_id: str, date: str, ta_results: list, kronos_results: list) -> None:
+        """对每只 TA 分析过的股票运行 Investment Committee 审议。"""
+        orchestrator = CommitteeOrchestrator(research)
+        orchestrator.run(job_id, date, ta_results, kronos_results)
+
     @staticmethod
-    def _index_ta_raw_reports(
-        research,
-        job_id: str,
-        ta_results: list,
-        raw_paths: dict,
-    ) -> None:
+    def _index_ta_raw_reports(research, job_id: str, ta_results: list, raw_paths: dict) -> None:
         """索引 TA 原始报告文件到 research database。"""
-        for r in ta_results:
-            if not r.investment_decision:
-                continue
-            report_path = raw_paths.get(r.ticker)
-            if not report_path:
-                continue
-            raw_file = Path(report_path)
-            if not raw_file.exists():
-                continue
-            try:
-                file_data = json.loads(raw_file.read_text(encoding="utf-8"))
-                lengths = {k: len(v) for k, v in file_data.get("reports_raw", {}).items()}
-                research.index_raw_report(job_id, r.ticker, str(report_path), lengths)
-            except (OSError, ValueError) as e:
-                # 已知文件/格式错误
-                logger.warning(f"⚠️  索引原始报告失败 {r.ticker}: {e}")
-            except Exception as e:
-                # 未预料错误：脱敏记录
-                safe_msg = sanitize_for_log(str(e))
-                logger.warning(f"⚠️  索引原始报告异常 {r.ticker}: {safe_msg}")
-
-    # ── Committee Deliberation ──────────────────────────────────────────────
-
-    @staticmethod
-    def _run_committee(
-        research: Any,  # noqa: ANN401 — ResearchDatabase 在运行时注入，避免循环导入
-        job_id: str,
-        date: str,
-        ta_results: list,
-        kronos_results: list,
-    ) -> None:
-        """对每只 TA 分析过的股票运行 Investment Committee 审议。
-
-        跳过无 final_state（分析失败）或无 agent reports 的股票。
-        审议结果写入 committee_deliberations 表。
-        """
-        # 构建 kronos lookup: ticker → forecast dict
-        kronos_map: dict[str, dict] = {}
-        for kr in kronos_results:
-            if isinstance(kr, KronosForecastResult):
-                pu = kr.prediction_uncertainty
-                kronos_map[kr.ticker] = {
-                    "direction": kr.direction,
-                    "expected_change_pct": kr.expected_change_pct,
-                    "prediction_uncertainty": pu.to_dict() if pu else {},
-                }
-            elif isinstance(kr, dict):
-                kronos_map[kr.get("ticker", "")] = kr
-
-        committee = InvestmentCommittee()
-        deliberated = 0
-        for ta in ta_results:
-            if ta.error is not None:
-                continue
-            final_state = getattr(ta, "final_state", None)
-            if not final_state:
-                continue
-
-            kr = kronos_map.get(ta.ticker)
-            try:
-                committee_input = build_committee_input(
-                    ticker=ta.ticker,
-                    date=date,
-                    final_state=final_state,
-                    kronos_result=kr,
-                    ta_signal=ta.signal,
-                    ta_confidence=ta.confidence,
-                    composite_score=None,  # 由合并打分提供，此处为 TA-only 路径
-                )
-                result = committee.deliberate(committee_input)
-                result.job_id = job_id
-                # 获取 run_id（从 research 中取 job 信息）
-                job_info = research.get_job(job_id)
-                result.run_id = job_info.get("run_id", "") if job_info else ""
-                research.insert_committee_deliberation(
-                    job_id=job_id,
-                    ticker=ta.ticker,
-                    date=date,
-                    bull_case=result.bull_case,
-                    bear_case=result.bear_case,
-                    recommendation=result.recommendation,
-                    recommendation_confidence=result.recommendation_confidence,
-                    reasoning=result.reasoning,
-                    agent_consensus=result.agent_consensus,
-                )
-                deliberated += 1
-                logger.info(
-                    f"🏛️  委员会审议完成: {ta.ticker} "
-                    f"→ {result.recommendation}(conf={result.recommendation_confidence:.0f})",
-                )
-            except Exception as e:
-                safe_msg = sanitize_for_log(str(e))
-                logger.warning(f"⚠️  委员会审议失败 {ta.ticker}: {safe_msg}")
-
-        if deliberated:
-            logger.info(f"🏛️  委员会审议: {deliberated}/{len(ta_results)} 只股票完成")
+        indexer = ReportIndexer(research)
+        indexer.index(job_id, ta_results, raw_paths)
