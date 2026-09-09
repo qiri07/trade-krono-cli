@@ -77,8 +77,10 @@ class TestTASessionSingleton:
 
     def test_default_kwargs_create_cache_key(self) -> None:
         """默认参数应正常缓存。"""
-        session1 = TASession()
-        session2 = TASession()
+        with patch("trade_krono_cli.models.ta_session.TradingAgentsRunner") as MockRunner:
+            MockRunner.return_value = MagicMock()
+            session1 = TASession()
+            session2 = TASession()
         assert session1 is session2
 
 
