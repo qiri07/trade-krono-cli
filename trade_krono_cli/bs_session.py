@@ -55,7 +55,7 @@ def clear_baostock_globals() -> None:
 def _ensure_bs_import() -> None:
     """确保 baostock 模块已被导入。"""
     global _bs, _HAS_BS
-    if _HAS_BS:
+    if _HAS_BS and _bs is not None:
         return
     try:
         import baostock as _bs_mod  # type: ignore

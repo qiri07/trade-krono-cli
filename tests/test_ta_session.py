@@ -37,14 +37,20 @@ class TestTASession:
 
     def test_clear_cache_clears_singleton(self) -> None:
         """清除缓存后，新实例应不同。"""
-        session1 = TASession(no_cache=True)
-        TASession.clear_cache()
-        session2 = TASession(no_cache=True)
+        with patch("trade_krono_cli.models.ta_session.TradingAgentsRunner") as MockRunner:
+            MockRunner.return_value = MagicMock()
+            session1 = TASession(no_cache=True)
+            TASession.clear_cache()
+            session2 = TASession(no_cache=True)
         assert session1 is not session2
 
     def test_adapter_lazy_loads_on_access(self) -> None:
         """访问 adapter 属性时应触发懒加载。"""
-        with patch.object(TASession, "_get_adapter") as mock_get:
+        with (
+            patch("trade_krono_cli.models.ta_session.TradingAgentsRunner") as MockRunner,
+            patch.object(TASession, "_get_adapter") as mock_get,
+        ):
+            MockRunner.return_value = MagicMock()
             mock_get.return_value = MagicMock()
             session = TASession(no_cache=True)
             _ = session.adapter  # 触发懒加载
@@ -52,8 +58,10 @@ class TestTASession:
 
     def test_unload_clears_adapter(self) -> None:
         """调用 unload 后 is_loaded 应为 False。"""
-        session = TASession(no_cache=True)
-        session.unload()
+        with patch("trade_krono_cli.models.ta_session.TradingAgentsRunner") as MockRunner:
+            MockRunner.return_value = MagicMock()
+            session = TASession(no_cache=True)
+            session.unload()
         assert session.is_loaded is False
 
 
@@ -78,7 +86,9 @@ class TestTASessionPrivateAttrs:
     """TASession 私有属性访问测试。"""
 
     def test_llm_provider_private_attr(self) -> None:
-        session = TASession(no_cache=True, llm_provider="deepseek-chat")
+        with patch("trade_krono_cli.models.ta_session.TradingAgentsRunner") as MockRunner:
+            MockRunner.return_value = MagicMock()
+            session = TASession(no_cache=True, llm_provider="deepseek-chat")
         assert session._llm_provider == "deepseek-chat"
 
     def test_runner_property(self) -> None:

@@ -71,7 +71,7 @@ class TestKronosRunnerPredictOneErrorPaths:
 
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=True, sample_count=1)
-            with patch.object(runner, "_prepare") as mock_prepare:
+            with patch.object(runner._predictor._data_prep, "prepare") as mock_prepare:
                 mock_prepare.side_effect = RuntimeError("数据不足")
                 result = runner.predict_one("sh.600519", "2026-08-12")
                 assert result.error is not None
@@ -170,7 +170,7 @@ class TestKronosRunnerPredictBatch:
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=True, sample_count=1)
 
-            with patch.object(runner, "_prepare") as mock_prepare:
+            with patch.object(runner._predictor._data_prep, "prepare") as mock_prepare:
                 mock_prepare.side_effect = RuntimeError("no data")
                 results = runner.predict_batch(["sh.600519"], "2026-08-12")
                 assert len(results) == 1

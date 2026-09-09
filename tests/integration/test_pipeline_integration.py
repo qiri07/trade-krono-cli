@@ -1,7 +1,7 @@
 """Pipeline 集成测试 — 验证 orchestrator 与 scorer/reporter 协作。"""
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestPipelineOrchestrator:
@@ -107,58 +107,64 @@ class TestPipelineOrchestrator:
         from trade_krono_cli.pipeline import QuantPipeline
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
-        mock_ta = MagicMock()
-        mock_ta.analyze_batch.return_value = [
-            StockAnalysisResult(
-                ticker="sh.600519",
-                date="2026-08-12",
-                signal="BUY",
-                confidence=80.0,
-            ),
-        ]
-        mock_kr = MagicMock()
-        mock_kr.predict_batch.side_effect = RuntimeError("model load failed")
+        with patch("trade_krono_cli.pipeline.pipeline_core.precheck_stock_status") as mock_precheck:
+            mock_precheck.return_value = {}
+            mock_ta = MagicMock()
+            mock_ta.analyze_batch.return_value = [
+                StockAnalysisResult(
+                    ticker="sh.600519",
+                    date="2026-08-12",
+                    signal="BUY",
+                    confidence=80.0,
+                ),
+            ]
+            mock_kr = MagicMock()
+            mock_kr.predict_batch.side_effect = RuntimeError("model load failed")
 
-        pipeline = QuantPipeline(ta_runner=mock_ta, kronos_runner=mock_kr, no_cache=True)
-        merged = pipeline.run_parallel(tickers=["600519"], date="2026-08-12")
-        assert len(merged) >= 1
-        assert merged[0]["ta_signal"] == "BUY"
+            pipeline = QuantPipeline(ta_runner=mock_ta, kronos_runner=mock_kr, no_cache=True)
+            merged = pipeline.run_parallel(tickers=["600519"], date="2026-08-12")
+            assert len(merged) >= 1
+            assert merged[0]["ta_signal"] == "BUY"
 
     def test_filter_pool_reduces_results(self) -> None:
         """filter_pool 应正确过滤低置信度股票。"""
         from trade_krono_cli.pipeline import QuantPipeline
         from trade_krono_cli.ta_runner import StockAnalysisResult
 
-        mock_ta = MagicMock()
-        mock_ta.analyze_batch.return_value = [
-            StockAnalysisResult(
-                ticker="sh.600519",
-                date="2026-08-12",
-                signal="BUY",
-                confidence=80.0,
-            ),
-            StockAnalysisResult(
-                ticker="sz.000858",
-                date="2026-08-12",
-                signal="BUY",
-                confidence=40.0,
-            ),
-            StockAnalysisResult(
-                ticker="sh.600036",
-                date="2026-08-12",
-                signal="SELL",
-                confidence=90.0,
-            ),
-        ]
-        mock_kr = MagicMock()
-        mock_kr.predict_batch.return_value = []
+        with patch("trade_krono_cli.pipeline.pipeline_core.precheck_stock_status") as mock_precheck:
+            mock_precheck.return_value = {}
+            mock_ta = MagicMock()
+            mock_ta.analyze_batch.return_value = [
+                StockAnalysisResult(
+                    ticker="sh.600519",
+                    date="2026-08-12",
+                    signal="BUY",
+                    confidence=80.0,
+                ),
+                StockAnalysisResult(
+                    ticker="sz.000858",
+                    date="2026-08-12",
+                    signal="BUY",
+                    confidence=40.0,
+                ),
+                StockAnalysisResult(
+                    ticker="sh.600036",
+                    date="2026-08-12",
+                    signal="SELL",
+                    confidence=90.0,
+                ),
+            ]
+            mock_kr = MagicMock()
+            mock_kr.predict_batch.return_value = []
 
-        pipeline = QuantPipeline(ta_runner=mock_ta, kronos_runner=mock_kr, no_cache=True)
-        merged = pipeline.run_parallel(tickers=["600519", "000858", "600036"], date="2026-08-12")
-        tickers = {m["ticker"] for m in merged}
-        assert "sh.600519" in tickers
-        assert "sz.000858" not in tickers
-        assert "sh.600036" not in tickers
+            pipeline = QuantPipeline(ta_runner=mock_ta, kronos_runner=mock_kr, no_cache=True)
+            merged = pipeline.run_parallel(
+                tickers=["600519", "000858", "600036"], date="2026-08-12"
+            )
+            tickers = {m["ticker"] for m in merged}
+            assert "sh.600519" in tickers
+            assert "sz.000858" not in tickers
+            assert "sh.600036" not in tickers
 
     def test_empty_tickers(self) -> None:
         """空 ticker 列表应返回空结果。"""

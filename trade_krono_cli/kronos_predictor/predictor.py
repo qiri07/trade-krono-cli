@@ -209,6 +209,7 @@ class KronosPredictor:
             x_ts_list = [p[2] for p, _ in batch]
             y_ts_list = [p[3] for p, _ in batch]
             idx_list = [i for _, i in batch]
+            pred_dfs: list = []  # 初始化，防止 except 块中 UnboundLocalError
 
             try:
                 pred_dfs = self._runner._adapter.predict(  # type: ignore
