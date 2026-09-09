@@ -16,8 +16,8 @@ import pandas as pd
 from loguru import logger
 
 # ── baostock 会话管理（已提取到 bs_session.py）──────────────────────────────
+import trade_krono_cli.bs_session as _bs_session  # noqa: F401
 from trade_krono_cli.bs_session import (  # noqa: F401
-    _bs,
     _ensure_bs_import,
     _ensure_bs_login,
     _get_limiter,
@@ -103,7 +103,7 @@ def fetch_kline(
         f"📥 拉取 K 线（baostock 直调）: {bs_code} {start_date}~{end_date} freq={frequency}",
     )
 
-    rs = _bs.query_history_k_data_plus(  # type: ignore
+    rs = _bs_session._bs.query_history_k_data_plus(  # type: ignore
         bs_code,
         "date,open,high,low,close,volume,amount",
         start_date=start_date,
