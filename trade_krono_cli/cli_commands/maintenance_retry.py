@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import typer
 from rich.console import Console
 
-from trade_krono_cli.cli_commands.core import _build_retry_overrides, _load_env
+from trade_krono_cli.cli_commands._core_helpers import _build_retry_overrides, _load_env
 
 if TYPE_CHECKING:
     from trade_krono_cli.retry_policy.store import FailureRecord

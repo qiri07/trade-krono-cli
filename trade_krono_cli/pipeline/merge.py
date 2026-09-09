@@ -26,6 +26,7 @@ from trade_krono_cli.domain.signal import _compute_ev as _domain_compute_ev
 from trade_krono_cli.risk.models import adjust_expected_return
 from trade_krono_cli.risk.risk_engine import RiskEngine
 from trade_krono_cli.scoring.registry import get_scorer_registry
+from trade_krono_cli.security import sanitize_for_log
 from trade_krono_cli.trading_constraints import (
     T1Tracker,
     check_all_constraints,
@@ -327,7 +328,7 @@ def merge_results(
                 if raw_ret is not None and risk_metrics.get("return_adjustment") is not None:
                     item["adjusted_expected_return"] = adjust_expected_return(raw_ret, risk_metrics)
             except Exception as e:
-                logger.warning(f"⚠️  风险评估异常 {tk}: {str(e)[:200]}")
+                logger.warning(f"⚠️  风险评估异常 {tk}: {sanitize_for_log(str(e)[:200])}")
                 item["risk_score_total"] = 50.0
                 item["risk_scores"] = {}
                 item["risk_metrics"] = {}

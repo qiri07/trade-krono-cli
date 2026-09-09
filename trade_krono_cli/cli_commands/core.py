@@ -11,7 +11,6 @@ from __future__ import annotations
 from trade_krono_cli.cli_commands._core_commands import kronos, run, ta
 from trade_krono_cli.cli_commands._core_helpers import (
     _build_degrade_overrides,
-    _build_retry_overrides,
     _load_env,
     _load_tickers,
     _sanitize_path,
@@ -25,5 +24,4 @@ __all__ = [
     "_load_tickers",
     "_sanitize_path",
     "_build_degrade_overrides",
-    "_build_retry_overrides",
 ]

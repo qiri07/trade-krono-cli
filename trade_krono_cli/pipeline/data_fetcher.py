@@ -11,6 +11,7 @@ from loguru import logger
 
 from trade_krono_cli.data import fetch_lookback, fetch_realtime_quote
 from trade_krono_cli.errors import DataError
+from trade_krono_cli.security import sanitize_for_log
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -88,7 +89,7 @@ def prepare_kline_batch(
                 use_cache=use_cache,
             )
         except DataError as e:
-            logger.warning(f"⚠️  K 线获取失败 {tk}: {e}")
+            logger.warning(f"⚠️  K 线获取失败 {tk}: {sanitize_for_log(str(e))}")
         except Exception as e:
-            logger.warning(f"⚠️  K 线获取异常 {tk}: {str(e)[:200]}")
+            logger.warning(f"⚠️  K 线获取异常 {tk}: {sanitize_for_log(str(e)[:200])}")
     return result
