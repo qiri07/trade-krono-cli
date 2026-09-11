@@ -79,13 +79,15 @@ class KlineCache:
         # 重叠/包含判定（满足任一即删除）：
         #   1. 旧段完全在新段内（含边界相等）
         #   2. 旧段起点等于新段起点（同一位置不同长度）
+        #   3. 旧段左端在新段内（旧段起点早于新段，但右端与新段左端重叠）
         conn.execute(
             "DELETE FROM kline_cache "
             "WHERE ticker=? AND freq=? AND adjustflag=? "
             "AND (start > ? AND end < ? OR "
             "     start >= ? AND end <= ? OR "
-            "     start = ?)",
-            (ticker, freq, adjustflag, start, end, start, end, start),
+            "     start = ? OR "
+            "     start < ? AND end >= ?)",
+            (ticker, freq, adjustflag, start, end, start, end, start, start, start),
         )
         conn.execute(
             "INSERT INTO kline_cache "
