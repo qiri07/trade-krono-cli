@@ -116,7 +116,8 @@ def _check_provider_health() -> dict[str, bool]:
             continue
         try:
             result[name] = provider.health_check()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"provider {name} health check 失败: {e}")
             result[name] = False
     return result
 
