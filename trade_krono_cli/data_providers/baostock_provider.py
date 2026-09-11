@@ -30,6 +30,8 @@ _bs_logged_in = False
 _bs_limiter: TokenBucket | None = None
 _bs_login_lock = threading.Lock()
 _bs_query_lock = threading.Lock()
+# 合并锁：baostock 仅支持单会话，登录和查询必须在同一把锁下原子执行
+_bs_lock = threading.Lock()
 
 # ST 标记正则（与 trading_constraints.py 保持一致）
 _ST_PATTERNS = re.compile(r"^(ST|\*ST|SST|N ST)", re.IGNORECASE)
@@ -91,10 +93,8 @@ class BaostockProvider(DataProvider):
             self._ensure_import()
         if _bs_logged_in:
             return
-        with _bs_login_lock:
-            if _bs_logged_in:
-                return
-            lg = _bs.login()  # type: ignore
+        # 注意：调用者必须已持有 _bs_lock
+        lg = _bs.login()  # type: ignore
         if lg.error_code != "0":
             msg = f"baostock 登录失败: {lg.error_msg}"
             raise RuntimeError(msg)
@@ -112,8 +112,8 @@ class BaostockProvider(DataProvider):
 
     def _query_stock_basic(self, ticker: str) -> list[dict]:
         """查询股票基本信息。"""
-        self._ensure_login()
-        with _bs_query_lock:
+        with _bs_lock:
+            self._ensure_login()
             rs = _bs.query_stock_basic(code=ticker)  # type: ignore
         if rs.error_code != "0":
             logger.debug(f"{self.name} 基本查询失败 {ticker}: {rs.error_msg}")
@@ -139,10 +139,12 @@ class BaostockProvider(DataProvider):
 
         self._ensure_import()
         self._get_limiter().acquire()
-        self._ensure_login()
 
+        rows: list[list[str]] = []
         try:
-            with _bs_query_lock:
+            with _bs_lock:
+                # baostock 仅支持单会话：登录和查询必须在同一把锁下原子执行
+                self._ensure_login()
                 rs = _bs.query_history_k_data_plus(  # type: ignore
                     ticker,
                     "date,open,high,low,close,volume,amount",
@@ -154,7 +156,6 @@ class BaostockProvider(DataProvider):
                 if rs.error_code != "0":
                     logger.warning(f"{self.name} K 线查询失败 [{ticker}]: {rs.error_msg}")
                     return None
-                rows = []
                 while rs.next():
                     rows.append(rs.get_row_data())
         except Exception as e:

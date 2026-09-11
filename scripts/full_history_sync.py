@@ -81,7 +81,7 @@ def _fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[
                         ts.max().strftime("%Y-%m-%d"),
                         "d",
                         df,
-                        ttl=86400 * 365 * 10,
+                        ttl=0.0,
                     )
                     result_container.append((ticker, len(df), provider_name))
                     return

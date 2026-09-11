@@ -97,7 +97,7 @@ def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[s
                     ts.max().strftime("%Y-%m-%d"),
                     "d",
                     df,
-                    ttl=86400 * 365 * 10,
+                    ttl=0.0,
                 )
                 result_container.append(
                     (
@@ -158,7 +158,7 @@ def fetch_today_incremental(
                         combined["timestamps"].max().strftime("%Y-%m-%d"),
                         "d",
                         combined,
-                        ttl=86400 * 365 * 10,
+                        ttl=0.0,
                     )
                 else:
                     cache.set_kline(
@@ -167,7 +167,7 @@ def fetch_today_incremental(
                         ts.max().strftime("%Y-%m-%d"),
                         "d",
                         df,
-                        ttl=86400 * 365 * 10,
+                        ttl=0.0,
                     )
                 result_container.append(
                     (

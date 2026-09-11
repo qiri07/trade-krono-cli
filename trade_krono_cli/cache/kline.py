@@ -75,33 +75,24 @@ class KlineCache:
         ttl: float,
         adjustflag: str,
     ) -> None:
-        if ttl == KLINE_HISTORICAL_TTL:
-            # 永久缓存：先删除与新段有实质性重叠的旧段，再插入新段
-            # 重叠定义（满足任一即删除）：
-            #   1. 旧段完全在新段内（含边界相等，即整段覆盖）
-            #   2. 仅端点接触（旧段end==新段start 或 旧段start==新段end）→ 合并为连续段
-            #   3. 内部区间部分交叉（非包含关系的真实重叠）
-            conn.execute(
-                "DELETE FROM kline_cache "
-                "WHERE ticker=? AND freq=? AND adjustflag=? "
-                "AND (start >= ? AND end <= ? OR "
-                "     end = ? OR start = ? OR "
-                "     (start < ? AND end > ?))",
-                (ticker, freq, adjustflag, start, end, start, start, start, end),
-            )
-            conn.execute(
-                "INSERT INTO kline_cache "
-                "(ticker, start, end, freq, adjustflag, ttl, data, created) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
-            )
-        else:
-            conn.execute(
-                "INSERT OR REPLACE INTO kline_cache "
-                "(ticker, start, end, freq, adjustflag, ttl, data, created) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
-            )
+        # 历史数据写入策略：删除与新段有实质性重叠的旧段，插入新段
+        # 重叠/包含判定（满足任一即删除）：
+        #   1. 旧段完全在新段内（含边界相等）
+        #   2. 旧段起点等于新段起点（同一位置不同长度）
+        conn.execute(
+            "DELETE FROM kline_cache "
+            "WHERE ticker=? AND freq=? AND adjustflag=? "
+            "AND (start > ? AND end < ? OR "
+            "     start >= ? AND end <= ? OR "
+            "     start = ?)",
+            (ticker, freq, adjustflag, start, end, start, end, start),
+        )
+        conn.execute(
+            "INSERT INTO kline_cache "
+            "(ticker, start, end, freq, adjustflag, ttl, data, created) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
+        )
 
     def warm_history(self, ticker: str, end_date: str, lookback_days: int = 730) -> tuple[int, int]:
         """预热 K 线缓存：拉取历史数据，全部以永久缓存写入。"""
