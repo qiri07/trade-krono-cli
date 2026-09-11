@@ -154,8 +154,25 @@ class BaostockProvider(DataProvider):
                     adjustflag=adjustflag,
                 )
                 if rs.error_code != "0":
-                    logger.warning(f"{self.name} K 线查询失败 [{ticker}]: {rs.error_msg}")
-                    return None
+                    # 服务端会话失效：注销后重新登录再重试
+                    if rs.error_code == "10001001":  # BSERR_NO_LOGIN
+                        logger.warning(f"{self.name} 会话失效，重新登录: {ticker}")
+                        self._logout()
+                        self._ensure_login()
+                        rs = _bs.query_history_k_data_plus(  # type: ignore
+                            ticker,
+                            "date,open,high,low,close,volume,amount",
+                            start_date=start_date,
+                            end_date=end_date,
+                            frequency=frequency,
+                            adjustflag=adjustflag,
+                        )
+                    if rs.error_code != "0":
+                        logger.warning(f"{self.name} K 线查询失败 [{ticker}]: {rs.error_msg}")
+                        return None
+                    while rs.next():
+                        rows.append(rs.get_row_data())
+                    return self._build_kline_data(ticker, rows, rs.fields)
                 while rs.next():
                     rows.append(rs.get_row_data())
         except Exception as e:
@@ -166,14 +183,19 @@ class BaostockProvider(DataProvider):
             logger.debug(f"{self.name} 空数据: {ticker} {start_date}~{end_date}")
             return None
 
+        return self._build_kline_data(ticker, rows, rs.fields)
+
+    @staticmethod
+    def _build_kline_data(
+        ticker: str, rows: list[list[str]], fields: list[str]
+    ) -> KlineData | None:
+        """从查询结果构建 KlineData。"""
         import pandas as pd
 
-        df = pd.DataFrame(rows, columns=rs.fields)
+        df = pd.DataFrame(rows, columns=fields)
         df = df.dropna(subset=["close"])
-
         if df.empty:
             return None
-
         return KlineData(
             timestamps=pd.to_datetime(df["date"]).tolist(),
             open=df["open"].astype(float).tolist(),
