@@ -39,6 +39,7 @@ def _get_cached_data() -> list[tuple[str, str, str]]:
     if not CACHE_DB.exists():
         return []
     import sqlite3
+
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
     # 找出 start > START_DATE 的股票，需要补全历史
@@ -60,9 +61,7 @@ def _get_provider_chain(ticker: str) -> list[str]:
     return ["baostock", "tonghuashun"]
 
 
-def _fetch_full_range(
-    factory, ticker: str, provider_chain: list[str]
-) -> tuple[str, int, str]:
+def _fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[str, int, str]:
     """带超时的全量历史拉取。"""
     result_container: list[tuple[str, int, str]] = []
     error_container: list[Exception] = []
@@ -83,6 +82,7 @@ def _fetch_full_range(
                     if len(df) == 0:
                         continue
                     from trade_krono_cli.cache import get_cache
+
                     cache = get_cache()
                     ts = pd.to_datetime(df["timestamps"])
                     cache.set_kline(

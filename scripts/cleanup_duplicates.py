@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """清理重复记录"""
+
 from __future__ import annotations
 
 import sqlite3
@@ -50,7 +51,7 @@ def main() -> None:
         WHERE start <= '2020-12-31' AND end >= '2020-01-01'
     """)
     has_2020 = cur.fetchone()[0]
-    print(f"2020年数据: {has_2020} 只 ({has_2020*100/tickers:.1f}%)")
+    print(f"2020年数据: {has_2020} 只 ({has_2020 * 100 / tickers:.1f}%)")
 
     conn.close()
     print("✅ 完成")

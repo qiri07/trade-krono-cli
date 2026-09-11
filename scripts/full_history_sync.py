@@ -34,6 +34,7 @@ _load_env()
 def _get_all_tickers() -> list[str]:
     """获取所有需要同步的股票列表。"""
     import sqlite3
+
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
     # 获取所有ticker
@@ -126,8 +127,7 @@ def main() -> None:
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
             futures = {
-                pool.submit(_fetch_full_range, factory, t, _get_provider_chain(t)): t
-                for t in batch
+                pool.submit(_fetch_full_range, factory, t, _get_provider_chain(t)): t for t in batch
             }
             for future in as_completed(futures):
                 ticker, rows, provider_name = future.result()
@@ -138,18 +138,18 @@ def main() -> None:
                         rate = success / elapsed * 3600 if elapsed > 0 else 0
                         eta = (total - success) / rate if rate > 0 else 0
                         logger.info(
-                            f"  进度: {success}/{total} ({success*100/total:.1f}%) | "
-                            f"速度: {rate:.0f}只/小时 | ETA: {eta/60:.1f}分钟"
+                            f"  进度: {success}/{total} ({success * 100 / total:.1f}%) | "
+                            f"速度: {rate:.0f}只/小时 | ETA: {eta / 60:.1f}分钟"
                         )
                 else:
                     failed.append((ticker, provider_name))
 
     elapsed = time.time() - start_time
-    logger.info(f"\n{'='*60}")
+    logger.info(f"\n{'=' * 60}")
     logger.info("✅ 全量同步完成！")
-    logger.info(f"   成功: {success}/{total} ({success*100/total:.1f}%)")
+    logger.info(f"   成功: {success}/{total} ({success * 100 / total:.1f}%)")
     logger.info(f"   失败: {len(failed)}")
-    logger.info(f"   耗时: {elapsed/60:.1f} 分钟")
+    logger.info(f"   耗时: {elapsed / 60:.1f} 分钟")
 
     if failed:
         logger.info("\n❌ 失败股票（前20只）:")
@@ -158,19 +158,22 @@ def main() -> None:
 
     # 最终统计
     import sqlite3
+
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
     total_records = cur.execute("SELECT COUNT(*) FROM kline_cache").fetchone()[0]
     distinct_tickers = cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache").fetchone()[0]
     latest_date = cur.execute("SELECT MAX(end) FROM kline_cache").fetchone()[0]
-    since_2020 = cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE start >= '2020-01-01'").fetchone()[0]
+    since_2020 = cur.execute(
+        "SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE start >= '2020-01-01'"
+    ).fetchone()[0]
     conn.close()
 
     logger.info("\n📊 最终状态:")
     logger.info(f"   总记录: {total_records:,} 条")
     logger.info(f"   股票数: {distinct_tickers:,} 只")
     logger.info(f"   最新日期: {latest_date}")
-    logger.info(f"   2020年数据: {since_2020}只 ({since_2020*100/distinct_tickers:.1f}%)")
+    logger.info(f"   2020年数据: {since_2020}只 ({since_2020 * 100 / distinct_tickers:.1f}%)")
 
 
 if __name__ == "__main__":

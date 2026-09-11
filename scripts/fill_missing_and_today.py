@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """补齐失败股票历史数据 + 今日增量同步"""
+
 from __future__ import annotations
 
 import sys
@@ -28,15 +29,26 @@ _load_env()
 def get_failed_tickers() -> list[str]:
     """获取全量同步失败的13只非北交所股票。"""
     return [
-        "sh.600027", "sh.600052", "sh.600053", "sh.600007", "sh.600794",
-        "sh.600871", "sh.601858", "sh.603678", "sh.688005", "sh.688435",
-        "sz.002845", "sz.002865", "sz.300364",
+        "sh.600027",
+        "sh.600052",
+        "sh.600053",
+        "sh.600007",
+        "sh.600794",
+        "sh.600871",
+        "sh.601858",
+        "sh.603678",
+        "sh.688005",
+        "sh.688435",
+        "sz.002845",
+        "sz.002865",
+        "sz.300364",
     ]
 
 
 def get_today_only_tickers() -> list[str]:
     """获取只有今日数据的非北交所股票（需要补全历史）。"""
     import sqlite3
+
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
     cur.execute("""
@@ -87,7 +99,13 @@ def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[s
                     df,
                     ttl=86400 * 365 * 10,
                 )
-                result_container.append((provider_name, len(df), f"{ts.min().strftime('%Y-%m-%d')}~{ts.max().strftime('%Y-%m-%d')}"))
+                result_container.append(
+                    (
+                        provider_name,
+                        len(df),
+                        f"{ts.min().strftime('%Y-%m-%d')}~{ts.max().strftime('%Y-%m-%d')}",
+                    )
+                )
                 return
             except Exception as e:
                 error_container.append(f"{provider_name}:{e}")
@@ -104,7 +122,9 @@ def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[s
     return ("failed", 0, "; ".join(error_container) if error_container else "无结果")
 
 
-def fetch_today_incremental(factory, ticker: str, provider_chain: list[str]) -> tuple[str, int, str]:
+def fetch_today_incremental(
+    factory, ticker: str, provider_chain: list[str]
+) -> tuple[str, int, str]:
     """拉取今日增量数据。"""
     result_container: list[tuple[str, int, str]] = []
     error_container: list[str] = []
@@ -149,7 +169,13 @@ def fetch_today_incremental(factory, ticker: str, provider_chain: list[str]) -> 
                         df,
                         ttl=86400 * 365 * 10,
                     )
-                result_container.append((provider_name, len(df), f"{ts.min().strftime('%Y-%m-%d')}~{ts.max().strftime('%Y-%m-%d')}"))
+                result_container.append(
+                    (
+                        provider_name,
+                        len(df),
+                        f"{ts.min().strftime('%Y-%m-%d')}~{ts.max().strftime('%Y-%m-%d')}",
+                    )
+                )
                 return
             except Exception as e:
                 error_container.append(f"{provider_name}:{e}")
@@ -177,7 +203,10 @@ def main() -> None:
     success_13 = 0
     failed_13 = []
     with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-        futures = {executor.submit(fetch_full_range, factory, t, get_provider_chain(t)): t for t in failed_tickers}
+        futures = {
+            executor.submit(fetch_full_range, factory, t, get_provider_chain(t)): t
+            for t in failed_tickers
+        }
         for i, future in enumerate(as_completed(futures), 1):
             ticker = futures[future]
             try:
@@ -190,11 +219,15 @@ def main() -> None:
                     print(f"  ❌ {i}/{len(failed_tickers)} 失败: {ticker} ({detail[:60]})")
                 else:
                     success_13 += 1
-                    print(f"  ✅ {i}/{len(failed_tickers)} {ticker}: {provider} 拉取 {n_rows} 条 {detail}")
+                    print(
+                        f"  ✅ {i}/{len(failed_tickers)} {ticker}: {provider} 拉取 {n_rows} 条 {detail}"
+                    )
             except Exception as e:
                 failed_13.append((ticker, str(e)))
                 print(f"  ❌ {i}/{len(failed_tickers)} 异常: {ticker} ({e})")
-    print(f"\n第一步结果: 成功 {success_13}/{len(failed_tickers)}, 失败 {len(failed_13)}/{len(failed_tickers)}")
+    print(
+        f"\n第一步结果: 成功 {success_13}/{len(failed_tickers)}, 失败 {len(failed_13)}/{len(failed_tickers)}"
+    )
     if failed_13:
         print(f"   仍失败: {[t for t, _ in failed_13]}")
     print()
@@ -204,6 +237,7 @@ def main() -> None:
     print("📌 第二步：同步今日（2026-09-10）增量数据")
     print("=" * 60)
     import sqlite3
+
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
     cur.execute("""
@@ -225,10 +259,13 @@ def main() -> None:
     failed_today = []
     batch_size = 50
     for batch_start in range(0, len(need_today), batch_size):
-        batch = need_today[batch_start:batch_start + batch_size]
-        print(f"  批次 [{batch_start+1}~{batch_start+len(batch)}/{len(need_today)}]")
+        batch = need_today[batch_start : batch_start + batch_size]
+        print(f"  批次 [{batch_start + 1}~{batch_start + len(batch)}/{len(need_today)}]")
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-            futures = {executor.submit(fetch_today_incremental, factory, t, get_provider_chain(t)): t for t in batch}
+            futures = {
+                executor.submit(fetch_today_incremental, factory, t, get_provider_chain(t)): t
+                for t in batch
+            }
             for future in as_completed(futures):
                 ticker = futures[future]
                 try:
@@ -241,7 +278,9 @@ def main() -> None:
                     failed_today.append((ticker, str(e)))
         time.sleep(1)  # 短暂休息避免API限流
 
-    print(f"\n第二步结果: 成功 {success_today}/{len(need_today)}, 失败 {len(failed_today)}/{len(need_today)}")
+    print(
+        f"\n第二步结果: 成功 {success_today}/{len(need_today)}, 失败 {len(failed_today)}/{len(need_today)}"
+    )
     if failed_today:
         print(f"   仍失败: {[t for t, _ in failed_today]}")
     print()
@@ -273,8 +312,8 @@ def main() -> None:
     print(f"  总记录数:   {total}")
     print(f"  股票数:     {tickers}")
     print(f"  最新日期:   {latest}")
-    print(f"  今日数据:   {has_today}/{tickers} ({has_today*100/tickers:.1f}%)")
-    print(f"  2020年数据: {has_2020}/{tickers} ({has_2020*100/tickers:.1f}%)")
+    print(f"  今日数据:   {has_today}/{tickers} ({has_today * 100 / tickers:.1f}%)")
+    print(f"  2020年数据: {has_2020}/{tickers} ({has_2020 * 100 / tickers:.1f}%)")
     print("=" * 60)
     print("✅ 全部完成")
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """重拉取全量同步失败的历史数据（仅针对只有今日数据的股票）"""
+
 from __future__ import annotations
 
 import sys
@@ -27,6 +28,7 @@ _load_env()
 def get_incomplete_tickers() -> list[str]:
     """获取只有今日数据、缺少历史数据的股票。"""
     import sqlite3
+
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
     cur.execute("""
@@ -78,7 +80,13 @@ def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[s
                     df,
                     ttl=86400 * 365 * 10,
                 )
-                result_container.append((provider_name, len(df), f"{ts.min().strftime('%Y-%m-%d')}~{ts.max().strftime('%Y-%m-%d')}"))
+                result_container.append(
+                    (
+                        provider_name,
+                        len(df),
+                        f"{ts.min().strftime('%Y-%m-%d')}~{ts.max().strftime('%Y-%m-%d')}",
+                    )
+                )
                 return
             except Exception as e:
                 error_container.append(f"{provider_name}:{e}")
@@ -111,7 +119,9 @@ def main() -> None:
     failed_list: list[tuple[str, str]] = []
 
     with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-        futures = {executor.submit(fetch_full_range, factory, t, get_provider_chain(t)): t for t in tickers}
+        futures = {
+            executor.submit(fetch_full_range, factory, t, get_provider_chain(t)): t for t in tickers
+        }
         for i, future in enumerate(as_completed(futures), 1):
             ticker = futures[future]
             try:

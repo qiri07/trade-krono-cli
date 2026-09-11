@@ -118,9 +118,7 @@ def main() -> None:
         logger.info(f"📦 批次 {batch_num} [{batch_start + 1}~{batch_start + len(batch)}/{total}]")
 
         with ThreadPoolExecutor(max_workers=10) as pool:
-            futures = {
-                pool.submit(_fetch_with_retry, factory, t): t for t in batch
-            }
+            futures = {pool.submit(_fetch_with_retry, factory, t): t for t in batch}
             for future in as_completed(futures):
                 ticker, rows, provider_name = future.result()
                 if rows > 0:

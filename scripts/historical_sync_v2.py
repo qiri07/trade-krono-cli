@@ -30,6 +30,7 @@ _load_env()
 def _get_need_sync() -> list[str]:
     """获取需要补齐历史数据的股票列表（start >= 2022-01-01）。"""
     import sqlite3
+
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
     cur.execute("SELECT ticker FROM kline_cache WHERE start >= ?", ("2022-01-01",))
@@ -57,16 +58,26 @@ def _fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[
                     provider = factory.get_provider(provider_name)
                     if provider is None:
                         continue
-                    result = provider.fetch_kline(ticker, START_DATE, END_DATE, frequency="d", adjustflag="1")
+                    result = provider.fetch_kline(
+                        ticker, START_DATE, END_DATE, frequency="d", adjustflag="1"
+                    )
                     if result is None or result.is_empty:
                         continue
                     df = result.to_dataframe()
                     if len(df) == 0:
                         continue
                     from trade_krono_cli.cache import get_cache
+
                     cache = get_cache()
                     ts = pd.to_datetime(df["timestamps"])
-                    cache.set_kline(ticker, ts.min().strftime("%Y-%m-%d"), ts.max().strftime("%Y-%m-%d"), "d", df, ttl=86400 * 365 * 10)
+                    cache.set_kline(
+                        ticker,
+                        ts.min().strftime("%Y-%m-%d"),
+                        ts.max().strftime("%Y-%m-%d"),
+                        "d",
+                        df,
+                        ttl=86400 * 365 * 10,
+                    )
                     result_container.append((ticker, len(df), provider_name))
                     return
                 except Exception as e:
@@ -106,7 +117,9 @@ def main() -> None:
         logger.info(f"📦 批次 {batch_num} [{batch_start + 1}~{batch_start + len(batch)}/{total}]")
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            futures = {pool.submit(_fetch_full_range, factory, t, _get_provider_chain(t)): t for t in batch}
+            futures = {
+                pool.submit(_fetch_full_range, factory, t, _get_provider_chain(t)): t for t in batch
+            }
             for future in as_completed(futures):
                 ticker, rows_count, provider_name = future.result()
                 if rows_count > 0:
@@ -115,7 +128,9 @@ def main() -> None:
                     failed.append(ticker)
                 elapsed = time.time() - start_time
                 rate = (success + len(failed)) / elapsed * 60 if elapsed > 0 else 0
-                logger.info(f"  {'✅' if rows_count > 0 else '❌'} [{success + len(failed)}/{len(batch)}] {ticker} {rows_count}行 ← {provider_name or 'FAIL'} (总: {success + len(failed)}/{total}, 速率: {rate:.1f}/min)")
+                logger.info(
+                    f"  {'✅' if rows_count > 0 else '❌'} [{success + len(failed)}/{len(batch)}] {ticker} {rows_count}行 ← {provider_name or 'FAIL'} (总: {success + len(failed)}/{total}, 速率: {rate:.1f}/min)"
+                )
 
         time.sleep(2)
 

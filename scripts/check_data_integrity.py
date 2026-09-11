@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """数据完整性检查脚本 — 使用正确的pandas pickle格式解码"""
+
 from __future__ import annotations
 
 import sqlite3
@@ -58,7 +59,7 @@ def main() -> None:
     print(f"  总记录数:   {total_records}")
     print(f"  股票数:     {total_tickers}")
     print(f"  数据范围:   {min_start} ~ {max_end}")
-    print(f"  2020年数据: {has_2020} 只 ({has_2020*100/total_tickers:.1f}%)")
+    print(f"  2020年数据: {has_2020} 只 ({has_2020 * 100 / total_tickers:.1f}%)")
     print()
 
     # ── 2. 重复检查 ──────────────────────────────────────────
@@ -95,10 +96,13 @@ def main() -> None:
     # ── 4. 各年份覆盖率 ──────────────────────────────────────
     print("【4. 各年份数据覆盖率】")
     for year in range(2020, 2027):
-        cur.execute("""
+        cur.execute(
+            """
             SELECT COUNT(DISTINCT ticker) FROM kline_cache
             WHERE end >= ? AND start <= ?
-        """, (f"{year}-01-01", f"{year}-12-31"))
+        """,
+            (f"{year}-01-01", f"{year}-12-31"),
+        )
         cnt = cur.fetchone()[0]
         pct = cnt * 100 / total_tickers
         bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
@@ -165,7 +169,9 @@ def main() -> None:
         ticker, db_start, db_end, raw = row
         n_records, first_date, last_date = decode_data(raw)
         if n_records > 0:
-            print(f"  ✅ {ticker}: {db_start}~{db_end}, {n_records}条K线, 首:{first_date}, 末:{last_date}")
+            print(
+                f"  ✅ {ticker}: {db_start}~{db_end}, {n_records}条K线, 首:{first_date}, 末:{last_date}"
+            )
             valid += 1
         else:
             print(f"  ❌ {ticker}: 解码失败")
@@ -188,7 +194,9 @@ def main() -> None:
             # 检查数据是否跨越整个范围
             span_ok = (first_date <= start <= last_date) and (first_date <= end <= last_date)
             status = "✅" if span_ok else "⚠️"
-            print(f"  {status} {ticker}: {start}~{end}, {n_records}条K线, 实际覆盖{first_date}~{last_date}")
+            print(
+                f"  {status} {ticker}: {start}~{end}, {n_records}条K线, 实际覆盖{first_date}~{last_date}"
+            )
         else:
             print(f"  ❌ {ticker}: 解码失败")
     print()
@@ -219,7 +227,7 @@ def main() -> None:
         issues.append(f"解码失败 {invalid}/20 只抽样")
 
     if has_2020 < total_tickers * 0.6:
-        warnings.append(f"2020年数据覆盖仅 {has_2020*100/total_tickers:.1f}%（新股多属正常）")
+        warnings.append(f"2020年数据覆盖仅 {has_2020 * 100 / total_tickers:.1f}%（新股多属正常）")
     if len(short_rows) > 100:
         warnings.append(f"{len(short_rows)} 只股票数据跨度<1天")
 
