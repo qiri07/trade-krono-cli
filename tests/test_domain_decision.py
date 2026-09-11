@@ -141,7 +141,9 @@ class TestInvestmentDecisionFallback:
         assert d.eval_date == "2026-09-01"
 
     def test_fallback_custom_signal(self) -> None:
-        d = InvestmentDecision.fallback("sz.000001", "2026-08-01", signal=Signal.SELL, confidence=30.0)
+        d = InvestmentDecision.fallback(
+            "sz.000001", "2026-08-01", signal=Signal.SELL, confidence=30.0
+        )
         assert d.signal == Signal.SELL
         assert d.confidence == 30.0
 
@@ -208,18 +210,27 @@ class TestInvestmentDecisionToLegacyDict:
 
     def test_to_dict_with_assessments(self) -> None:
         sa = SignalAssessment(
-            ticker="sh.600519", eval_date="2026-09-01",
-            ta=TAAnalysis(ticker="sh.600519", eval_date="2026-09-01", signal="BUY", confidence=80.0),
-            final_signal=Signal.BUY, final_confidence=80.0,
+            ticker="sh.600519",
+            eval_date="2026-09-01",
+            ta=TAAnalysis(
+                ticker="sh.600519", eval_date="2026-09-01", signal="BUY", confidence=80.0
+            ),
+            final_signal=Signal.BUY,
+            final_confidence=80.0,
         )
         ra = RiskAssessment(
-            ticker="sh.600519", eval_date="2026-09-01",
-            risk_score_total=0.35, adjusted_expected_return=0.02,
+            ticker="sh.600519",
+            eval_date="2026-09-01",
+            risk_score_total=0.35,
+            adjusted_expected_return=0.02,
         )
         d = InvestmentDecision(
-            ticker="sh.600519", eval_date="2026-09-01",
-            signal=Signal.BUY, confidence=80.0,
-            signal_assessment=sa, risk_assessment=ra,
+            ticker="sh.600519",
+            eval_date="2026-09-01",
+            signal=Signal.BUY,
+            confidence=80.0,
+            signal_assessment=sa,
+            risk_assessment=ra,
         )
         data = d.to_dict()
         assert "signal_assessment" in data
@@ -230,18 +241,30 @@ class TestInvestmentDecisionToLegacyDict:
     def test_to_legacy_dict_with_kronos_distribution(self) -> None:
         from trade_krono_cli.domain.prediction import PredictionDistribution
 
-        dist = PredictionDistribution(expected_return=2.5, direction=Direction.UP, p10=-1.0, p90=6.0)
+        dist = PredictionDistribution(
+            expected_return=2.5, direction=Direction.UP, p10=-1.0, p90=6.0
+        )
         kr = KronosPrediction(
-            ticker="sh.600519", eval_date="2026-09-01", horizon=5,
-            direction=Direction.UP, expected_return=2.5, predicted_close=180.0, distribution=dist,
+            ticker="sh.600519",
+            eval_date="2026-09-01",
+            horizon=5,
+            direction=Direction.UP,
+            expected_return=2.5,
+            predicted_close=180.0,
+            distribution=dist,
         )
         sa = SignalAssessment(
-            ticker="sh.600519", eval_date="2026-09-01",
-            kronos=kr, final_signal=Signal.BUY, final_confidence=75.0,
+            ticker="sh.600519",
+            eval_date="2026-09-01",
+            kronos=kr,
+            final_signal=Signal.BUY,
+            final_confidence=75.0,
         )
         d = InvestmentDecision(
-            ticker="sh.600519", eval_date="2026-09-01",
-            signal=Signal.BUY, confidence=75.0,
+            ticker="sh.600519",
+            eval_date="2026-09-01",
+            signal=Signal.BUY,
+            confidence=75.0,
             signal_assessment=sa,
         )
         legacy = d.to_legacy_dict()

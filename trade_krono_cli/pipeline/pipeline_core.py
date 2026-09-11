@@ -147,7 +147,8 @@ class QuantPipeline:
                 # TAAnalysis 是 frozen dataclass，必须创建新实例替代原地修改
                 # StockAnalysisResult 用 .date，TAAnalysis 用 .eval_date，统一兼容
                 from trade_krono_cli.ta_runner import StockAnalysisResult
-                ta_date = getattr(ta, 'eval_date', None) or str(getattr(ta, 'date', ''))
+
+                ta_date = getattr(ta, "eval_date", None) or str(getattr(ta, "date", ""))
                 # 下游 merge.py 期望 StockAnalysisResult（有 .date / .reports）
                 ta_results[idx] = StockAnalysisResult(
                     ticker=ta.ticker,

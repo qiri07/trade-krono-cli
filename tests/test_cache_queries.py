@@ -73,7 +73,9 @@ class TestCacheQueriesStats:
 class TestCacheQueriesClearAll:
     """CacheQueries.clear_all 测试。"""
 
-    def test_clear_all_removes_all_tables(self, cache_with_data: tuple[Cache, CacheQueries]) -> None:
+    def test_clear_all_removes_all_tables(
+        self, cache_with_data: tuple[Cache, CacheQueries]
+    ) -> None:
         c, qc = cache_with_data
         count = qc.clear_all()
         assert count >= 1
@@ -93,7 +95,9 @@ class TestCacheQueriesClearAll:
 class TestCacheQueriesExportDailyPv:
     """CacheQueries.export_daily_pv 测试。"""
 
-    def test_export_daily_pv_creates_parquet(self, cache_with_data: tuple[Cache, CacheQueries], tmp_path: Path) -> None:
+    def test_export_daily_pv_creates_parquet(
+        self, cache_with_data: tuple[Cache, CacheQueries], tmp_path: Path
+    ) -> None:
         _, qc = cache_with_data
         parquet_path = str(tmp_path / "daily_pv.parquet")
         result = qc.export_daily_pv(parquet_path)

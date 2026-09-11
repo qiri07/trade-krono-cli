@@ -895,7 +895,5 @@ def test_keyword_fallback_overweight_with_negative_before(adapter) -> None:
 
 def test_keyword_fallback_sell_with_negative_before(adapter) -> None:
     """SELL preceded by negative word → not treated as sell."""
-    signal, conf = DecisionAdapter._keyword_fallback(
-        "We do NOT see a reason to SELL the stock."
-    )
+    signal, conf = DecisionAdapter._keyword_fallback("We do NOT see a reason to SELL the stock.")
     assert signal != Signal.SELL

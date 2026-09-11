@@ -38,7 +38,9 @@ class TestKlineCacheMergeLogic:
 
     def test_set_and_get(self, kline_cache: KlineCache) -> None:
         df = _make_df("2026-01-01", "2026-01-05")
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-05", "d", df, ttl=_KLINE_HISTORICAL_TTL)
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-05", "d", df, ttl=_KLINE_HISTORICAL_TTL
+        )
         result = kline_cache.get_kline("sh.600519", "2026-01-01", "2026-01-05", "d")
         assert result is not None
         assert len(result) == 5
@@ -53,8 +55,12 @@ class TestKlineCacheMergeLogic:
         df2 = _make_df("2026-01-01", "2026-01-05")
         df2["close"] = [999.0] * 5  # 不同数据
 
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-05", "d", df1, ttl=_KLINE_HISTORICAL_TTL)
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-05", "d", df2, ttl=_KLINE_HISTORICAL_TTL)
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-05", "d", df1, ttl=_KLINE_HISTORICAL_TTL
+        )
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-05", "d", df2, ttl=_KLINE_HISTORICAL_TTL
+        )
 
         result = kline_cache.get_kline("sh.600519", "2026-01-01", "2026-01-05", "d")
         assert result is not None
@@ -66,8 +72,12 @@ class TestKlineCacheMergeLogic:
         df1 = _make_df("2026-01-01", "2026-01-10")
         df2 = _make_df("2026-01-12", "2026-01-15")  # 跳过周末，避免重叠
 
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-10", "d", df1, ttl=_KLINE_HISTORICAL_TTL)
-        kline_cache.set_kline("sh.600519", "2026-01-12", "2026-01-15", "d", df2, ttl=_KLINE_HISTORICAL_TTL)
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-10", "d", df1, ttl=_KLINE_HISTORICAL_TTL
+        )
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-12", "2026-01-15", "d", df2, ttl=_KLINE_HISTORICAL_TTL
+        )
 
         # 两段并存（非重叠不删除）
         result = kline_cache.get_cached_date_range("sh.600519")
@@ -83,8 +93,12 @@ class TestKlineCacheMergeLogic:
         df1 = _make_df("2026-01-01", "2026-01-10")
         df2 = _make_df("2026-01-08", "2026-01-15")
 
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-10", "d", df1, ttl=_KLINE_HISTORICAL_TTL)
-        kline_cache.set_kline("sh.600519", "2026-01-08", "2026-01-15", "d", df2, ttl=_KLINE_HISTORICAL_TTL)
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-10", "d", df1, ttl=_KLINE_HISTORICAL_TTL
+        )
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-08", "2026-01-15", "d", df2, ttl=_KLINE_HISTORICAL_TTL
+        )
 
         # 旧段被删除，只剩新段
         rows = kline_cache._cache._conn.execute(
@@ -98,8 +112,12 @@ class TestKlineCacheMergeLogic:
         df1 = _make_df("2026-01-05", "2026-01-07")
         df2 = _make_df("2026-01-01", "2026-01-10")
 
-        kline_cache.set_kline("sh.600519", "2026-01-05", "2026-01-07", "d", df1, ttl=_KLINE_HISTORICAL_TTL)
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-10", "d", df2, ttl=_KLINE_HISTORICAL_TTL)
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-05", "2026-01-07", "d", df1, ttl=_KLINE_HISTORICAL_TTL
+        )
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-10", "d", df2, ttl=_KLINE_HISTORICAL_TTL
+        )
 
         rows = kline_cache._cache._conn.execute(
             "SELECT start, end FROM kline_cache WHERE ticker=?", ("sh.600519",)
@@ -117,8 +135,12 @@ class TestKlineCacheMergeLogic:
         df1 = _make_df("2026-01-01", "2026-01-05")
         df2 = _make_df("2026-01-01", "2026-01-10")
 
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-05", "d", df1, ttl=_KLINE_HISTORICAL_TTL)
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-10", "d", df2, ttl=_KLINE_HISTORICAL_TTL)
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-05", "d", df1, ttl=_KLINE_HISTORICAL_TTL
+        )
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-10", "d", df2, ttl=_KLINE_HISTORICAL_TTL
+        )
 
         result = kline_cache.get_kline("sh.600519", "2026-01-01", "2026-01-10", "d")
         assert result is not None
@@ -127,8 +149,12 @@ class TestKlineCacheMergeLogic:
     def test_get_cached_date_range(self, kline_cache: KlineCache) -> None:
         df1 = _make_df("2026-01-01", "2026-01-10")
         df2 = _make_df("2026-01-11", "2026-01-15")
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-10", "d", df1, ttl=_KLINE_HISTORICAL_TTL)
-        kline_cache.set_kline("sh.600519", "2026-01-11", "2026-01-15", "d", df2, ttl=_KLINE_HISTORICAL_TTL)
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-10", "d", df1, ttl=_KLINE_HISTORICAL_TTL
+        )
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-11", "2026-01-15", "d", df2, ttl=_KLINE_HISTORICAL_TTL
+        )
 
         result = kline_cache.get_cached_date_range("sh.600519")
         assert result == ("2026-01-01", "2026-01-15")
@@ -153,9 +179,15 @@ class TestKlineCacheMergeLogic:
         df2 = _make_df("2026-01-05", "2026-01-20")  # 包含 df1
         df3 = _make_df("2026-01-15", "2026-01-25")  # 与 df2 重叠
 
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-10", "d", df1, ttl=_KLINE_HISTORICAL_TTL)
-        kline_cache.set_kline("sh.600519", "2026-01-05", "2026-01-20", "d", df2, ttl=_KLINE_HISTORICAL_TTL)
-        kline_cache.set_kline("sh.600519", "2026-01-15", "2026-01-25", "d", df3, ttl=_KLINE_HISTORICAL_TTL)
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-10", "d", df1, ttl=_KLINE_HISTORICAL_TTL
+        )
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-05", "2026-01-20", "d", df2, ttl=_KLINE_HISTORICAL_TTL
+        )
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-15", "2026-01-25", "d", df3, ttl=_KLINE_HISTORICAL_TTL
+        )
 
         conn: sqlite3.Connection = kline_cache._cache._conn
         rows = conn.execute(
@@ -169,8 +201,12 @@ class TestKlineCacheMergeLogic:
     def test_different_ticker_same_range(self, kline_cache: KlineCache) -> None:
         """不同 ticker 的相同日期段互不影响。"""
         df = _make_df("2026-01-01", "2026-01-05")
-        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-05", "d", df, ttl=_KLINE_HISTORICAL_TTL)
-        kline_cache.set_kline("sz.000858", "2026-01-01", "2026-01-05", "d", df, ttl=_KLINE_HISTORICAL_TTL)
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-05", "d", df, ttl=_KLINE_HISTORICAL_TTL
+        )
+        kline_cache.set_kline(
+            "sz.000858", "2026-01-01", "2026-01-05", "d", df, ttl=_KLINE_HISTORICAL_TTL
+        )
 
         r1 = kline_cache.get_kline("sh.600519", "2026-01-01", "2026-01-05", "d")
         r2 = kline_cache.get_kline("sz.000858", "2026-01-01", "2026-01-05", "d")

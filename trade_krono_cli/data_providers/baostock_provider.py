@@ -198,12 +198,12 @@ class BaostockProvider(DataProvider):
             return None
         return KlineData(
             timestamps=pd.to_datetime(df["date"]).tolist(),
-            open=df["open"].astype(float).tolist(),
-            high=df["high"].astype(float).tolist(),
-            low=df["low"].astype(float).tolist(),
-            close=df["close"].astype(float).tolist(),
-            volume=df["volume"].astype(float).tolist(),
-            amount=df["amount"].astype(float).tolist(),
+            open=pd.to_numeric(df["open"], errors="coerce").fillna(0.0).tolist(),
+            high=pd.to_numeric(df["high"], errors="coerce").fillna(0.0).tolist(),
+            low=pd.to_numeric(df["low"], errors="coerce").fillna(0.0).tolist(),
+            close=pd.to_numeric(df["close"], errors="coerce").fillna(0.0).tolist(),
+            volume=pd.to_numeric(df["volume"], errors="coerce").fillna(0.0).tolist(),
+            amount=pd.to_numeric(df["amount"], errors="coerce").fillna(0.0).tolist(),
         )
 
     def fetch_quote(self, ticker: str) -> RealtimeQuote | None:

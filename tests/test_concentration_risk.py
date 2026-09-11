@@ -23,6 +23,7 @@ class TestCalcConcentrationRisk:
     def test_empty_reports(self) -> None:
         """空 reports 时返回默认值。"""
         from trade_krono_cli.ta_runner import StockAnalysisResult
+
         ta = StockAnalysisResult(
             ticker="sh.600519",
             date="2026-08-11",
@@ -38,6 +39,7 @@ class TestCalcConcentrationRisk:
     def test_with_industry_report(self) -> None:
         """有行业报告时按行业调整风险分。"""
         from trade_krono_cli.ta_runner import StockAnalysisResult
+
         ta = StockAnalysisResult(
             ticker="sh.600519",
             date="2026-08-11",
@@ -53,6 +55,7 @@ class TestCalcConcentrationRisk:
     def test_large_cap_lower_risk(self) -> None:
         """大盘股（≥500亿）集中度风险降低。"""
         from trade_krono_cli.ta_runner import StockAnalysisResult
+
         ta = StockAnalysisResult(
             ticker="sh.600519",
             date="2026-08-11",
@@ -66,6 +69,7 @@ class TestCalcConcentrationRisk:
         assert result == pytest.approx(3.0, abs=0.5)
         """小盘股（<50亿）集中度风险升高。"""
         from trade_krono_cli.ta_runner import StockAnalysisResult
+
         ta = StockAnalysisResult(
             ticker="sh.600519",
             date="2026-08-11",
@@ -103,10 +107,12 @@ class TestExtractSector:
         """fundamental_report 优先于 analysis_report。"""
         fundamental = "房地产行业分析"
         analysis = "科技板块"
-        result = _extract_sector({
-            "fundamental_report": fundamental,
-            "analysis_report": analysis,
-        })
+        result = _extract_sector(
+            {
+                "fundamental_report": fundamental,
+                "analysis_report": analysis,
+            }
+        )
         assert result == "real_estate"
 
 

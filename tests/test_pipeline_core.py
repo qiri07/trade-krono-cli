@@ -328,14 +328,21 @@ def test_run_parallel_saves_html_when_output_html_set() -> None:
     ]
 
     pu = PredictionUncertainty(
-        expected_return=3.2, direction="UP", direction_score=0.8,
-        confidence_score=75.0, sample_count_used=1,
+        expected_return=3.2,
+        direction="UP",
+        direction_score=0.8,
+        confidence_score=75.0,
+        sample_count_used=1,
     )
     mock_kr = MagicMock()
     mock_kr.predict_batch.return_value = [
         KronosForecastResult(
-            ticker="sh.600519", eval_date="2026-08-11", horizon=30,
-            direction="UP", expected_change_pct=3.2, last_close=1780.5,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            horizon=30,
+            direction="UP",
+            expected_change_pct=3.2,
+            last_close=1780.5,
             prediction_uncertainty=pu,
         ),
     ]
@@ -347,7 +354,9 @@ def test_run_parallel_saves_html_when_output_html_set() -> None:
         with patch("trade_krono_cli.pipeline.pipeline_core.precheck_stock_status") as mock_precheck:
             mock_precheck.return_value = {"sh.600519": _make_abnormality_flag("sh.600519")}
             pipeline.run_parallel(
-                tickers=["600519"], date="2026-08-11", output_html=str(html_path),
+                tickers=["600519"],
+                date="2026-08-11",
+                output_html=str(html_path),
             )
         assert html_path.exists()
 
@@ -367,7 +376,10 @@ def test_run_parallel_stores_investment_decision() -> None:
     decision = InvestmentDecision(signal=Signal.BUY, confidence=85.0, thesis="strong bullish")
     mock_ta.analyze_batch.return_value = [
         StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=85.0,
+            ticker="sh.600519",
+            date="2026-08-11",
+            signal="BUY",
+            confidence=85.0,
             investment_decision=decision,
         ),
     ]
@@ -391,7 +403,10 @@ def test_run_ta_only_stores_investment_decision() -> None:
     decision = InvestmentDecision(signal=Signal.BUY, confidence=85.0, thesis="bullish")
     mock_ta.analyze_batch.return_value = [
         StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=85.0,
+            ticker="sh.600519",
+            date="2026-08-11",
+            signal="BUY",
+            confidence=85.0,
             investment_decision=decision,
         ),
     ]
@@ -416,30 +431,52 @@ def test_run_parallel_degrade_mode_triggers_fallback() -> None:
     mock_ta = MagicMock()
     mock_ta.analyze_batch.return_value = [
         StockAnalysisResult(
-            ticker="sh.600519", date="2026-08-11", signal="BUY", confidence=80.0, error=None,
+            ticker="sh.600519",
+            date="2026-08-11",
+            signal="BUY",
+            confidence=80.0,
+            error=None,
         ),
         StockAnalysisResult(
-            ticker="sz.000858", date="2026-08-11", signal="HOLD", confidence=50.0, error="Network error",
+            ticker="sz.000858",
+            date="2026-08-11",
+            signal="HOLD",
+            confidence=50.0,
+            error="Network error",
         ),
     ]
 
     pu = PredictionUncertainty(
-        expected_return=3.2, direction="UP", direction_score=0.8,
-        confidence_score=75.0, sample_count_used=1,
+        expected_return=3.2,
+        direction="UP",
+        direction_score=0.8,
+        confidence_score=75.0,
+        sample_count_used=1,
     )
     mock_kr = MagicMock()
     mock_kr.predict_batch.return_value = [
         KronosForecastResult(
-            ticker="sh.600519", eval_date="2026-08-11", horizon=30,
-            direction="UP", expected_change_pct=3.2, last_close=1780.5,
+            ticker="sh.600519",
+            eval_date="2026-08-11",
+            horizon=30,
+            direction="UP",
+            expected_change_pct=3.2,
+            last_close=1780.5,
             prediction_uncertainty=pu,
         ),
         KronosForecastResult(
-            ticker="sz.000858", eval_date="2026-08-11", horizon=30,
-            direction="DOWN", expected_change_pct=-1.5, last_close=25.3,
+            ticker="sz.000858",
+            eval_date="2026-08-11",
+            horizon=30,
+            direction="DOWN",
+            expected_change_pct=-1.5,
+            last_close=25.3,
             prediction_uncertainty=PredictionUncertainty(
-                expected_return=-1.5, direction="DOWN", direction_score=0.6,
-                confidence_score=60.0, sample_count_used=1,
+                expected_return=-1.5,
+                direction="DOWN",
+                direction_score=0.6,
+                confidence_score=60.0,
+                sample_count_used=1,
             ),
         ),
     ]
@@ -449,7 +486,9 @@ def test_run_parallel_degrade_mode_triggers_fallback() -> None:
     config.ta_cache_fallback_enabled = True
 
     pipeline = QuantPipeline(
-        ta_runner=mock_ta, kronos_runner=mock_kr, config=config,
+        ta_runner=mock_ta,
+        kronos_runner=mock_kr,
+        config=config,
     )
 
     cached_result = {"date": "2026-08-10", "signal": "BUY", "confidence": 75.0, "thesis": "cached"}

@@ -599,7 +599,10 @@ class TestMootDxGetUniverse:
             error_msg = "success"
 
         class FakeRS:
-            _rows = [["sh.600519", "茅台", "", "", "1", "1"], ["sz.000858", "五粮液", "", "", "1", "1"]]
+            _rows = [
+                ["sh.600519", "茅台", "", "", "1", "1"],
+                ["sz.000858", "五粮液", "", "", "1", "1"],
+            ]
             _idx = 0
 
             def next(self):
@@ -668,9 +671,7 @@ class TestMootDxGetUniverse:
         # Mock mootdx module in sys.modules before import
         fake_mootdx = ModuleType("mootdx")
         fake_quotes = ModuleType("mootdx.quotes")
-        fake_quotes.Quotes = type(
-            "Quotes", (), {"factory": staticmethod(lambda market: FakeQ())}
-        )
+        fake_quotes.Quotes = type("Quotes", (), {"factory": staticmethod(lambda market: FakeQ())})
         sys.modules["mootdx"] = fake_mootdx
         sys.modules["mootdx.quotes"] = fake_quotes
 
@@ -694,6 +695,7 @@ class TestMootDxGetUniverse:
 
     def test_fetch_industry_map_with_data(self) -> None:
         """_fetch_industry_map parses rows correctly."""
+
         class FakeRS:
             _rows = [
                 ["sh.600519", "白酒"],
@@ -737,7 +739,9 @@ class TestTongHuaShunPagination:
     def test_multi_page_ticker_list(self) -> None:
         """Pagination: second page fetched when first page has 1000 items."""
         fake_items_page1 = [{"thscode": f"{i:06d}.SH", "ticker": f"Stock{i}"} for i in range(1000)]
-        fake_items_page2 = [{"thscode": f"{1000+i:06d}.SH", "ticker": f"Stock{1000+i}"} for i in range(100)]
+        fake_items_page2 = [
+            {"thscode": f"{1000 + i:06d}.SH", "ticker": f"Stock{1000 + i}"} for i in range(100)
+        ]
 
         request_counts = {"ticker": 0, "snapshot": 0}
 
@@ -807,18 +811,32 @@ class TestTongHuaShunPagination:
             if "tickers/list" in url:
                 request_counts["ticker"] += 1
                 return FakeResponse(
-                    {"code": 0, "data": {"item": [
-                        {"thscode": "600519.SH", "ticker": "贵州茅台"},
-                        {"thscode": "000858.SZ", "ticker": "五粮液"},
-                    ]}}
+                    {
+                        "code": 0,
+                        "data": {
+                            "item": [
+                                {"thscode": "600519.SH", "ticker": "贵州茅台"},
+                                {"thscode": "000858.SZ", "ticker": "五粮液"},
+                            ]
+                        },
+                    }
                 )
             if "prices/snapshot" in url:
                 request_counts["snapshot"] += 1
                 if request_counts["snapshot"] == 1:
                     return FakeResponse(
-                        {"code": 0, "data": {"item": [
-                            {"thscode": "600519.SH", "ticker": "贵州茅台", "last_price": 1800.0},
-                        ]}}
+                        {
+                            "code": 0,
+                            "data": {
+                                "item": [
+                                    {
+                                        "thscode": "600519.SH",
+                                        "ticker": "贵州茅台",
+                                        "last_price": 1800.0,
+                                    },
+                                ]
+                            },
+                        }
                     )
                 else:
                     return FakeResponse({"code": 0, "data": {"item": []}})

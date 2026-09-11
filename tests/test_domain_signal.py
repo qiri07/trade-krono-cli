@@ -65,7 +65,12 @@ class TestSignalAssessmentFromDict:
         assert sa.committee_rec is None
 
     def test_from_dict_with_ta_and_kronos(self) -> None:
-        ta_data = {"ticker": "sh.600519", "eval_date": "2026-09-01", "signal": "BUY", "confidence": 75.0}
+        ta_data = {
+            "ticker": "sh.600519",
+            "eval_date": "2026-09-01",
+            "signal": "BUY",
+            "confidence": 75.0,
+        }
         kr_data = {
             "ticker": "sh.600519",
             "eval_date": "2026-09-01",
@@ -170,7 +175,9 @@ class TestSignalAssessmentToDict:
     def test_to_dict_with_kronos(self) -> None:
         from trade_krono_cli.domain.prediction import PredictionDistribution
 
-        dist = PredictionDistribution(expected_return=2.5, direction=Direction.UP, p10=-1.0, p90=6.0)
+        dist = PredictionDistribution(
+            expected_return=2.5, direction=Direction.UP, p10=-1.0, p90=6.0
+        )
         kr = KronosPrediction(
             ticker="sh.600519",
             eval_date="2026-09-01",
@@ -210,19 +217,34 @@ class TestSignalAssessmentToDict:
     def test_to_dict_with_all_optional_fields(self) -> None:
         from trade_krono_cli.domain.prediction import PredictionDistribution
 
-        dist = PredictionDistribution(expected_return=2.5, direction=Direction.UP, p10=-1.0, p90=6.0)
+        dist = PredictionDistribution(
+            expected_return=2.5, direction=Direction.UP, p10=-1.0, p90=6.0
+        )
         kr = KronosPrediction(
-            ticker="sh.600519", eval_date="2026-09-01", horizon=5,
-            direction=Direction.UP, expected_return=2.5, predicted_close=180.0, distribution=dist,
+            ticker="sh.600519",
+            eval_date="2026-09-01",
+            horizon=5,
+            direction=Direction.UP,
+            expected_return=2.5,
+            predicted_close=180.0,
+            distribution=dist,
         )
         ta = TAAnalysis(ticker="sh.600519", eval_date="2026-09-01", signal="BUY", confidence=80.0)
         sa = SignalAssessment(
-            ticker="sh.600519", eval_date="2026-09-01",
-            ta=ta, kronos=kr,
-            committee_rec=DomainSignal.OVERWEIGHT, committee_confidence=70.0,
-            bull_case="bull", bear_case="bear",
-            entry_zone=[170.0, 180.0], target_price=200.0, stop_loss=160.0,
-            thesis="test thesis", risks=["r1"], invalidations=["inv1"],
+            ticker="sh.600519",
+            eval_date="2026-09-01",
+            ta=ta,
+            kronos=kr,
+            committee_rec=DomainSignal.OVERWEIGHT,
+            committee_confidence=70.0,
+            bull_case="bull",
+            bear_case="bear",
+            entry_zone=[170.0, 180.0],
+            target_price=200.0,
+            stop_loss=160.0,
+            thesis="test thesis",
+            risks=["r1"],
+            invalidations=["inv1"],
         )
         d = sa.to_dict()
         assert "ta_analysis" in d
@@ -234,16 +256,27 @@ class TestSignalAssessmentToDict:
         assert d["risks"] == ["r1"]
 
     def test_from_dict_with_ta_kronos_roundtrip(self) -> None:
-        ta_data = {"ticker": "sh.600519", "eval_date": "2026-09-01", "signal": "BUY", "confidence": 75.0}
+        ta_data = {
+            "ticker": "sh.600519",
+            "eval_date": "2026-09-01",
+            "signal": "BUY",
+            "confidence": 75.0,
+        }
         kr_data = {
-            "ticker": "sh.600519", "eval_date": "2026-09-01",
-            "direction": "UP", "expected_return": 2.5,
-            "p10": -1.0, "p90": 6.0,
+            "ticker": "sh.600519",
+            "eval_date": "2026-09-01",
+            "direction": "UP",
+            "expected_return": 2.5,
+            "p10": -1.0,
+            "p90": 6.0,
         }
         data = {
-            "ticker": "sh.600519", "eval_date": "2026-09-01",
-            "final_signal": "BUY", "final_confidence": 80.0,
-            "ta_analysis": ta_data, "kronos_prediction": kr_data,
+            "ticker": "sh.600519",
+            "eval_date": "2026-09-01",
+            "final_signal": "BUY",
+            "final_confidence": 80.0,
+            "ta_analysis": ta_data,
+            "kronos_prediction": kr_data,
         }
         sa = SignalAssessment.from_dict(data)
         d = sa.to_dict()

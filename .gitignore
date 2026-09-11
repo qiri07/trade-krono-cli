@@ -33,3 +33,13 @@ RD-Agent-Work/git_ignore_folder/factor_implementation_source_data/daily_pv_debug
 # Scratch/analysis scripts (not part of project)
 backtest_kronos.py
 *.png
+
+# Large data files
+RD-Agent-Work/git_ignore_folder/**/*.h5
+RD-Agent-Work/git_ignore_folder/**/*.parquet
+
+# Large data files (prevents accidental commits)
+*.h5
+*.parquet
+*.pkl
+*.pkl.gz

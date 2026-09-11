@@ -67,16 +67,30 @@ class TestBacktestEngine:
         engine = BacktestEngine(fixed_horizon=3, initial_capital=1_000_000.0)
         records = [
             # Day 1: buy signal
-            BacktestRecord(ticker="sh.600519", date="2026-08-11", signal="BUY",
-                          entry_price=100.0, exit_price=None, horizon_days=5,
-                          pred_direction="UP", actual_return_pct=None),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-08-11",
+                signal="BUY",
+                entry_price=100.0,
+                exit_price=None,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
             # Day 2: no signal (hold)
             # Day 3: price moves up
             # Day 4: still holding
             # Day 5: exit signal (after 3 days hold)
-            BacktestRecord(ticker="sh.600519", date="2026-08-14", signal="SELL",
-                          entry_price=None, exit_price=105.0, horizon_days=5,
-                          pred_direction="UP", actual_return_pct=None),
+            BacktestRecord(
+                ticker="sh.600519",
+                date="2026-08-14",
+                signal="SELL",
+                entry_price=None,
+                exit_price=105.0,
+                horizon_days=5,
+                pred_direction="UP",
+                actual_return_pct=None,
+            ),
         ]
         result = engine.run(records)
         assert isinstance(result, type(engine.run([])))
@@ -112,6 +126,7 @@ class TestBacktestEngineClosePosition:
     def test_normal_close(self) -> None:
         engine = BacktestEngine()
         from trade_krono_cli.backtest_engine import _Position
+
         pos = _Position(
             ticker="sh.600519",
             entry_date="2026-08-10",
@@ -128,6 +143,7 @@ class TestBacktestEngineClosePosition:
     def test_limit_down_blocked(self) -> None:
         engine = BacktestEngine()
         from trade_krono_cli.backtest_engine import _Position
+
         pos = _Position(
             ticker="sh.600519",
             entry_date="2026-08-10",
@@ -160,7 +176,7 @@ class TestComputeMetrics:
     def test_basic_metrics(self) -> None:
         engine = BacktestEngine()
         # Simulate: equity grows from 1M to 1.1M over 10 days
-        equity_curve = [(f"2026-08-{11+i}", 1_000_000.0 + i * 10_000.0) for i in range(10)]
+        equity_curve = [(f"2026-08-{11 + i}", 1_000_000.0 + i * 10_000.0) for i in range(10)]
         trades = [
             {"action": "SELL", "pnl": 5000.0},
             {"action": "SELL", "pnl": -2000.0},
@@ -175,7 +191,7 @@ class TestComputeMetrics:
 
     def test_loss_only_trades(self) -> None:
         engine = BacktestEngine()
-        equity_curve = [(f"2026-08-{11+i}", 1_000_000.0 - i * 5_000.0) for i in range(5)]
+        equity_curve = [(f"2026-08-{11 + i}", 1_000_000.0 - i * 5_000.0) for i in range(5)]
         trades = [
             {"action": "SELL", "pnl": -1000.0},
             {"action": "SELL", "pnl": -500.0},
