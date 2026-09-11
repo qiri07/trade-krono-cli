@@ -105,7 +105,7 @@ class TestBuildBuffettCard:
     def test_card_structure(self, tmp_path) -> None:
         result_file = tmp_path / "buffett.txt"
         result_file.write_text(
-            "巴菲特六闸门筛选结果\n"
+            "巴菲特六闸门筛选结果 2026-09-09\n"
             "通过五闸门: 共 5 只\n"
             "--------\n"
             "600519 贵州茅台 18.5 3.2 25.1\n"

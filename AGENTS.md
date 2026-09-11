@@ -20,6 +20,11 @@ uv run trade-krono-cli ta --tickers "600519"                           # 仅 TA 
 uv run trade-krono-cli kronos --tickers "600519"                       # 仅 Kronos 预测
 uv run trade-krono-cli sync-whitelist                  # 仅同步白名单股票
 uv run python tests/buffett_screen_parallel.py         # 巴菲特六闸门全量筛选（并行版）
+uv run python scripts/full_history_sync.py             # 全量历史数据同步（2020起，~22分钟）
+uv run python scripts/retry_missing_history.py          # 重试缺失历史的股票
+uv run python scripts/check_data_integrity.py           # 数据完整性检查
+uv run python scripts/cleanup_duplicates.py             # 清理重复记录
+uv run python scripts/fill_missing_and_today.py         # 补齐失败股票 + 同步今日增量
 uv run ruff check .                  # Lint 检查
 uv run ruff check --fix .            # Lint + 自动修复
 uv run mypy .                        # 类型检查
@@ -91,9 +96,12 @@ tests/check_cache_integrity.py     # 缓存完整性检查工具
 tests/check_cache_quality.py       # 缓存质量分析工具
 tests/test_sync_whitelist.py       # sync-whitelist / sync-universe 单元测试
 tests/conftest.py                  # 共享 fixture（make_mock_settings）+ pytest_configure/env var 路由 + clear_all_globals hook
-tests/test_*.py                    # 扁平化测试结构：每个源模块对应一个测试文件（91 个测试文件）
+tests/test_*.py                    # 扁平化测试结构：每个源模块对应一个测试文件（2391 个测试）
 outputs/                     # 运行时产物（gitignore）
+outputs/cache/               # K 线缓存数据库（pipeline_cache.db，约 588 MB）
+outputs/cache/backups/       # 数据库备份（每次大操作前自动创建）
 outputs/results/             # 报告输出目录（gitignore 中 *.db/*.log，结果文件可提交）
+scripts/                     # 运维脚本（数据同步 / 完整性检查 / 飞书通知）
 ```
 
 ### 核心数据流
@@ -194,6 +202,29 @@ from scripts.feishu_core import load_config, send_notification
 config = load_config()
 send_notification(mode="buffett", config=config, result_file="result.txt")
 ```
+
+## 数据同步脚本（scripts/）
+
+所有脚本使用同花顺 Fuyao API + baostock 主备降级，并发模型为 ThreadPoolExecutor。
+数据库存储格式：pandas DataFrame 序列化为 pickle（`pd.to_pickle` / `pd.read_pickle(BytesIO)`）。
+
+### 脚本清单
+| 脚本 | 用途 |
+|------|------|
+| `full_history_sync.py` | 全量历史同步（2020-01-01 起，16 并发，~22 分钟完成 4893 只） |
+| `retry_missing_history.py` | 重试缺失历史的股票（16 并发） |
+| `fill_missing_and_today.py` | 补齐失败股票历史 + 同步今日增量（8 并发） |
+| `check_data_integrity.py` | 数据完整性检查（重复/空数据/解码验证） |
+| `cleanup_duplicates.py` | 清理同一 ticker 的多条记录（保留最长） |
+| `full_sync_v2.py` | 优化版主备降级同步（沪深优先 tonghuashun） |
+
+### 数据质量指标（截至 2026-09-11）
+- 总记录数：5,234（无重复）
+- 非北交所：4,891 只
+- 数据范围：2020-01-02 ~ 2026-09-10
+- 有 2020 年数据：3,223 只 (61.6%)
+- 有 9.10 数据：707 只（同花顺 API 限流影响全量增量同步）
+- DB 大小：588 MB
 
 ## 代码风格（Code Style）
 - Linter：ruff（行宽 100，豁免 RUF001/RUF002/RUF003、G004）
