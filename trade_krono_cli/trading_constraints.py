@@ -67,7 +67,7 @@ def check_st_status(
 ) -> bool:
     """检查是否为 ST/*ST 标的。
 
-    实现方式：通过 baostock 的 query_stock_basic() 获取 ST 状态，
+    实现方式：通过 BaostockProvider（统一会话管理 + 线程安全锁）获取 ST 状态，
     缓存结果避免重复网络请求。
 
     Parameters
@@ -84,38 +84,19 @@ def check_st_status(
         return False
 
     try:
-        import baostock as bs  # type: ignore
+        from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
 
-        lg = bs.login()
-        if lg.error_code != "0":
-            logger.debug(f"baostock 登录失败，跳过 ST 检测: {lg.error_msg}")
-            result = False
-        else:
-            rs = bs.query_stock_basic(code=ticker)  # type: ignore
-            if rs.error_code != "0":
-                logger.debug(f"ST 查询失败 {ticker}: {rs.error_msg}")
-                result = False
-            else:
-                rows = []
-                while rs.next():
-                    rows.append(rs.get_row_data())
-                if not rows:
-                    result = False
-                else:
-                    # baostock stock_basic 返回字段：code, code_name, ipoDate, outDate, ...
-                    # ST 标记在 code_name 字段中以 "ST" 或 "*ST" 开头
-                    name = rows[0][1] if len(rows[0]) > 1 else ""
-                    result = bool(_ST_PATTERNS.match(name.strip()))
-                    if result:
-                        logger.info(f"🚫 {ticker} 被识别为 ST 标的，已过滤")
-            bs.logout()  # type: ignore
-    except ImportError:
-        logger.debug("baostock 未安装，ST 检测跳过")
+        provider = BaostockProvider()
+        result = provider.check_st_status(ticker)
+    except (ImportError, RuntimeError) as e:
+        logger.debug(f"ST 检测初始化失败 {ticker}: {e}")
         result = False
     except Exception as e:
         logger.debug(f"ST 检测异常 {ticker}: {str(e)[:200]}")
         result = False
 
+    if result:
+        logger.info(f"🚫 {ticker} 被识别为 ST 标的，已过滤")
     return result
 
 

@@ -15,14 +15,6 @@ from datetime import datetime, timedelta
 import pandas as pd
 from loguru import logger
 
-# ── baostock 会话管理（已提取到 bs_session.py）──────────────────────────────
-import trade_krono_cli.bs_session as _bs_session  # noqa: F401
-from trade_krono_cli.bs_session import (  # noqa: F401
-    _ensure_bs_import,
-    _ensure_bs_login,
-    _get_limiter,
-    clear_baostock_globals,
-)
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.data_providers import DataProviderFactory, get_data_factory
 from trade_krono_cli.security import retry, validate_date, validate_ticker
@@ -92,62 +84,22 @@ def fetch_kline(
     except Exception as e:
         logger.warning(f"Factory K 线拉取失败 {ticker}: {str(e)[:150]}，回退 baostock 直调")
 
-    # ── 路径 2：直接调用 baostock（兼容层）──────────────────────────────
-    _ensure_bs_import()
-    _get_limiter().acquire()
-    _ensure_bs_login()
+    # ── 路径 2：通过 BaostockProvider（统一锁 + 自动重连）──────────────
+    try:
+        from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
 
-    bs_code = ticker
-
-    logger.debug(
-        f"📥 拉取 K 线（baostock 直调）: {bs_code} {start_date}~{end_date} freq={frequency}",
-    )
-
-    rs = _bs_session._bs.query_history_k_data_plus(  # type: ignore
-        bs_code,
-        "date,open,high,low,close,volume,amount",
-        start_date=start_date,
-        end_date=end_date,
-        frequency=frequency,
-        adjustflag=adjustflag,
-    )
-
-    if rs.error_code != "0":
-        msg = f"baostock 查询失败 [{bs_code}]: {rs.error_msg}"
-        raise RuntimeError(msg)
-
-    rows = []
-    while rs.next():
-        rows.append(rs.get_row_data())
-
-    if not rows:
-        msg = f"空数据: {bs_code} {start_date}~{end_date}"
-        raise RuntimeError(msg)
-
-    df = pd.DataFrame(rows, columns=rs.fields)
-    df = df.dropna(subset=["close"])
-
-    # 使用 rs.fields 动态映射列名，避免硬编码索引依赖
-    _col_map = {c: i for i, c in enumerate(rs.fields)}
-    _date_col = rs.fields[_col_map.get("date", 0)]
-    _open_col = rs.fields[_col_map.get("open", 1)]
-    _high_col = rs.fields[_col_map.get("high", 2)]
-    _low_col = rs.fields[_col_map.get("low", 3)]
-    _close_col = rs.fields[_col_map.get("close", 4)]
-    _volume_col = rs.fields[_col_map.get("volume", 5)]
-    _amount_col = rs.fields[_col_map.get("amount", 6)]
-
-    out = pd.DataFrame(
-        {
-            "timestamps": pd.to_datetime(df[_date_col]),
-            "open": df[_open_col].astype(float),
-            "high": df[_high_col].astype(float),
-            "low": df[_low_col].astype(float),
-            "close": df[_close_col].astype(float),
-            "volume": df[_volume_col].astype(float),
-            "amount": df[_amount_col].astype(float),
-        },
-    ).reset_index(drop=True)
+        provider = BaostockProvider()
+        kline_data = provider.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
+        if kline_data is None:
+            logger.warning(f"⚠️ {ticker} 无 K 线数据（baostock provider）")
+            return pd.DataFrame()
+        out = kline_data.to_dataframe()
+        if out.empty:
+            logger.warning(f"⚠️ {ticker} 空 DataFrame（baostock provider）")
+            return pd.DataFrame()
+    except Exception as e:
+        logger.warning(f"BaostockProvider K 线拉取失败 {ticker}: {str(e)[:150]}")
+        return pd.DataFrame()
 
     # 写缓存：永久缓存
     from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL
@@ -161,8 +113,7 @@ def fetch_kline(
         ttl=_KLINE_HISTORICAL_TTL,
         adjustflag=adjustflag,
     )
-    logger.debug(f"✅ K 线就绪: {ticker} 共 {len(out)} 行")
-
+    logger.debug(f"✅ K 线就绪（baostock provider）: {ticker} 共 {len(out)} 行")
     return out
 
 

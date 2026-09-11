@@ -381,6 +381,9 @@ def fetch_stock_meta(
 ) -> dict[str, StockMeta]:
     """批量获取股票的过滤元数据（PE / PB / 行业 / 市值）。
 
+    使用 BaostockProvider 的统一锁（_bs_lock）确保线程安全，
+    避免与 BaostockProvider.fetch_kline() 并发冲突。
+
     Parameters
     ----------
     tickers : list[str]
@@ -401,56 +404,58 @@ def fetch_stock_meta(
         logger.warning("baostock 未安装，跳过元数据获取")
         return {t: StockMeta(ticker=t) for t in tickers}
 
+    # 使用 BaostockProvider 的统一锁，确保与 fetch_kline 等并发调用不冲突
+    from trade_krono_cli.data_providers.baostock_provider import _bs_lock
+
     metas: dict[str, StockMeta] = {}
 
-    lg = bs.login()
-    if lg.error_code != "0":
-        logger.warning(f"baostock 登录失败: {lg.error_msg}，跳过元数据获取")
-        return {t: StockMeta(ticker=t) for t in tickers}
+    with _bs_lock:
+        lg = bs.login()
+        if lg.error_code != "0":
+            logger.warning(f"baostock 登录失败: {lg.error_msg}，跳过元数据获取")
+            return {t: StockMeta(ticker=t) for t in tickers}
 
-    try:
-        for ticker in tickers:
-            meta = StockMeta(ticker=ticker)
+        try:
+            for ticker in tickers:
+                meta = StockMeta(ticker=ticker)
 
-            # ── 行业分类（query_stock_industry）─────────────────────────
-            rs_ind = bs.query_stock_industry(code=ticker)
-            if rs_ind.error_code == "0":
-                rows = []
-                while rs_ind.next():
-                    rows.append(rs_ind.get_row_data())
-                if rows:
-                    meta.industry = rows[0][1] if len(rows[0]) > 1 else None  # code_name
-                    meta.industry_code = rows[0][0] if rows[0] else None
+                # ── 行业分类（query_stock_industry）─────────────────────────
+                rs_ind = bs.query_stock_industry(code=ticker)
+                if rs_ind.error_code == "0":
+                    rows = []
+                    while rs_ind.next():
+                        rows.append(rs_ind.get_row_data())
+                    if rows:
+                        meta.industry = rows[0][1] if len(rows[0]) > 1 else None  # code_name
+                        meta.industry_code = rows[0][0] if rows[0] else None
 
-            # ── 财务指标（query_stock_performance）───────────────────────
-            # pe、pb 等字段需在行情数据中获取
-            rs_perf = bs.query_stock_performance(code=ticker)
-            if rs_perf.error_code == "0":
-                rows = []
-                while rs_perf.next():
-                    rows.append(rs_perf.get_row_data())
-                if rows:
-                    row = rows[-1]  # 最新一期
-                    # baostock performance 字段顺序：
-                    # 0=code, 1=report_date, 2=pe_ttm, 3=pb, ...
-                    if len(row) > 2 and row[2]:
-                        with contextlib.suppress(ValueError, TypeError):
-                            meta.pe_ttm = float(row[2])
-                    if len(row) > 3 and row[3]:
-                        with contextlib.suppress(ValueError, TypeError):
-                            meta.pb = float(row[3])
+                # ── 财务指标（query_stock_performance）───────────────────────
+                rs_perf = bs.query_stock_performance(code=ticker)
+                if rs_perf.error_code == "0":
+                    rows = []
+                    while rs_perf.next():
+                        rows.append(rs_perf.get_row_data())
+                    if rows:
+                        row = rows[-1]  # 最新一期
+                        # baostock performance 字段顺序：
+                        # 0=code, 1=report_date, 2=pe_ttm, 3=pb, ...
+                        if len(row) > 2 and row[2]:
+                            with contextlib.suppress(ValueError, TypeError):
+                                meta.pe_ttm = float(row[2])
+                        if len(row) > 3 and row[3]:
+                            with contextlib.suppress(ValueError, TypeError):
+                                meta.pb = float(row[3])
 
-            # ── 市值（query_stock_basic，部分版本支持）──────────────────
-            rs_basic = bs.query_stock_basic(code=ticker)
-            if rs_basic.error_code == "0":
-                while rs_basic.next():
-                    row = rs_basic.get_row_data()
-                    # row: [code, code_name, ipoDate, outDate, ...]
-                    # 市值字段不在 basic 中，需从行情接口获取
+                # ── 基本信息（query_stock_basic）────────────────────────────
+                rs_basic = bs.query_stock_basic(code=ticker)
+                if rs_basic.error_code == "0":
+                    while rs_basic.next():
+                        row = rs_basic.get_row_data()
+                        # row: [code, code_name, ipoDate, outDate, ...]
+                        # 市值字段不在 basic 中，需从行情接口获取
 
-            metas[ticker] = meta
-
-    finally:
-        bs.logout()  # type: ignore
+                metas[ticker] = meta
+        finally:
+            bs.logout()  # type: ignore
 
     return metas
