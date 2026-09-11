@@ -24,10 +24,14 @@ F = TypeVar("F", bound=Callable[..., Any])
 #   sk-<20+ alphanum>       OpenAI / DeepSeek style
 #   sk-ant-<20+ alphanum>   Anthropic style
 #   Bearer <token>          Standard bearer auth
+#   TUSHARE_TOKEN           Tushare Pro tokens (32+ alphanumeric)
+#   ts_<alphanum>+          Some legacy token formats
 _KEY_REDACT_RE = re.compile(
     r"(?P<openai>sk-[a-zA-Z0-9]{20,})"
     r"|(?P<anthropic>sk-ant-[a-zA-Z0-9_\-]{20,})"
-    r"|(?P<bearer>Bearer\s+[a-zA-Z0-9._\-]+)",
+    r"|(?P<bearer>Bearer\s+[a-zA-Z0-9._\-]+)"
+    r"|(?P<tushare>TUSHARE_TOKEN\s*[=:]\s*[a-zA-Z0-9]{20,}|[a-zA-Z0-9]{32,})"
+    r"|(?P<ts_key>ts_[a-zA-Z0-9]{20,})",
 )
 
 

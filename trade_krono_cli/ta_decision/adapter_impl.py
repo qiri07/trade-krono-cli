@@ -20,6 +20,19 @@ from trade_krono_cli.ta_decision import (
     InvestmentDecision,
     Signal,
 )
+from trade_krono_cli.ta_decision.patterns import (
+    RE_CATALYSTS,
+    RE_ENTRY_ZONE,
+    RE_HOLDING_PERIOD,
+    RE_INVALIDATIONS,
+    RE_PCT,
+    RE_POS_SIZE,
+    RE_RATING,
+    RE_STOP_LOSS,
+    RE_SUMMARY,
+    RE_TARGET_PRICE,
+    RE_THESIS,
+)
 
 
 class DecisionAdapter:
@@ -35,56 +48,26 @@ class DecisionAdapter:
     """
 
     # Rating 正则
-    _RE_RATING = re.compile(
-        r"\*\*Rating\*\*\s*[:：]\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)",
-        re.IGNORECASE,
-    )
+    _RE_RATING = RE_RATING
     # Thesis 段落
-    _RE_THESIS = re.compile(
-        r"\*\*Investment Thesis\*\*\s*[:：]\s*(.+?)(?=\n\*\*|\Z)",
-        re.DOTALL | re.IGNORECASE,
-    )
+    _RE_THESIS = RE_THESIS
     # Executive Summary
-    _RE_SUMMARY = re.compile(
-        r"\*\*Executive Summary\*\*\s*[:：]\s*(.+?)(?=\n\*\*|\Z)",
-        re.DOTALL | re.IGNORECASE,
-    )
+    _RE_SUMMARY = RE_SUMMARY
     # 百分比数字
-    _RE_PCT = re.compile(r"(?<![\d./])(\d+(?:\.\d+)?)\s*%")
+    _RE_PCT = RE_PCT
     # 持仓比例
-    _RE_POS_SIZE = re.compile(r"仓位[:：]?\s*(\d+(?:\.\d+)?)\s*[%‰]?\s*(?:以上|左右|)")
-
+    _RE_POS_SIZE = RE_POS_SIZE
     # 止损相关
-    _RE_STOP_LOSS = re.compile(
-        r"(?:止损|stop\s*loss)[:：]?\s*([\d.,]+\s*[-–—至到]\s*[\d.,]+|[≥≤><=]?\s*[\d.,]+)",
-        re.IGNORECASE,
-    )
-    _RE_TARGET_PRICE = re.compile(
-        r"(?:目标价|target\s*(?:price|price\s*target)|目标)[:：]?\s*([\d.,]+\s*[-–—至到]\s*[\d.,]+|[≥≤><=]?\s*[\d.,]+)",
-        re.IGNORECASE,
-    )
-    _RE_ENTRY_ZONE = re.compile(
-        r"(?:入场区?间|entry\s*(?:zone|price)|建议买入)[:：]?\s*([\d.,]+\s*[-–—至到]\s*[\d.,]+|[≥≤><=]?\s*[\d.,]+)",
-        re.IGNORECASE,
-    )
+    _RE_STOP_LOSS = RE_STOP_LOSS
+    _RE_TARGET_PRICE = RE_TARGET_PRICE
+    _RE_ENTRY_ZONE = RE_ENTRY_ZONE
 
     # 持有期（更宽松的匹配）
-    _RE_HOLDING_PERIOD = re.compile(
-        r"(?:持有期|holding\s*period|预期持有)[:：]?\s*(\d+)",
-        re.IGNORECASE,
-    )
-
+    _RE_HOLDING_PERIOD = RE_HOLDING_PERIOD
     # 失效条件
-    _RE_INVALIDATIONS = re.compile(
-        r"(?:失效条件|invalidation|if.*?则?卖出|逻辑失效)[:：]?\s*(.+?)(?=\n\s*(?:风险|catalyst|\*\*|#####)|\Z)",
-        re.DOTALL | re.IGNORECASE,
-    )
-
+    _RE_INVALIDATIONS = RE_INVALIDATIONS
     # 催化剂
-    _RE_CATALYSTS = re.compile(
-        r"\*\*Catalysts\*\*\s*[:：]\s*(.+?)(?=\n\*\*|\Z)",
-        re.DOTALL | re.IGNORECASE,
-    )
+    _RE_CATALYSTS = RE_CATALYSTS
 
     def parse(self, decision_text: str) -> InvestmentDecision:
         """主入口：解析 LLM 输出 → InvestmentDecision。
@@ -154,7 +137,7 @@ class DecisionAdapter:
             confidence=round(confidence, 1),
             expected_return=expected_return,
             position_size=position_size,
-            horizon=None,
+            horizon=holding_period,
             thesis=thesis,
             risks=risks,
             invalidations=invalidations,
@@ -325,7 +308,7 @@ class DecisionAdapter:
             confidence=round(confidence, 1),
             expected_return=expected_return,
             position_size=position_size,
-            horizon=None,
+            horizon=holding_period,
             thesis=thesis,
             risks=risks,
             invalidations=invalidations,

@@ -197,14 +197,14 @@ class TestLiquidityRisk:
 
 class TestConcentrationRisk:
     def test_default_score(self) -> None:
-        """无 TA 结果时返回默认 10 分。"""
+        """无 TA 结果时返回默认 15 分（保守中等风险）。"""
         score = calc_concentration_risk()
-        assert score == 10.0
+        assert score == 15.0
 
-    def test_with_ta_result_returns_10(self) -> None:
-        """有 TA 结果时也返回默认值（占位实现）。"""
+    def test_with_ta_result_returns_default(self) -> None:
+        """有 TA 结果但无有效信息时也返回默认 15 分。"""
         score = calc_concentration_risk(ta_result="dummy")
-        assert score == 10.0
+        assert score == 15.0
 
 
 # ═══════════════════════════════════════════════════════
