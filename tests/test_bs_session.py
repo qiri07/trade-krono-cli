@@ -20,7 +20,7 @@ class TestGetLimiter:
         assert limiter is not None
 
     def test_reuses_existing(self, monkeypatch) -> None:
-        from trade_krono_cli.bs_session import _get_limiter, _bs_limiter
+        from trade_krono_cli.bs_session import _get_limiter
 
         settings = MagicMock()
         settings.baostock_sleep_sec = 1.0

@@ -676,3 +676,226 @@ def test_investment_decision_to_dict_new_fields(adapter) -> None:
     assert d["catalysts"] == ["Q3超预期"]
     assert d["valuation_score"] == 75.0
     assert d["fundamental_score"] == 82.0
+
+
+# ═══════════════════════════════════════════════════════
+# JSON edge cases — invalid field parsing
+# ═══════════════════════════════════════════════════════
+
+
+def test_json_invalid_signal_fallback(adapter) -> None:
+    """JSON signal that fails both .upper() and initial parse → HOLD."""
+    import json
+
+    text = json.dumps({"signal": "!!invalid!!", "confidence": 90.0})
+    dec = adapter.parse(text)
+    assert dec.signal == Signal.HOLD
+    assert dec.confidence == 90.0  # confidence preserved from JSON
+
+
+def test_json_confidence_invalid_fallback(adapter) -> None:
+    """Confidence that can't be converted to float → hardcoded 50.0."""
+    import json
+
+    text = json.dumps({"signal": "BUY", "confidence": "not_a_number"})
+    dec = adapter.parse(text)
+    assert dec.signal == Signal.BUY
+    assert dec.confidence == 50.0  # hardcoded fallback when float() fails
+
+
+def test_json_expected_return_invalid(adapter) -> None:
+    """Invalid expected_return → None."""
+    import json
+
+    text = json.dumps({"signal": "BUY", "expected_return": "abc"})
+    dec = adapter.parse(text)
+    assert dec.expected_return is None
+
+
+def test_json_position_size_invalid(adapter) -> None:
+    """Invalid position_size → None."""
+    import json
+
+    text = json.dumps({"signal": "BUY", "position_size": "xyz"})
+    dec = adapter.parse(text)
+    assert dec.position_size is None
+
+
+def test_json_entry_zone_invalid(adapter) -> None:
+    """Invalid entry_zone → None."""
+    import json
+
+    text = json.dumps({"signal": "BUY", "entry_zone": [148.0, "bad"]})
+    dec = adapter.parse(text)
+    assert dec.entry_zone is None
+
+
+def test_json_target_price_invalid(adapter) -> None:
+    """Invalid target_price → None."""
+    import json
+
+    text = json.dumps({"signal": "BUY", "target_price": "not_a_num"})
+    dec = adapter.parse(text)
+    assert dec.target_price is None
+
+
+def test_json_stop_loss_invalid(adapter) -> None:
+    """Invalid stop_loss → None."""
+    import json
+
+    text = json.dumps({"signal": "BUY", "stop_loss": None})
+    dec = adapter.parse(text)
+    assert dec.stop_loss is None
+
+
+def test_json_holding_period_invalid(adapter) -> None:
+    """Invalid expected_holding_period → None."""
+    import json
+
+    text = json.dumps({"signal": "BUY", "expected_holding_period": "abc"})
+    dec = adapter.parse(text)
+    assert dec.expected_holding_period is None
+
+
+def test_json_scores_invalid(adapter) -> None:
+    """Invalid score values → remain None."""
+    import json
+
+    text = json.dumps(
+        {
+            "signal": "BUY",
+            "valuation_score": "abc",  # not a number → None
+            "fundamental_score": True,  # bool → float(True)=1.0, clamped to [0,100]
+        },
+    )
+    dec = adapter.parse(text)
+    assert dec.valuation_score is None  # "abc" → ValueError → None
+    assert dec.fundamental_score == 1.0  # True → 1.0 (valid float)
+
+
+# ═══════════════════════════════════════════════════════
+# Text-path extraction edge cases
+# ═══════════════════════════════════════════════════════
+
+
+def test_extract_risks_short_items_filtered(adapter) -> None:
+    """Risks shorter than 10 chars or longer than 120 are filtered out."""
+    text = """**Rating**: Buy
+Risk: X (too short)
+Risk: This is a reasonably long risk statement that is exactly right length for extraction.
+Risk: This is an extremely long risk factor description that exceeds the maximum allowed length of one hundred and twenty characters for proper filtering."""
+    dec = adapter.parse(text)
+    # The short one and the too-long one should be filtered
+    assert all(10 <= len(r) <= 120 for r in dec.risks)
+
+
+def test_extract_expected_return_buy_out_of_range(adapter) -> None:
+    """BUY with pct outside 5-30% range → no expected_return matched."""
+    text = "**Rating**: Buy\nWe expect a 40% upside due to strong momentum."
+    dec = adapter.parse(text)
+    assert dec.expected_return is None  # 40% > 30% for BUY
+
+
+def test_extract_expected_return_sell_too_small(adapter) -> None:
+    """SELL with pct -0.5% → below -1% threshold, no match."""
+    text = "**Rating**: Sell\nExpected decline of just 0.5%."
+    dec = adapter.parse(text)
+    assert dec.expected_return is None  # -0.5% is outside [-20, -1]
+
+
+def test_extract_expected_return_hold_within_range(adapter) -> None:
+    """HOLD with small pct → matched."""
+    text = "**Rating**: Hold\nExpecting roughly 2% movement either way."
+    dec = adapter.parse(text)
+    assert dec.expected_return is not None
+    assert abs(dec.expected_return) <= 5
+
+
+def test_extract_position_size_no_match(adapter) -> None:
+    """No position size mentioned → None."""
+    text = "**Rating**: Buy\nStrong fundamentals."
+    dec = adapter.parse(text)
+    assert dec.position_size is None
+
+
+def test_extract_position_size_invalid_format(adapter) -> None:
+    """Position size mention but unparseable → None."""
+    text = "**Rating**: Buy\n仓位: not_a_number"
+    dec = adapter.parse(text)
+    assert dec.position_size is None
+
+
+def test_extract_invalidations_no_structured_no_chinese(adapter) -> None:
+    """No invalidation markers → empty list."""
+    text = "**Rating**: Buy\nNothing to invalidate here."
+    dec = adapter.parse(text)
+    assert dec.invalidations == []
+
+
+def test_extract_invalidations_chinese_fallback(adapter) -> None:
+    """Chinese invalidation pattern should be extracted."""
+    text = """**Rating**: Buy
+如果毛利率下降，则建议卖出。
+若订单连续两季度下滑，便考虑止损。"""
+    dec = adapter.parse(text)
+    assert len(dec.invalidations) >= 1
+    assert any("毛利率" in inv for inv in dec.invalidations)
+
+
+def test_extract_price_range_no_match(adapter) -> None:
+    """No price range pattern → None."""
+    text = "**Rating**: Buy\nNo price targets mentioned."
+    dec = adapter.parse(text)
+    assert dec.entry_zone is None
+    assert dec.target_price is None
+    assert dec.stop_loss is None
+
+
+def test_extract_holding_period_no_match(adapter) -> None:
+    """No holding period mention → None."""
+    text = "**Rating**: Buy\nInvestment horizon unclear."
+    dec = adapter.parse(text)
+    assert dec.expected_holding_period is None
+
+
+def test_extract_catalysts_no_match(adapter) -> None:
+    """No catalysts section → empty list."""
+    text = "**Rating**: Buy\nNo catalysts discussed."
+    dec = adapter.parse(text)
+    assert dec.catalysts == []
+
+
+# ═══════════════════════════════════════════════════════
+# Fallback signal / keyword path
+# ═══════════════════════════════════════════════════════
+
+
+def test_fallback_signal_from_rating_no_match(adapter) -> None:
+    """Unknown rating string → HOLD, 50."""
+    signal, conf = adapter._fallback_signal_from_rating("持有")
+    assert signal == Signal.HOLD
+    assert conf == 50.0
+
+
+def test_keyword_fallback_no_keywords(adapter) -> None:
+    """Text with no BUY/SELL/HOLD keywords → HOLD, 50."""
+    signal, conf = DecisionAdapter._keyword_fallback("The market looks uncertain today.")
+    assert signal == Signal.HOLD
+    assert conf == 50.0
+
+
+def test_keyword_fallback_overweight_with_negative_before(adapter) -> None:
+    """OVERWEIGHT preceded by negative word → not treated as buy."""
+    signal, conf = DecisionAdapter._keyword_fallback(
+        "We do NOT recommend OVERWEIGHT at this time due to valuation."
+    )
+    # Should not be BUY since OVERWEIGHT has negative before it
+    assert signal != Signal.BUY or conf < 65.0
+
+
+def test_keyword_fallback_sell_with_negative_before(adapter) -> None:
+    """SELL preceded by negative word → not treated as sell."""
+    signal, conf = DecisionAdapter._keyword_fallback(
+        "We do NOT see a reason to SELL the stock."
+    )
+    assert signal != Signal.SELL

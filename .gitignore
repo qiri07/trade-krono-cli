@@ -29,3 +29,7 @@ raw/
 # Large data files (>100MB, exceed GitHub limit)
 RD-Agent-Work/git_ignore_folder/factor_implementation_source_data/daily_pv.parquet
 RD-Agent-Work/git_ignore_folder/factor_implementation_source_data/daily_pv_debug.parquet
+
+# Scratch/analysis scripts (not part of project)
+backtest_kronos.py
+*.png

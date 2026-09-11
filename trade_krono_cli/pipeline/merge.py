@@ -157,7 +157,7 @@ def _make_empty_merged(
         "ta_signal": ta.signal if ta else None,
         "ta_confidence": ta.confidence if ta else None,
         "ta_reasoning": (ta.reasoning or "")[:REASONING_TRUNCATE_LEN] if ta else "",
-        "ta_reports": (ta.reports or {}) if ta else {},
+        "ta_reports": getattr(ta, 'reports', {}) or {},
         "ta_error": ta.error if ta else None,
         "kronos_direction": kronos.direction if kronos else None,
         "kronos_change_pct": kronos.expected_change_pct if kronos else None,

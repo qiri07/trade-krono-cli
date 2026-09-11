@@ -753,7 +753,7 @@ trade-krono-cli
 │       └── registry.py         # Scoring plugin registry
 ├── scripts/
 │   └── install.sh              # One-click install script
-├── tests/                      # Test suite (2391 tests, ruff + mypy clean)
+├── tests/                      # Test suite (2617 tests, ruff + mypy clean)
 └── external/                   # External project configs (repos.yaml + repo.lock)
 ```
 
@@ -902,7 +902,7 @@ Expected Return
 | **Volatility Risk** | 20-day annualized std of daily returns | Higher vol = higher risk (0%→0, 60%→100) | 25% |
 | **Drawdown Risk** | 60-day rolling max → max drawdown | Larger DD = higher risk (5%→20, 40%→100) | 20% |
 | **Liquidity Risk** | 20-day avg volume + market cap | Lower volume = higher risk (segmented) | 15% |
-| **Concentration Risk** | Placeholder | Default 10 points | 8% |
+| **Concentration Risk** | Heuristic: industry keywords + market cap (large cap -5pts, small cap +8pts) | 0-100, lower = less risk | 8% |
 | **Market Regime Risk** | 20-day + 60-day momentum | Downtrend = high, uptrend = low | 12% |
 | **Gap Risk** | Frequency of daily moves >3% | More frequent large moves = higher risk | 5% |
 | **Event Risk** | Short-term / long-term vol ratio | Ratio >> 1 means recent volatility spike | 5% |
@@ -1235,7 +1235,7 @@ sa = build_signal_assessment("sh.600519", "2026-08-11", ta=ta, kronos=kp)
 pytest tests/ -v
 ```
 
-Test Results: **1106 passed** · **87%+ overall coverage** · **mypy clean**
+Test Results: **2617 passed** · **88%+ overall coverage** · **mypy clean**
 
 | File | Coverage |
 |------|----------|
@@ -1253,6 +1253,16 @@ Test Results: **1106 passed** · **87%+ overall coverage** · **mypy clean**
 | `test_prediction_eval_ic.py` | IC/rank-IC evaluation metrics |
 | `test_risk.py` | Risk Engine (multi-dimensional scores + VaR/CVaR/Beta + RiskMetrics) full-dimension tests |
 | `test_risk_models.py` | Risk models (VaR/CVaR/Beta/Sharpe/expected return adj/gap/event/valuation) unit tests |
+| `test_concentration_risk.py` | Concentration risk heuristic (industry keyword + market cap adjustment) |
+| `test_prediction_eval_report.py` | Prediction evaluation report printing (Kronos/TA/combined/backtest) |
+| `test_backtest_engine.py` | Backtest engine (trade simulation, performance metrics, limit-up/down constraints) |
+| `test_backtest_benchmarks.py` | Backtest benchmarks (equal-weight portfolio, excess return curve, record building) |
+| `test_domain_decision.py` | InvestmentDecision.from_dict / fallback / to_legacy_dict |
+| `test_domain_signal.py` | SignalAssessment.from_dict, EV computation, conflict detection |
+| `test_cache_queries.py` | CacheQueries.stats, clear_all, export_daily_pv |
+| `test_tradingagents_adapter.py` | TradingAgentsAdapter load/run/error paths |
+| `test_decision_patterns.py` | Regex pattern extraction (10 patterns, 27 tests) |
+| `test_pipeline_core.py` | PipelineCore edge cases (delisted filter, cache fallback, merge) |
 | `test_external.py` | External repo management (config I/O, status, pin, lock drift detection) |
 | `test_kronos_runner.py` | Device resolution (CPU/CUDA/large-model warning), result save, slots cleanup |
 | `test_ta_runner.py` | BuildConfig, provider validation, graph lazy-load, batch analysis, raw report I/O |
@@ -1408,7 +1418,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | Path Isolation | External projects injected via `sys.path`; output paths restricted to project root | `kronos_runner.py`, `ta_runner.py`, `cli.py::_sanitize_path` |
 | Cache Safety | SQLite local storage, no data upload; K-line cache is permanent (ttl=0), TA/Kronos cache uses config-based expiry; safe deserialization of `investment_decision` / `prediction_uncertainty` | `cache.py`, `ta_runner.py`, `kronos_runner.py` |
 | baostock Login | Global singleton + thread lock to avoid concurrent conflicts | `data.py::_ensure_bs_login` |
-| Log Sanitization | Exception logs auto-sanitize API keys (regex replace sk-xxx / Bearer xxx) | `security.py::sanitize_for_log` |
+| Log Sanitization | Exception logs auto-sanitize API keys (regex replace sk-xxx / Bearer xxx / Tushare token) | `security.py::sanitize_for_log` |
 
 ---
 

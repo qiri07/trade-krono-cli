@@ -7,8 +7,10 @@ import pytest
 from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.trading_constraints import (
     T1Tracker,
+    _is_st_by_name,
     check_all_constraints,
     check_limit_status,
+    check_st_status,
     compute_limit_prices,
     compute_transaction_cost,
     detect_exchange,
@@ -332,3 +334,174 @@ class TestFilterByConstraints:
         assert len(allowed) == 1
         assert len(rejected) == 1
         assert allowed[0]["ticker"] == "sh.600519"
+
+
+# ═══════════════════════════════════════════════════════
+# _is_st_by_name
+# ═══════════════════════════════════════════════════════
+
+
+class TestIsStByName:
+    def test_with_st_name_hint(self) -> None:
+        assert _is_st_by_name("sh.600001", "ST某某") is True
+
+    def test_with_star_st_name_hint(self) -> None:
+        assert _is_st_by_name("sh.600002", "*ST某某") is True
+
+    def test_with_sst_name_hint(self) -> None:
+        assert _is_st_by_name("sh.600003", "SST某某") is True
+
+    def test_with_n_st_name_hint(self) -> None:
+        assert _is_st_by_name("sh.600004", "N ST某某") is True
+
+    def test_without_name_hint_returns_false(self) -> None:
+        """No name_hint → heuristic returns False (later confirmed by query)."""
+        assert _is_st_by_name("sh.600519") is False
+
+    def test_normal_name_returns_false(self) -> None:
+        assert _is_st_by_name("sh.600519", "贵州茅台") is False
+
+
+# ═══════════════════════════════════════════════════════
+# check_st_status — error paths
+# ═══════════════════════════════════════════════════════
+
+
+class TestCheckStStatusErrorPaths:
+    def test_runtime_error_from_provider(self) -> None:
+        """BaostockProvider raises RuntimeError → returns False gracefully."""
+        from unittest.mock import patch
+
+        with patch(
+            "trade_krono_cli.data_providers.baostock_provider.BaostockProvider",
+            side_effect=RuntimeError("session invalid"),
+        ):
+            result = check_st_status("sh.600519")
+        assert result is False
+
+    def test_generic_exception_from_provider(self) -> None:
+        """BaostockProvider raises generic Exception → returns False gracefully."""
+        from unittest.mock import patch
+
+        with patch(
+            "trade_krono_cli.data_providers.baostock_provider.BaostockProvider",
+            side_effect=Exception("network timeout"),
+        ):
+            result = check_st_status("sh.600519")
+        assert result is False
+
+    def test_st_detected_logs_and_returns_true(self) -> None:
+        """ST stock detected → logs info and returns True."""
+        from unittest.mock import MagicMock, patch
+
+        mock_provider = MagicMock()
+        mock_provider.check_st_status.return_value = True
+
+        with patch(
+            "trade_krono_cli.data_providers.baostock_provider.BaostockProvider",
+            return_value=mock_provider,
+        ):
+            cfg = ConstraintConfig(enable_st_filter=True)
+            result = check_st_status("sh.600001", config=cfg)
+        assert result is True
+
+
+# ═══════════════════════════════════════════════════════
+# detect_exchange — bse prefix
+# ═══════════════════════════════════════════════════════
+
+
+class TestDetectExchangeBse:
+    def test_bj_prefix(self) -> None:
+        assert detect_exchange("bj.830001") == "bse"
+
+    def test_bj_prefix_with_real_bj_stock(self) -> None:
+        assert detect_exchange("bj.872925") == "bse"
+
+
+# ═══════════════════════════════════════════════════════
+# check_limit_status — near-limit tolerance
+# ═══════════════════════════════════════════════════════
+
+
+class TestCheckLimitStatusTolerance:
+    def test_near_limit_up_within_tolerance(self) -> None:
+        """Price at 99.9% of limit_up → still detected as LIMIT_UP."""
+        r = check_limit_status("sh.600519", current_price=109.89, prev_close=100.0)
+        assert r.allowed is False
+        assert r.reason == "LIMIT_UP"
+
+    def test_near_limit_down_within_tolerance(self) -> None:
+        """Price slightly below limit_down → still detected as LIMIT_DOWN."""
+        # 90.0 * 1.001 = 90.08999..., so 90.08 triggers the limit_down check
+        r = check_limit_status("sh.600519", current_price=90.08, prev_close=100.0)
+        assert r.allowed is False
+        assert r.reason == "LIMIT_DOWN"
+
+
+# ═══════════════════════════════════════════════════════
+# compute_transaction_cost — disabled cost model
+# ═══════════════════════════════════════════════════════
+
+
+class TestComputeTransactionCostDisabled:
+    def test_sell_no_cost_model(self) -> None:
+        """enable_cost_model=False → sell returns gross return unchanged."""
+        cfg = ConstraintConfig(enable_cost_model=False)
+        result = compute_transaction_cost(5.0, side="sell", config=cfg)
+        assert result == 5.0
+
+    def test_roundtrip_no_cost_model(self) -> None:
+        """enable_cost_model=False → roundtrip returns gross return unchanged."""
+        cfg = ConstraintConfig(enable_cost_model=False)
+        result = compute_transaction_cost(5.0, side="roundtrip", config=cfg)
+        assert result == 5.0
+
+    def test_unknown_side_returns_gross(self) -> None:
+        """Unknown side string → returns gross_return_pct unchanged."""
+        cfg = ConstraintConfig()
+        result = compute_transaction_cost(5.0, side="hold", config=cfg)
+        assert result == 5.0
+
+
+# ═══════════════════════════════════════════════════════
+# T1Tracker — invalid date format
+# ═══════════════════════════════════════════════════════
+
+
+class TestT1TrackerInvalidDate:
+    def test_locked_until_bad_date_format(self) -> None:
+        """Invalid date format in record_buy → locked_until returns None."""
+        tracker = T1Tracker()
+        tracker.record_buy("sh.600519", "not-a-date")
+        assert tracker.locked_until("sh.600519") is None
+
+
+# ═══════════════════════════════════════════════════════
+# check_all_constraints — ST filter enabled path
+# ═══════════════════════════════════════════════════════
+
+
+class TestCheckAllConstraintsStFilter:
+    def test_st_filter_enabled_st_detected(self) -> None:
+        """ST filter enabled and stock is ST → returns ST_FILTER immediately."""
+        from unittest.mock import MagicMock, patch
+
+        mock_provider = MagicMock()
+        mock_provider.check_st_status.return_value = True
+
+        with patch(
+            "trade_krono_cli.data_providers.baostock_provider.BaostockProvider",
+            return_value=mock_provider,
+        ):
+            cfg = ConstraintConfig(enable_st_filter=True, enable_limit_check=False)
+            r = check_all_constraints("sh.600001", "2026-08-12", config=cfg)
+        assert r.allowed is False
+        assert r.reason == "ST_FILTER"
+        assert r.is_st is True
+
+    def test_st_filter_disabled_st_status_ignored(self) -> None:
+        """ST filter disabled → check_st_status not called, proceeds to other checks."""
+        cfg = ConstraintConfig(enable_st_filter=False, enable_limit_check=False)
+        r = check_all_constraints("sh.600001", "2026-08-12", config=cfg)
+        assert r.allowed is True

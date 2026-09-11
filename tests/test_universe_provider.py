@@ -554,3 +554,288 @@ class TestGetUniverseProvider:
         with patch.dict("trade_krono_cli.universe.provider._PROVIDER_REGISTRY", {}, clear=True):
             result = get_universe_provider("akshare")
         assert result is None
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  MootDxUniverseProvider — full get_universe paths
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class TestMootDxGetUniverse:
+    """Test MootDxUniverseProvider.get_universe end-to-end paths."""
+
+    def _make_fake_bs_login_failure(self):
+        """Return a fake baostock module where login fails."""
+        import types
+
+        fake_bs = types.ModuleType("baostock")
+
+        class FakeLoginResult:
+            error_code = "10001001"
+            error_msg = "用户未登录"
+
+        fake_bs.login = lambda: FakeLoginResult()
+        fake_bs.logout = lambda: None
+        return fake_bs
+
+    def test_baostock_login_failure_returns_empty(self) -> None:
+        """Baostock login failure → returns empty list."""
+        fake_bs = self._make_fake_bs_login_failure()
+
+        with patch.dict("sys.modules", {"baostock": fake_bs}):
+            provider = MootDxUniverseProvider()
+            result = provider.get_universe()
+        assert result == []
+
+    def test_mootdx_init_failure_fallback_to_baostock_codes(self) -> None:
+        """mootdx init fails → fallback to baostock raw code list."""
+        import types
+
+        # Baostock that succeeds
+        fake_bs = types.ModuleType("baostock")
+
+        class FakeLoginResult:
+            error_code = "0"
+            error_msg = "success"
+
+        class FakeRS:
+            _rows = [["sh.600519", "茅台", "", "", "1", "1"], ["sz.000858", "五粮液", "", "", "1", "1"]]
+            _idx = 0
+
+            def next(self):
+                ok = self._idx < len(self._rows)
+                if ok:
+                    self._idx += 1
+                return ok
+
+            def get_row_data(self):
+                return list(self._rows[self._idx - 1])
+
+        fake_bs.login = lambda: FakeLoginResult()
+        fake_bs.query_stock_basic = lambda: FakeRS()
+        fake_bs.logout = lambda: None
+
+        # Make mootdx import fail
+        with patch.dict("sys.modules", {"baostock": fake_bs, "mootdx": None}):
+            provider = MootDxUniverseProvider()
+            result = provider.get_universe()
+        # Should fallback to baostock codes (no price data)
+        assert len(result) == 2
+        assert result[0].ticker == "sh.600519"
+        assert result[0].price is None  # no mootdx price
+
+    def test_empty_mootdx_results_fallback(self) -> None:
+        """mootdx returns empty → fallback to baostock codes."""
+        import sys
+        from types import ModuleType
+
+        fake_bs = ModuleType("baostock")
+
+        class FakeLoginResult:
+            error_code = "0"
+            error_msg = "success"
+
+        class FakeRS:
+            _rows = [["sh.600519", "茅台", "", "", "1", "1"]]
+            _idx = 0
+
+            def next(self):
+                ok = self._idx < len(self._rows)
+                if ok:
+                    self._idx += 1
+                return ok
+
+            def get_row_data(self):
+                return list(self._rows[self._idx - 1])
+
+        fake_bs.login = lambda: FakeLoginResult()
+        fake_bs.query_stock_basic = lambda: FakeRS()
+        fake_bs.logout = lambda: None
+
+        class FakeQ:
+            def quotes(self, symbol):
+                class EmptyDF:
+                    empty = True
+
+                    def iterrows(self):
+                        return iter([])
+
+                    def __len__(self) -> int:
+                        return 0
+
+                return EmptyDF()
+
+        # Mock mootdx module in sys.modules before import
+        fake_mootdx = ModuleType("mootdx")
+        fake_quotes = ModuleType("mootdx.quotes")
+        fake_quotes.Quotes = type(
+            "Quotes", (), {"factory": staticmethod(lambda market: FakeQ())}
+        )
+        sys.modules["mootdx"] = fake_mootdx
+        sys.modules["mootdx.quotes"] = fake_quotes
+
+        try:
+            with patch.dict("sys.modules", {"baostock": fake_bs}):
+                import importlib
+
+                import trade_krono_cli.universe.provider as provider_mod
+
+                importlib.reload(provider_mod)
+                provider = provider_mod.MootDxUniverseProvider()
+                result = provider.get_universe()
+        finally:
+            sys.modules.pop("mootdx", None)
+            sys.modules.pop("mootdx.quotes", None)
+
+        # Fallback to baostock codes since mootdx returned empty
+        assert len(result) == 1
+        assert result[0].ticker == "sh.600519"
+        assert result[0].price is None
+
+    def test_fetch_industry_map_with_data(self) -> None:
+        """_fetch_industry_map parses rows correctly."""
+        class FakeRS:
+            _rows = [
+                ["sh.600519", "白酒"],
+                ["sz.000858", "食品饮料"],
+                ["sh.600000", ""],  # empty industry
+            ]
+            _idx = 0
+
+            def next(self):
+                ok = self._idx < len(self._rows)
+                if ok:
+                    self._idx += 1
+                return ok
+
+            def get_row_data(self):
+                return list(self._rows[self._idx - 1])
+
+        result = MootDxUniverseProvider._fetch_industry_map(FakeRS())
+        assert result == {"sh.600519": "白酒", "sz.000858": "食品饮料"}
+
+    def test_fetch_industry_map_empty(self) -> None:
+        class FakeRS:
+            def next(self) -> bool:
+                return False
+
+            def get_row_data(self):
+                return []
+
+        result = MootDxUniverseProvider._fetch_industry_map(FakeRS())
+        assert result == {}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  TongHuaShunUniverseProvider — pagination and snapshot error paths
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class TestTongHuaShunPagination:
+    """Test multi-page ticker list and snapshot error handling."""
+
+    def test_multi_page_ticker_list(self) -> None:
+        """Pagination: second page fetched when first page has 1000 items."""
+        fake_items_page1 = [{"thscode": f"{i:06d}.SH", "ticker": f"Stock{i}"} for i in range(1000)]
+        fake_items_page2 = [{"thscode": f"{1000+i:06d}.SH", "ticker": f"Stock{1000+i}"} for i in range(100)]
+
+        request_counts = {"ticker": 0, "snapshot": 0}
+
+        class FakeResponse:
+            def __init__(self, json_data, status_code=200) -> None:
+                self._json = json_data
+                self.status_code = status_code
+
+            def json(self):
+                return self._json
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    msg = f"HTTP {self.status_code}"
+                    raise RuntimeError(msg)
+
+        def fake_get(self, url, params=None, headers=None, timeout=30):
+            if "tickers/list" in url:
+                request_counts["ticker"] += 1
+                offset = 0
+                if params:
+                    for p in params:
+                        if isinstance(p, tuple) and p[0] == "offset":
+                            offset = int(p[1])
+                if offset == 0:
+                    return FakeResponse({"code": 0, "data": {"item": fake_items_page1}})
+                else:
+                    return FakeResponse({"code": 0, "data": {"item": fake_items_page2}})
+            if "prices/snapshot" in url:
+                request_counts["snapshot"] += 1
+                return FakeResponse({"code": 0, "data": {"item": []}})
+            return FakeResponse({"code": 1}, status_code=404)
+
+        import trade_krono_cli.universe.provider as provider_mod
+
+        original = provider_mod.requests
+        try:
+            provider_mod.requests = type("FakeRequests", (), {"get": fake_get})()
+            with patch.dict("os.environ", {"HITHINK_FINANCE_API_KEY": "test-key"}):
+                provider = TongHuaShunUniverseProvider()
+                provider.get_universe()
+        finally:
+            provider_mod.requests = original
+
+        # Should have made 2 ticker list requests (page 1 + page 2)
+        assert request_counts["ticker"] == 2
+        assert request_counts["snapshot"] >= 1
+
+    def test_snapshot_batch_error_handled(self) -> None:
+        """Snapshot API error for a batch → logs warning, continues with other batches."""
+        request_counts = {"ticker": 0, "snapshot": 0}
+
+        class FakeResponse:
+            def __init__(self, json_data, status_code=200) -> None:
+                self._json = json_data
+                self.status_code = status_code
+
+            def json(self):
+                return self._json
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    msg = f"HTTP {self.status_code}"
+                    raise RuntimeError(msg)
+
+        def fake_get(self, url, params=None, headers=None, timeout=30):
+            if "tickers/list" in url:
+                request_counts["ticker"] += 1
+                return FakeResponse(
+                    {"code": 0, "data": {"item": [
+                        {"thscode": "600519.SH", "ticker": "贵州茅台"},
+                        {"thscode": "000858.SZ", "ticker": "五粮液"},
+                    ]}}
+                )
+            if "prices/snapshot" in url:
+                request_counts["snapshot"] += 1
+                if request_counts["snapshot"] == 1:
+                    return FakeResponse(
+                        {"code": 0, "data": {"item": [
+                            {"thscode": "600519.SH", "ticker": "贵州茅台", "last_price": 1800.0},
+                        ]}}
+                    )
+                else:
+                    return FakeResponse({"code": 0, "data": {"item": []}})
+            return FakeResponse({"code": 1}, status_code=404)
+
+        import trade_krono_cli.universe.provider as provider_mod
+
+        original = provider_mod.requests
+        try:
+            provider_mod.requests = type("FakeRequests", (), {"get": fake_get})()
+            with patch.dict("os.environ", {"HITHINK_FINANCE_API_KEY": "test-key"}):
+                provider = TongHuaShunUniverseProvider()
+                tickets = provider.get_universe()
+        finally:
+            provider_mod.requests = original
+
+        # First snapshot batch succeeded
+        assert any(t.ticker == "sh.600519" for t in tickets)
+        # At least one snapshot batch was attempted (2 tickers fit in one batch of 200)
+        assert request_counts["snapshot"] >= 1

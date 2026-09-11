@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
-from io import BytesIO
-from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from trade_krono_cli.cache import Cache, KlineCache, _KLINE_HISTORICAL_TTL
+from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL, Cache, KlineCache
 
 
 def _make_df(start: str, end: str) -> pd.DataFrame:

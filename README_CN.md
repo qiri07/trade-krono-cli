@@ -767,7 +767,7 @@ trade-krono-cli
 │       └── rules.py        # FilterRulesStage：用户自定义规则链
 ├── scripts/
 │   └── install.sh          # 一键安装脚本
-├── tests/                  # 测试套件（2065 项，mypy 零新增错误）
+├── tests/                  # 测试套件（2617 项，mypy 零错误）
 └── external/               # 外部项目配置（repos.yaml + repo.lock）
 ```
 
@@ -904,7 +904,7 @@ Expected Return
 | **波动率风险** | 20 日年化标准差 | 波动率越高风险越大（0%→0，60%→100） | 25% |
 | **回撤风险** | 60 日滚动最高价 → 最大回撤 | 回撤越大风险越大（5%→20，40%→100） | 20% |
 | **流动性风险** | 20 日平均成交量 + 市值 | 成交量越小风险越大（分段映射） | 15% |
-| **集中度风险** | 占位实现 | 当前默认 10 分 | 8% |
+| **集中度风险** | 行业关键词 + 市值启发式（大盘蓝筹 -5 分，小盘股 +8 分） | 0-100，越低风险越小 | 8% |
 | **市场环境风险** | 20 日 + 60 日动量 | 下跌趋势风险高，上涨趋势风险低 | 12% |
 | **缺口风险** | 单日涨跌幅 >3% 的频率 | 跳空越大越频繁，风险越高 | 5% |
 | **事件风险** | 10 日 / 60 日波动率比值 | 比值 >> 1 表示近期波动异常 | 5% |
@@ -1237,7 +1237,7 @@ sa = build_signal_assessment("sh.600519", "2026-08-11", ta=ta, kronos=kp)
 pytest tests/ -v
 ```
 
-测试结果：**1106 项通过** · **87%+ 整体覆盖** · **mypy 零错误**
+测试结果：**2617 项通过** · **88%+ 整体覆盖** · **mypy 零错误**
 
 | 文件 | 覆盖模块 |
 |------|----------|
@@ -1255,6 +1255,16 @@ pytest tests/ -v
 | `test_prediction_eval_ic.py` | IC/ rank-IC 评估指标 |
 | `test_risk.py` | 风险引擎（多维度风险评分 + VaR/CVaR/Beta + RiskMetrics）全维度测试 |
 | `test_risk_models.py` | 风险模型（VaR/CVaR/Beta/Sharpe/预期收益调整/缺口/事件/估值）专项测试 |
+| `test_concentration_risk.py` | 集中度风险启发式计算（行业关键词 + 市值调整） |
+| `test_prediction_eval_report.py` | 预测评估报告打印工具（Kronos/TA/综合信号/回测报告） |
+| `test_backtest_engine.py` | 回测引擎（交易模拟、绩效指标计算、涨跌停约束） |
+| `test_backtest_benchmarks.py` | 回测基准计算（等权组合、超额收益曲线、记录构建） |
+| `test_domain_decision.py` | InvestmentDecision.from_dict / fallback / to_legacy_dict |
+| `test_domain_signal.py` | SignalAssessment.from_dict、EV 计算、冲突检测 |
+| `test_cache_queries.py` | CacheQueries.stats、clear_all、export_daily_pv |
+| `test_tradingagents_adapter.py` | TradingAgentsAdapter load/run/错误路径 |
+| `test_decision_patterns.py` | 正则模式提取（10 个模式，27 项测试） |
+| `test_pipeline_core.py` | PipelineCore 边界条件（退市过滤、缓存回退、合并） |
 | `test_external.py` | 外部项目管理（config I/O、status、pin、lock 漂移检测） |
 | `test_kronos_runner.py` | 设备解析（CPU/CUDA/大模型警告）、结果保存、slots 清理 |
 | `test_ta_runner.py` | BuildConfig、provider 校验、图懒加载、批量分析、raw 报告读写 |
@@ -1410,7 +1420,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | 路径隔离 | 外部项目通过 `sys.path` 注入，输出路径限制在项目根目录下 | `kronos_runner.py`, `ta_runner.py`, `cli.py::_sanitize_path` |
 | 缓存安全 | SQLite 本地存储，不上传任何数据；缓存 TTL 过期自动清理；`investment_decision` / `prediction_uncertainty` 缓存反序列化安全处理 | `cache.py`, `ta_runner.py`, `kronos_runner.py` |
 | baostock 登录 | 全局单例 + 线程锁，避免并发冲突 | `data.py::_ensure_bs_login` |
-| 日志脱敏 | 异常日志自动脱敏 API key（正则替换 sk-xxx / Bearer xxx） | `security.py::sanitize_for_log` |
+| 日志脱敏 | 异常日志自动脱敏 API key（正则替换 sk-xxx / Bearer xxx / Tushare token） | `security.py::sanitize_for_log` |
 
 ---
 

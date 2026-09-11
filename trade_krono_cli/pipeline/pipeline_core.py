@@ -21,7 +21,6 @@ from trade_krono_cli.abnormal_stock import (
 )
 from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.data import fetch_realtime_quote
-from trade_krono_cli.domain.prediction import TAAnalysis
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
 from trade_krono_cli.pipeline.factory import PipelineFactory, _collect_futures
@@ -146,9 +145,13 @@ class QuantPipeline:
                     f"(signal={cached['signal']}, confidence={cached['confidence']})",
                 )
                 # TAAnalysis 是 frozen dataclass，必须创建新实例替代原地修改
-                ta_results[idx] = TAAnalysis(
+                # StockAnalysisResult 用 .date，TAAnalysis 用 .eval_date，统一兼容
+                from trade_krono_cli.ta_runner import StockAnalysisResult
+                ta_date = getattr(ta, 'eval_date', None) or str(getattr(ta, 'date', ''))
+                # 下游 merge.py 期望 StockAnalysisResult（有 .date / .reports）
+                ta_results[idx] = StockAnalysisResult(
                     ticker=ta.ticker,
-                    eval_date=ta.eval_date,
+                    date=ta_date,
                     signal=cached["signal"],
                     confidence=cached["confidence"],
                     reasoning=cached.get("thesis") or "",
