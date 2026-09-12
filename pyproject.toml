@@ -26,6 +26,7 @@ dependencies = [
     # 不再作为 PyPI 依赖引入，避免与 TradingAgents-astock 产生包级耦合
     "akshare>=1.18.88",
     "mootdx>=0.11.7",
+    "fire",
 ]
 
 [project.optional-dependencies]

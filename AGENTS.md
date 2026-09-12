@@ -25,6 +25,9 @@ uv run python scripts/retry_missing_history.py          # 重试缺失历史的�
 uv run python scripts/check_data_integrity.py           # 数据完整性检查
 uv run python scripts/cleanup_duplicates.py             # 清理重复记录
 uv run python scripts/fill_missing_and_today.py         # 补齐失败股票 + 同步今日增量
+uv run python scripts/export_shared_data.py --format all --dest ~/Work/shared_data  # 导出共享数据
+uv run python scripts/export_vnpy_data.py                # 导出 vnpy 格式
+bash scripts/post_sync_export.sh                         # 同步后一键导出所有格式
 uv run ruff check .                  # Lint 检查
 uv run ruff check --fix .            # Lint + 自动修复
 uv run mypy .                        # 类型检查
@@ -101,7 +104,10 @@ outputs/                     # 运行时产物（gitignore）
 outputs/cache/               # K 线缓存数据库（pipeline_cache.db，约 588 MB）
 outputs/cache/backups/       # 数据库备份（每次大操作前自动创建）
 outputs/results/             # 报告输出目录（gitignore 中 *.db/*.log，结果文件可提交）
-scripts/                     # 运维脚本（数据同步 / 完整性检查 / 飞书通知）
+scripts/                     # 运维脚本（数据同步 / 完整性检查 / 飞书通知 / 共享数据导出）
+scripts/export_shared_data.py  # 共享数据导出（pipeline_cache.db → CSV/Parquet/HDF5/qlib 等 7 种格式）
+scripts/export_vnpy_data.py    # vnpy parquet 格式导出（CSV → parquet，供 vnpy alpha 使用）
+scripts/post_sync_export.sh    # 同步后一键导出全部格式到 ~/Work/shared_data/
 ```
 
 ### 核心数据流
@@ -218,13 +224,52 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `cleanup_duplicates.py` | 清理同一 ticker 的多条记录（保留最长） |
 | `full_sync_v2.py` | 优化版主备降级同步（沪深优先 tonghuashun） |
 
-### 数据质量指标（截至 2026-09-11）
-- 总记录数：5,234（无重复）
+### 数据质量指标（截至 2026-09-12）
+- 总记录数：5,240（无重复）
 - 非北交所：4,891 只
-- 数据范围：2020-01-02 ~ 2026-09-10
-- 有 2020 年数据：3,223 只 (61.6%)
-- 有 9.10 数据：707 只（同花顺 API 限流影响全量增量同步）
+- 北交所：343 只
+- 数据范围：2020-01-02 ~ 2026-09-12
 - DB 大小：588 MB
+- 共享数据总大小：3.6 GB（7 种格式，供 7 个项目共用）
+
+## 共享数据源机制（Shared Data）
+
+`trade-krono-cli` 是唯一数据源。同步后通过 `export_shared_data.py` / `export_vnpy_data.py` 导出为 7 种格式，
+各项目通过 symlink 直接读取，无需复制。
+
+### 共享数据目录：`~/Work/shared_data/`
+
+| 格式 | 路径 | 目标项目 |
+|------|------|----------|
+| CSV | `astock_daily_csv/` | Kronos / backtrader |
+| Parquet | `astock_daily.parquet` | RD-Agent |
+| HDF5 | `astock_daily.h5` | RD-Agent |
+| TA CSV | `astock_daily_ta/` | TradingAgents-astock |
+| qlib CSV | `astock_daily_qlib_csv/` | qlib dump_bin 源 |
+| qlib Binary | `qlib_data/` | qlib / RD-Agent qlib |
+| vnpy Parquet | `vnpy_daily/` | vnpy alpha |
+
+### 各项目 Symlink
+
+```
+Kronos/data/astock_daily_csv          → ~/Work/shared_data/astock_daily_csv
+~/.tradingagents/cache                → ~/Work/shared_data/astock_daily_ta
+qlib/qlib/data/shared_data            → ~/Work/shared_data/qlib_data
+backtrader/datas/astock_daily_csv     → ~/Work/shared_data/astock_daily_csv
+vnpy/data/daily                       → ~/Work/shared_data/vnpy_daily
+~/.qlib/qlib_data/cn_data             → ~/Work/shared_data/qlib_data
+```
+
+### 更新数据
+
+```bash
+# 全量/增量同步后，一键导出所有格式
+bash scripts/post_sync_export.sh
+
+# 或手动：
+uv run python scripts/export_shared_data.py --format all --dest ~/Work/shared_data
+uv run python scripts/export_vnpy_data.py
+```
 
 ## 代码风格（Code Style）
 - Linter：ruff（行宽 100，豁免 RUF001/RUF002/RUF003、G004）
