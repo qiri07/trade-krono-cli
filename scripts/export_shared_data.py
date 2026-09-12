@@ -73,6 +73,7 @@ def _symbol_to_ticker(symbol: str) -> str:
 
 # ── 导出：CSV（per-stock） ─────────────────────────────────────────────────
 
+
 def export_csv(db_path: Path, dest: Path, progress_interval: int = 500) -> dict:
     """导出为 per-stock CSV 文件（Kronos / backtrader 格式）"""
     dest.mkdir(parents=True, exist_ok=True)
@@ -106,7 +107,7 @@ def export_csv(db_path: Path, dest: Path, progress_interval: int = 500) -> dict:
         except Exception as e:
             failed.append(f"{ticker}: {e}")
         if (i + 1) % progress_interval == 0:
-            logger.info(f"  CSV 导出进度: {i+1}/{len(tickers)}")
+            logger.info(f"  CSV 导出进度: {i + 1}/{len(tickers)}")
 
     conn.close()
     logger.info(f"  ✅ CSV 导出完成: {success} 只, 失败 {len(failed)} 只")
@@ -114,6 +115,7 @@ def export_csv(db_path: Path, dest: Path, progress_interval: int = 500) -> dict:
 
 
 # ── 导出：Parquet（panel） ─────────────────────────────────────────────────
+
 
 def export_parquet(db_path: Path, dest: Path) -> dict:
     """导出为 MultiIndex Parquet（RD-Agent / qlib 格式）"""
@@ -142,11 +144,14 @@ def export_parquet(db_path: Path, dest: Path) -> dict:
     # 移除多余的 amount 列如果不存在
     dest.parent.mkdir(parents=True, exist_ok=True)
     panel.to_parquet(dest, engine="pyarrow", compression="snappy")
-    logger.info(f"  ✅ Parquet 导出完成: {panel.shape} ({dest.stat().st_size / 1024 / 1024:.1f} MB)")
+    logger.info(
+        f"  ✅ Parquet 导出完成: {panel.shape} ({dest.stat().st_size / 1024 / 1024:.1f} MB)"
+    )
     return {"success": len(panel.index.get_level_values("ticker").unique()), "shape": panel.shape}
 
 
 # ── 导出：HDF5（panel，RD-Agent 兼容） ────────────────────────────────────
+
 
 def export_hdf5(db_path: Path, dest: Path) -> dict:
     """导出为 HDF5 Panel 格式（RD-Agent daily_pv.h5 兼容）"""
@@ -184,6 +189,7 @@ def export_hdf5(db_path: Path, dest: Path) -> dict:
 
 # ── 导出：TradingAgents-astock 兼容 CSV ─────────────────────────────────────
 
+
 def export_tradingagents_csv(db_path: Path, dest: Path, progress_interval: int = 500) -> dict:
     """导出为 TradingAgents-astock 兼容的 CSV 格式（无 symbol 列，文件名为 {code}-astock-daily.csv）"""
     dest.mkdir(parents=True, exist_ok=True)
@@ -207,10 +213,15 @@ def export_tradingagents_csv(db_path: Path, dest: Path, progress_interval: int =
             df = df.rename(columns={"timestamps": "Date"})
             df["Date"] = pd.to_datetime(df["Date"]).dt.strftime("%Y-%m-%d")
             # 列名大写，与 TradingAgents 期望一致
-            df = df.rename(columns={
-                "open": "Open", "high": "High", "low": "Low",
-                "close": "Close", "volume": "Volume",
-            })
+            df = df.rename(
+                columns={
+                    "open": "Open",
+                    "high": "High",
+                    "low": "Low",
+                    "close": "Close",
+                    "volume": "Volume",
+                }
+            )
             cols = ["Date", "Open", "High", "Low", "Close", "Volume"]
             df = df[[c for c in cols if c in df.columns]]
             # 文件名：sh.600519 → 600519-astock-daily.csv
@@ -222,7 +233,7 @@ def export_tradingagents_csv(db_path: Path, dest: Path, progress_interval: int =
         except Exception as e:
             failed.append(f"{ticker}: {e}")
         if (i + 1) % progress_interval == 0:
-            logger.info(f"  TA CSV 导出进度: {i+1}/{len(tickers)}")
+            logger.info(f"  TA CSV 导出进度: {i + 1}/{len(tickers)}")
 
     conn.close()
     logger.info(f"  ✅ TradingAgents CSV 导出完成: {success} 只, 失败 {len(failed)} 只")
@@ -230,6 +241,7 @@ def export_tradingagents_csv(db_path: Path, dest: Path, progress_interval: int =
 
 
 # ── 导出：Qlib 兼容 CSV（带 symbol 列） ─────────────────────────────────────
+
 
 def export_qlib_csv(db_path: Path, dest: Path, progress_interval: int = 500) -> dict:
     """导出为 qlib dump_bin 兼容的 CSV 格式（含 symbol 列，文件名用 SH600519 格式）"""
@@ -264,7 +276,7 @@ def export_qlib_csv(db_path: Path, dest: Path, progress_interval: int = 500) -> 
         except Exception as e:
             failed.append(f"{ticker}: {e}")
         if (i + 1) % progress_interval == 0:
-            logger.info(f"  Qlib CSV 导出进度: {i+1}/{len(tickers)}")
+            logger.info(f"  Qlib CSV 导出进度: {i + 1}/{len(tickers)}")
 
     conn.close()
     logger.info(f"  ✅ Qlib CSV 导出完成: {success} 只, 失败 {len(failed)} 只")
@@ -272,6 +284,7 @@ def export_qlib_csv(db_path: Path, dest: Path, progress_interval: int = 500) -> 
 
 
 # ── 导出：Qlib Binary（dump_bin） ──────────────────────────────────────────
+
 
 def export_qlib(db_path: Path, dest: Path, qlib_dir_name: str = "shared") -> dict:
     """导出为 Qlib Binary 格式（CSV → dump_bin.py → .bin）"""
@@ -319,9 +332,20 @@ def export_qlib(db_path: Path, dest: Path, qlib_dir_name: str = "shared") -> dic
         if dump_bin_script.exists():
             logger.info(f"  运行 dump_bin.py → {dest} ...")
             result = subprocess.run(
-                ["python", str(dump_bin_script), "dump_all",
-                 "--data_path", str(csv_dest), "--qlib_dir", str(dest), "--freq", "day"],
-                capture_output=True, text=True, timeout=600,
+                [
+                    "python",
+                    str(dump_bin_script),
+                    "dump_all",
+                    "--data_path",
+                    str(csv_dest),
+                    "--qlib_dir",
+                    str(dest),
+                    "--freq",
+                    "day",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,
             )
             if result.returncode == 0:
                 bin_count = len(list((dest / "features").glob("*")))
@@ -341,8 +365,10 @@ def export_qlib(db_path: Path, dest: Path, qlib_dir_name: str = "shared") -> dic
 
 # ── 元数据写入 ─────────────────────────────────────────────────────────────
 
+
 def _write_meta(dest: Path, results: dict) -> None:
     import json
+
     meta: dict = {
         "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "results": results,
@@ -352,10 +378,16 @@ def _write_meta(dest: Path, results: dict) -> None:
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser(description="导出 trade-krono-cli 数据为共享格式")
-    parser.add_argument("--format", choices=["csv", "parquet", "hdf5", "qlib_csv", "qlib", "ta_csv", "all"], default="all")
+    parser.add_argument(
+        "--format",
+        choices=["csv", "parquet", "hdf5", "qlib_csv", "qlib", "ta_csv", "all"],
+        default="all",
+    )
     parser.add_argument("--dest", type=Path, default=SHARED_DATA_ROOT)
     parser.add_argument("--db", type=Path, default=None)
     args = parser.parse_args()

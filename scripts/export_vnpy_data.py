@@ -6,6 +6,7 @@ vnpy format per file ({vt_symbol}.parquet):
   Columns: datetime, open, high, low, close, volume, turnover
   vt_symbol format: "SH600519", "SZ000001", "BJ920000"
 """
+
 from __future__ import annotations
 
 from pathlib import Path
