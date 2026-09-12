@@ -25,8 +25,8 @@ from loguru import logger
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
-END_DATE = "2026-09-09"
-START_DATE = "2022-01-01"
+END_DATE = "2026-09-12"
+START_DATE = "2020-01-01"
 BATCH_SIZE = 200
 WORKERS = 16
 FETCH_TIMEOUT = 10  # 缩短超时时间

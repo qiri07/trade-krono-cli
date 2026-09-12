@@ -18,7 +18,7 @@ from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
 START_DATE = "2020-01-01"
-END_DATE = "2026-09-10"
+END_DATE = "2026-09-12"
 WORKERS = 8
 FETCH_TIMEOUT = 45
 CACHE_DB = Path("outputs/cache/pipeline_cache.db")
@@ -53,7 +53,7 @@ def get_today_only_tickers() -> list[str]:
     cur = conn.cursor()
     cur.execute("""
         SELECT DISTINCT ticker FROM kline_cache
-        WHERE start = '2026-09-10' AND end = '2026-09-10'
+        WHERE start = '2026-09-12' AND end = '2026-09-12'
           AND ticker NOT LIKE 'bj.%'
         ORDER BY ticker
     """)
@@ -136,7 +136,7 @@ def fetch_today_incremental(
                 if provider is None:
                     continue
                 result = provider.fetch_kline(
-                    ticker, "2026-09-10", "2026-09-10", frequency="d", adjustflag="1"
+                    ticker, "2026-09-12", "2026-09-12", frequency="d", adjustflag="1"
                 )
                 if result is None or result.is_empty:
                     continue
@@ -146,7 +146,7 @@ def fetch_today_incremental(
                 cache = get_cache()
                 ts = pd.to_datetime(df["timestamps"])
                 # 检查是否已存在今日数据，如存在则更新
-                cur_result = cache.get_kline(ticker, "2026-09-10", "2026-09-10", "d", "1")
+                cur_result = cache.get_kline(ticker, "2026-09-12", "2026-09-12", "d", "1")
                 if cur_result is not None and len(cur_result) > 0:
                     # 合并：保留历史数据，追加/更新今日数据
                     combined = pd.concat([cur_result, df], ignore_index=True)
@@ -232,9 +232,9 @@ def main() -> None:
         print(f"   仍失败: {[t for t, _ in failed_13]}")
     print()
 
-    # ── 第二步：检查哪些股票缺少2026-09-10数据 ──────────────────
+    # ── 第二步：检查哪些股票缺少2026-09-12数据 ──────────────────
     print("=" * 60)
-    print("📌 第二步：同步今日（2026-09-10）增量数据")
+    print("📌 第二步：同步今日（2026-09-12）增量数据")
     print("=" * 60)
     import sqlite3
 
@@ -244,7 +244,7 @@ def main() -> None:
         SELECT DISTINCT ticker FROM kline_cache
         WHERE ticker NOT IN (
             SELECT DISTINCT ticker FROM kline_cache
-            WHERE end >= '2026-09-10'
+            WHERE end >= '2026-09-12'
         )
         AND ticker NOT LIKE 'bj.%'
         ORDER BY ticker
@@ -299,7 +299,7 @@ def main() -> None:
     latest = cur.fetchone()[0]
     cur.execute("""
         SELECT COUNT(DISTINCT ticker) FROM kline_cache
-        WHERE end >= '2026-09-10'
+        WHERE end >= '2026-09-12'
     """)
     has_today = cur.fetchone()[0]
     cur.execute("""
