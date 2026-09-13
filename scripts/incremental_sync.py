@@ -47,7 +47,7 @@ def get_missing_tickers() -> list[str]:
 
 
 def fetch_one(factory, ticker: str, provider_name: str) -> tuple[str, bool]:
-    """拉取单只股票的新数据。"""
+    """拉取单只股票的新数据并追加到现有记录（不覆盖历史）。"""
     try:
         provider = factory.get_provider(provider_name)
         if provider is None:
@@ -64,24 +64,41 @@ def fetch_one(factory, ticker: str, provider_name: str) -> tuple[str, bool]:
         ts_col = "timestamps" if "timestamps" in df.columns else "date"
         ts = pd.to_datetime(df[ts_col])
 
+        # 从数据库读取现有完整记录
         import sqlite3
 
         conn = sqlite3.connect(str(CACHE_DB))
-        row = conn.execute("SELECT end FROM kline_cache WHERE ticker = ?", (ticker,)).fetchone()
+        row = conn.execute(
+            "SELECT start, end, data FROM kline_cache WHERE ticker = ?", (ticker,)
+        ).fetchone()
         conn.close()
-        existing_max = pd.Timestamp(row[0]) if row else pd.Timestamp.max
 
-        new_data = df[ts > existing_max]
-        if len(new_data) == 0:
-            return (ticker, True)  # 已有更新数据，无需写入
+        if row:
+            existing_start, existing_end, existing_data = row
+            try:
+                from io import BytesIO
 
+                existing_df = pd.read_pickle(BytesIO(existing_data))
+            except Exception:
+                existing_df = pd.DataFrame()
+            # 过滤出真正的增量数据（晚于现有最后一天）
+            new_data = df[ts > pd.Timestamp(existing_end)]
+            if len(new_data) == 0:
+                return (ticker, True)  # 已有更新数据，无需写入
+            # 追加：合并新旧数据
+            combined = pd.concat([existing_df, new_data], ignore_index=True)
+        else:
+            # 新股票，无历史记录
+            combined = df
+
+        # 写入合并后的完整数据（避免 set_kline 的 DELETE 逻辑覆盖历史）
         cache = get_cache()
         cache.set_kline(
             ticker,
-            ts.min().strftime("%Y-%m-%d"),
-            ts.max().strftime("%Y-%m-%d"),
+            combined[ts_col].iloc[0].strftime("%Y-%m-%d"),
+            combined[ts_col].iloc[-1].strftime("%Y-%m-%d"),
             freq="d",
-            df=new_data,
+            df=combined,
             ttl=0.0,
             adjustflag="1",
         )
