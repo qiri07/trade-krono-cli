@@ -47,7 +47,7 @@ _CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 # AI 核实
 # ─────────────────────────────────────────────────────────────────────────────
 
-_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "agnes-3.0-flash")
+_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "agnes-2.5-flash")
 
 try:
     from openai import OpenAI
