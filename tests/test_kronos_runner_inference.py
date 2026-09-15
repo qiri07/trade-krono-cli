@@ -16,7 +16,7 @@ class TestKronosRunnerPredictOneErrorPaths:
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=False, sample_count=1)
             runner._cache = MagicMock()
-            runner._cache.get_kronos.return_value = {
+            runner._cache.get.return_value = {
                 "ticker": "sh.600519",
                 "eval_date": "2026-08-12",
                 "horizon": 30,
@@ -45,7 +45,7 @@ class TestKronosRunnerPredictOneErrorPaths:
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=False)
             runner._cache = MagicMock()
-            runner._cache.get_kronos.return_value = {
+            runner._cache.get.return_value = {
                 "ticker": "sh.600519",
                 "eval_date": "2026-08-12",
                 "horizon": 30,
@@ -106,7 +106,7 @@ class TestKronosRunnerPredictBatch:
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=False, sample_count=1)
             runner._cache = MagicMock()
-            runner._cache.get_kronos.return_value = {
+            runner._cache.get.return_value = {
                 "ticker": "sh.600519",
                 "eval_date": "2026-08-12",
                 "horizon": 30,
@@ -413,7 +413,7 @@ class TestKronosBatchInference:
         with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
             runner = KronosRunner(no_cache=False, sample_count=1, batch_size=8)
             runner._cache = MagicMock()
-            runner._cache.get_kronos.return_value = {
+            runner._cache.get.return_value = {
                 "ticker": "sh.600519",
                 "eval_date": "2026-08-12",
                 "horizon": 30,

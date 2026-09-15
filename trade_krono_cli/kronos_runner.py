@@ -265,7 +265,7 @@ class KronosRunner:
         )
 
         if self.use_cache and self._cache:
-            cached = self._cache.get_kronos(
+            cached = self._cache.get(
                 ticker,
                 eval_date,
                 self._settings_obj.kronos_pred_len,
@@ -333,7 +333,7 @@ class KronosRunner:
         all_cached = True
         for tk in tickers:
             if self.use_cache and self._cache:
-                cached = self._cache.get_kronos(
+                cached = self._cache.get(
                     tk,
                     eval_date,
                     self._settings_obj.kronos_pred_len,

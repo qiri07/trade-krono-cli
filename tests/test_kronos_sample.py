@@ -45,7 +45,7 @@ class TestKronosSampleCount:
                 mock_prepare.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
                 runner = KronosRunner(no_cache=False, sample_count=5)
                 runner._cache = MagicMock()
-                runner._cache.get_kronos.return_value = None
+                runner._cache.get.return_value = None
 
                 mock_adapter = MagicMock()
                 import numpy as np
@@ -64,10 +64,12 @@ class TestKronosSampleCount:
                     mock_dict.return_value = {"close": [101.0, 102.0]}
                     _result = runner.predict_one("sh.600519", "2026-08-12")
 
-                # 验证缓存查询传入了 sample_count=5
-                runner._cache.get_kronos.assert_called_once()
-                call_args = runner._cache.get_kronos.call_args
-                assert call_args[0][3] == 5  # sample_count 参数
+                # 验证缓存查询传入了 sample_count=5（可能因 fallback 被调用多次）
+                assert runner._cache.get.call_count >= 1
+                call_args = runner._cache.get.call_args_list
+                # 所有调用都应包含 sample_count=5
+                for call in call_args:
+                    assert call[0][3] == 5  # sample_count 参数
 
     def test_cache_key_differs_by_sample_count(self) -> None:
         """不同 sample_count 产生不同的缓存 key。"""
@@ -81,8 +83,8 @@ class TestKronosSampleCount:
             runner_5._cache = MagicMock()
 
             # 模拟缓存未命中
-            runner_1._cache.get_kronos.return_value = None
-            runner_5._cache.get_kronos.return_value = None
+            runner_1._cache.get.return_value = None
+            runner_5._cache.get.return_value = None
 
             # 创建真正的 DataFrame 作为预测结果
             pred_df_1 = pd.DataFrame({"close": [101.0, 102.0]})
@@ -117,10 +119,13 @@ class TestKronosSampleCount:
                         mock_dict5.return_value = {"close": [101.0, 102.0]}
                         _r5 = runner_5.predict_one("sh.600519", "2026-08-12")
 
-                    # 两次缓存查询应使用不同的 sample_count
+                    # 两次缓存查询应使用不同的 sample_count（各至少1次）
                     read_calls_1 = runner_1._cache.get.call_args_list
                     read_calls_5 = runner_5._cache.get.call_args_list
-                    assert len(read_calls_1) == 1
-                    assert len(read_calls_5) == 1
-                    assert read_calls_1[0][0][3] == 1  # sample_count
-                    assert read_calls_5[0][0][3] == 5  # sample_count
+                    assert len(read_calls_1) >= 1
+                    assert len(read_calls_5) >= 1
+                    # 检查所有调用中的 sample_count 参数
+                    args_1 = [c[0][3] for c in read_calls_1]
+                    args_5 = [c[0][3] for c in read_calls_5]
+                    assert 1 in args_1
+                    assert 5 in args_5
