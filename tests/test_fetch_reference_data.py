@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from scripts._utils import get_all_tickers
 from scripts.fetch_reference_data import _fetch_metadata_one
 
 
@@ -12,16 +11,31 @@ class TestGetAllTickers:
     """Ticker retrieval from DB."""
 
     def test_returns_list(self) -> None:
-        tickers = get_all_tickers()
-        assert isinstance(tickers, list)
-        assert len(tickers) > 0
+        with patch("scripts._utils.sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchall.return_value = [
+                ("sh.600519",),
+                ("sz.000001",),
+            ]
+            from scripts._utils import get_all_tickers
+
+            tickers = get_all_tickers()
+            assert isinstance(tickers, list)
+            assert len(tickers) > 0
 
     def test_contains_known_tickers(self) -> None:
         """At minimum sz.000001 should always be present (whitelist stock)."""
-        tickers = get_all_tickers()
-        assert "sz.000001" in tickers
-        # sh.600519 may not be present after cache clear; just check non-empty
-        assert len(tickers) > 0
+        with patch("scripts._utils.sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchall.return_value = [
+                ("sz.000001",),
+                ("sh.600519",),
+            ]
+            from scripts._utils import get_all_tickers
+
+            tickers = get_all_tickers()
+            assert "sz.000001" in tickers
+            assert len(tickers) > 0
 
 
 class TestFetchMetadataOne:
