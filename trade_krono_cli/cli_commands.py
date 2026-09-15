@@ -6,7 +6,16 @@
 
 from __future__ import annotations
 
-from trade_krono_cli.cli_commands.core import (
+import warnings
+
+warnings.warn(
+    "trade_krono_cli.cli_commands is deprecated; use trade_krono_cli.cli_commands.* submodules.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+# 所有导出由 cli_commands/ 包提供
+from trade_krono_cli.cli_commands.core import (  # noqa: E402
     _build_degrade_overrides,
     _load_env,
     _load_tickers,
@@ -15,7 +24,7 @@ from trade_krono_cli.cli_commands.core import (
     run,
     ta,
 )
-from trade_krono_cli.cli_commands.maintenance import (
+from trade_krono_cli.cli_commands.maintenance import (  # noqa: E402
     clear_cache,
     eval_prediction,
     history,
@@ -23,7 +32,7 @@ from trade_krono_cli.cli_commands.maintenance import (
     status,
     warm_cache,
 )
-from trade_krono_cli.cli_commands.repo import (
+from trade_krono_cli.cli_commands.repo import (  # noqa: E402
     repo_doctor,
     repo_pin,
     repo_status,

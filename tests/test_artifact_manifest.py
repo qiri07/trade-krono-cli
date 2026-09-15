@@ -41,11 +41,9 @@ class TestGitTools:
         (repo_dir / ".git" / "refs" / "heads" / "main").write_text("abc123def456789abc\n")
 
         with patch("trade_krono_cli.artifact_manifest.subprocess.run") as mock_run:
-            # 两次 rev-parse HEAD + 两次 rev-parse --short=12 HEAD
+            # 一次 rev-parse HEAD + 一次 rev-parse --short=12 HEAD
             mock_run.side_effect = [
                 MagicMock(returncode=0, stdout="abc123def456789abc", stderr=""),
-                MagicMock(returncode=0, stdout="abc123def456789abc", stderr=""),
-                MagicMock(returncode=0, stdout="abc123def456", stderr=""),
                 MagicMock(returncode=0, stdout="abc123def456", stderr=""),
             ]
             full, short = _git_sha(repo_dir)

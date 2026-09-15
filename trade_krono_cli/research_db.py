@@ -6,8 +6,15 @@
 
 from __future__ import annotations
 
+import warnings
+
 # 所有导出由 research_db 包提供
-from trade_krono_cli.research_db.__init__ import (
+warnings.warn(
+    "trade_krono_cli.research_db is deprecated; use trade_krono_cli.research_db package instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+from trade_krono_cli.research_db.__init__ import (  # noqa: E402, F401
     REASONING_TRUNCATE_LEN,
     RESEARCH_TABLES,
     ResearchDatabase,

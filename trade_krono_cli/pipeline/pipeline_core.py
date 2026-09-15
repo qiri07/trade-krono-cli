@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
 
@@ -33,13 +33,13 @@ from trade_krono_cli.pipeline.reporter import (
 from trade_krono_cli.pipeline_config import PipelineConfig
 from trade_krono_cli.research_db import get_research
 from trade_krono_cli.stock_filter import StockFilter, StockMeta
+from trade_krono_cli.ta_runner import StockAnalysisResult
 from trade_krono_cli.trading_constraints import T1Tracker
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from trade_krono_cli.constraints_config import ConstraintConfig
-    from trade_krono_cli.ta_runner import StockAnalysisResult
     from trade_krono_cli.universe.engine import UniverseEngine
 
 
@@ -337,8 +337,8 @@ class QuantPipeline:
         }
 
         # 构建 StockMeta 并注入异常标记，用于过滤
-        filtered_ta_list: list[Any] = []
-        rejected_ta: list[Any] = []
+        filtered_ta_list: list[StockAnalysisResult] = []
+        rejected_ta: list[StockAnalysisResult] = []
         for r in filtered_ta:
             if r.error is not None:
                 continue
@@ -362,9 +362,20 @@ class QuantPipeline:
             filtered_ta_list.append(r)
 
         # 再用常规 StockFilter 过滤（置信度 / 信号等）
-        passed_ta, rejected_ta_extra = filter_engine.apply_batch(filtered_ta_list)
-        rejected_ta.extend(rejected_ta_extra)
-        filtered_ta_final: list[Any] = passed_ta
+        meta_list = [
+            StockMeta(
+                signal=r.signal,
+                confidence=r.confidence,
+                ticker=r.ticker,
+                pe_ttm=quote_data.get(r.ticker, {}).get("pe"),
+                pb=quote_data.get(r.ticker, {}).get("pb"),
+            )
+            for r in filtered_ta_list
+        ]
+        passed_metas, rejected_ta_extra = filter_engine.apply_batch(meta_list)
+        rejected_ta.extend(cast(list["StockAnalysisResult"], rejected_ta_extra))
+        passed_tickers = {m.ticker for m in passed_metas}
+        filtered_ta_final = [r for r in filtered_ta_list if r.ticker in passed_tickers]
 
         logger.info(
             f"📋 元数据过滤完成: 保留 {len(filtered_ta_final)} 只 "
@@ -375,7 +386,7 @@ class QuantPipeline:
         t1_tracker = T1Tracker()
 
         merged = merge_results(
-            filtered_ta,
+            filtered_ta_final,
             kronos_results,
             kline_data=kline_data,
             quote_data=quote_data,
