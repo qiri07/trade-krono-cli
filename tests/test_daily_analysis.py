@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import sqlite3
 from io import BytesIO
-from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
@@ -115,17 +113,41 @@ class TestAnalyzeStock:
         ]
 
     def test_no_data(self) -> None:
-        result = analyze_stock("sh.999999")
-        assert result["status"] == "no_data"
-        assert result["score"] == 0.0
-        assert result["trend"] == "数据不足"
+        """Mock sqlite3 to return no data for non-existent ticker in CI."""
+        with patch("sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchone.return_value = None
+            result = analyze_stock("sh.999999")
+            assert result["status"] == "no_data"
+            assert result["score"] == 0.0
+            assert result["trend"] == "数据不足"
 
     def test_name_mapping(self) -> None:
-        result = analyze_stock("sh.601668")
-        assert result["name"] == "中国建筑"
+        """Mock sqlite3 to verify name mapping works with valid data."""
+        dates = pd.date_range(end="2026-09-15", periods=30, freq="B")
+        mock_df = pd.DataFrame(
+            {
+                "timestamps": dates.strftime("%Y-%m-%d").tolist(),
+                "close": [10.0 + i * 0.1 for i in range(30)],
+                "open": [9.9 + i * 0.1 for i in range(30)],
+                "high": [10.2 + i * 0.1 for i in range(30)],
+                "low": [9.8 + i * 0.1 for i in range(30)],
+                "volume": [1_000_000 + i * 10_000 for i in range(30)],
+            }
+        )
+        buf = BytesIO()
+        mock_df.to_pickle(buf)
+        buf.seek(0)
+        mock_data = buf.read()
+        with patch("sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchone.return_value = (mock_data,)
+            result = analyze_stock("sh.601668")
+            assert result["name"] == "中国建筑"
+            assert result["status"] == "ok"
 
     def test_short_kline(self) -> None:
-        """Stock with less than 20 rows should return no_data."""
+        """Stock with less than 20 rows should return no_data (mocked)."""
         tiny_df = pd.DataFrame(
             {
                 "timestamps": ["2026-01-01", "2026-01-02"],
@@ -136,32 +158,34 @@ class TestAnalyzeStock:
         buf = BytesIO()
         tiny_df.to_pickle(buf)
         buf.seek(0)
-
-        conn = sqlite3.connect(str(Path("outputs/cache/pipeline_cache.db")))
-        conn.execute(
-            "INSERT OR REPLACE INTO kline_cache "
-            "(ticker, start, end, freq, ttl, data, created, adjustflag) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("test_short", "2026-01-01", "2026-01-02", "d", 0.0, buf.read(), 0.0, "1"),
-        )
-        conn.commit()
-        conn.close()
-
-        try:
-            result = analyze_stock("test_short")
+        with patch("sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchone.return_value = (buf.read(),)
+            result = analyze_stock("sh.999998")
             assert result["status"] == "no_data"
-        finally:
-            conn = sqlite3.connect(str(Path("outputs/cache/pipeline_cache.db")))
-            conn.execute("DELETE FROM kline_cache WHERE ticker = ?", ("test_short",))
-            conn.commit()
-            conn.close()
 
     def test_bj_stock(self) -> None:
-        """BJ ticker should return ok (uses existing DB data)."""
-        # bj.920001 may not be in DB after clear-cache; use a known existing ticker
-        result = analyze_stock("sz.000001")
-        assert result["status"] == "ok"
-        assert result["score"] >= 0
+        """Mock sqlite3 to verify BJ-style ticker returns ok (CI-safe)."""
+        dates = pd.date_range(end="2026-09-15", periods=30, freq="B")
+        mock_df = pd.DataFrame(
+            {
+                "timestamps": dates.strftime("%Y-%m-%d").tolist(),
+                "close": [10.0 + i * 0.1 for i in range(30)],
+                "open": [9.9 + i * 0.1 for i in range(30)],
+                "high": [10.2 + i * 0.1 for i in range(30)],
+                "low": [9.8 + i * 0.1 for i in range(30)],
+                "volume": [1_000_000 + i * 10_000 for i in range(30)],
+            }
+        )
+        buf = BytesIO()
+        mock_df.to_pickle(buf)
+        buf.seek(0)
+        with patch("sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchone.return_value = (buf.read(),)
+            result = analyze_stock("bj.920001")
+            assert result["status"] == "ok"
+            assert result["score"] >= 0
 
 
 class TestAiVerify:
