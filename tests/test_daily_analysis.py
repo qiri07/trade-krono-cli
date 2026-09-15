@@ -45,9 +45,7 @@ class TestGetKline:
 
     def test_existing_ticker(self) -> None:
         """Mock sqlite3 to avoid relying on real database in CI."""
-        mock_df = pd.DataFrame(
-            {"timestamps": ["2026-09-01"], "close": [1500.0], "open": [1490.0]}
-        )
+        mock_df = pd.DataFrame({"timestamps": ["2026-09-01"], "close": [1500.0], "open": [1490.0]})
         buf = BytesIO()
         mock_df.to_pickle(buf)
         buf.seek(0)
