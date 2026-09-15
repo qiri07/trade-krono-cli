@@ -6,6 +6,18 @@ The changelog is also available in Chinese: [中文版更新日志](./CHANGELOG_
 
 ---
 
+### v0.1.11 — 2026-09-15
+
+**Feishu push format optimization + data fill script + date updates:**
+
+- **feat(feishu)**: `feishu_utils.build_buffett_card` optimizes Buffett screen push format — stock list now shows 3 names per line (no codes), failure stats are aggregated by gate category (①PE/PB ②ROE ③Debt ratio ④Cash flow ⑤CAGR) instead of listing individual values
+- **feat(sync)**: Added `scripts/fill_missing_latest.py` — fills missing latest-day increment data for stocks, with tonghuashun primary and baostock fallback
+- **fix(sync)**: `incremental_sync.py` refactored date params to module-level constants (`START_DATE` / `END_DATE`), SQLite query now uses parameterized binding
+- **fix(sync)**: `full_sync_v2.py` updated `END_DATE` to `2026-09-14`
+- **docs**: Updated AGENTS.md data quality metrics (as of 2026-09-15, 100% coverage)
+
+---
+
 ### v0.1.10 — 2026-09-07
 
 **Parallel K-line sync with rate limiting & provider health check:**

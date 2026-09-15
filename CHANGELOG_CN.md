@@ -6,6 +6,18 @@
 
 ---
 
+### v0.1.11 — 2026-09-15
+
+**飞书推送格式优化 + 数据补齐脚本 + 日期更新：**
+
+- **feat(feishu)**：`feishu_utils.build_buffett_card` 优化巴菲特筛选结果推送格式 — 通过股票列表改为每行三个名称（去代码），失败分布按闸门类别汇总（①PE/PB ②ROE ③负债率 ④现金流 ⑤CAGR），不再展开单值明细
+- **feat(sync)**：新增 `scripts/fill_missing_latest.py` — 补齐缺少最新日期的股票增量数据，支持 tonghuashun 主 / baostock 降级
+- **fix(sync)**：`incremental_sync.py` 日期参数重构为模块级常量（`START_DATE` / `END_DATE`），SQLite 查询改用参数化绑定
+- **fix(sync)**：`full_sync_v2.py` 更新 `END_DATE` 至 `2026-09-14`
+- **docs**：更新 AGENTS.md 数据质量指标（截至 2026-09-15，覆盖率 100%）
+
+---
+
 ### v0.1.10 — 2026-09-07
 
 **并行 K 线同步 + 速率限制 + Provider 健康检查：**

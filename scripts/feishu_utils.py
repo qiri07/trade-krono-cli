@@ -176,32 +176,50 @@ def build_buffett_card(result_file: str, ai_summary: str = "") -> dict:
         elif in_table:
             break
 
-    # 构建股票列表文本
-    stock_lines = []
-    for s in stocks[:15]:
-        stock_lines.append(
-            f"• **{s['code']} {s['name']}** &nbsp; PE={s['pe']} &nbsp; ROE={s['roe']}%"
-        )
-    if len(stocks) > 15:
+    # 构建股票列表文本（仅显示名称，每行三个）
+    names = [s['name'] for s in stocks[:30]]
+    chunks = [names[i : i + 3] for i in range(0, len(names), 3)]
+    stock_lines = ["、".join(f"**{n}**" for n in c) for c in chunks]
+    if len(stocks) > 30:
         stock_lines.append(f"... 共 {len(stocks)} 只")
 
     stock_text = "\n".join(stock_lines) if stock_lines else "（无通过股票）"
 
-    # 提取失败统计
-    fail_lines = []
+    # 提取失败统计（按闸门类别汇总，不展开单值明细）
+    fail_summary: list[str] = []  # 直接保留的摘要行
+    fail_gate_counts: dict[str, int] = {}  # 按闸门汇总计数
+
     in_fail = False
     for line in lines:
         if "失败分布" in line:
             in_fail = True
             continue
-        if in_fail and line.strip().startswith("  "):
-            fail_lines.append(line.strip())
-        elif in_fail:
+        if not in_fail:
+            continue
+        if not line.startswith("  "):
             break
+        stripped = line.strip()
+        # 单值明细行：格式为 "①PE=xxx PB=xxx: 1 只" 或含 None 的单值行
+        is_detail = bool(re.match(r"^[①②③④⑤]", stripped)) and ": 1 只" in stripped
+        if is_detail:
+            gate = stripped[0]
+            fail_gate_counts[gate] = fail_gate_counts.get(gate, 0) + 1
+        else:
+            fail_summary.append(stripped)
 
-    fail_text = "\n".join(fail_lines[:5]) if fail_lines else "（无失败统计）"
-    if len(fail_lines) > 5:
-        fail_text += f"\n... 共 {len(fail_lines)} 种失败原因"
+    # 将汇总的闸门计数追加到失败统计末尾
+    gate_labels = {
+        "①": "①PE/PB不达标",
+        "②": "②ROE不达标",
+        "③": "③负债率不达标",
+        "④": "④现金流不达标",
+        "⑤": "⑤CAGR不达标",
+    }
+    for gate, label in gate_labels.items():
+        if gate in fail_gate_counts:
+            fail_summary.append(f"{label}: {fail_gate_counts[gate]} 只")
+
+    fail_text = "\n".join(fail_summary) if fail_summary else "（无失败统计）"
 
     # 解析日期
     date_match = re.search(r"(\d{4}-\d{2}-\d{2})", header)

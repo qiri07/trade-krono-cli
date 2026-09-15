@@ -28,20 +28,22 @@ WORKERS = 20
 BATCH_SIZE = 80
 FETCH_TIMEOUT = 30
 CACHE_DB = Path("outputs/cache/pipeline_cache.db")
+END_DATE = "2026-09-14"
+START_DATE = "2026-09-01"
 
 _load_env()
 
 
 def get_missing_tickers() -> list[str]:
-    """获取缺少 Sep 10+ 数据的 ticker。"""
+    """获取缺少今日数据的 ticker。"""
     import sqlite3
 
     conn = sqlite3.connect(str(CACHE_DB))
     rows = conn.execute("""
         SELECT ticker, MAX(end) as latest FROM kline_cache
-        GROUP BY ticker HAVING MAX(end) < '2026-09-12'
+        GROUP BY ticker HAVING MAX(end) < ?
         ORDER BY ticker
-    """).fetchall()
+    """, (END_DATE,)).fetchall()
     conn.close()
     return [r[0] for r in rows]
 
@@ -53,7 +55,7 @@ def fetch_one(factory, ticker: str, provider_name: str) -> tuple[str, bool]:
         if provider is None:
             return (ticker, False)
         result = provider.fetch_kline(
-            ticker, "2026-09-01", "2026-09-12", frequency="d", adjustflag="1"
+            ticker, START_DATE, END_DATE, frequency="d", adjustflag="1"
         )
         if result is None or result.is_empty:
             return (ticker, False)

@@ -223,13 +223,14 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `check_data_integrity.py` | 数据完整性检查（重复/空数据/解码验证） |
 | `cleanup_duplicates.py` | 清理同一 ticker 的多条记录（保留最长） |
 | `full_sync_v2.py` | 优化版主备降级同步（沪深优先 tonghuashun） |
+| `fill_missing_latest.py` | 补齐缺少最新日期的股票增量数据（tonghuashun 主，baostock 降级） |
 
-### 数据质量指标（截至 2026-09-12）
+### 数据质量指标（截至 2026-09-15）
 - 总记录数：5,288（无重复）
 - 非北交所：4,945 只
 - 北交所：343 只
-- 数据范围：2020-01-02 ~ 2026-09-11（5,277 只含最新数据）
-- DB 大小：588 MB
+- 数据范围：2020-01-02 ~ 2026-09-14（5,288 只含最新数据，覆盖率 100%）
+- DB 大小：约 590 MB
 - 共享数据总大小：3.6 GB（7 种格式，供 7 个项目共用）
 
 ## 共享数据源机制（Shared Data）
