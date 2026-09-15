@@ -110,7 +110,7 @@ tests/check_cache_integrity.py     # 缓存完整性检查工具
 tests/check_cache_quality.py       # 缓存质量分析工具
 tests/test_sync_whitelist.py       # sync-whitelist / sync-universe 单元测试
 tests/conftest.py                  # 共享 fixture（make_mock_settings）+ pytest_configure/env var 路由 + clear_all_globals hook
-tests/test_*.py                    # 扁平化测试结构：每个源模块对应一个测试文件（2391 个测试）
+tests/test_*.py                    # 扁平化测试结构：每个源模块对应一个测试文件（2766 个测试）
 outputs/                     # 运行时产物（gitignore）
 outputs/cache/               # K 线缓存数据库（pipeline_cache.db，约 588 MB）
 outputs/cache/backups/       # 数据库备份（每次大操作前自动创建）
