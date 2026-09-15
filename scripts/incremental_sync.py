@@ -39,11 +39,14 @@ def get_missing_tickers() -> list[str]:
     import sqlite3
 
     conn = sqlite3.connect(str(CACHE_DB))
-    rows = conn.execute("""
+    rows = conn.execute(
+        """
         SELECT ticker, MAX(end) as latest FROM kline_cache
         GROUP BY ticker HAVING MAX(end) < ?
         ORDER BY ticker
-    """, (END_DATE,)).fetchall()
+    """,
+        (END_DATE,),
+    ).fetchall()
     conn.close()
     return [r[0] for r in rows]
 
@@ -54,9 +57,7 @@ def fetch_one(factory, ticker: str, provider_name: str) -> tuple[str, bool]:
         provider = factory.get_provider(provider_name)
         if provider is None:
             return (ticker, False)
-        result = provider.fetch_kline(
-            ticker, START_DATE, END_DATE, frequency="d", adjustflag="1"
-        )
+        result = provider.fetch_kline(ticker, START_DATE, END_DATE, frequency="d", adjustflag="1")
         if result is None or result.is_empty:
             return (ticker, False)
         df = result.to_dataframe()

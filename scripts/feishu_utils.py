@@ -177,7 +177,7 @@ def build_buffett_card(result_file: str, ai_summary: str = "") -> dict:
             break
 
     # 构建股票列表文本（仅显示名称，每行三个）
-    names = [s['name'] for s in stocks[:30]]
+    names = [s["name"] for s in stocks[:30]]
     chunks = [names[i : i + 3] for i in range(0, len(names), 3)]
     stock_lines = ["、".join(f"**{n}**" for n in c) for c in chunks]
     if len(stocks) > 30:

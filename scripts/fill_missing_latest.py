@@ -50,9 +50,7 @@ def fetch_and_append(factory, ticker: str) -> tuple[str, bool, str]:
         if provider is None:
             return (ticker, False, "no_provider")
 
-        result = provider.fetch_kline(
-            ticker, FETCH_START, FETCH_END, frequency="d", adjustflag="1"
-        )
+        result = provider.fetch_kline(ticker, FETCH_START, FETCH_END, frequency="d", adjustflag="1")
         if result is None or result.is_empty:
             return (ticker, False, "empty")
 
@@ -132,9 +130,7 @@ def main() -> None:
         batch_failed: list[tuple[str, str]] = []
 
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-            futures = {
-                executor.submit(fetch_and_append, factory, t): t for t in batch
-            }
+            futures = {executor.submit(fetch_and_append, factory, t): t for t in batch}
             for future in as_completed(futures, timeout=FETCH_TIMEOUT * len(batch) // WORKERS + 10):
                 ticker, succeeded, detail = future.result()
                 if succeeded:
