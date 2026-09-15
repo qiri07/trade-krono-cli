@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
@@ -73,13 +73,25 @@ class TestGetAllTickers:
     """Ticker retrieval."""
 
     def test_returns_list(self) -> None:
-        tickers = get_all_tickers()
-        assert isinstance(tickers, list)
-        assert len(tickers) > 0
+        with patch("scripts._utils.sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchall.return_value = [
+                ("sh.600519",),
+                ("sz.000001",),
+            ]
+            tickers = get_all_tickers()
+            assert isinstance(tickers, list)
+            assert len(tickers) > 0
 
     def test_sorted(self) -> None:
-        tickers = get_all_tickers()
-        assert tickers == sorted(tickers)
+        with patch("scripts._utils.sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchall.return_value = [
+                ("sh.600519",),
+                ("sz.000001",),
+            ]
+            tickers = get_all_tickers()
+            assert tickers == sorted(tickers)
 
 
 class TestFetchAndAppend:
