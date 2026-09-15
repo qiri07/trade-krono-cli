@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
+from scripts._utils import get_provider_chain
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
@@ -73,14 +74,6 @@ def get_today_only_tickers() -> list[str]:
     tickers = [r[0] for r in cur.fetchall()]
     conn.close()
     return tickers
-
-
-def get_provider_chain(ticker: str) -> list[str]:
-    if ticker.startswith("bj."):
-        return ["tonghuashun"]
-    elif ticker.startswith("sh.") or ticker.startswith("sz."):
-        return ["tonghuashun", "baostock"]
-    return ["baostock", "tonghuashun"]
 
 
 def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[str, int, str]:

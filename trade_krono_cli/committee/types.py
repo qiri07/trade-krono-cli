@@ -55,6 +55,7 @@ class AgentReport:
     key_finding: str = ""
 
     def to_dict(self) -> dict:
+        """将 AgentReport 序列化为字典（agent_type 转为字符串值）。"""
         d = asdict(self)
         d["agent_type"] = self.agent_type.value
         return d
@@ -89,6 +90,7 @@ class StockCommitteeInput:
     composite_score: float | None = None
 
     def to_dict(self) -> dict:
+        """将 StockCommitteeInput 序列化为字典，供 JSON 持久化使用。"""
         return {
             "ticker": self.ticker,
             "date": self.date,

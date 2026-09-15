@@ -133,6 +133,7 @@ class Cache:
     # ── 向后兼容：直接调用方法（委托给子模块）──────────────────────────────────
 
     def get_kline(self, ticker: str, start: str, end: str, freq: str, adjustflag: str = "1") -> Any:  # noqa: ANN401
+        """从缓存中获取指定股票的历史 K 线数据。"""
         from trade_krono_cli.cache.kline import KlineCache
 
         return KlineCache(self).get_kline(ticker, start, end, freq, adjustflag)
@@ -147,11 +148,13 @@ class Cache:
         ttl: float = 86400,
         adjustflag: str = "1",
     ) -> None:  # noqa: ANN401
+        """将 K 线 DataFrame 写入缓存。"""
         from trade_krono_cli.cache.kline import KlineCache
 
         KlineCache(self).set_kline(ticker, start, end, freq, df, ttl, adjustflag)
 
     def warm_history(self, ticker: str, end_date: str, lookback_days: int = 730) -> tuple[int, int]:
+        """预加载指定股票的历史 K 线数据（用于冷启动预热）。"""
         from trade_krono_cli.cache.kline import KlineCache
 
         return KlineCache(self).warm_history(ticker, end_date, lookback_days)
@@ -164,6 +167,7 @@ class Cache:
         prompt_ver: str = "",
         model_ver: str = "",
     ) -> dict | None:
+        """从缓存中获取指定股票的 TA 分析结果。"""
         from trade_krono_cli.cache.ta import TADataCache
 
         return TADataCache(self).get_ta(ticker, date, config_hash, prompt_ver, model_ver)
@@ -178,6 +182,7 @@ class Cache:
         model_ver: str = "",
         ttl: float = 86400,
     ) -> None:
+        """将 TA 分析结果写入缓存。"""
         from trade_krono_cli.cache.ta import TADataCache
 
         TADataCache(self).set_ta(ticker, date, result, config_hash, prompt_ver, model_ver, ttl)
@@ -191,6 +196,7 @@ class Cache:
         config_hash: str = "",
         model_ver: str = "",
     ) -> dict | None:
+        """从缓存中获取指定股票的 Kronos 预测结果。"""
         from trade_krono_cli.cache.kronos import KronosCache
 
         return KronosCache(self).get_kronos(
@@ -208,6 +214,7 @@ class Cache:
         config_hash: str = "",
         model_ver: str = "",
     ) -> None:
+        """将 Kronos 预测结果写入缓存。"""
         from trade_krono_cli.cache.kronos import KronosCache
 
         KronosCache(self).set_kronos(
@@ -215,6 +222,7 @@ class Cache:
         )
 
     def clear_all(self) -> int:
+        """清除所有缓存数据，返回清除的记录总数。"""
         from trade_krono_cli.cache.queries import CacheQueries
 
         return CacheQueries(self).clear_all()
@@ -222,11 +230,13 @@ class Cache:
     def export_daily_pv(
         self, parquet_path: str, h5_path: str | None = None, debug_insts: int = 0
     ) -> dict:
+        """导出每日 PV（访问量）Parquet + 可选 H5，返回统计字典。"""
         from trade_krono_cli.cache.queries import CacheQueries
 
         return CacheQueries(self).export_daily_pv(parquet_path, h5_path, debug_insts)
 
     def stats(self) -> dict:
+        """返回缓存统计信息（总记录数、股票数、日期范围等）。"""
         from trade_krono_cli.cache.queries import CacheQueries
 
         return CacheQueries(self).stats()
@@ -234,6 +244,7 @@ class Cache:
     def get_cached_date_range(
         self, ticker: str, freq: str = "d", adjustflag: str = "1"
     ) -> tuple[str, str] | None:
+        """查询指定股票在缓存中的最早/最晚日期范围。"""
         from trade_krono_cli.cache.kline import KlineCache
 
         return KlineCache(self).get_cached_date_range(ticker, freq, adjustflag)

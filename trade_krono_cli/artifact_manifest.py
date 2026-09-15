@@ -123,6 +123,7 @@ class ModelArtifact:
 
     @property
     def version_tag(self) -> str:
+        """Kronos 模型版本标签（含模型名、tokenizer、device）。"""
         return get_kronos_model_version(self.name, self.tokenizer, self.device)
 
 
@@ -137,6 +138,7 @@ class LlmArtifact:
 
     @property
     def version_tag(self) -> str:
+        """LLM provider 版本标签（含 provider、deep_think_model、quick_think_model）。"""
         return get_llm_version(self.provider, self.deep_think_model, self.quick_think_model)
 
 
@@ -160,6 +162,7 @@ class PromptArtifact:
 
     @property
     def version_tag(self) -> str:
+        """TA 提示词版本标签（含辩论轮次、风险讨论轮次、语言、结构化输出配置）。"""
         return get_ta_prompt_version(
             self.max_debate_rounds,
             self.max_risk_discuss_rounds,
@@ -216,6 +219,7 @@ class ArtifactManifest:
     environment: EnvironmentArtifact = field(default_factory=EnvironmentArtifact)
 
     def to_dict(self) -> dict:
+        """将完整 manifest 序列化为字典（含所有子 artiface 的字段）。"""
         return asdict(self)
 
     def experiment_id(self) -> str:
