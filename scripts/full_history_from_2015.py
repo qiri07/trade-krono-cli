@@ -39,32 +39,57 @@ _load_env()
 def _fetch_and_append(
     factory, ticker: str, provider_chain: list[str], start_date: str, end_date: str, cache_db: Path
 ) -> tuple[str, int, str]:
-    """拉取历史数据并追加到现有记录（不覆盖已有数据）。"""
-    try:
-        df_new = None
-        for provider_name in provider_chain:
-            try:
-                provider = factory.get_provider(provider_name)
-                if provider is None:
-                    continue
-                result = provider.fetch_kline(
-                    ticker, start_date, end_date, frequency="d", adjustflag="1"
-                )
-                if result is None or result.is_empty:
-                    continue
-                df = result.to_dataframe()
-                if df is None or len(df) == 0:
-                    continue
-                df_new = df
-                break
-            except Exception as e:
-                logger.debug(f"  {provider_name} 失败 {ticker}: {e}")
+    """拉取历史数据并追加到现有记录（不覆盖已有数据）。
 
-        if df_new is None:
+    由于同花顺 API 最多支持 10 年范围且仅返回 2020 年后的数据，
+    对于需要补全 2015-2019 历史的股票优先使用 baostock 作为主数据源。
+    """
+    try:
+        from datetime import datetime, timedelta
+
+        # 将请求区间拆分为最多10年的子区间
+        sub_ranges: list[tuple[str, str]] = []
+        cur = datetime.strptime(start_date, "%Y-%m-%d")
+        while cur <= datetime.strptime(end_date, "%Y-%m-%d"):
+            chunk_end = min(cur + timedelta(days=3650), datetime.strptime(end_date, "%Y-%m-%d"))
+            sub_ranges.append((cur.strftime("%Y-%m-%d"), chunk_end.strftime("%Y-%m-%d")))
+            cur = chunk_end + timedelta(days=1)
+
+        # 优先使用 baostock（支持 2015 年前历史），其次是原始 provider chain
+        fallback_chain = ["baostock"] + [p for p in provider_chain if p != "baostock"]
+
+        # 依次拉取各子区间并合并
+        merged_df: pd.DataFrame | None = None
+        for sub_start, sub_end in sub_ranges:
+            for provider_name in fallback_chain:
+                try:
+                    provider = factory.get_provider(provider_name)
+                    if provider is None:
+                        continue
+                    result = provider.fetch_kline(
+                        ticker, sub_start, sub_end, frequency="d", adjustflag="1"
+                    )
+                    if result is None or result.is_empty:
+                        continue
+                    df = result.to_dataframe()
+                    if df is None or len(df) == 0:
+                        continue
+                    if merged_df is None:
+                        merged_df = df
+                    else:
+                        merged_df = pd.concat([merged_df, df], ignore_index=True)
+                    break
+                except Exception as e:
+                    logger.debug(f"  {provider_name} 失败 {ticker} [{sub_start}~{sub_end}]: {e}")
+            if merged_df is not None and len(merged_df) > 0:
+                break
+
+        if merged_df is None or len(merged_df) == 0:
             return (ticker, 0, "FAIL")
 
-        ts_col = "timestamps" if "timestamps" in df_new.columns else "date"
-        ts = pd.to_datetime(df_new[ts_col])
+        ts_col = "timestamps" if "timestamps" in merged_df.columns else "date"
+        merged_df = merged_df.drop_duplicates(subset=[ts_col]).reset_index(drop=True)
+        ts = pd.to_datetime(merged_df[ts_col])
 
         import sqlite3
 
@@ -85,13 +110,13 @@ def _fetch_and_append(
 
             # 只保留早于现有记录的行（补齐历史部分）
             cutoff = pd.Timestamp(existing_start)
-            old_rows = df_new[ts < cutoff]
+            old_rows = merged_df[ts < cutoff]
             if len(old_rows) == 0:
                 return (ticker, 0, "already_full")
             combined = pd.concat([old_rows, existing_df], ignore_index=True)
             combined = combined.sort_values(ts_col).reset_index(drop=True)
         else:
-            combined = df_new
+            combined = merged_df
 
         cache = get_cache()
         cache.set_kline(
@@ -122,15 +147,18 @@ def main(start_date: str, end_date: str) -> None:
     logger.info(f"📋 共 {len(all_tickers)} 只股票待处理")
 
     # 先检查哪些股票需要补全
+    # 选中 start 在 [START_DATE, END_DATE] 范围内的股票（IPO 日期在 2015 之后的股票）
     import sqlite3
 
     conn = sqlite3.connect(str(CACHE_DB))
     need_update = [
         r[0]
         for r in conn.execute(
-            "SELECT ticker FROM kline_cache WHERE start >= ?", (START_DATE,)
+            "SELECT ticker FROM kline_cache WHERE start >= ? AND start <= ?",
+            (START_DATE, END_DATE),
         ).fetchall()
     ]
+    # 已覆盖 2015 年前的股票也重新拉取以确保完整性
     already_full = [
         r[0]
         for r in conn.execute(
@@ -140,20 +168,22 @@ def main(start_date: str, end_date: str) -> None:
     conn.close()
 
     if already_full:
-        logger.info(f"📌 已有完整历史数据（{len(already_full)} 只），跳过")
+        logger.info(f"📌 已有完整历史数据（{len(already_full)} 只），也将重新验证")
     if not need_update:
         logger.info("✅ 所有股票历史已覆盖起始日期，无需补全")
         return
 
-    logger.info(f"📌 需补全历史：{len(need_update)} 只")
+    # 合并：已覆盖的股票也需要重新拉取以确认数据完整性
+    all_to_process = already_full + need_update
+    logger.info(f"📌 需处理：{len(all_to_process)} 只（含已覆盖 {len(already_full)} 只）")
 
     factory = get_data_factory()
     success = 0
     failed = []
     start_time = time.time()
 
-    for batch_start in range(0, len(need_update), BATCH_SIZE):
-        batch = need_update[batch_start : batch_start + BATCH_SIZE]
+    for batch_start in range(0, len(all_to_process), BATCH_SIZE):
+        batch = all_to_process[batch_start : batch_start + BATCH_SIZE]
         batch_num = batch_start // BATCH_SIZE + 1
         logger.info(
             f"📦 批次 {batch_num} [{batch_start + 1}~{batch_start + len(batch)}/{len(need_update)}]"
