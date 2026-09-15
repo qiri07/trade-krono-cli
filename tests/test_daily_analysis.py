@@ -44,16 +44,34 @@ class TestGetKline:
     """K-line data retrieval from cache."""
 
     def test_existing_ticker(self) -> None:
-        df = get_kline("sh.600519")
-        assert df is not None
-        assert len(df) > 0
-        assert "close" in df.columns
+        """Mock sqlite3 to avoid relying on real database in CI."""
+        mock_df = pd.DataFrame(
+            {"timestamps": ["2026-09-01"], "close": [1500.0], "open": [1490.0]}
+        )
+        buf = BytesIO()
+        mock_df.to_pickle(buf)
+        buf.seek(0)
+        mock_data = buf.read()
+
+        with patch("sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchone.return_value = (mock_data,)
+            df = get_kline("sh.600519")
+            assert df is not None
+            assert len(df) > 0
+            assert "close" in df.columns
 
     def test_missing_ticker(self) -> None:
-        assert get_kline("sh.999999") is None
+        with patch("sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchone.return_value = None
+            assert get_kline("sh.999999") is None
 
     def test_nonexistent_code(self) -> None:
-        assert get_kline("nonexistent") is None
+        with patch("sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchone.return_value = None
+            assert get_kline("nonexistent") is None
 
 
 class TestAnalyzeStock:

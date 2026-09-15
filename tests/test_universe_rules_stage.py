@@ -86,7 +86,9 @@ class TestFilterRulesStage:
 
     def test_range_op_filters_outside_range(self) -> None:
         """RANGE operator should keep tickets within [low, high]."""
-        rules: list[FilterRule] = [FilterRule(field="market_cap", op=FilterOp.RANGE, value=(100.0, 5000.0))]
+        rules: list[FilterRule] = [
+            FilterRule(field="market_cap", op=FilterOp.RANGE, value=(100.0, 5000.0))
+        ]
         stage = FilterRulesStage(rules=rules)
         ticket_in = _make_ticket(market_cap=1000.0)
         ticket_out_low = _make_ticket(market_cap=50.0)
@@ -121,17 +123,19 @@ class TestFilterRulesStage:
         ]
         stage = FilterRulesStage(rules=rules)
         tickets = [
-            _make_ticket(pe=20.0, pb=3.0),   # pass
-            _make_ticket(pe=30.0, pb=3.0),   # fail pe
-            _make_ticket(pe=20.0, pb=5.0),   # fail pb
-            _make_ticket(pe=25.0, pb=4.0),   # pass (boundary)
+            _make_ticket(pe=20.0, pb=3.0),  # pass
+            _make_ticket(pe=30.0, pb=3.0),  # fail pe
+            _make_ticket(pe=20.0, pb=5.0),  # fail pb
+            _make_ticket(pe=25.0, pb=4.0),  # pass (boundary)
         ]
         result = stage.filter(tickets)
         assert len(result) == 2
 
     def test_alias_market_cap_billion(self) -> None:
         """market_cap_billion alias should resolve to market_cap field."""
-        rules: list[FilterRule] = [FilterRule(field="market_cap_billion", op=FilterOp.MAX, value=500.0)]
+        rules: list[FilterRule] = [
+            FilterRule(field="market_cap_billion", op=FilterOp.MAX, value=500.0)
+        ]
         stage = FilterRulesStage(rules=rules)
         ticket_under = _make_ticket(market_cap=100.0)
         ticket_over = _make_ticket(market_cap=1000.0)
@@ -171,7 +175,9 @@ class TestFilterRulesStage:
 
     def test_not_in_op(self) -> None:
         """NOT_IN operator should exclude tickets in the set."""
-        rules: list[FilterRule] = [FilterRule(field="ticker", op=FilterOp.NOT_IN, value=["sh.600ST"])]
+        rules: list[FilterRule] = [
+            FilterRule(field="ticker", op=FilterOp.NOT_IN, value=["sh.600ST"])
+        ]
         stage = FilterRulesStage(rules=rules)
         ticket_in = _make_ticket(ticker="sh.600ST")
         ticket_out = _make_ticket(ticker="sh.600519")
@@ -182,5 +188,6 @@ class TestFilterRulesStage:
     def test_unknown_op_returns_true(self) -> None:
         """Unknown FilterOp should fall through to return True (pass)."""
         from trade_krono_cli.universe.stages.rules import _apply_rule
+
         result = _apply_rule(10.0, "unknown_op", 5.0)
         assert result is True

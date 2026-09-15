@@ -196,9 +196,7 @@ def analyze_stock(ticker: str) -> dict[str, Any]:
     if df is None or len(df) < 20:
         return {
             "ticker": ticker,
-            "name": _STOCK_NAMES.get(
-                ticker.lstrip("sz.").lstrip("sh.").lstrip("bj."), ""
-            ),
+            "name": _STOCK_NAMES.get(ticker.lstrip("sz.").lstrip("sh.").lstrip("bj."), ""),
             "status": "no_data",
             "score": 0.0,
             "trend": "数据不足",

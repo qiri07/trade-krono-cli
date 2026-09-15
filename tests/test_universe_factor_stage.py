@@ -91,7 +91,9 @@ class TestFactorFilterStage:
         ticket_bad_ratio = _make_ticket(volume_ratio=0.3, turnover_rate=0.5, volume=1_000_000)
         ticket_bad_turnover = _make_ticket(volume_ratio=1.5, turnover_rate=0.01, volume=1_000_000)
         ticket_bad_volume = _make_ticket(volume_ratio=1.5, turnover_rate=0.5, volume=100)
-        result = stage.filter([ticket_good, ticket_bad_ratio, ticket_bad_turnover, ticket_bad_volume])
+        result = stage.filter(
+            [ticket_good, ticket_bad_ratio, ticket_bad_turnover, ticket_bad_volume]
+        )
         assert len(result) == 1
         assert result[0].ticker == ticket_good.ticker
 

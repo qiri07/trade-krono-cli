@@ -168,6 +168,7 @@ def test_migrate_creates_missing_tables(conn: sqlite3.Connection) -> None:
 
 def test_migrate_handles_operational_error_on_add_column(conn: sqlite3.Connection) -> None:
     """Migration gracefully handles OperationalError when adding columns."""
+
     # Use a wrapper to intercept ADD COLUMN calls
     class ErrorConn:
         def __init__(self, real_conn: sqlite3.Connection) -> None:
@@ -199,8 +200,15 @@ def test_migrate_handles_operational_error_on_add_column(conn: sqlite3.Connectio
 def test_migrate_noop_when_all_cols_exist(conn: sqlite3.Connection) -> None:
     """When all columns exist, no ALTER TABLE is attempted (all except branches)."""
     # Add ALL version cols including external_repos
-    for col in ("run_id", "data_version", "model_versions", "prompt_version",
-                "strategy_version", "config_hash", "external_repos"):
+    for col in (
+        "run_id",
+        "data_version",
+        "model_versions",
+        "prompt_version",
+        "strategy_version",
+        "config_hash",
+        "external_repos",
+    ):
         conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
     conn.execute("ALTER TABLE backtest_results ADD COLUMN scoring_strategy TEXT")
     conn.execute("ALTER TABLE strategy_runs ADD COLUMN config_hash TEXT")

@@ -70,9 +70,9 @@ def _fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[
                         except Exception:
                             existing_df = pd.DataFrame()
                         # 只取早于现有数据的部分（补齐历史）
-                        cutoff = pd.Timestamp(existing_df["timestamps"].min()
-                                              if not existing_df.empty
-                                              else ts.min())
+                        cutoff = pd.Timestamp(
+                            existing_df["timestamps"].min() if not existing_df.empty else ts.min()
+                        )
                         old_rows = df[ts < cutoff]
                         if len(old_rows) > 0:
                             combined = pd.concat([old_rows, existing_df], ignore_index=True)
