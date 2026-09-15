@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
+from scripts._utils import get_all_tickers as _get_all_tickers
+from scripts._utils import get_provider_chain
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
@@ -29,28 +31,6 @@ FETCH_TIMEOUT = 20
 CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 
 _load_env()
-
-
-def _get_all_tickers() -> list[str]:
-    """获取所有需要同步的股票列表。"""
-    import sqlite3
-
-    conn = sqlite3.connect(str(CACHE_DB))
-    cur = conn.cursor()
-    # 获取所有ticker
-    cur.execute("SELECT DISTINCT ticker FROM kline_cache")
-    tickers = [r[0] for r in cur.fetchall()]
-    conn.close()
-    return sorted(tickers)
-
-
-def _get_provider_chain(ticker: str) -> list[str]:
-    """根据股票类型返回 provider 优先级链。"""
-    if ticker.startswith("bj."):
-        return ["tonghuashun"]
-    elif ticker.startswith("sh.") or ticker.startswith("sz."):
-        return ["tonghuashun", "baostock"]
-    return ["baostock", "tonghuashun"]
 
 
 def _fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[str, int, str]:
@@ -75,15 +55,51 @@ def _fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[
                         continue
                     cache = get_cache()
                     ts = pd.to_datetime(df["timestamps"])
+                    # 增量合并：保留 DB 中已有的记录，补充新历史数据
+                    import sqlite3
+                    from io import BytesIO
+
+                    conn = sqlite3.connect(str(CACHE_DB))
+                    row = conn.execute(
+                        "SELECT data FROM kline_cache WHERE ticker = ?", (ticker,)
+                    ).fetchone()
+                    conn.close()
+                    if row:
+                        try:
+                            existing_df = pd.read_pickle(BytesIO(row[0]))
+                        except Exception:
+                            existing_df = pd.DataFrame()
+                        # 只取早于现有数据的部分（补齐历史）
+                        cutoff = pd.Timestamp(existing_df["timestamps"].min()
+                                              if not existing_df.empty
+                                              else ts.min())
+                        old_rows = df[ts < cutoff]
+                        if len(old_rows) > 0:
+                            combined = pd.concat([old_rows, existing_df], ignore_index=True)
+                            combined = combined.sort_values("timestamps").reset_index(drop=True)
+                            new_start = combined["timestamps"].min().strftime("%Y-%m-%d")
+                            new_end = combined["timestamps"].max().strftime("%Y-%m-%d")
+                            new_len = len(combined)
+                        else:
+                            new_start = ts.min().strftime("%Y-%m-%d")
+                            new_end = ts.max().strftime("%Y-%m-%d")
+                            new_len = len(df)
+                            combined = df
+                    else:
+                        combined = df
+                        new_start = ts.min().strftime("%Y-%m-%d")
+                        new_end = ts.max().strftime("%Y-%m-%d")
+                        new_len = len(df)
+                    cache = get_cache()
                     cache.set_kline(
                         ticker,
-                        ts.min().strftime("%Y-%m-%d"),
-                        ts.max().strftime("%Y-%m-%d"),
+                        new_start,
+                        new_end,
                         "d",
-                        df,
+                        combined,
                         ttl=0.0,
                     )
-                    result_container.append((ticker, len(df), provider_name))
+                    result_container.append((ticker, new_len, provider_name))
                     return
                 except Exception as e:
                     logger.debug(f"  {provider_name} 失败 {ticker}: {e}")
@@ -127,7 +143,7 @@ def main() -> None:
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
             futures = {
-                pool.submit(_fetch_full_range, factory, t, _get_provider_chain(t)): t for t in batch
+                pool.submit(_fetch_full_range, factory, t, get_provider_chain(t)): t for t in batch
             }
             for future in as_completed(futures):
                 ticker, rows, provider_name = future.result()

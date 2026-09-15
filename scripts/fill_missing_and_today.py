@@ -18,12 +18,22 @@ from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
 START_DATE = "2020-01-01"
-END_DATE = "2026-09-12"
 WORKERS = 8
 FETCH_TIMEOUT = 45
 CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 
 _load_env()
+
+# 首次运行时缓存今日日期，避免跨批次日期变化
+_today: str | None = None
+
+
+def get_today_date() -> str:
+    """动态获取今日日期（YYYY-MM-DD 格式），并缓存供后续调用复用。"""
+    global _today
+    if _today is None:
+        _today = time.strftime("%Y-%m-%d")
+    return _today
 
 
 def get_failed_tickers() -> list[str]:
@@ -53,9 +63,10 @@ def get_today_only_tickers() -> list[str]:
 
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
-    cur.execute("""
+    today = get_today_date()
+    cur.execute(f"""
         SELECT DISTINCT ticker FROM kline_cache
-        WHERE start = '2026-09-12' AND end = '2026-09-12'
+        WHERE start = '{today}' AND end = '{today}'
           AND ticker NOT LIKE 'bj.%'
         ORDER BY ticker
     """)
@@ -84,7 +95,7 @@ def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[s
                 if provider is None:
                     continue
                 result = provider.fetch_kline(
-                    ticker, START_DATE, END_DATE, frequency="d", adjustflag="1"
+                    ticker, START_DATE, get_today_date(), frequency="d", adjustflag="1"
                 )
                 if result is None or result.is_empty:
                     continue
@@ -138,7 +149,7 @@ def fetch_today_incremental(
                 if provider is None:
                     continue
                 result = provider.fetch_kline(
-                    ticker, "2026-09-12", "2026-09-12", frequency="d", adjustflag="1"
+                    ticker, get_today_date(), get_today_date(), frequency="d", adjustflag="1"
                 )
                 if result is None or result.is_empty:
                     continue
@@ -148,7 +159,8 @@ def fetch_today_incremental(
                 cache = get_cache()
                 ts = pd.to_datetime(df["timestamps"])
                 # 检查是否已存在今日数据，如存在则更新
-                cur_result = cache.get_kline(ticker, "2026-09-12", "2026-09-12", "d", "1")
+                today = get_today_date()
+                cur_result = cache.get_kline(ticker, today, today, "d", "1")
                 if cur_result is not None and len(cur_result) > 0:
                     # 合并：保留历史数据，追加/更新今日数据
                     combined = pd.concat([cur_result, df], ignore_index=True)
@@ -234,19 +246,20 @@ def main() -> None:
         print(f"   仍失败: {[t for t, _ in failed_13]}")
     print()
 
-    # ── 第二步：检查哪些股票缺少2026-09-12数据 ──────────────────
+    # ── 第二步：检查哪些股票缺少今日数据 ───────────────────────
     print("=" * 60)
-    print("📌 第二步：同步今日（2026-09-12）增量数据")
+    print(f"📌 第二步：同步今日（{get_today_date()}）增量数据")
     print("=" * 60)
     import sqlite3
 
+    today = get_today_date()
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(f"""
         SELECT DISTINCT ticker FROM kline_cache
         WHERE ticker NOT IN (
             SELECT DISTINCT ticker FROM kline_cache
-            WHERE end >= '2026-09-12'
+            WHERE end >= '{today}'
         )
         AND ticker NOT LIKE 'bj.%'
         ORDER BY ticker
@@ -299,10 +312,8 @@ def main() -> None:
     tickers = cur.fetchone()[0]
     cur.execute("SELECT MAX(end) FROM kline_cache")
     latest = cur.fetchone()[0]
-    cur.execute("""
-        SELECT COUNT(DISTINCT ticker) FROM kline_cache
-        WHERE end >= '2026-09-12'
-    """)
+    today = get_today_date()
+    cur.execute(f"SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE end >= '{today}'")
     has_today = cur.fetchone()[0]
     cur.execute("""
         SELECT COUNT(DISTINCT ticker) FROM kline_cache

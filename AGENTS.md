@@ -20,14 +20,17 @@ uv run trade-krono-cli ta --tickers "600519"                           # 仅 TA 
 uv run trade-krono-cli kronos --tickers "600519"                       # 仅 Kronos 预测
 uv run trade-krono-cli sync-whitelist                  # 仅同步白名单股票
 uv run python tests/buffett_screen_parallel.py         # 巴菲特六闸门全量筛选（并行版）
-uv run python scripts/full_history_sync.py             # 全量历史数据同步（2020起，~22分钟）
-uv run python scripts/retry_missing_history.py          # 重试缺失历史的股票
-uv run python scripts/check_data_integrity.py           # 数据完整性检查
-uv run python scripts/cleanup_duplicates.py             # 清理重复记录
-uv run python scripts/fill_missing_and_today.py         # 补齐失败股票 + 同步今日增量
+uv run python scripts/full_history_from_2015.py        # 全量历史同步（2015起，~30分钟）
+uv run python scripts/full_history_sync.py             # 全量历史同步（2020起，~22分钟）
+uv run python scripts/retry_missing_history.py         # 重试缺失历史的股票
+uv run python scripts/fill_missing_and_today.py        # 补齐失败股票 + 同步今日增量（日期动态检测）
+uv run python scripts/check_data_integrity.py          # 数据完整性检查
+uv run python scripts/cleanup_duplicates.py            # 清理重复记录
+uv run python scripts/daily_analysis.py                # 每日白名单分析 + AI 验证 + 飞书推送
+uv run python scripts/fetch_reference_data.py          # 批量获取股票参考数据（PE/PB/行业等）
 uv run python scripts/export_shared_data.py --format all --dest ~/Work/shared_data  # 导出共享数据
-uv run python scripts/export_vnpy_data.py                # 导出 vnpy 格式
-bash scripts/post_sync_export.sh                         # 同步后一键导出所有格式
+uv run python scripts/export_vnpy_data.py              # 导出 vnpy 格式
+bash scripts/post_sync_export.sh                       # 同步后一键导出所有格式
 uv run ruff check .                  # Lint 检查
 uv run ruff check --fix .            # Lint + 自动修复
 uv run mypy .                        # 类型检查
@@ -40,9 +43,13 @@ uv run pytest -x                     # 首个失败即停
 ```
 trade_krono_cli/
 ├── cli.py                # Typer CLI 入口（app / repo_app 注册、命令分发）
-├── cli_commands/         # CLI 命令包（向后兼容：cli_commands.py 为薄包装）
+├── cli_commands.py       # 向后兼容薄包装（DeprecationWarning）
+├── cli_commands/         # CLI 命令包
 │   ├── __init__.py       # 统一导出 run/ta/kronos/repo_* 等
-│   ├── core.py           # 共享工具函数 + run/ta/kronos 主流程命令
+│   ├── _core_commands.py # run/ta/kronos 主流程命令实际实现
+│   ├── _core_helpers.py  # 共享工具函数（_load_env / _load_tickers / _sanitize_path）
+│   ├── _sync_helpers.py  # 同步辅助函数
+│   ├── core.py           # 薄包装（re-export）
 │   ├── repo.py           # repo status/doctor/update/pin 子命令
 │   ├── maintenance.py    # 向后兼容薄包装（re-export 子模块）
 │   ├── maintenance_status.py   # status 命令
@@ -50,7 +57,11 @@ trade_krono_cli/
 │   ├── maintenance_sync.py     # sync-universe / sync-whitelist + _resolve_tickers
 │   ├── maintenance_history.py  # history 命令
 │   ├── maintenance_eval.py     # eval-prediction 命令
-│   └── maintenance_retry.py    # retry-failed 命令
+│   ├── maintenance_retry.py    # retry-failed 命令
+│   ├── rank_providers.py     # provider 排名命令
+│   ├── sync_universe.py      # sync-universe 命令
+│   ├── sync_whitelist.py     # sync-whitelist 命令
+│   └── export_daily_pv.py    # export-daily-pv 命令
 ├── config.py             # Settings dataclass：从 .env 加载，模块级单例 get_settings()
 ├── errors.py             # 异常层次：TradeKronoError → ModuleError / DataError / ModelError 等
 ├── logger.py             # loguru 初始化（控制台 + 文本日志 + JSON 结构化日志）
