@@ -27,6 +27,7 @@ dependencies = [
     "akshare>=1.18.88",
     "mootdx>=0.11.7",
     "fire",
+    "openai>=3.14.0",
 ]
 
 [project.optional-dependencies]
