@@ -101,9 +101,11 @@ def _apply_rule(value: object, op: FilterOp, rule_value: object) -> bool:
         if op == FilterOp.CONTAINS:
             return str(rule_value) in str(value)
         if op == FilterOp.MATCH:
-            import re
+            import re as _re
 
-            return bool(re.search(str(rule_value), str(value)))
+            # 若 value 是编译后的 Pattern，直接使用；否则尝试字符串
+            pattern = rule_value.pattern if hasattr(rule_value, "pattern") else str(rule_value)
+            return bool(_re.search(pattern, str(value)))
     except (TypeError, ValueError):
         return False
     return True
