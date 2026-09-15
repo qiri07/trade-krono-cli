@@ -33,17 +33,35 @@ class TestGetAllTickers:
     """Ticker list retrieval tests."""
 
     def test_returns_sorted_list(self) -> None:
-        result = get_all_tickers()
-        assert isinstance(result, list)
-        assert result == sorted(result), "Result must be sorted"
+        with patch("scripts._utils.sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchall.return_value = [
+                ("sh.600519",),
+                ("sz.000001",),
+            ]
+            result = get_all_tickers()
+            assert isinstance(result, list)
+            assert result == sorted(result), "Result must be sorted"
 
     def test_non_empty(self) -> None:
-        result = get_all_tickers()
-        assert len(result) > 0, "Should return at least some tickers"
+        with patch("scripts._utils.sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchall.return_value = [
+                ("sh.600519",),
+                ("sz.000001",),
+            ]
+            result = get_all_tickers()
+            assert len(result) > 0, "Should return at least some tickers"
 
     def test_all_have_dot(self) -> None:
-        result = get_all_tickers()
-        assert all("." in t for t in result), "All tickers should have exchange prefix"
+        with patch("scripts._utils.sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchall.return_value = [
+                ("sh.600519",),
+                ("sz.000001",),
+            ]
+            result = get_all_tickers()
+            assert all("." in t for t in result), "All tickers should have exchange prefix"
 
     def test_db_not_found_raises(self) -> None:
         """When DB is missing, should raise an error."""
