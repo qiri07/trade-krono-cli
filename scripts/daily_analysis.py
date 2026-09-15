@@ -197,7 +197,7 @@ def analyze_stock(ticker: str) -> dict[str, Any]:
         return {
             "ticker": ticker,
             "name": _STOCK_NAMES.get(
-                ticker.replace(".", "").replace("sh.", "").replace("sz.", ""), ""
+                ticker.lstrip("sz.").lstrip("sh.").lstrip("bj."), ""
             ),
             "status": "no_data",
             "score": 0.0,
@@ -286,7 +286,7 @@ def analyze_stock(ticker: str) -> dict[str, Any]:
 
     return {
         "ticker": ticker,
-        "name": _STOCK_NAMES.get(ticker.replace(".", "").replace("sh.", "").replace("sz.", ""), ""),
+        "name": _STOCK_NAMES.get(ticker.lstrip("sz.").lstrip("sh.").lstrip("bj."), ""),
         "status": "ok",
         "score": round(score, 1),
         "close": round(latest, 2),
@@ -397,6 +397,7 @@ def run_analysis(date: str, tickers_str: str) -> None:
 
 
 def main() -> None:
+    """命令行入口：解析参数并执行白名单分析 + AI 核实 + 飞书推送。"""
     import argparse
 
     parser = argparse.ArgumentParser(description="白名单股票综合分析 + AI核实 + 飞书推送")

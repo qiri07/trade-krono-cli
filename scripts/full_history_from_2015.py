@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
+from scripts._utils import get_all_tickers, get_provider_chain
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
@@ -35,26 +36,9 @@ CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 _load_env()
 
 
-def _get_all_tickers() -> list[str]:
-    """从数据库读取所有 ticker。"""
-    import sqlite3
-
-    conn = sqlite3.connect(str(CACHE_DB))
-    tickers = [r[0] for r in conn.execute("SELECT DISTINCT ticker FROM kline_cache").fetchall()]
-    conn.close()
-    return sorted(tickers)
-
-
-def _get_provider_chain(ticker: str) -> list[str]:
-    """根据股票类型返回 provider 优先级链。"""
-    if ticker.startswith("bj."):
-        return ["tonghuashun", "baostock"]
-    elif ticker.startswith("sh.") or ticker.startswith("sz."):
-        return ["tonghuashun", "baostock", "mootdx"]
-    return ["baostock", "tonghuashun"]
-
-
-def _fetch_and_append(factory, ticker: str, provider_chain: list[str]) -> tuple[str, int, str]:
+def _fetch_and_append(
+    factory, ticker: str, provider_chain: list[str], start_date: str, end_date: str, cache_db: Path
+) -> tuple[str, int, str]:
     """拉取历史数据并追加到现有记录（不覆盖已有数据）。"""
     try:
         df_new = None
@@ -64,7 +48,7 @@ def _fetch_and_append(factory, ticker: str, provider_chain: list[str]) -> tuple[
                 if provider is None:
                     continue
                 result = provider.fetch_kline(
-                    ticker, START_DATE, END_DATE, frequency="d", adjustflag="1"
+                    ticker, start_date, end_date, frequency="d", adjustflag="1"
                 )
                 if result is None or result.is_empty:
                     continue
@@ -84,7 +68,7 @@ def _fetch_and_append(factory, ticker: str, provider_chain: list[str]) -> tuple[
 
         import sqlite3
 
-        conn = sqlite3.connect(str(CACHE_DB))
+        conn = sqlite3.connect(str(cache_db))
         row = conn.execute(
             "SELECT start, end, data FROM kline_cache WHERE ticker = ?", (ticker,)
         ).fetchone()
@@ -126,13 +110,15 @@ def _fetch_and_append(factory, ticker: str, provider_chain: list[str]) -> tuple[
 
 
 def main(start_date: str, end_date: str) -> None:
-    global START_DATE, END_DATE
-    START_DATE = start_date
-    END_DATE = end_date
+    """执行历史数据回退同步，将 K 线数据扩展至指定起始日期。
 
-    logger.info(f"🚀 启动历史回退同步：{START_DATE} ~ {END_DATE}")
+    Args:
+        start_date: 目标起始日期，格式 YYYY-MM-DD。
+        end_date: 目标结束日期，格式 YYYY-MM-DD。
+    """
+    logger.info(f"🚀 启动历史回退同步：{start_date} ~ {end_date}")
 
-    all_tickers = _get_all_tickers()
+    all_tickers = get_all_tickers()
     logger.info(f"📋 共 {len(all_tickers)} 只股票待处理")
 
     # 先检查哪些股票需要补全
@@ -175,7 +161,16 @@ def main(start_date: str, end_date: str) -> None:
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
             futures = {
-                pool.submit(_fetch_and_append, factory, t, _get_provider_chain(t)): t for t in batch
+                pool.submit(
+                    _fetch_and_append,
+                    factory,
+                    t,
+                    get_provider_chain(t),
+                    start_date,
+                    end_date,
+                    CACHE_DB,
+                ): t
+                for t in batch
             }
             for future in as_completed(futures):
                 ticker, n_new, status = future.result()

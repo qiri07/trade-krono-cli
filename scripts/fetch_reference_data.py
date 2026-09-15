@@ -21,26 +21,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
+from scripts._utils import get_all_tickers
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
 WORKERS = 20
 BATCH_SIZE = 100
 FETCH_TIMEOUT = 15
-CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 METADATA_FILE = Path("outputs/cache/metadata.json")
 
 _load_env()
-
-
-def _get_all_tickers() -> list[str]:
-    """从数据库读取所有 ticker。"""
-    import sqlite3
-
-    conn = sqlite3.connect(str(CACHE_DB))
-    tickers = [r[0] for r in conn.execute("SELECT DISTINCT ticker FROM kline_cache").fetchall()]
-    conn.close()
-    return sorted(tickers)
 
 
 def _fetch_metadata_one(factory, ticker: str) -> tuple[str, dict | None, str]:
@@ -67,12 +57,17 @@ def _fetch_metadata_one(factory, ticker: str) -> tuple[str, dict | None, str]:
 
 
 def main(tickers_input: list[str] | None = None) -> None:
+    """批量拉取股票元数据（参考数据）并保存到 JSON 文件。
+
+    Args:
+        tickers_input: 指定股票代码列表（逗号分隔），为 None 时拉取全量。
+    """
     logger.info("📊 启动参考数据（元数据）拉取")
 
     if tickers_input:
         tickers = tickers_input
     else:
-        tickers = _get_all_tickers()
+        tickers = get_all_tickers()
 
     logger.info(f"📋 共 {len(tickers)} 只股票待获取元数据")
 
