@@ -76,8 +76,29 @@ class TestAnalyzeStock:
     """Stock analysis logic tests."""
 
     def test_with_data(self) -> None:
-        result = analyze_stock("sh.601668")
-        assert result["status"] == "ok"
+        """Mock sqlite3 to avoid relying on real database in CI."""
+        # Generate 30 trading days of mock K-line data (need >= 20 rows for analyze_stock)
+        dates = pd.date_range(end="2026-09-15", periods=30, freq="B")
+        mock_df = pd.DataFrame(
+            {
+                "timestamps": dates.strftime("%Y-%m-%d").tolist(),
+                "close": [10.0 + i * 0.1 for i in range(30)],
+                "open": [9.9 + i * 0.1 for i in range(30)],
+                "high": [10.2 + i * 0.1 for i in range(30)],
+                "low": [9.8 + i * 0.1 for i in range(30)],
+                "volume": [1_000_000 + i * 10_000 for i in range(30)],
+            }
+        )
+        buf = BytesIO()
+        mock_df.to_pickle(buf)
+        buf.seek(0)
+        mock_data = buf.read()
+
+        with patch("sqlite3.connect") as mock_connect:
+            mock_conn = mock_connect.return_value
+            mock_conn.execute.return_value.fetchone.return_value = (mock_data,)
+            result = analyze_stock("sh.601668")
+            assert result["status"] == "ok"
         assert 0 <= result["score"] <= 100
         assert result["trend"] in [
             "强势上涨📈",
