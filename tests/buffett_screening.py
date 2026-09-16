@@ -38,8 +38,22 @@ _BASE = "https://fuyao.aicubes.cn"
 _CONCURRENCY = 8
 _AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "agnes-2.5-flash")
 
-# ── LLM 可用性检查 ─────────────────────────────────────────────────────────────
-_LLM_AVAILABLE = bool(os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""))
+# ── LLM 配置 ───────────────────────────────────────────────────────────────
+# 优先使用 AGNES_API_KEY（agnes-2.5-flash 模型），兼容 DEEPSEEK_API_KEY / OPENAI_API_KEY
+_LLM_BASE_URL = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.cn/v1")
+_LLM_API_KEYS = ("AGNES_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY")
+
+
+def _get_llm_config() -> tuple[str | None, str]:
+    """返回 (api_key, base_url) 或 (None, url) 如果无可用 key。"""
+    for key_name in _LLM_API_KEYS:
+        key = os.getenv(key_name, "")
+        if key and key.strip():
+            return key.strip(), _LLM_BASE_URL
+    return None, _LLM_BASE_URL
+
+
+_LLM_AVAILABLE = bool(_get_llm_config()[0])
 
 
 def _verify_pe_percentile(ticker: str, name: str, pe_ttm: float | None) -> tuple[bool, str]:
@@ -76,11 +90,11 @@ def _verify_pe_percentile(ticker: str, name: str, pe_ttm: float | None) -> tuple
         if OpenAI is None:
             return True, "openai SDK 未安装"
 
-        key = os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+        key, base_url = _get_llm_config()
         if not key:
             return True, "未配置 LLM API Key"
 
-        client = OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
+        client = OpenAI(api_key=key, base_url=base_url)
         response = client.chat.completions.create(
             model=_AI_MODEL,
             messages=[{"role": "user", "content": prompt}],
@@ -913,8 +927,8 @@ def run_ai_verification(
     AiVerificationResult
         AI 核实结果，包含完整分析与摘要
     """
-    api_key = os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
-    if not api_key or not api_key.strip():
+    api_key, base_url = _get_llm_config()
+    if not api_key:
         return AiVerificationResult.empty(
             date_str, total_stocks, len(results_pass), len(results_fail)
         )
@@ -922,7 +936,7 @@ def run_ai_verification(
     try:
         from openai import OpenAI  # 局部导入，避免无 openai 时模块加载失败
 
-        client = OpenAI(api_key=api_key.strip(), base_url="https://api.deepseek.com/v1")
+        client = OpenAI(api_key=api_key.strip(), base_url=base_url)
 
         # ── 构建输入数据（只含核心字段，控制 prompt 长度）──────────────────────
         pass_lines: list[str] = []
