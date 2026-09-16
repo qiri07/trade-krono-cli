@@ -81,7 +81,9 @@ def _make_val(pe: float | None, pb: float | None) -> dict:
     return {"pe_ttm": pe, "pb_mrq": pb}
 
 
-def _make_fin(roe: float | None, roe_excl: float | None, debt: float | None, gross_margin: float | None = 50.0) -> dict:
+def _make_fin(
+    roe: float | None, roe_excl: float | None, debt: float | None, gross_margin: float | None = 50.0
+) -> dict:
     return {"roe": roe, "roe_excl": roe_excl, "debt_ratio": debt, "gross_margin": gross_margin}
 
 

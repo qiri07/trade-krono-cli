@@ -174,15 +174,47 @@ def _api_get(path: str, params: dict | None = None, timeout: int = 8) -> dict | 
 
 # 金融行业关键词（负债率阈值豁免）
 _FINANCIAL_KEYWORDS = (
-    "银行", "保险", "证券", "基金", "信托", "金融", "租赁", "信贷",
-    "农商", "城商", "工农中建交", "太平洋保险", "中国平安", "中国人民",
+    "银行",
+    "保险",
+    "证券",
+    "基金",
+    "信托",
+    "金融",
+    "租赁",
+    "信贷",
+    "农商",
+    "城商",
+    "工农中建交",
+    "太平洋保险",
+    "中国平安",
+    "中国人民",
 )
 
 # 周期行业关键词（毛利率/ROE稳定性豁免）
 _CYCLIC_KEYWORDS = (
-    "铝业", "钢铁", "煤炭", "有色", "化工", "水泥", "玻璃", "航运",
-    "石油", "化工", "稀土", "铜业", "锌业", "铅业", "铁矿", "铜矿",
-    "锂矿", "钨业", "锌业", "稀土", "稀土", "稀土", "宝钢",
+    "铝业",
+    "钢铁",
+    "煤炭",
+    "有色",
+    "化工",
+    "水泥",
+    "玻璃",
+    "航运",
+    "石油",
+    "化工",
+    "稀土",
+    "铜业",
+    "锌业",
+    "铅业",
+    "铁矿",
+    "铜矿",
+    "锂矿",
+    "钨业",
+    "锌业",
+    "稀土",
+    "稀土",
+    "稀土",
+    "宝钢",
 )
 
 
@@ -314,7 +346,12 @@ def _fetch_financials(
     if cached is not None:
         return cached, None
 
-    result: dict[str, float | None] = {"roe": None, "roe_excl": None, "debt_ratio": None, "gross_margin": None}
+    result: dict[str, float | None] = {
+        "roe": None,
+        "roe_excl": None,
+        "debt_ratio": None,
+        "gross_margin": None,
+    }
     data = _api_get(
         "/api/a-share/financials/indicators",
         {"thscode": thscode, "report": report},
