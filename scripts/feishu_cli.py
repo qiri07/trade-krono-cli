@@ -43,10 +43,10 @@ import argparse
 import sys
 from pathlib import Path
 
-# 确保仓库根在 sys.path 中
+# 确保仓库根在 sys.path 中（供直接 python scripts/feishu_cli.py 使用）
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from feishu_core import load_config, send_notification
+from scripts.feishu_core import load_config, send_notification
 
 
 def main() -> None:

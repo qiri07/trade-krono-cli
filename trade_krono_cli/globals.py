@@ -45,3 +45,6 @@ def clear_all_globals() -> None:
 
     KronosSession.clear_cache()
     TASession.clear_cache()
+    from trade_krono_cli.scoring.registry import reset_scoring_registries
+
+    reset_scoring_registries()
