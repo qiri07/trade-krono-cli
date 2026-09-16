@@ -655,6 +655,7 @@ def test_committee_table_exists_after_init(tmp_path) -> None:
 
 # ── _parse_llm_response 边界条件 ────────────────────────────────────────────
 
+
 def test_parse_llm_response_none_input() -> None:
     """response_text 为 None 时应抛出 ValueError，不崩溃。"""
     from trade_krono_cli.committee import InvestmentCommittee

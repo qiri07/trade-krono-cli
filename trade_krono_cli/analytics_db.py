@@ -175,14 +175,15 @@ class ResearchAnalytics:
 
     用法示例：
         analytics = ResearchAnalytics(db_path, parquet_paths)
+        # 通过注册视图查询 SQLite 研究数据库
         df = analytics.query(
             "SELECT s.ticker, s.rank, s.composite_score, j.date"
-            " FROM sqlite_scan('pipeline_cache.db', 'signals') s"
-            " JOIN sqlite_scan('pipeline_cache.db', 'jobs') j"
-            "   ON s.job_id = j.job_id"
+            " FROM v_signals s JOIN v_jobs j ON s.job_id = j.job_id"
             " WHERE j.date >= '2026-01-01'"
             " ORDER BY s.rank"
         )
+        # 或直接执行 SQL（参数化查询防注入）
+        df = analytics.query("SELECT * FROM v_signals WHERE ticker = ?", ("sh.600519",))
     """
 
     def __init__(
