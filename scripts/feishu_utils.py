@@ -177,11 +177,14 @@ def build_buffett_card(result_file: str, ai_summary: str = "") -> dict:
             break
 
     # 构建股票列表文本（仅显示名称，每行三个）
-    names = [s["name"] for s in stocks[:30]]
+    max_show = min(len(stocks), 80)  # 最多显示80只，避免消息过长
+    names = [s["name"] for s in stocks[:max_show]]
     chunks = [names[i : i + 3] for i in range(0, len(names), 3)]
     stock_lines = ["、".join(f"**{n}**" for n in c) for c in chunks]
-    if len(stocks) > 30:
+    if len(stocks) > max_show:
         stock_lines.append(f"... 共 {len(stocks)} 只")
+    elif len(stocks) == 0:
+        stock_lines.append("（无通过股票）")
 
     stock_text = "\n".join(stock_lines) if stock_lines else "（无通过股票）"
 
