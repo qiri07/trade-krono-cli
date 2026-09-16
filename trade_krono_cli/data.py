@@ -223,6 +223,16 @@ def fetch_kline_incremental(
             logger.info(
                 f"🔄 {ticker} 增量拉取: 缓存已覆盖至 {cached_end}，仅返回 {fetch_start} ~ {end_date}",
             )
+            # 直接返回缓存数据，无需合并写回（避免 UNIQUE 约束冲突）
+            df = fetch_kline(
+                ticker,
+                start_date,
+                end_date,
+                frequency=frequency,
+                adjustflag=adjustflag,
+                use_cache=True,
+            )
+            return df
         else:
             # 缓存与请求范围有重叠，从 cached_end 下一天开始补拉
             next_day = (datetime.strptime(cached_end, "%Y-%m-%d") + timedelta(days=1)).strftime(
