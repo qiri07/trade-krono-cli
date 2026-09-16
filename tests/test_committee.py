@@ -651,3 +651,54 @@ def test_committee_table_exists_after_init(tmp_path) -> None:
             for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         ]
     assert "committee_deliberations" in tables
+
+
+# ── _parse_llm_response 边界条件 ────────────────────────────────────────────
+
+def test_parse_llm_response_none_input() -> None:
+    """response_text 为 None 时应抛出 ValueError，不崩溃。"""
+    from trade_krono_cli.committee import InvestmentCommittee
+
+    with pytest.raises(ValueError, match="LLM 响应为空"):
+        InvestmentCommittee._parse_llm_response(None, MagicMock(), {})  # type: ignore[arg-type]
+
+
+def test_parse_llm_response_empty_string() -> None:
+    """response_text 为空字符串时应抛出 ValueError。"""
+    from trade_krono_cli.committee import InvestmentCommittee
+
+    with pytest.raises(ValueError, match="LLM 响应为空"):
+        InvestmentCommittee._parse_llm_response("", MagicMock(), {})  # type: ignore[arg-type]
+
+
+def test_parse_llm_response_non_json_text() -> None:
+    """纯文本（非 JSON）且不含 JSON 块时应抛出 ValueError。"""
+    from trade_krono_cli.committee import InvestmentCommittee
+
+    with pytest.raises(ValueError, match="无法解析 LLM 响应"):
+        InvestmentCommittee._parse_llm_response("这是一段纯文本", MagicMock(), {})  # type: ignore[arg-type]
+
+
+def test_parse_llm_response_json_with_missing_fields() -> None:
+    """JSON 有效但缺少必需字段时应抛出 ValueError。"""
+    from trade_krono_cli.committee import InvestmentCommittee
+
+    bad_json = json.dumps({"bull_case": "only this"})
+    with pytest.raises(ValueError, match="LLM 响应缺少字段"):
+        InvestmentCommittee._parse_llm_response(bad_json, MagicMock(), {})  # type: ignore[arg-type]
+
+
+def test_deliberate_llm_returns_none_falls_back(research_db) -> None:
+    """LLM 返回 None 时降级到启发式路径，不抛出异常。"""
+    inp = StockCommitteeInput(
+        ticker="sh.600519",
+        date="2026-08-14",
+        agent_reports=[],
+    )
+    committee = InvestmentCommittee()
+    mock_client = MagicMock()
+    mock_client.generate.return_value = None  # LLM 返回空
+
+    result = committee.deliberate(inp, llm_client=mock_client)
+    assert result.recommendation == "HOLD"
+    assert result.recommendation_confidence == 50.0

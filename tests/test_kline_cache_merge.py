@@ -215,3 +215,50 @@ class TestKlineCacheMergeLogic:
         r2 = kline_cache.get_kline("sz.000858", "2026-01-01", "2026-01-05", "d")
         assert r1 is not None
         assert r2 is not None
+
+    def test_corrupted_data_skipped_during_merge(self, kline_cache: KlineCache) -> None:
+        """旧缓存数据损坏时：跳过损坏记录，新数据正常写入，不崩溃。"""
+
+        df1 = _make_df("2026-01-01", "2026-01-05")
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-05", "d", df1, ttl=_KLINE_HISTORICAL_TTL
+        )
+        # 直接篡改 DB 中的 pickle 数据为无效字节
+        conn = kline_cache._cache._conn
+        conn.execute(
+            "UPDATE kline_cache SET data = ? WHERE ticker = ? AND start = ?",
+            (b"THIS_IS_NOT_A_PICKLE", "sh.600519", "2026-01-01"),
+        )
+        conn.commit()
+
+        # 新数据与损坏数据重叠 → 应跳过损坏数据，只写入新数据
+        df2 = _make_df("2026-01-03", "2026-01-10")
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-03", "2026-01-10", "d", df2, ttl=_KLINE_HISTORICAL_TTL
+        )
+
+        result = kline_cache.get_kline("sh.600519", "2026-01-03", "2026-01-10", "d")
+        assert result is not None
+        assert len(result) == 8  # 2026-01-03 ~ 2026-01-10
+
+    def test_pickle_fallback_valid_bytes(self, kline_cache: KlineCache) -> None:
+        """旧缓存使用 pickle.loads 序列化的字节应能通过回退路径加载。"""
+        import pickle as pickle_mod
+
+        df = _make_df("2026-01-01", "2026-01-05")
+        kline_cache.set_kline(
+            "sh.600519", "2026-01-01", "2026-01-05", "d", df, ttl=_KLINE_HISTORICAL_TTL
+        )
+        # 用 pickle.dumps（而非 pd.to_pickle）序列化，模拟旧格式
+        conn = kline_cache._cache._conn
+        raw_pickle = pickle_mod.dumps(df)
+        conn.execute(
+            "UPDATE kline_cache SET data = ? WHERE ticker = ? AND start = ?",
+            (raw_pickle, "sh.600519", "2026-01-01"),
+        )
+        conn.commit()
+
+        # 读取应成功（通过 pickle.loads 回退）
+        result = kline_cache.get_kline("sh.600519", "2026-01-01", "2026-01-05", "d")
+        assert result is not None
+        assert len(result) == 5

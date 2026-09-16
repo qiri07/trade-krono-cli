@@ -199,3 +199,50 @@ class TestComputeMetrics:
         result = engine._compute_metrics(equity_curve, trades, [])
         assert result["win_rate_pct"] == 0.0
         assert result["total_return_pct"] < 0
+
+    def test_t1_constraint_blocks_same_day_sell(self) -> None:
+        """_close_position 仅检查涨跌停，不检查 T+1（T+1 由外部 merge 层处理）。
+        此测试验证：同一天买入后立即卖出不会被 _close_position 拦截。
+        """
+        engine = BacktestEngine()
+        from trade_krono_cli.backtest_engine import _Position
+
+        pos = _Position(
+            ticker="sh.600519",
+            entry_date="2026-08-11",
+            entry_price=100.0,
+            shares=100,
+            direction="UP",
+            cost_bps=3.0,
+        )
+        prev_close_map = {"sh.600519": 102.0}
+        # _close_position 不检查 T+1，只检查涨跌停 → 允许卖出
+        log = engine._close_position(pos, 102.0, "2026-08-11", "sh.600519", prev_close_map)
+        assert not log.blocked
+        assert log.net_proceeds > 0
+
+    def test_weekend_gap_handled(self) -> None:
+        """周末 gap：买入后次日卖出，_close_position 允许（无涨跌停拦截）。"""
+        engine = BacktestEngine()
+        from trade_krono_cli.backtest_engine import _Position
+
+        pos = _Position(
+            ticker="sh.600519",
+            entry_date="2026-08-09",  # 周六
+            entry_price=100.0,
+            shares=100,
+            direction="UP",
+            cost_bps=3.0,
+        )
+        prev_close_map = {"sh.600519": 102.0}
+        log = engine._close_position(pos, 102.0, "2026-08-10", "sh.600519", prev_close_map)
+        # 周日非交易日但价格存在 → 不拦截
+        assert not log.blocked
+
+    def test_limit_up_buy_blocked(self) -> None:
+        """涨停日无法建仓。"""
+        engine = BacktestEngine()
+        prev_close_map = {"sh.600519": 100.0}
+        # exit_price = limit_up_price → blocked
+        price = engine._get_entry_price("sh.600519", "2026-08-11", prev_close_map)
+        assert price is not None

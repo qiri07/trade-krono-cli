@@ -46,8 +46,15 @@ class KlineCache:
                 continue
             try:
                 dfs.append(pd.read_pickle(BytesIO(data)))
-            except (ModuleNotFoundError, AttributeError, TypeError):
-                dfs.append(pickle.loads(data))
+            except (ModuleNotFoundError, AttributeError, TypeError, OSError):
+                # pickle.loads 作为回退：仅在数据为合法 pickle 字节时执行
+                if isinstance(data, (bytes, bytearray)) and len(data) > 4:
+                    try:
+                        dfs.append(pickle.loads(data))
+                    except Exception as e2:
+                        logger.warning(f"⚠️ pickle 回退解析失败: {e2}")
+                else:
+                    logger.warning("⚠️ 缓存数据格式异常，跳过")
         if not dfs:
             return None
         merged = (

@@ -300,13 +300,20 @@ class InvestmentCommittee:
         consensus: dict[str, int],
     ) -> dict[str, Any]:
         """解析 LLM 返回的 JSON 响应。"""
+        if not response_text or not isinstance(response_text, str):
+            msg = f"LLM 响应为空或非字符串: {type(response_text).__name__}"
+            raise ValueError(msg)
         try:
             result = json.loads(response_text)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             # 尝试从文本中提取 JSON 块
             match = re.search(r"\{[^{}]+\}", response_text, re.DOTALL)
             if match:
-                result = json.loads(match.group(0))
+                try:
+                    result = json.loads(match.group(0))
+                except (json.JSONDecodeError, TypeError):
+                    msg = f"无法解析 LLM 响应: {response_text[:200]}"
+                    raise ValueError(msg) from None
             else:
                 msg = f"无法解析 LLM 响应: {response_text[:200]}"
                 raise ValueError(msg)
