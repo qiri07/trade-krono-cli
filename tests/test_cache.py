@@ -63,13 +63,29 @@ def test_kline_cache_miss(tmp_path) -> None:
 
 def test_kline_cache_overwrite(tmp_path) -> None:
     c = Cache(db_path=tmp_path / "cache.db")
-    df1 = _make_kline_df(3)
-    df2 = _make_kline_df(7)
-    c.set_kline("sh.600519", "2026-01-01", "2026-01-05", "d", df1, ttl=3600)
-    c.set_kline("sh.600519", "2026-01-01", "2026-01-05", "d", df2, ttl=3600)
-    result = c.get_kline("sh.600519", "2026-01-01", "2026-01-05", "d")
+    # 创建相邻区间的 DataFrame（共享端点）
+    df1 = _make_kline_df(3)  # 2026-01-01 ~ 2026-01-03
+    # 构造第二段：从2026-01-03开始，5天到2026-01-07（确保 timestamps 类型一致）
+    dates2 = pd.date_range("2026-01-03", periods=5, freq="D")
+    df2 = pd.DataFrame(
+        {
+            "timestamps": dates2,
+            "open": [10.0 + i * 0.1 for i in range(5)],
+            "close": [10.5 + i * 0.1 for i in range(5)],
+            "high": [11.0 + i * 0.1 for i in range(5)],
+            "low": [9.5 + i * 0.1 for i in range(5)],
+            "volume": [1_000_000] * 5,
+        }
+    )
+    c.set_kline("sh.600519", "2026-01-01", "2026-01-03", "d", df1, ttl=3600)
+    c.set_kline("sh.600519", "2026-01-03", "2026-01-07", "d", df2, ttl=3600)
+    result = c.get_kline("sh.600519", "2026-01-01", "2026-01-07", "d")
     assert result is not None
+    # 合并相邻区间（3+5行，共享1天），去重后共 3+5-1 = 7 行
     assert len(result) == 7
+    # 范围覆盖整个区间
+    assert str(result["timestamps"].min())[:10] == "2026-01-01"
+    assert str(result["timestamps"].max())[:10] == "2026-01-07"
 
 
 def test_kline_cache_ttl_expiry(tmp_path) -> None:

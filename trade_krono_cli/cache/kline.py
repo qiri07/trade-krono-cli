@@ -31,21 +31,33 @@ class KlineCache:
         freq: str,
         adjustflag: str = "1",
     ) -> pd.DataFrame | None:
-        row = self._cache._query_one(
+        # 查询所有与目标区间有重叠或相邻的记录
+        rows = self._cache._query_all(
             "SELECT data, created, ttl FROM kline_cache "
-            "WHERE ticker=? AND start=? AND end=? AND freq=? AND adjustflag=?",
-            (ticker, start, end, freq, adjustflag),
+            "WHERE ticker=? AND freq=? AND adjustflag=? "
+            "AND end >= ? AND start <= ?",  # 重叠或相邻：现有end >= 查询start 且 现有start <= 查询end
+            (ticker, freq, adjustflag, start, end),
         )
-        if row is None:
+        if not rows:
             return None
-        data, created, ttl = row
-        if ttl < 0 or (ttl > 0 and time.time() - created > ttl):
+        dfs: list[pd.DataFrame] = []
+        for data, created, ttl in rows:
+            if ttl < 0 or (ttl > 0 and time.time() - created > ttl):
+                continue
+            try:
+                dfs.append(pd.read_pickle(BytesIO(data)))
+            except (ModuleNotFoundError, AttributeError, TypeError):
+                dfs.append(pickle.loads(data))
+        if not dfs:
             return None
-        try:
-            return pd.read_pickle(BytesIO(data))
-        except (ModuleNotFoundError, AttributeError, TypeError):
-            # pyarrow 未安装或旧版 pandas pickle 兼容回退
-            return pickle.loads(data)
+        merged = (
+            pd.concat(dfs)
+            .drop_duplicates(subset=["timestamps"], keep="last")
+            .sort_values("timestamps")
+        )
+        # 裁剪到请求的日期范围
+        mask = (merged["timestamps"] >= start) & (merged["timestamps"] <= end)
+        return merged.loc[mask].reset_index(drop=True)
 
     def set_kline(
         self,
@@ -75,26 +87,62 @@ class KlineCache:
         ttl: float,
         adjustflag: str,
     ) -> None:
-        # 历史数据写入策略：删除与新段有实质性重叠的旧段，插入新段
-        # 重叠/包含判定（满足任一即删除）：
-        #   1. 旧段完全在新段内（含边界相等）
-        #   2. 旧段起点等于新段起点（同一位置不同长度）
-        #   3. 旧段左端在新段内（旧段起点早于新段，但右端与新段左端重叠）
-        conn.execute(
-            "DELETE FROM kline_cache "
+        # 查找所有与新区间有重叠或相邻的记录（包括端点相接的情况）
+        rows = conn.execute(
+            "SELECT rowid, data FROM kline_cache "
             "WHERE ticker=? AND freq=? AND adjustflag=? "
-            "AND (start > ? AND end < ? OR "
-            "     start >= ? AND end <= ? OR "
-            "     start = ? OR "
-            "     start < ? AND end >= ?)",
-            (ticker, freq, adjustflag, start, end, start, end, start, start, start),
-        )
-        conn.execute(
-            "INSERT INTO kline_cache "
-            "(ticker, start, end, freq, adjustflag, ttl, data, created) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
-        )
+            "AND end > ? AND start < ?",  # 相邻或重叠：现有end > 新start 且 现有start < 新end
+            (ticker, freq, adjustflag, start, end),
+        ).fetchall()
+
+        if rows:
+            # 合并所有重叠记录的数据
+            all_dfs: list[pd.DataFrame] = []
+            for _, old_data in rows:
+                try:
+                    all_dfs.append(pd.read_pickle(BytesIO(old_data)))
+                except Exception:
+                    pass
+            all_dfs.append(pd.read_pickle(buf))
+            merged = (
+                pd.concat(all_dfs)
+                .drop_duplicates(subset=["timestamps"], keep="last")
+                .sort_values("timestamps")
+            )
+            merged_buf = BytesIO()
+            merged.to_pickle(merged_buf)
+            merged_buf.seek(0)
+
+            # 删除重叠记录
+            conn.executemany(
+                "DELETE FROM kline_cache WHERE rowid=?",
+                [(r[0],) for r in rows],
+            )
+            # 插入合并后记录
+            conn.execute(
+                "INSERT INTO kline_cache "
+                "(ticker, start, end, freq, adjustflag, ttl, data, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    ticker,
+                    merged["timestamps"].min().strftime("%Y-%m-%d"),
+                    merged["timestamps"].max().strftime("%Y-%m-%d"),
+                    freq,
+                    adjustflag,
+                    ttl,
+                    merged_buf.read(),
+                    time.time(),
+                ),
+            )
+        else:
+            # 无重叠，直接插入
+            buf.seek(0)
+            conn.execute(
+                "INSERT INTO kline_cache "
+                "(ticker, start, end, freq, adjustflag, ttl, data, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
+            )
 
     def warm_history(self, ticker: str, end_date: str, lookback_days: int = 730) -> tuple[int, int]:
         """预热 K 线缓存：拉取历史数据，全部以永久缓存写入。"""

@@ -28,10 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import CACHE_DB, get_provider_chain
-from trade_krono_cli.cache import get_cache
+from scripts._utils import CACHE_DB
 from trade_krono_cli.cli_commands.core import _load_env
-from trade_krono_cli.data_providers.factory import get_data_factory
 
 # ── 配置 ───────────────────────────────────────────────────────────────
 DEFAULT_START = "2015-01-01"
@@ -142,11 +140,16 @@ def analyze_gaps(start_date: str = DEFAULT_START, end_date: str = DEFAULT_END) -
     }
 
 
-def fetch_and_store(
-    factory, ticker: str, provider_chain: list[str], start_date: str, end_date: str
-) -> tuple[str, int, str]:
+def fetch_and_store(ticker: str, start_date: str, end_date: str) -> tuple[str, int, str]:
     """拉取数据并通过 cache API 存储（自动去重合并）。"""
     try:
+        from scripts._utils import get_provider_chain
+        from trade_krono_cli.cache import get_cache
+        from trade_krono_cli.data_providers.factory import get_data_factory
+
+        factory = get_data_factory()
+        cache = get_cache()
+        provider_chain = get_provider_chain(ticker)
         # 拆分为最多10年的子区间（同花顺 API 限制）
         sub_ranges: list[tuple[str, str]] = []
         cur = datetime.strptime(start_date, "%Y-%m-%d")
@@ -300,7 +303,6 @@ def cmd_full_history(start_date: str, end_date: str) -> None:
         return
 
     # 3. 执行同步
-    factory = get_data_factory()
     success = 0
     no_data = 0
     failed = []
@@ -314,12 +316,7 @@ def cmd_full_history(start_date: str, end_date: str) -> None:
         )
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            futures = {
-                pool.submit(
-                    fetch_and_store, factory, t, get_provider_chain(t), start_date, end_date
-                ): t
-                for t in batch
-            }
+            futures = {pool.submit(fetch_and_store, t, start_date, end_date): t for t in batch}
             for future in as_completed(futures):
                 ticker, n_rows, status = future.result()
                 if n_rows > 0:
@@ -375,7 +372,6 @@ def cmd_daily() -> None:
         return
 
     # 3. 执行同步
-    factory = get_data_factory()
     success = 0
     failed = []
     start_time = time.time()
@@ -388,10 +384,7 @@ def cmd_daily() -> None:
         )
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            futures = {
-                pool.submit(fetch_and_store, factory, t, get_provider_chain(t), today, today): t
-                for t in batch
-            }
+            futures = {pool.submit(fetch_and_store, t, today, today): t for t in batch}
             for future in as_completed(futures):
                 ticker, n_rows, status = future.result()
                 if n_rows > 0:

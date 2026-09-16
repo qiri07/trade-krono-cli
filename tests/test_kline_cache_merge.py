@@ -89,7 +89,7 @@ class TestKlineCacheMergeLogic:
         assert r2 is not None and len(r2) == 4
 
     def test_merge_overlapping_segment(self, kline_cache: KlineCache) -> None:
-        """新段与旧段部分重叠（左重叠）：旧段被删除，新段保留。"""
+        """新段与旧段部分重叠（左重叠）：两段的端点扩展后合并为一条。"""
         df1 = _make_df("2026-01-01", "2026-01-10")
         df2 = _make_df("2026-01-08", "2026-01-15")
 
@@ -100,12 +100,15 @@ class TestKlineCacheMergeLogic:
             "sh.600519", "2026-01-08", "2026-01-15", "d", df2, ttl=_KLINE_HISTORICAL_TTL
         )
 
-        # 旧段被删除，只剩新段
+        # 两段合并为一条，端点扩展
         rows = kline_cache._cache._conn.execute(
             "SELECT start, end FROM kline_cache WHERE ticker=?", ("sh.600519",)
         ).fetchall()
         assert len(rows) == 1
-        assert rows[0] == ("2026-01-08", "2026-01-15")
+        assert rows[0] == ("2026-01-01", "2026-01-15")
+        result = kline_cache.get_kline("sh.600519", "2026-01-01", "2026-01-15", "d")
+        assert result is not None
+        assert len(result) == 15
 
     def test_merge_fully_contained(self, kline_cache: KlineCache) -> None:
         """旧段完全在新段内：旧段被删除，新段保留。"""
@@ -194,9 +197,9 @@ class TestKlineCacheMergeLogic:
             "SELECT start, end FROM kline_cache WHERE ticker=? AND freq=? AND adjustflag=?",
             ("sh.600519", "d", "1"),
         ).fetchall()
-        # df1 被 df2 包含删除，df2 与 df3 重叠删除 → 只剩 df3
+        # 三段全部重叠，合并为一条最大段
         assert len(rows) == 1
-        assert rows[0] == ("2026-01-15", "2026-01-25")
+        assert rows[0] == ("2026-01-01", "2026-01-25")
 
     def test_different_ticker_same_range(self, kline_cache: KlineCache) -> None:
         """不同 ticker 的相同日期段互不影响。"""
