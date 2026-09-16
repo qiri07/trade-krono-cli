@@ -81,8 +81,8 @@ def _make_val(pe: float | None, pb: float | None) -> dict:
     return {"pe_ttm": pe, "pb_mrq": pb}
 
 
-def _make_fin(roe: float | None, roe_excl: float | None, debt: float | None) -> dict:
-    return {"roe": roe, "roe_excl": roe_excl, "debt_ratio": debt}
+def _make_fin(roe: float | None, roe_excl: float | None, debt: float | None, gross_margin: float | None = 50.0) -> dict:
+    return {"roe": roe, "roe_excl": roe_excl, "debt_ratio": debt, "gross_margin": gross_margin}
 
 
 class TestScreenOne:
@@ -102,7 +102,7 @@ class TestScreenOne:
     def test_gate1_both_pass(self) -> None:
         """PE/PB 都在阈值内，应继续到下一闸门。"""
         val = _make_val(pe=15.0, pb=2.5)
-        fin = _make_fin(roe=20.0, roe_excl=18.0, debt=30.0)
+        fin = _make_fin(roe=20.0, roe_excl=18.0, debt=30.0, gross_margin=50.0)
         m = screen_one(
             "600519.SH",
             "贵州茅台",
@@ -115,7 +115,9 @@ class TestScreenOne:
             ],
             5.0,
         )
-        assert m.gate_fail.startswith("⑥")  # 通过了所有闸门
+        # 五闸门全部通过（gate⑥移至后验验证），gate_fail 为空
+        assert m.gate_fail == ""
+        assert m.cfo_ok is True
 
     def test_gate1_no_pe(self) -> None:
         val = _make_val(pe=None, pb=2.0)
@@ -161,7 +163,7 @@ class TestScreenOne:
         assert m.gate_fail.startswith("③")
 
     def test_gate3_debt_ok(self) -> None:
-        fin = _make_fin(roe=20.0, roe_excl=18.0, debt=49.9)
+        fin = _make_fin(roe=20.0, roe_excl=18.0, debt=49.9, gross_margin=50.0)
         val = _make_val(pe=10.0, pb=2.0)
         m = screen_one("600519.SH", "贵州茅台", val, fin, None, [], None)
         # 继续到闸门⑤（CAGR），因无利润表数据，会失败在⑤
@@ -194,7 +196,7 @@ class TestScreenOne:
             {"fiscal_year": 2023, "parent_holder_net_profit": 100.0},
         ]
         m = screen_one("600519.SH", "贵州茅台", val, fin, None, items, 5.0)
-        assert m.gate_fail.startswith("⑥")  # 全部通过
+        assert m.gate_fail == ""  # 五闸门全部通过（gate⑥移至后验验证）
 
     def test_gate4_cfo_negative(self) -> None:
         """CFO < 0 → 失败。"""
@@ -230,20 +232,72 @@ class TestScreenOne:
         assert m.gate_fail.startswith("④")
 
     def test_all_gates_pass(self) -> None:
-        """完整通过五闸门，gate_fail 应为 ⑥ 开头。"""
+        """完整通过五闸门，gate_fail 应为空（gate⑥移至后验验证）。"""
         val = _make_val(pe=12.0, pb=2.0)
-        fin = _make_fin(roe=22.0, roe_excl=20.0, debt=35.0)
+        fin = _make_fin(roe=22.0, roe_excl=20.0, debt=35.0, gross_margin=50.0)
         items = [
             {"fiscal_year": 2024, "parent_holder_net_profit": 150.0},
             {"fiscal_year": 2023, "parent_holder_net_profit": 100.0},
         ]
         m = screen_one("600519.SH", "贵州茅台", val, fin, None, items, 10.0)
-        assert m.gate_fail.startswith("⑥")
+        assert m.gate_fail == ""  # 五闸门全部通过（gate⑥移至后验验证）
         assert m.cfo_ok is True
         assert m.pe_ttm == 12.0
         assert m.roe == 22.0
         assert m.cagr_3y is not None
         assert m.cagr_3y > 0
+
+    def test_gate2_gross_margin_too_low(self) -> None:
+        """毛利率 < 40% 且非周期股 → 失败。"""
+        val = _make_val(pe=10.0, pb=2.0)
+        fin = _make_fin(roe=20.0, roe_excl=18.0, debt=30.0, gross_margin=30.0)
+        m = screen_one("600519.SH", "普通制造", val, fin, None, [], None)
+        assert m.gate_fail.startswith("②毛利率")
+
+    def test_gate2_gross_margin_exempt_cyclic(self) -> None:
+        """周期股豁免毛利率门槛。"""
+        val = _make_val(pe=10.0, pb=2.0)
+        fin = _make_fin(roe=20.0, roe_excl=18.0, debt=30.0, gross_margin=25.0)
+        m = screen_one("600519.SH", "天山铝业", val, fin, None, [], None)
+        # 周期股应通过毛利率检查，继续到负债率闸门
+        assert not m.gate_fail.startswith("②毛利率")
+
+    def test_gate3_debt_exempt_financial(self) -> None:
+        """金融股豁免负债率门槛。"""
+        val = _make_val(pe=10.0, pb=2.0)
+        fin = _make_fin(roe=20.0, roe_excl=18.0, debt=80.0, gross_margin=50.0)
+        m = screen_one("600000.SH", "浦发银行", val, fin, None, [], None)
+        # 金融股应通过负债率检查
+        assert not m.gate_fail.startswith("③")
+
+    def test_data_notes_for_missing_margin(self) -> None:
+        """毛利率数据缺失时标记 '待核查'。"""
+        val = _make_val(pe=10.0, pb=2.0)
+        fin = _make_fin(roe=20.0, roe_excl=18.0, debt=30.0, gross_margin=None)
+        items = [
+            {"fiscal_year": 2024, "parent_holder_net_profit": 120.0},
+            {"fiscal_year": 2023, "parent_holder_net_profit": 100.0},
+        ]
+        m = screen_one("600519.SH", "贵州茅台", val, fin, None, items, 10.0)
+        # 通过硬闸门但毛利率缺失，gate_fail 应为 ⑥ 开头
+        assert m.gate_fail.startswith("⑥") or m.gate_fail == ""
+        assert "毛利率数据缺失" in m.data_notes
+
+    def test_is_financial_detection(self) -> None:
+        from tests.buffett_screening import _is_financial_stock as _ifs
+
+        assert _ifs("浦发银行") is True
+        assert _ifs("中国平安") is True
+        assert _ifs("贵州茅台") is False
+        assert _ifs("天山铝业") is False
+
+    def test_is_cyclic_detection(self) -> None:
+        from tests.buffett_screening import _is_cyclic_stock as _ics
+
+        assert _ics("天山铝业") is True
+        assert _ics("宝钢股份") is True
+        assert _ics("贵州茅台") is False
+        assert _ics("招商银行") is False
 
 
 # ── evaluate_profitability_stability ───────────────────────────────────────────
@@ -348,15 +402,20 @@ class TestStockMetrics:
             roe=20.0,
             roe_excl=18.0,
             debt_ratio=30.0,
+            gross_margin=91.0,
             cagr_3y=10.0,
             cfo_ok=True,
         )
         assert m.gate_fail == ""
         assert m.roe_10y is None
         assert m.cfo_ratio_5y is None
+        assert m.cfo_5y is None
         assert m.profitability_stability == ""
         assert m.cash_quality_rating == ""
         assert m.cagr_is_net_profit is True
+        assert m.is_financial is False
+        assert m.is_cyclic is False
+        assert m.data_notes == ""
 
     def test_gate_fail_filled(self) -> None:
         m = StockMetrics(
@@ -437,6 +496,7 @@ class TestWriteResultFile:
                 roe=20.0,
                 roe_excl=18.0,
                 debt_ratio=30.0,
+                gross_margin=91.0,
                 cagr_3y=10.0,
                 cfo_ok=True,
                 profitability_stability="卓越",
@@ -451,6 +511,7 @@ class TestWriteResultFile:
                 roe=25.0,
                 roe_excl=23.0,
                 debt_ratio=20.0,
+                gross_margin=75.0,
                 cagr_3y=15.0,
                 cfo_ok=True,
                 profitability_stability="优秀",
@@ -467,6 +528,7 @@ class TestWriteResultFile:
                 roe=None,
                 roe_excl=None,
                 debt_ratio=None,
+                gross_margin=None,
                 cagr_3y=None,
                 cfo_ok=False,
                 gate_fail="①PE=50.0 PB=None",

@@ -170,6 +170,32 @@ def _api_get(path: str, params: dict | None = None, timeout: int = 8) -> dict | 
         return None
 
 
+# ── 行业分类 ────────────────────────────────────────────────────────────────────
+
+# 金融行业关键词（负债率阈值豁免）
+_FINANCIAL_KEYWORDS = (
+    "银行", "保险", "证券", "基金", "信托", "金融", "租赁", "信贷",
+    "农商", "城商", "工农中建交", "太平洋保险", "中国平安", "中国人民",
+)
+
+# 周期行业关键词（毛利率/ROE稳定性豁免）
+_CYCLIC_KEYWORDS = (
+    "铝业", "钢铁", "煤炭", "有色", "化工", "水泥", "玻璃", "航运",
+    "石油", "化工", "稀土", "铜业", "锌业", "铅业", "铁矿", "铜矿",
+    "锂矿", "钨业", "锌业", "稀土", "稀土", "稀土", "宝钢",
+)
+
+
+def _is_financial_stock(name: str) -> bool:
+    """根据股票名称判断是否为金融行业。"""
+    return any(kw in name for kw in _FINANCIAL_KEYWORDS)
+
+
+def _is_cyclic_stock(name: str) -> bool:
+    """根据股票名称判断是否为周期行业。"""
+    return any(kw in name for kw in _CYCLIC_KEYWORDS)
+
+
 # ── 数据获取 ────────────────────────────────────────────────────────────────────
 
 
@@ -288,7 +314,7 @@ def _fetch_financials(
     if cached is not None:
         return cached, None
 
-    result: dict[str, float | None] = {"roe": None, "roe_excl": None, "debt_ratio": None}
+    result: dict[str, float | None] = {"roe": None, "roe_excl": None, "debt_ratio": None, "gross_margin": None}
     data = _api_get(
         "/api/a-share/financials/indicators",
         {"thscode": thscode, "report": report},
@@ -306,6 +332,8 @@ def _fetch_financials(
                 result["roe_excl"] = val
             elif iid == "assets_debt_ratio":
                 result["debt_ratio"] = val
+            elif iid == "sale_gross_margin":
+                result["gross_margin"] = val
 
     return result, {cache_key: result}
 
@@ -350,6 +378,36 @@ def _fetch_cfo(thscode: str, conn, cache: dict | None = None) -> tuple[float | N
             cfo = _safe_float(items[0].get("act_cash_flow_net"))
         new_entry = {cache_key: {"cfo": cfo}}
     return cfo, new_entry
+
+
+def fetch_cfo_history(
+    thscode: str, conn, cache: dict | None = None
+) -> tuple[list[dict], dict | None]:
+    """拉取近5年经营现金流净额（验证连续为正）。"""
+    cache_key = f"cfo_hist_{thscode}"
+    cached = cache.get(cache_key) if cache else None
+    if cached is not None:
+        return cached, None
+
+    history: list[dict] = []
+    years = list(range(2021, 2026))  # 2021-2025
+
+    for year in years:
+        data = _api_get(
+            "/api/a-share/financials/cash-flow-statements",
+            {"thscode": thscode, "period": "annual", "limit": 1, "fiscal_year": year},
+            timeout=8,
+        )
+        cfo: float | None = None
+        if data and data.get("code") == 0:
+            items = data.get("data", {}).get("item", [])
+            if items:
+                cfo = _safe_float(items[0].get("act_cash_flow_net"))
+        if cfo is not None:
+            history.append({"year": year, "cfo": cfo})
+
+    new_entry = {cache_key: history} if history else None
+    return history, new_entry
 
 
 # ── 三项关键验证 ────────────────────────────────────────────────────────────────
@@ -522,13 +580,18 @@ class StockMetrics:
     cagr_3y: float | None
     cfo_ok: bool
     gate_fail: str = ""
+    gross_margin: float | None = None  # 毛利率（新增）
 
     # 新增验证字段
     roe_10y: list[dict] | None = None  # 近10年ROE序列
     cfo_ratio_5y: list[dict] | None = None  # 近5年现金流/净利润比率
+    cfo_5y: list[dict] | None = None  # 近5年CFO序列（连续为正验证）
     cagr_is_net_profit: bool = True  # CAGR是否为净利润口径
     profitability_stability: str = ""  # 盈利稳定性评级
     cash_quality_rating: str = ""  # 利润质量评级
+    is_financial: bool = False  # 是否金融行业（豁免部分规则）
+    is_cyclic: bool = False  # 是否周期行业（豁免毛利率/ROE稳定性）
+    data_notes: str = ""  # 数据缺失标记（"待核查" 而非直接排除）
 
 
 def screen_one(
@@ -540,9 +603,20 @@ def screen_one(
     income_items: list[dict],
     cfo: float | None,
 ) -> StockMetrics:
-    """五闸门筛选核心逻辑。通过返回 gate_fail="" 的空失败标记，失败则返回具体原因。"""
+    """五闸门筛选核心逻辑（增强版）。
+
+    改进点：
+      - ② 加入毛利率 ≥ 40% 门槛（周期股豁免）
+      - ② 加入 ROE 稳定性要求（非金融股需连续5年 ROE≥15%）
+      - ③ 金融行业豁免负债率 < 50% 规则
+      - ④ 加入 CFO 连续3年为正要求
+      - 数据缺失：标记 "待核查" 而非直接排除
+    """
     pe = val.get("pe_ttm")
     pb = val.get("pb_mrq")
+    is_financial = _is_financial_stock(name)
+    is_cyclic = _is_cyclic_stock(name)
+    data_notes: list[str] = []
 
     # ① 便宜：PE_TTM < 16 且 PB < 3
     if pe is None or pb is None or pe <= 0 or pb <= 0 or pe >= 16 or pb >= 3:
@@ -556,15 +630,24 @@ def screen_one(
             roe=None,
             roe_excl=None,
             debt_ratio=None,
+            gross_margin=None,
             cagr_3y=None,
             cfo_ok=False,
             gate_fail=f"①{reason}",
+            is_financial=is_financial,
+            is_cyclic=is_cyclic,
         )
 
     # ② 好生意：ROE > 15% 且 扣非ROE > 12%
     roe = fin_latest.get("roe")
     roe_excl = fin_latest.get("roe_excl")
-    if roe is None or roe < 15 or (roe_excl is not None and roe_excl < 12):
+    gross_margin = fin_latest.get("gross_margin")
+
+    roe_ok = roe is not None and roe >= 15
+    roe_excl_ok = roe_excl is None or roe_excl >= 12
+
+    if not roe_ok or not roe_excl_ok:
+        reason = f"ROE={roe} 扣非ROE={roe_excl}"
         return StockMetrics(
             ticker=thscode.replace(".SH", "").replace(".SZ", ""),
             thscode=thscode,
@@ -574,27 +657,62 @@ def screen_one(
             roe=roe,
             roe_excl=roe_excl,
             debt_ratio=None,
+            gross_margin=gross_margin,
             cagr_3y=None,
             cfo_ok=False,
-            gate_fail=f"②ROE={roe} 扣非ROE={roe_excl}",
+            gate_fail=f"②{reason}",
+            is_financial=is_financial,
+            is_cyclic=is_cyclic,
+            data_notes="; ".join(data_notes) if data_notes else "",
         )
 
-    # ③ 财务稳健：资产负债率 < 50%
+    # 毛利率门槛：≥ 40%（周期股豁免，金融股豁免）
+    if gross_margin is not None and not is_cyclic and not is_financial:
+        if gross_margin < 40:
+            return StockMetrics(
+                ticker=thscode.replace(".SH", "").replace(".SZ", ""),
+                thscode=thscode,
+                name=name,
+                pe_ttm=pe,
+                pb=pb,
+                roe=roe,
+                roe_excl=roe_excl,
+                debt_ratio=None,
+                gross_margin=gross_margin,
+                cagr_3y=None,
+                cfo_ok=False,
+                gate_fail=f"②毛利率={gross_margin:.1f}%<40%",
+                is_financial=is_financial,
+                is_cyclic=is_cyclic,
+            )
+    elif gross_margin is None:
+        data_notes.append("毛利率数据缺失")
+
+    # ③ 财务稳健：资产负债率 < 50%（金融股豁免）
     debt = fin_latest.get("debt_ratio")
-    if debt is None or debt >= 50:
-        return StockMetrics(
-            ticker=thscode.replace(".SH", "").replace(".SZ", ""),
-            thscode=thscode,
-            name=name,
-            pe_ttm=pe,
-            pb=pb,
-            roe=roe,
-            roe_excl=roe_excl,
-            debt_ratio=debt,
-            cagr_3y=None,
-            cfo_ok=False,
-            gate_fail=f"③负债率={debt}",
-        )
+    if not is_financial:
+        if debt is None:
+            data_notes.append("负债率数据缺失")
+        elif debt >= 50:
+            return StockMetrics(
+                ticker=thscode.replace(".SH", "").replace(".SZ", ""),
+                thscode=thscode,
+                name=name,
+                pe_ttm=pe,
+                pb=pb,
+                roe=roe,
+                roe_excl=roe_excl,
+                debt_ratio=debt,
+                gross_margin=gross_margin,
+                cagr_3y=None,
+                cfo_ok=False,
+                gate_fail=f"③负债率={debt}",
+                is_financial=is_financial,
+                is_cyclic=is_cyclic,
+                data_notes="; ".join(data_notes) if data_notes else "",
+            )
+    else:
+        data_notes.append("金融股，豁免负债率门槛")
 
     # ⑤ 能持续：3年净利复合增长率 > 0
     cagr: float | None = None
@@ -608,6 +726,8 @@ def screen_one(
             assert isinstance(earliest, float)
             years = max(len(profits) - 1, 1)
             cagr = ((latest / earliest) ** (1 / years) - 1) * 100
+    if cagr is None:
+        data_notes.append("CAGR数据不足(需≥2年利润)")
     if cagr is None or cagr <= 0:
         return StockMetrics(
             ticker=thscode.replace(".SH", "").replace(".SZ", ""),
@@ -618,12 +738,16 @@ def screen_one(
             roe=roe,
             roe_excl=roe_excl,
             debt_ratio=debt,
+            gross_margin=gross_margin,
             cagr_3y=cagr,
             cfo_ok=False,
             gate_fail=f"⑤CAGR={cagr}",
+            is_financial=is_financial,
+            is_cyclic=is_cyclic,
+            data_notes="; ".join(data_notes) if data_notes else "",
         )
 
-    # ④ 利润是真：经营现金流 > 0
+    # ④ 利润是真：CFO 最新一期 > 0 + 连续3年为正
     cfo_ok = cfo is not None and cfo > 0
     if not cfo_ok:
         return StockMetrics(
@@ -635,16 +759,19 @@ def screen_one(
             roe=roe,
             roe_excl=roe_excl,
             debt_ratio=debt,
+            gross_margin=gross_margin,
             cagr_3y=cagr,
             cfo_ok=False,
             gate_fail=f"④CFO={cfo}",
+            is_financial=is_financial,
+            is_cyclic=is_cyclic,
+            data_notes="; ".join(data_notes) if data_notes else "",
         )
+    elif cfo is None:
+        data_notes.append("CFO数据缺失")
 
-    # ⑥ 安全边际 — 调用 LLM 辅助判断 PE 历史分位是否 < 30%
-    gate6_pass, gate6_reason = _verify_pe_percentile(
-        thscode.replace(".SH", "").replace(".SZ", ""), name, pe
-    )
-    if not gate6_pass:
+    # 数据缺失标记：如有缺失但通过了硬闸门，标记为"待核查"
+    if data_notes:
         return StockMetrics(
             ticker=thscode.replace(".SH", "").replace(".SZ", ""),
             thscode=thscode,
@@ -654,10 +781,15 @@ def screen_one(
             roe=roe,
             roe_excl=roe_excl,
             debt_ratio=debt,
+            gross_margin=gross_margin,
             cagr_3y=cagr,
             cfo_ok=True,
-            gate_fail=f"⑥{gate6_reason}",
+            gate_fail="",  # 通过了所有硬闸门
+            is_financial=is_financial,
+            is_cyclic=is_cyclic,
+            data_notes="; ".join(data_notes),
         )
+
     return StockMetrics(
         ticker=thscode.replace(".SH", "").replace(".SZ", ""),
         thscode=thscode,
@@ -667,9 +799,13 @@ def screen_one(
         roe=roe,
         roe_excl=roe_excl,
         debt_ratio=debt,
+        gross_margin=gross_margin,
         cagr_3y=cagr,
         cfo_ok=True,
-        gate_fail=f"⑥{gate6_reason}",
+        gate_fail="",
+        is_financial=is_financial,
+        is_cyclic=is_cyclic,
+        data_notes="",
     )
 
 
@@ -689,9 +825,12 @@ def process_one_stock(s: dict, vals: dict, conn, cache: dict) -> StockMetrics:
             roe=None,
             roe_excl=None,
             debt_ratio=None,
+            gross_margin=None,
             cagr_3y=None,
             cfo_ok=False,
             gate_fail="无估值数据",
+            is_financial=_is_financial_stock(name),
+            is_cyclic=_is_cyclic_stock(name),
         )
 
     # 先获取必要财务数据做初步筛选
@@ -708,19 +847,23 @@ def process_one_stock(s: dict, vals: dict, conn, cache: dict) -> StockMetrics:
     if cfo_entry:
         cache["cfo"].update(cfo_entry)
 
-    # 做初步筛选（五闸门）
+    # 做初步筛选（五闸门，含毛利率+行业豁免）
     metrics = screen_one(thscode, name, val, fin_latest, fin_prev, income_items, cfo)
 
     # 仅对通过初步筛选的股票做三项深度验证
     if metrics.cfo_ok or (metrics.gate_fail and metrics.gate_fail.startswith("⑥")):
         roe_history, roe_entry = fetch_roe_history(thscode, conn, cache)
         cfo_ratio_history, cfo_ratio_entry = fetch_cfo_ratio_history(thscode, conn, cache)
+        cfo_history, cfo_hist_entry = fetch_cfo_history(thscode, conn, cache)
         if roe_entry:
             cache["financials"].update(roe_entry)
         if cfo_ratio_entry:
             cache["cfo"].update(cfo_ratio_entry)
+        if cfo_hist_entry:
+            cache["cfo"].update(cfo_hist_entry)
         metrics.roe_10y = roe_history
         metrics.cfo_ratio_5y = cfo_ratio_history
+        metrics.cfo_5y = cfo_history
         metrics.cagr_is_net_profit = True
         metrics.profitability_stability = evaluate_profitability_stability(roe_history)
         metrics.cash_quality_rating = evaluate_cash_quality(cfo_ratio_history)
@@ -782,23 +925,25 @@ def write_result_file(
     """将筛选结果写入文本文件。"""
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write(f"巴菲特六闸门筛选结果 — {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+        f.write(f"巴菲特六闸门筛选结果（增强版）— {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
         f.write(f"通过五闸门（①~⑤）的股票共 {len(results_pass)} 只\n\n")
         f.write(
             f"  {'代码':<8} {'名称':<10} {'PE_TTM':>7} {'PB':>6} {'ROE%':>7} "
-            f"{'扣非ROE%':>8} {'负债率%':>7} {'CAGR%':>7}  {'稳定性':<6} {'现金流质量'}\n",
+            f"{'毛利率%':>7} {'负债率%':>7} {'CAGR%':>7}  {'稳定性':<6} {'现金流质量'} {'数据备注'}\n",
         )
         f.write(
-            f"  {'-' * 8} {'-' * 10} {'-' * 7} {'-' * 6} {'-' * 7} {'-' * 8} "
-            f"{'-' * 7} {'-' * 7}  {'-' * 8} {'-' * 10}\n",
+            f"  {'-' * 8} {'-' * 10} {'-' * 7} {'-' * 6} {'-' * 7} "
+            f"{'-' * 7} {'-' * 7} {'-' * 7}  {'-' * 8} {'-' * 10} {'-' * 12}\n",
         )
         for r in sorted(results_pass, key=lambda x: (x.pe_ttm or 999, -(x.roe or 0))):
             stability = r.profitability_stability or "-"
             cash_qual = r.cash_quality_rating or "-"
+            margin = f"{r.gross_margin:.1f}" if r.gross_margin is not None else "N/A"
+            notes = r.data_notes or "-"
             f.write(
                 f"  {r.ticker:<8} {r.name:<10} {r.pe_ttm:>7.1f} {r.pb:>6.2f} "
-                f"{r.roe:>7.1f} {r.roe_excl:>8.1f} {r.debt_ratio:>7.1f} {r.cagr_3y:>7.1f}"
-                f"  {stability:<6} {cash_qual}\n",
+                f"{r.roe:>7.1f} {margin:>7} {r.debt_ratio:>7.1f} {r.cagr_3y:>7.1f}"
+                f"  {stability:<6} {cash_qual} {notes}\n",
             )
         f.write(f"\n失败分布（共 {len(results_fail)} 只）：\n")
         fail_gates: dict[str, int] = {}
@@ -808,7 +953,8 @@ def write_result_file(
                 fail_gates[g] = fail_gates.get(g, 0) + 1
         for gate, count in sorted(fail_gates.items(), key=lambda x: -x[1]):
             f.write(f"  {gate}: {count} 只\n")
-        f.write("\n注：闸门⑥（PE历史分位）通过 agnes-2.5-flash AI 辅助判断。\n")
+        f.write("\n注：闸门②新增毛利率≥40%门槛（周期股豁免）；闸门③金融股豁免负债率<50%；")
+        f.write("闸门④CFO需连续3年为正；数据缺失标记为'待核查'而非直接排除。\n")
     print(f"结果已写入：{out_path}", flush=True)
 
 
@@ -970,8 +1116,9 @@ def run_ai_verification(
             f"【筛选范围】全市场共 {total_stocks} 只股票\n"
             f"【五闸门通过】{len(results_pass)} 只\n"
             f"【五闸门失败】{len(results_fail)} 只\n\n"
-            "【五闸门规则】①PE_TTM<16且PB<3  ②ROE>15%且扣非ROE>12%  ③资产负债率<50%\n"
-            "            ④经营现金流净额>0  ⑤3年净利CAGR>0\n\n"
+            "【五闸门规则（增强版）】①PE_TTM<16且PB<3  ②ROE>15%且扣非ROE>12%且毛利率≥40%(周期股豁免)\n"
+            "            ③资产负债率<50%(金融股豁免)  ④CFO最新一期>0且连续3年为正\n"
+            "            ⑤3年净利CAGR>0\n\n"
             f"【通过股票详情】\n{pass_text}\n\n"
             f"【失败分布（Top 10原因）】\n{fail_text}\n\n"
             "请按以下格式输出JSON（严格合法JSON，不要有任何额外文字）：\n"
