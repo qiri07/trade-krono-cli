@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -64,24 +63,24 @@ def _build_retry_overrides(
 
 def _sanitize_path(path: str, label: str, project_root: Path) -> Path:
     """验证输出路径在项目根目录内，防止路径遍历与符号链接绕过。"""
-    real_project = os.path.realpath(str(project_root))
-    real_path = os.path.realpath(path)
+    real_project = project_root.resolve()
+    real_path = Path(path).resolve()
 
     # 拒绝：目标路径不在 project_root 的 realpath 之下
     try:
-        Path(real_path).relative_to(real_project)
+        real_path.relative_to(real_project)
     except ValueError:
         console.print(f"[red]❌ {label} 路径必须在项目根目录下: {path}[/red]")
         raise typer.Exit(1)
 
     # 拒绝：路径中存在指向 project_root 之外的符号链接
     # 逐段向上检查，发现越界链接即拒绝
-    p = Path(real_path)
-    while str(p) != real_project and str(p).startswith(real_project + os.sep):
+    p = real_path
+    while str(p) != str(real_project) and str(p).startswith(str(real_project) + "/"):
         if p.is_symlink():
-            target = os.path.realpath(str(p))
+            target = p.resolve()
             try:
-                Path(target).relative_to(real_project)
+                target.relative_to(real_project)
             except ValueError:
                 console.print(f"[red]❌ {label} 路径包含指向项目外的符号链接: {path}[/red]")
                 raise typer.Exit(1)

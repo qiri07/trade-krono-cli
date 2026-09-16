@@ -101,8 +101,8 @@ class KlineCache:
             for _, old_data in rows:
                 try:
                     all_dfs.append(pd.read_pickle(BytesIO(old_data)))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"⚠️ 缓存数据损坏，跳过 ticker={ticker} rowid={rows[0][0]}: {e}")
             all_dfs.append(pd.read_pickle(buf))
             merged = (
                 pd.concat(all_dfs)
