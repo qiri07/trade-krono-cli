@@ -259,6 +259,11 @@ def _run_sync(
     usable_providers = [p for p in ranked if health.get(p, False)]
     logger.info(f"可用 Provider: {usable_providers}")
 
+    if not usable_providers:
+        logger.error("❌ 所有 Provider 均不可用，同步终止。请检查网络连接或数据源配置。")
+        console.print("\n[red]❌ 同步失败：无可用数据源[/red]")
+        return
+
     # ── 并发拉取 ─────────────────────────────────────────────────────────────
     total = len(tickers)
     workers = min(workers, total)
