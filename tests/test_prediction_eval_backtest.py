@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from trade_krono_cli.eval_data import EvalRecord
 from trade_krono_cli.prediction_eval_backtest import run_backtest
@@ -53,7 +51,6 @@ class TestRunBacktest:
 
         assert result is not None
         # 回测引擎应被调用
-        from trade_krono_cli.backtest_engine import BacktestEngine
 
         assert hasattr(result, "n_trades")
 

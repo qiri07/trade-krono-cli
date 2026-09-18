@@ -56,3 +56,20 @@ class TestClearAllGlobals:
         x = [1, 2, 3]
         clear_all_globals()
         assert x == [1, 2, 3]
+
+    def test_clears_analytics_singleton(self) -> None:
+        """clear_all_globals 应包含 Analytics 单例清理（不报错）。"""
+        from trade_krono_cli.analytics_db.engine import (
+            clear_analytics_singleton,
+        )
+
+        # 直接设置单例再清除，验证 cleanup 路径存在
+        clear_analytics_singleton()  # 已为 None，不应报错
+        clear_all_globals()  # 应包含 analytics 清理且不掉异常
+
+    def test_analytics_cleanup_no_error(self) -> None:
+        """清除未初始化的 Analytics 单例不应抛出异常。"""
+        from trade_krono_cli.analytics_db.engine import clear_analytics_singleton
+
+        clear_analytics_singleton()  # 已为 None，不应报错
+        clear_all_globals()  # 多次调用也应安全

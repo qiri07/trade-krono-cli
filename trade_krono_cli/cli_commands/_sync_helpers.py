@@ -192,27 +192,21 @@ def _fetch_ticker_parallel(
     (行数, provider名称) 或 (0, None) 表示失败
     """
     from trade_krono_cli.data import fetch_kline_incremental
-    from trade_krono_cli.data_providers import get_data_factory
 
     def _single(ticker_: str, provider_: str) -> tuple[int, str | None]:
         # 获取该 Provider 的信号量，限制并发请求数
         provider_sema = _get_provider_semaphore(provider_)
         with provider_sema:
-            old_primary = get_data_factory().primary
-            old_fallbacks = list(get_data_factory().fallbacks)
             try:
-                get_data_factory().primary = provider_
-                get_data_factory().fallbacks = []
                 df = fetch_kline_incremental(
-                    ticker_, start_date, end_date, frequency, adjustflag, use_cache
+                    ticker_, start_date, end_date, frequency, adjustflag, use_cache,
                 )
-                return (len(df), provider_) if df is not None and len(df) > 0 else (0, None)
+                if df is not None and len(df) > 0:
+                    return (len(df), provider_)
+                return (0, None)
             except Exception as e:
                 logger.debug(f"  {ticker_} ← {provider_} 失败: {e}")
                 return (0, None)
-            finally:
-                get_data_factory().primary = old_primary
-                get_data_factory().fallbacks = old_fallbacks
 
     with ThreadPoolExecutor(max_workers=len(providers)) as pool:
         futures = {pool.submit(_single, ticker, p): p for p in providers}
@@ -277,12 +271,12 @@ def _run_sync(
         "tickers_since_check": 0,
         "failure_counts": {},
         "lock": threading.Lock(),
+        "stop_event": threading.Event(),
     }
 
     def _health_monitor() -> None:
         """后台线程：定期重新检测 Provider 健康状态。"""
-        while True:
-            time.sleep(5.0)
+        while not _health_state["stop_event"].wait(timeout=5.0):
             with _health_state["lock"]:
                 elapsed = time.monotonic() - _health_state["last_check_time"]
                 tickers_done = _health_state["tickers_since_check"]
@@ -325,36 +319,39 @@ def _run_sync(
         finally:
             _get_global_semaphore().release()
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_process, t): t for t in tickers}
-        for future in as_completed(futures):
-            ticker = futures[future]
-            try:
-                t, rows, provider_name = future.result()
-                provider_map[ticker] = provider_name
-                if rows > 0:
-                    success_count += 1
-                    if show_progress:
-                        console.print(
-                            f"  ✅ [{success_count}/{total}] {ticker} {rows}行 ← {provider_name or '?'}",
-                            soft_wrap=True,
-                        )
-                else:
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_process, t): t for t in tickers}
+            for future in as_completed(futures):
+                ticker = futures[future]
+                try:
+                    t, rows, provider_name = future.result()
+                    provider_map[ticker] = provider_name
+                    if rows > 0:
+                        success_count += 1
+                        if show_progress:
+                            console.print(
+                                f"  ✅ [{success_count}/{total}] {ticker} {rows}行 ← {provider_name or '?'}",
+                                soft_wrap=True,
+                            )
+                    else:
+                        fail_tickers.append(ticker)
+                        logger.warning(f"⚠️  {ticker} 无数据返回")
+                        if show_progress:
+                            console.print(
+                                f"  ❌ [{success_count + len(fail_tickers)}/{total}] {ticker} 无数据",
+                                soft_wrap=True,
+                            )
+                except Exception as e:
                     fail_tickers.append(ticker)
-                    logger.warning(f"⚠️  {ticker} 无数据返回")
+                    logger.debug(f"⚠️  {ticker} K 线拉取失败: {e}")
                     if show_progress:
                         console.print(
-                            f"  ❌ [{success_count + len(fail_tickers)}/{total}] {ticker} 无数据",
+                            f"  ❌ [{success_count + len(fail_tickers)}/{total}] {ticker} {str(e)[:40]}",
                             soft_wrap=True,
                         )
-            except Exception as e:
-                fail_tickers.append(ticker)
-                logger.debug(f"⚠️  {ticker} K 线拉取失败: {e}")
-                if show_progress:
-                    console.print(
-                        f"  ❌ [{success_count + len(fail_tickers)}/{total}] {ticker} {str(e)[:40]}",
-                        soft_wrap=True,
-                    )
+    finally:
+        _health_state["stop_event"].set()
 
     console.print()
 

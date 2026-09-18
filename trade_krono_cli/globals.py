@@ -40,6 +40,9 @@ def clear_all_globals() -> None:
     clear_tradingagents_imported()
     clear_kronos_imported()
     clear_failure_store_singleton()
+    from trade_krono_cli.analytics_db import clear_analytics_singleton
+
+    clear_analytics_singleton()
     from trade_krono_cli.models.kronos_session import KronosSession
     from trade_krono_cli.models.ta_session import TASession
 
