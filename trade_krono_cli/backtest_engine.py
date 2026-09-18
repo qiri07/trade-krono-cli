@@ -169,9 +169,11 @@ class BacktestEngine:
                 if pnl.blocked:
                     blocked_reason = pnl.trade_log.get("blocked_reason", "")  # type: ignore[union-attr]
                     if "LIMIT_UP" in blocked_reason:
-                        pass  # 涨停无法卖出，保留持仓到下一天
+                        # 涨停无法卖出，恢复持仓到下一天
+                        positions[ticker] = pos
                     elif "LIMIT_DOWN" in blocked_reason:
-                        pass  # 跌停无法卖出，保留持仓
+                        # 跌停无法卖出，恢复持仓到下一天
+                        positions[ticker] = pos
 
             # ── 2. 调仓：买入新标的 ────────────────────────────────────────
             today_signals = [r for r in records if r.date == day]
@@ -403,7 +405,7 @@ class BacktestEngine:
         avg_loss = abs(np.mean(losses)) if losses else 1e-9
         profit_factor = (
             abs(sum(wins) / sum(losses))
-            if losses and sum(losses) != 0
+            if losses
             else (100.0 if wins else 0.0)
         )
 
