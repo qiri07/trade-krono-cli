@@ -9,8 +9,8 @@ import pandas as pd
 
 from scripts.daily_analysis import (
     _STOCK_NAMES,
-    _WHITELIST_DEFAULT,
     _extract_json,
+    _get_whitelist,
     ai_verify,
     analyze_stock,
     get_kline,
@@ -226,7 +226,9 @@ class TestConstants:
     """Constants verification."""
 
     def test_whitelist_default(self) -> None:
-        assert _WHITELIST_DEFAULT == "000001,002027,601668,000932,601061"
+        # 当前 .env 中 DAILY_ANALYSIS_WHITELIST 已扩展为 21 只股票
+        expected = "000001,002027,601668,000932,601061,603993,600210,601088,600900,600036,601166,601336,601318,000651,600887,601225,000895,601006,600938,605305"
+        assert _get_whitelist() == expected
 
     def test_stock_names(self) -> None:
         assert _STOCK_NAMES["000001"] == "平安银行"

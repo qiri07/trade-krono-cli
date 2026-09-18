@@ -282,7 +282,8 @@ class TestKronosBatchInference:
                 )
                 mock_adapter = MagicMock()
                 pred_df = pd.DataFrame({"close": [101.0, 102.0]})
-                mock_adapter.predict.return_value = [pred_df]
+                # predictor.predict_batch 调用的是 adapter.predict_batch
+                mock_adapter.predict_batch.return_value = [pred_df]
                 mock_session = MagicMock()
                 mock_session._predictor = mock_adapter
                 runner._session = mock_session
@@ -291,8 +292,8 @@ class TestKronosBatchInference:
                     results = runner.predict_batch(["sh.600519"], "2026-08-12")
                     assert len(results) == 1
                     assert results[0].error is None
-                    # predict 应被调用 1 次
-                    mock_adapter.predict.assert_called_once()
+                    # predict_batch 应被调用 1 次
+                    mock_adapter.predict_batch.assert_called_once()
 
     def test_predict_batch_splits_into_multiple_batches(self) -> None:
         """股票数 > batch_size 时应拆分为多批。"""
@@ -315,7 +316,7 @@ class TestKronosBatchInference:
                 mock_adapter = MagicMock()
                 pred_df = pd.DataFrame({"close": [101.0, 102.0]})
                 # 每批返回对应数量的预测结果（批次1有2只，批次2有1只）
-                mock_adapter.predict.side_effect = [
+                mock_adapter.predict_batch.side_effect = [
                     [pred_df, pred_df],
                     [pred_df],
                 ]
@@ -330,7 +331,7 @@ class TestKronosBatchInference:
                     )
                     assert len(results) == 3
                     # 3 只股票，batch_size=2 → 2 批
-                    assert mock_adapter.predict.call_count == 2
+                    assert mock_adapter.predict_batch.call_count == 2
 
     def test_predict_batch_pads_shorter_series(self) -> None:
         """较短序列应被 padding 到与同批最长序列相同的长度。"""
@@ -361,7 +362,7 @@ class TestKronosBatchInference:
                 ]
                 mock_adapter = MagicMock()
                 pred_df = pd.DataFrame({"close": [101.0, 102.0]})
-                mock_adapter.predict.return_value = [pred_df, pred_df]
+                mock_adapter.predict_batch.return_value = [pred_df, pred_df]
                 mock_session = MagicMock()
                 mock_session._predictor = mock_adapter
                 runner._session = mock_session
@@ -369,9 +370,9 @@ class TestKronosBatchInference:
                     mock_dict.return_value = {"close": [101.0, 102.0]}
                     results = runner.predict_batch(["sh.600519", "sz.000001"], "2026-08-12")
                     assert len(results) == 2
-                    # 验证传入 predict 的 df 列表包含原始数据（无 padding，当前实现不补全）
-                    call_args = mock_adapter.predict.call_args
-                    padded_dfs = call_args[1]["df"]
+                    # 验证传入 predict_batch 的 df 列表包含原始数据（无 padding，当前实现不补全）
+                    call_args = mock_adapter.predict_batch.call_args
+                    padded_dfs = call_args.kwargs["df_list"]
                     assert len(padded_dfs) == 2
                     assert len(padded_dfs[0]) == 400
                     assert len(padded_dfs[1]) == 300
