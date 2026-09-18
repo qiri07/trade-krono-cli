@@ -403,6 +403,7 @@ class PredictionEvaluator:
     ) -> BacktestResult:
         """运行回测引擎（委托给 prediction_eval_backtest 模块）。"""
         from trade_krono_cli.prediction_eval_backtest import run_backtest  # noqa: PLC0415
+
         return run_backtest(records, rebal_mode=rebal_mode, fixed_horizon=fixed_horizon)
 
     def _store_summary(

@@ -65,9 +65,7 @@ class StatsMixin(ResearchDatabase):
                 ):
                     validated = validate_table_name(table, RESEARCH_TABLES)
                     try:
-                        count = conn.execute(
-                            f"SELECT COUNT(*) FROM {validated}"
-                        ).fetchone()[0]
+                        count = conn.execute(f"SELECT COUNT(*) FROM {validated}").fetchone()[0]
                         result[f"research_{table}"] = count
                     except sqlite3.OperationalError:
                         result[f"research_{table}"] = 0

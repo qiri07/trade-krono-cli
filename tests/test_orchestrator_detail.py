@@ -35,7 +35,9 @@ class TestCommitteeOrchestrator:
         result = orchestrator._build_kronos_map([])
         assert result == {}
 
-    def test_run_skips_ta_with_error(self, orchestrator: CommitteeOrchestrator, mock_research: MagicMock) -> None:
+    def test_run_skips_ta_with_error(
+        self, orchestrator: CommitteeOrchestrator, mock_research: MagicMock
+    ) -> None:
         """测试跳过有错误的 TA 结果。"""
         ta = MagicMock()
         ta.ticker = "sh.600519"
@@ -46,7 +48,9 @@ class TestCommitteeOrchestrator:
         # 不应调用 insert_committee_deliberation
         mock_research.insert_committee_deliberation.assert_not_called()
 
-    def test_run_skips_ta_without_final_state(self, orchestrator: CommitteeOrchestrator, mock_research: MagicMock) -> None:
+    def test_run_skips_ta_without_final_state(
+        self, orchestrator: CommitteeOrchestrator, mock_research: MagicMock
+    ) -> None:
         """测试跳过没有 final_state 的 TA 结果。"""
         ta = MagicMock()
         ta.ticker = "sh.600519"
@@ -68,16 +72,22 @@ class TestReportIndexer:
     def indexer(self, mock_research: MagicMock) -> ReportIndexer:
         return ReportIndexer(research=mock_research)
 
-    def test_index_skips_no_decision(self, indexer: ReportIndexer, mock_research: MagicMock) -> None:
+    def test_index_skips_no_decision(
+        self, indexer: ReportIndexer, mock_research: MagicMock
+    ) -> None:
         """测试无 investment_decision 的 TA 结果被跳过。"""
         ta = MagicMock()
         ta.ticker = "sh.600519"
         ta.investment_decision = None
 
-        indexer.index(job_id="job_001", ta_results=[ta], raw_paths={"sh.600519": "/path/to/report.json"})
+        indexer.index(
+            job_id="job_001", ta_results=[ta], raw_paths={"sh.600519": "/path/to/report.json"}
+        )
         mock_research.index_raw_report.assert_not_called()
 
-    def test_index_skips_missing_path(self, indexer: ReportIndexer, mock_research: MagicMock) -> None:
+    def test_index_skips_missing_path(
+        self, indexer: ReportIndexer, mock_research: MagicMock
+    ) -> None:
         """测试 raw_paths 中无对应路径时跳过。"""
         ta = MagicMock()
         ta.ticker = "sh.600519"
@@ -86,7 +96,9 @@ class TestReportIndexer:
         indexer.index(job_id="job_001", ta_results=[ta], raw_paths={})
         mock_research.index_raw_report.assert_not_called()
 
-    def test_index_handles_missing_file(self, indexer: ReportIndexer, mock_research: MagicMock) -> None:
+    def test_index_handles_missing_file(
+        self, indexer: ReportIndexer, mock_research: MagicMock
+    ) -> None:
         """测试报告文件不存在时不报错。"""
         ta = MagicMock()
         ta.ticker = "sh.600519"

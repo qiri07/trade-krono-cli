@@ -321,9 +321,7 @@ class DataProviderFactory:
 
         return _bench(self, name, ticker)
 
-    def _get_cached_ranked_chain(
-        self, ticker_type: str
-    ) -> tuple[list[str], float] | None:
+    def _get_cached_ranked_chain(self, ticker_type: str) -> tuple[list[str], float] | None:
         """读取排名缓存（委托 benchmark 模块）。"""
         from trade_krono_cli.data_providers.benchmark import get_cached_ranked_chain
 

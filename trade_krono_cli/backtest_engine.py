@@ -403,11 +403,7 @@ class BacktestEngine:
         win_rate = len(wins) / len(pnl_list) * 100 if pnl_list else 0.0
         avg_win = np.mean(wins) if wins else 0.0
         avg_loss = abs(np.mean(losses)) if losses else 1e-9
-        profit_factor = (
-            abs(sum(wins) / sum(losses))
-            if losses
-            else (100.0 if wins else 0.0)
-        )
+        profit_factor = abs(sum(wins) / sum(losses)) if losses else (100.0 if wins else 0.0)
 
         # ── 收益分布（手动计算偏度/峰度，兼容 numpy 2.0）─────────────────────
         def _skewness(arr):

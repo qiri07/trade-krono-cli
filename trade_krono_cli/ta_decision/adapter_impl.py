@@ -154,6 +154,7 @@ class DecisionAdapter:
     def _try_parse_json(text: str) -> "InvestmentDecision | None":
         """尝试将输入解析为 JSON 结构化决策（委托给 parsers 模块）。"""
         from trade_krono_cli.ta_decision.parsers import parse_json  # noqa: PLC0415
+
         return parse_json(text)
 
     def _extract_thesis(self, text: str) -> str:

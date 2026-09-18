@@ -199,7 +199,12 @@ def _fetch_ticker_parallel(
         with provider_sema:
             try:
                 df = fetch_kline_incremental(
-                    ticker_, start_date, end_date, frequency, adjustflag, use_cache,
+                    ticker_,
+                    start_date,
+                    end_date,
+                    frequency,
+                    adjustflag,
+                    use_cache,
                 )
                 if df is not None and len(df) > 0:
                     return (len(df), provider_)

@@ -105,12 +105,13 @@ class TestApplyMetadataFilter:
 
     def test_filters_by_signal(self, sample_ta_results, sample_pipeline_config) -> None:
         """信号过滤：只保留 BUY/HOLD。"""
-        with patch(
-            "trade_krono_cli.pipeline.post_processing.fetch_realtime_quote",
-            return_value={"pe": 25.0, "pb": 3.0},
-        ), patch(
-            "trade_krono_cli.pipeline.post_processing.filter_pool"
-        ) as mock_filter_pool:
+        with (
+            patch(
+                "trade_krono_cli.pipeline.post_processing.fetch_realtime_quote",
+                return_value={"pe": 25.0, "pb": 3.0},
+            ),
+            patch("trade_krono_cli.pipeline.post_processing.filter_pool") as mock_filter_pool,
+        ):
             mock_filter_pool.return_value = sample_ta_results
             result, quote_data = apply_metadata_filter(
                 sample_ta_results, {}, sample_pipeline_config, 55.0, ("BUY", "HOLD")
@@ -161,12 +162,15 @@ class TestApplyMetadataFilter:
         abnormal_flags_map = {
             "sh.999999": MagicMock(flag_names=lambda: ["ST"], severity=0.9),
         }
-        with patch(
-            "trade_krono_cli.pipeline.post_processing.filter_pool",
-            return_value=ta_with_st,
-        ), patch(
-            "trade_krono_cli.pipeline.post_processing.fetch_realtime_quote",
-            return_value={"pe": None, "pb": None},
+        with (
+            patch(
+                "trade_krono_cli.pipeline.post_processing.filter_pool",
+                return_value=ta_with_st,
+            ),
+            patch(
+                "trade_krono_cli.pipeline.post_processing.fetch_realtime_quote",
+                return_value={"pe": None, "pb": None},
+            ),
         ):
             result, _ = apply_metadata_filter(
                 ta_with_st, abnormal_flags_map, sample_pipeline_config, 55.0, ("BUY", "HOLD")
@@ -177,15 +181,22 @@ class TestApplyMetadataFilter:
     def test_error_result_not_in_output(self, sample_pipeline_config) -> None:
         """有 error 的结果不应出现在输出中。"""
         mixed = [
-            StockAnalysisResult(ticker="sh.600519", date="2026-09-15", signal="BUY", confidence=80.0, error=None),
-            StockAnalysisResult(ticker="sh.600000", date="2026-09-15", signal="BUY", confidence=80.0, error="fail"),
+            StockAnalysisResult(
+                ticker="sh.600519", date="2026-09-15", signal="BUY", confidence=80.0, error=None
+            ),
+            StockAnalysisResult(
+                ticker="sh.600000", date="2026-09-15", signal="BUY", confidence=80.0, error="fail"
+            ),
         ]
-        with patch(
-            "trade_krono_cli.pipeline.post_processing.filter_pool",
-            return_value=mixed,
-        ), patch(
-            "trade_krono_cli.pipeline.post_processing.fetch_realtime_quote",
-            return_value={"pe": 20.0, "pb": 2.0},
+        with (
+            patch(
+                "trade_krono_cli.pipeline.post_processing.filter_pool",
+                return_value=mixed,
+            ),
+            patch(
+                "trade_krono_cli.pipeline.post_processing.fetch_realtime_quote",
+                return_value={"pe": 20.0, "pb": 2.0},
+            ),
         ):
             result, _ = apply_metadata_filter(
                 mixed, {}, sample_pipeline_config, 55.0, ("BUY", "HOLD")
@@ -202,7 +213,9 @@ class TestApplyMetadataFilter:
 class TestMergeAndBoost:
     """merge_and_boost 单元测试。"""
 
-    def test_basic_merge(self, sample_ta_results, sample_pipeline_config, sample_constraint_config) -> None:
+    def test_basic_merge(
+        self, sample_ta_results, sample_pipeline_config, sample_constraint_config
+    ) -> None:
         """基本合并流程正常执行。"""
         fake_kronos = [MagicMock(ticker="sh.600519", prediction=1.0)]
         with patch(
@@ -226,14 +239,19 @@ class TestMergeAndBoost:
         """异常标记应触发风险分上调。"""
         fake_kronos = [MagicMock(ticker="sh.600519", prediction=1.0)]
         abnormal_map = {
-            "sh.600519": MagicMock(flags=["NEW_STOCK"], flag_names=lambda: ["NEW_STOCK"], severity=0.3),
+            "sh.600519": MagicMock(
+                flags=["NEW_STOCK"], flag_names=lambda: ["NEW_STOCK"], severity=0.3
+            ),
         }
-        with patch(
-            "trade_krono_cli.pipeline.post_processing.merge_results",
-            return_value=[{"ticker": "sh.600519", "risk_score_total": 30.0}],
-        ), patch(
-            "trade_krono_cli.pipeline.post_processing.apply_abnormality_risk_boost",
-            return_value=45.0,
+        with (
+            patch(
+                "trade_krono_cli.pipeline.post_processing.merge_results",
+                return_value=[{"ticker": "sh.600519", "risk_score_total": 30.0}],
+            ),
+            patch(
+                "trade_krono_cli.pipeline.post_processing.apply_abnormality_risk_boost",
+                return_value=45.0,
+            ),
         ):
             result = merge_and_boost(
                 sample_ta_results,
@@ -248,12 +266,16 @@ class TestMergeAndBoost:
             assert result[0]["risk_score_total"] == 45.0
             assert result[0]["abnormal_flags"] == ["NEW_STOCK"]
 
-    def test_boost_disabled_when_configured(self, sample_pipeline_config, sample_constraint_config) -> None:
+    def test_boost_disabled_when_configured(
+        self, sample_pipeline_config, sample_constraint_config
+    ) -> None:
         """当 abnormality_risk_boost_enabled=False 时，不应上调风险分。"""
         cfg = SimpleNamespace(**vars(sample_pipeline_config))
         cfg.abnormality_risk_boost_enabled = False
         fake_ta = [
-            StockAnalysisResult(ticker="sh.600519", date="2026-09-15", signal="BUY", confidence=80.0, error=None),
+            StockAnalysisResult(
+                ticker="sh.600519", date="2026-09-15", signal="BUY", confidence=80.0, error=None
+            ),
         ]
         fake_kronos = [MagicMock(ticker="sh.600519", prediction=1.0)]
         abnormal_map = {
@@ -264,7 +286,13 @@ class TestMergeAndBoost:
             return_value=[{"ticker": "sh.600519", "risk_score_total": 30.0}],
         ):
             result = merge_and_boost(
-                fake_ta, fake_kronos, {}, {}, sample_constraint_config, cfg, abnormal_map,
+                fake_ta,
+                fake_kronos,
+                {},
+                {},
+                sample_constraint_config,
+                cfg,
+                abnormal_map,
             )
             assert result[0]["risk_score_total"] == 30.0  # 未被上调
 
@@ -282,9 +310,7 @@ class TestRunCommittee:
         mock_research = MagicMock()
         mock_ta = [MagicMock(ticker="sh.600519")]
         mock_kronos = [MagicMock(ticker="sh.600519")]
-        with patch(
-            "trade_krono_cli.pipeline.post_processing.CommitteeOrchestrator"
-        ) as MockOrch:
+        with patch("trade_krono_cli.pipeline.post_processing.CommitteeOrchestrator") as MockOrch:
             run_committee(mock_research, "job-1", "2026-09-15", mock_ta, mock_kronos)
             MockOrch.assert_called_once_with(mock_research)
             MockOrch.return_value.run.assert_called_once_with(
@@ -294,9 +320,7 @@ class TestRunCommittee:
     def test_empty_results(self) -> None:
         """空结果也应正常调用（不报错）。"""
         mock_research = MagicMock()
-        with patch(
-            "trade_krono_cli.pipeline.post_processing.CommitteeOrchestrator"
-        ) as MockOrch:
+        with patch("trade_krono_cli.pipeline.post_processing.CommitteeOrchestrator") as MockOrch:
             run_committee(mock_research, "job-1", "2026-09-15", [], [])
             MockOrch.assert_called_once_with(mock_research)
             MockOrch.return_value.run.assert_called_once()

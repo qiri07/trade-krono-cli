@@ -63,9 +63,18 @@ class TestEvaluateEmptyPaths:
             {"job_id": "j2", "date": "2026-08-14"},
         ]
         mock_research.get_signals_by_job.side_effect = lambda jid: (
-            [{"ticker": "sh.600519", "ta_error": False, "kronos_error": False,
-              "kronos_direction": "UP", "kronos_change": 2.0, "composite_score": 70.0}]
-            if jid == "j2" else []
+            [
+                {
+                    "ticker": "sh.600519",
+                    "ta_error": False,
+                    "kronos_error": False,
+                    "kronos_direction": "UP",
+                    "kronos_change": 2.0,
+                    "composite_score": 70.0,
+                }
+            ]
+            if jid == "j2"
+            else []
         )
         # 禁用真实价格拉取，确保日期过滤路径单独测试
         with patch("trade_krono_cli.prediction_eval.get_close_price", return_value=None):
@@ -79,8 +88,14 @@ class TestEvaluatePriceMissing:
         evaluator, mock_research = _make_evaluator(Path("/tmp/tk_test_entry_none"))
         mock_research.list_jobs.return_value = [{"job_id": "j1", "date": "2026-08-14"}]
         mock_research.get_signals_by_job.return_value = [
-            {"ticker": "sh.600519", "ta_error": False, "kronos_error": False,
-             "kronos_direction": "UP", "kronos_change": 2.0, "composite_score": 70.0},
+            {
+                "ticker": "sh.600519",
+                "ta_error": False,
+                "kronos_error": False,
+                "kronos_direction": "UP",
+                "kronos_change": 2.0,
+                "composite_score": 70.0,
+            },
         ]
         with patch("trade_krono_cli.prediction_eval.get_close_price", return_value=None):
             summary = evaluator.evaluate(store=False)
@@ -97,11 +112,19 @@ class TestComputeSummary:
         evaluator, _ = _make_evaluator(Path("/tmp/tk_test_none_fields"))
         records = [
             EvalRecord(
-                ticker="sh.600519", eval_date="2026-08-14", horizon_days=5,
-                pred_direction=None, pred_return_pct=None, actual_return_pct=2.5,
-                actual_direction="UP", is_direction_correct=False, error_pct=0.0,
-                ta_signal=None, composite_score=None,
-                entry_blocked_limit_up=False, exit_blocked_limit_down=False,
+                ticker="sh.600519",
+                eval_date="2026-08-14",
+                horizon_days=5,
+                pred_direction=None,
+                pred_return_pct=None,
+                actual_return_pct=2.5,
+                actual_direction="UP",
+                is_direction_correct=False,
+                error_pct=0.0,
+                ta_signal=None,
+                composite_score=None,
+                entry_blocked_limit_up=False,
+                exit_blocked_limit_down=False,
                 cost_bps_applied=17.0,
             )
         ]

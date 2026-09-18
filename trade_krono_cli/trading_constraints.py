@@ -224,7 +224,6 @@ def check_limit_status(
     )
 
 
-
 def enforce_t1(
     ticker: str,
     eval_date: str,

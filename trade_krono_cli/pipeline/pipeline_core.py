@@ -473,8 +473,7 @@ class QuantPipeline:
         filtered_ta_final = [r for r in filtered_ta_list if r.ticker in passed_tickers]
 
         logger.info(
-            f"📋 元数据过滤完成: 保留 {len(filtered_ta_final)} 只 "
-            f"（原始池 {len(filtered_ta)}）",
+            f"📋 元数据过滤完成: 保留 {len(filtered_ta_final)} 只 （原始池 {len(filtered_ta)}）",
         )
 
         # ── 合并 + 风险上调 ───────────────────────────────────
