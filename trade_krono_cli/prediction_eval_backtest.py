@@ -27,8 +27,9 @@ def run_backtest(
     简化版：使用 EvalRecord 中的 entry/exit 价格直接模拟，
     不实时获取 K 线（性能优先），约束通过 is_blocked 字段判断。
     """
+    from trade_krono_cli.backtest_benchmarks import build_backtest_records
     from trade_krono_cli.backtest_engine import BacktestEngine, BacktestResult  # noqa: PLC0415
-    from trade_krono_cli.prediction_eval import _get_close_price, build_backtest_records
+    from trade_krono_cli.prediction_eval import _get_close_price
 
     # 选择主要 horizon（优先 5 日）
     primary_horizon = fixed_horizon
