@@ -130,6 +130,8 @@ class TestSyncWhitelist:
             ),
         ):
             mock_settings.return_value.sync_whitelist = "600519,000858"
+            mock_settings.return_value.provider_bench_workers = 1
+            mock_settings.return_value.provider_rank_cache_ttl_sec = 0
             result = runner.invoke(
                 app,
                 ["sync-whitelist", "--date", "2026-08-30", "--no-progress"],
@@ -160,6 +162,8 @@ class TestSyncWhitelist:
             ),
         ):
             mock_settings.return_value.sync_whitelist = "600519,000858"
+            mock_settings.return_value.provider_bench_workers = 1
+            mock_settings.return_value.provider_rank_cache_ttl_sec = 0
             result = runner.invoke(
                 app,
                 ["sync-whitelist", "--date", "2026-08-30", "--no-progress"],
@@ -213,6 +217,8 @@ class TestSyncUniverseWhitelist:
         ):
             mock_provider_cls.return_value.get_universe.return_value = mock_tickets
             mock_settings.return_value.sync_whitelist = "600519,000858"
+            mock_settings.return_value.provider_bench_workers = 1
+            mock_settings.return_value.provider_rank_cache_ttl_sec = 0
             result = runner.invoke(
                 app,
                 ["sync-universe", "--date", "2026-08-30", "--no-progress"],
@@ -250,6 +256,8 @@ class TestSyncUniverseWhitelist:
         ):
             mock_provider_cls.return_value.get_universe.return_value = mock_tickets
             mock_settings.return_value.sync_whitelist = ""
+            mock_settings.return_value.provider_bench_workers = 1
+            mock_settings.return_value.provider_rank_cache_ttl_sec = 0
             result = runner.invoke(
                 app,
                 ["sync-universe", "--date", "2026-08-30", "--no-progress"],

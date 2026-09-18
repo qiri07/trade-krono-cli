@@ -1,4 +1,4 @@
-"""Analytics 引擎 — DuckDB + Parquet 分析层。
+"""analytics_db.engine — DuckDB 分析引擎。
 
 职责：
   · 对 Parquet 文件执行大规模分析查询（横截面 IC、回测聚合、因子分析）
@@ -8,7 +8,7 @@
 架构：
   SQLite  ←─ 事务写入（jobs, signals, decisions, raw_reports）
                 │
-   sqlite_scan() ─┤
+  sqlite_scan() ─┤
                 │
   DuckDB  ──→  分析查询（IC、回测聚合、横截面分析）
                 │
@@ -19,7 +19,7 @@ DuckDB 未安装时自动降级为 SQLite 直接查询（向后兼容）。
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from loguru import logger
@@ -29,141 +29,18 @@ if TYPE_CHECKING:
 
     from trade_krono_cli.config import Settings
 
-# ── 可选 DuckDB 导入 ───────────────────────────────────────────────────────────
-try:
-    import duckdb
+from trade_krono_cli.analytics_db._helpers import _duckdb_available, _ensure_duckdb
+from trade_krono_cli.analytics_db.paths import ParquetPaths
+from trade_krono_cli.analytics_db.writer import ParquetWriter
 
-    _HAS_DUCKDB = True
-except ImportError:
-    _HAS_DUCKDB = False
-    duckdb = None  # type: ignore[misc]  # Optional dependency; set via conditional import above
-
-
-def _duckdb_available() -> bool:
-    return _HAS_DUCKDB
-
-
-def _ensure_duckdb() -> None:
-    if not _HAS_DUCKDB:
-        msg = (
-            "DuckDB 未安装，无法使用 Analytics 引擎。\n请运行: pip install duckdb 或 uv add duckdb"
-        )
-        raise RuntimeError(
-            msg,
-        )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  Parquet 文件路径构造
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class ParquetPaths:
-    """管理 Parquet 数据文件的目录结构。"""
-
-    def __init__(self, data_root: Path) -> None:
-        self.data_root = data_root
-        self.features_dir = data_root / "features"
-        self.predictions_dir = data_root / "predictions"
-        self.backtest_dir = data_root / "backtest"
-        for d in (self.features_dir, self.predictions_dir, self.backtest_dir):
-            d.mkdir(parents=True, exist_ok=True)
-
-    def feature_path(self, ticker: str, date: str) -> Path:
-        """data/features/{year}/{month}/{ticker}_{date}.parquet."""
-        safe = ticker.replace(".", "_")
-        from datetime import datetime
-
-        dt = datetime.strptime(date, "%Y-%m-%d")
-        p = self.features_dir / str(dt.year) / f"{dt.month:02d}"
-        p.mkdir(parents=True, exist_ok=True)
-        return p / f"{safe}_{date}.parquet"
-
-    def prediction_path(self, ticker: str, date: str, pred_len: int) -> Path:
-        """data/predictions/{year}/{month}/{ticker}_{date}_{predlen}.parquet."""
-        safe = ticker.replace(".", "_")
-        from datetime import datetime
-
-        dt = datetime.strptime(date, "%Y-%m-%d")
-        p = self.predictions_dir / str(dt.year) / f"{dt.month:02d}"
-        p.mkdir(parents=True, exist_ok=True)
-        return p / f"{safe}_{date}_{pred_len}.parquet"
-
-    def backtest_path(self, job_id: str) -> Path:
-        """data/backtest/{job_id}.parquet."""
-        p = self.backtest_dir
-        p.mkdir(parents=True, exist_ok=True)
-        return p / f"{job_id}.parquet"
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  Parquet 写入器
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class ParquetWriter:
-    """将分析结果写入 Parquet 文件。"""
-
-    def __init__(self, paths: ParquetPaths) -> None:
-        self.paths = paths
-
-    def write_feature(
-        self,
-        ticker: str,
-        date: str,
-        data: dict,
-    ) -> Path:
-        """写入单只股票的 TA 分析特征到 Parquet。"""
-        path = self.paths.feature_path(ticker, date)
-        df = pd.DataFrame([data])
-        df.to_parquet(path, engine="pyarrow", index=False)
-        logger.debug(f"📦 特征 Parquet 已写入: {path}")
-        return path
-
-    def write_prediction(
-        self,
-        ticker: str,
-        date: str,
-        pred_len: int,
-        data: dict,
-    ) -> Path:
-        """写入单只股票的 Kronos 预测到 Parquet。"""
-        path = self.paths.prediction_path(ticker, date, pred_len)
-        df = pd.DataFrame([data])
-        df.to_parquet(path, engine="pyarrow", index=False)
-        logger.debug(f"📦 预测 Parquet 已写入: {path}")
-        return path
-
-    def write_backtest(
-        self,
-        job_id: str,
-        records: list[dict],
-    ) -> Path:
-        """写入回测结果到 Parquet（支持多记录）。"""
-        path = self.paths.backtest_path(job_id)
-        if records:
-            df = pd.DataFrame(records)
-        else:
-            df = pd.DataFrame(
-                columns=[
-                    "ticker",
-                    "action",
-                    "entry_price",
-                    "exit_price",
-                    "entry_date",
-                    "exit_date",
-                    "return_pct",
-                    "horizon",
-                ],
-            )
-        df.to_parquet(path, engine="pyarrow", index=False)
-        logger.debug(f"📦 回测 Parquet 已写入: {path} ({len(records)} 条)")
-        return path
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  DuckDB Analytics Engine
-# ══════════════════════════════════════════════════════════════════════════════
+# Re-export for backward compatibility
+__all__ = (
+    "ParquetPaths",
+    "ParquetWriter",
+    "ResearchAnalytics",
+    "get_analytics",
+    "clear_analytics_singleton",
+)
 
 
 class ResearchAnalytics:
@@ -177,11 +54,11 @@ class ResearchAnalytics:
         analytics = ResearchAnalytics(db_path, parquet_paths)
         # 通过注册视图查询 SQLite 研究数据库
         df = analytics.query(
-            "SELECT s.ticker, s.rank, s.composite_score, j.date"
-            " FROM v_signals s JOIN v_jobs j ON s.job_id = j.job_id"
-            " WHERE j.date >= '2026-01-01'"
-            " ORDER BY s.rank"
-        )
+                "SELECT s.ticker, s.rank, s.composite_score, j.date"
+                " FROM v_signals s JOIN v_jobs j ON s.job_id = j.job_id"
+                " WHERE j.date >= '2026-01-01'"
+                " ORDER BY s.rank"
+            )
         # 或直接执行 SQL（参数化查询防注入）
         df = analytics.query("SELECT * FROM v_signals WHERE ticker = ?", ("sh.600519",))
     """
@@ -196,11 +73,14 @@ class ResearchAnalytics:
             _ensure_duckdb()
         self._db_path = db_path
         self._paths = parquet_paths
-        self._conn: duckdb.DuckDBPyConnection | None = None
+        self._writer = ParquetWriter(parquet_paths)
+        self._conn: Any | None = None  # duckdb.DuckDBPyConnection
         self._register_tables()
 
     def _register_tables(self) -> None:
         """注册 DuckDB 虚拟表：sqlite_scan + Parquet glob。"""
+        import duckdb  # type: ignore[import-not-found]
+
         _ensure_duckdb()
         con = duckdb.connect(database=":memory:", read_only=False)
 
@@ -269,7 +149,7 @@ class ResearchAnalytics:
         return self._conn.execute(sql, params).fetchone()
 
     @property
-    def conn(self) -> duckdb.DuckDBPyConnection | None:
+    def conn(self) -> Any | None:  # duckdb.DuckDBPyConnection | None
         return self._conn
 
     def close(self) -> None:
@@ -282,6 +162,11 @@ class ResearchAnalytics:
 
     def __exit__(self, *args):
         self.close()
+
+    @property
+    def writer(self) -> ParquetWriter:
+        """返回 Parquet 写入器实例。"""
+        return self._writer
 
     # ── 预置查询（常用分析场景）────────────────────────────────────────────────
 
@@ -489,7 +374,7 @@ def get_analytics(
     if _analytics is not None:
         return _analytics
 
-    cfg = settings or __import__("trade_krono_cli.config", fromlist=["get_settings"]).get_settings()
+    cfg = __import__("trade_krono_cli.config", fromlist=["get_settings"]).get_settings()
     db = db_path or (cfg.cache_dir / "pipeline_cache.db")
     pr = parquet_root or (cfg.cache_dir / "data")
     _analytics = ResearchAnalytics(db, ParquetPaths(pr), settings)
@@ -497,6 +382,7 @@ def get_analytics(
 
 
 def clear_analytics_singleton() -> None:
+    """清除全局 Analytics 单例（用于测试隔离）。"""
     global _analytics
     if _analytics is not None:
         _analytics.close()

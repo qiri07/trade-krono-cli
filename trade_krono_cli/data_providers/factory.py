@@ -18,9 +18,7 @@
 from __future__ import annotations
 
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -35,18 +33,12 @@ if TYPE_CHECKING:
         StockMetadata,
     )
 
+# 向后兼容：_BenchResult 供测试直接 import
+from trade_krono_cli.data_providers.benchmark import _BenchResult  # noqa: F401
+
 # ═══════════════════════════════════════════════════════
-# 工厂实现
+#  工厂实现
 # ═══════════════════════════════════════════════════════
-
-
-@dataclass(frozen=True)
-class _BenchResult:
-    """单次 Provider benchmark 结果。"""
-
-    name: str
-    latency_ms: float
-    success: bool
 
 
 class DataProviderFactory:
@@ -73,19 +65,9 @@ class DataProviderFactory:
     @staticmethod
     def _rank_cache_ttl_sec() -> int:
         """Provider 排名缓存 TTL（秒），从 Settings 读取。"""
-        return get_settings().provider_rank_cache_ttl_sec
+        import trade_krono_cli.config as _cfg
 
-    @staticmethod
-    def _bench_workers() -> int:
-        """Benchmark 并发线程数，从 Settings 读取。"""
-        return get_settings().provider_bench_workers
-
-    @classmethod
-    def _bench_date(cls) -> str:
-        """返回用于 benchmark 的采样日期（最近 1 天）。"""
-        from datetime import datetime, timedelta
-
-        return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        return _cfg.get_settings().provider_rank_cache_ttl_sec
 
     def __init__(self, primary: str = "baostock", fallbacks: list[str] | None = None) -> None:
         """Parameters
@@ -333,48 +315,33 @@ class DataProviderFactory:
 
     # ── 自适应优先级：Benchmark ───────────────────────────────────────
 
-    def _benchmark_provider(self, name: str, ticker: str) -> _BenchResult:
-        """Benchmark 单个 Provider：用一个小查询测量延迟。"""
-        provider = self.get_provider(name)
-        if provider is None or not provider.supports_kline:
-            return _BenchResult(name=name, latency_ms=float("inf"), success=False)
-        try:
-            t0 = time.perf_counter()
-            data = provider.fetch_kline(ticker, self._bench_date(), self._bench_date(), "d", "1")
-            latency_ms = (time.perf_counter() - t0) * 1000
-            success = data is not None and not data.is_empty
-            return _BenchResult(name=name, latency_ms=latency_ms, success=success)
-        except Exception as e:
-            logger.debug(f"benchmark {name} 失败: {e}")
-            return _BenchResult(name=name, latency_ms=float("inf"), success=False)
+    def _benchmark_provider(self, name: str, ticker: str) -> "_BenchResult":
+        """Benchmark 单个 Provider（委托 benchmark 模块）。"""
+        from trade_krono_cli.data_providers.benchmark import benchmark_provider as _bench
 
-    def _get_cached_ranked_chain(self, ticker_type: str) -> tuple[list[str], float] | None:
-        """读取缓存中指定 ticker_type 的已排序 Provider 链（不含 bj. 特殊处理）。
+        return _bench(self, name, ticker)
 
-        Returns
-        -------
-        (ranked_chain, timestamp) | None
+    def _get_cached_ranked_chain(
+        self, ticker_type: str
+    ) -> tuple[list[str], float] | None:
+        """读取排名缓存（委托 benchmark 模块）。"""
+        from trade_krono_cli.data_providers.benchmark import get_cached_ranked_chain
 
-        """
-        with self._rank_lock:
-            cached = self._rank_cache.get(ticker_type)
-        if cached is None:
-            return None
-        ranked_chain, ts = cached
-        if time.time() - ts >= self._rank_cache_ttl_sec():
-            return None
-        return ranked_chain, ts
+        return get_cached_ranked_chain(
+            self._rank_cache, self._rank_lock, self._rank_cache_ttl_sec(), ticker_type
+        )
 
     def _write_ranked_chain(self, ticker_type: str, ranked_chain: list[str]) -> None:
-        """将排序结果写入缓存，带当前时间戳。"""
-        with self._rank_lock:
-            self._rank_cache[ticker_type] = (ranked_chain, time.time())
+        """写入排名缓存（委托 benchmark 模块）。"""
+        from trade_krono_cli.data_providers.benchmark import write_ranked_chain
+
+        write_ranked_chain(self._rank_cache, self._rank_lock, ticker_type, ranked_chain)
 
     def bench_all(
         self,
         ticker: str = "sh.600519",
         workers: int | None = None,
-    ) -> list[_BenchResult]:
+    ) -> list["_BenchResult"]:
         """对所有可用 Provider 进行延迟 benchmark，按速度排序。
 
         Parameters
@@ -390,14 +357,18 @@ class DataProviderFactory:
             按 latency_ms 升序排列（越快越靠前），失败的排在末尾
 
         """
-        workers = workers or self._bench_workers()
+        from trade_krono_cli.data_providers.benchmark import (
+            _bench_workers,
+        )
+
+        workers = workers or _bench_workers()
         names = self.available_providers()
         if not names:
             logger.warning("没有可用的 Provider 进行 benchmark")
             return []
 
         logger.info(f"🔬 开始 Benchmark：{len(names)} 个 Provider，ticker={ticker}")
-        results: list[_BenchResult] = []
+        results: list["_BenchResult"] = []
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(self._benchmark_provider, n, ticker): n for n in names}

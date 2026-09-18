@@ -8,14 +8,13 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from trade_krono_cli.abnormal_stock import (
     AbnormalityFlag,
     StockAbnormality,
-    apply_abnormality_risk_boost,
     check_kline_completeness,
     precheck_stock_status,
 )
@@ -24,17 +23,17 @@ from trade_krono_cli.data import fetch_realtime_quote
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
 from trade_krono_cli.pipeline.factory import PipelineFactory, _collect_futures
-from trade_krono_cli.pipeline.merge import filter_pool, merge_results
+from trade_krono_cli.pipeline.merge import filter_pool
 from trade_krono_cli.pipeline.orchestrator import CommitteeOrchestrator, ReportIndexer
-from trade_krono_cli.pipeline.reporter import (
-    save_html_report,
-    save_json_report,
+from trade_krono_cli.pipeline.post_processing import (
+    merge_and_boost,
+    run_committee,
+    write_results,
 )
 from trade_krono_cli.pipeline_config import PipelineConfig
 from trade_krono_cli.research_db import get_research
 from trade_krono_cli.stock_filter import StockFilter, StockMeta
 from trade_krono_cli.ta_runner import StockAnalysisResult
-from trade_krono_cli.trading_constraints import T1Tracker
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -180,7 +179,6 @@ class QuantPipeline:
                     总耗时 ≈ max(T_fetch, T_compute)；默认 False 使用传统批量模式。
 
         """
-        t0 = time.time()
         # ── 自动宇宙解析：无 tickers 时从全市场生成 ─────────────────────
         if not tickers and self._universe_engine is not None:
             logger.info("🌌 未指定股票列表，启动 Universe Engine 自动发现...")
@@ -200,6 +198,8 @@ class QuantPipeline:
 
         research = get_research()
         job_id = research.create_job(date, tickers, settings=self._settings)
+        self._progress_cb = progress_cb
+        self._start_time = time.time()
 
         if progress_cb:
             progress_cb("启动", 0, 2)
@@ -307,168 +307,18 @@ class QuantPipeline:
         ):
             self._apply_ta_cache_fallback(ta_results)
 
-        # ── 应用过滤（信号 / 置信度阈值）────────────────────────────
-        filtered_ta = filter_pool(
-            ta_results,
-            min_confidence=self.min_confidence,
-            allowed_signals=self.allowed_signals,
-        )
-
-        # ── 股票元数据过滤（市值 / 行业 / PE/PB / 风险分 / 成交量 + 异常标记）──
-        cfg = self._config
-        filter_engine = StockFilter.from_config(
-            min_confidence=self.min_confidence,
-            allowed_signals=self.allowed_signals,
-            market_cap_range=cfg.market_cap_range,
-            industry_whitelist=cfg.industry_whitelist,
-            industry_blacklist=cfg.industry_blacklist,
-            pe_range=cfg.pe_range,
-            pb_range=cfg.pb_range,
-            max_risk_score=cfg.max_risk_score,
-            min_volume_ratio=cfg.min_volume_ratio,
-            min_turnover_rate=cfg.min_turnover_rate,
-            exclude_st=cfg.exclude_st,
-        )
-
-        # 提前收集实时行情数据，供 StockMeta 填充 PE/PB（仅对有效结果请求，避免浪费 timeout）
-        live_ta = [r for r in filtered_ta if r.error is None]
-        quote_data: dict[str, dict] = {
-            tk: fetch_realtime_quote(tk) for tk in [r.ticker for r in live_ta]
-        }
-
-        # 构建 StockMeta 并注入异常标记，用于过滤
-        filtered_ta_list: list[StockAnalysisResult] = []
-        rejected_ta: list[StockAnalysisResult] = []
-        for r in filtered_ta:
-            if r.error is not None:
-                continue
-            af = abnormal_flags_map.get(r.ticker)
-            flag_names = af.flag_names() if af else []
-            severity = af.severity if af else 0.0
-            meta = StockMeta(
-                signal=r.signal,
-                confidence=r.confidence,
-                ticker=r.ticker,
-                abnormal_flags=flag_names,
-                abnormality_score=severity,
-                pe_ttm=quote_data.get(r.ticker, {}).get("pe"),
-                pb=quote_data.get(r.ticker, {}).get("pb"),
-            )
-            # ST / 停牌 / 退市股票直接过滤
-            blocker_flags = {"ST", "SUSPENDED", "DELISTED"}
-            if blocker_flags & set(meta.abnormal_flags):
-                rejected_ta.append(r)
-                continue
-            filtered_ta_list.append(r)
-
-        # 再用常规 StockFilter 过滤（置信度 / 信号等）
-        meta_list = [
-            StockMeta(
-                signal=r.signal,
-                confidence=r.confidence,
-                ticker=r.ticker,
-                pe_ttm=quote_data.get(r.ticker, {}).get("pe"),
-                pb=quote_data.get(r.ticker, {}).get("pb"),
-            )
-            for r in filtered_ta_list
-        ]
-        passed_metas, rejected_ta_extra = filter_engine.apply_batch(meta_list)
-        rejected_ta.extend(cast(list["StockAnalysisResult"], rejected_ta_extra))
-        passed_tickers = {m.ticker for m in passed_metas}
-        filtered_ta_final = [r for r in filtered_ta_list if r.ticker in passed_tickers]
-
-        logger.info(
-            f"📋 元数据过滤完成: 保留 {len(filtered_ta_final)} 只 "
-            f"（原始池 {len(filtered_ta)} + 已过滤 {len(rejected_ta)}）",
-        )
-
-        # ── 合并 + 打分（含交易约束）────────────────────────────
-        t1_tracker = T1Tracker()
-
-        merged = merge_results(
-            filtered_ta_final,
-            kronos_results,
-            kline_data=kline_data,
-            quote_data=quote_data,
-            constraints_config=self.constraints_config,
-            t1_tracker=t1_tracker,
-            scoring_config=self._config.scoring,
-            risk_config=self._config.risk,
-            scoring_strategy=self._config.scoring_strategy,
-            degrade_mode=self._config.degrade_mode,
-        )
-
-        # ── 异常风险分上调 ──────────────────────────────────────
-        if getattr(cfg, "abnormality_risk_boost_enabled", True):
-            risk_boost_cfg = cfg.risk_boost_strategy
-            for item in merged:
-                ticker = item.get("ticker", "")
-                af = abnormal_flags_map.get(ticker)
-                if af and af.flags:
-                    base_risk = item.get("risk_score_total") or 50.0
-                    boosted = apply_abnormality_risk_boost(
-                        base_risk_score=base_risk,
-                        flags=af.flag_names(),
-                        enabled=True,
-                        strategy=risk_boost_cfg.strategy,
-                        params=risk_boost_cfg.params if hasattr(risk_boost_cfg, "params") else None,
-                    )
-                    item["risk_score_total"] = boosted
-                    item["abnormal_flags"] = af.flag_names()
-
-        # ── 落盘 ───────────────────────────────────────────
-        if output_json:
-            save_json_report(merged, output_json)
-        if output_html:
-            save_html_report(merged, output_html, date)
-
-        raw_paths = self.ta.save_raw_reports(ta_results, date)
-
-        # ── 写入研究数据库 ────────────────────────────────
-        job_info = research.get_job(job_id)
-        version_snapshot = {
-            "run_id": job_info["run_id"] if job_info else None,
-            "data_version": job_info["data_version"] if job_info else None,
-            "model_versions": job_info["model_versions"] if job_info else {},
-        }
-
-        for r in ta_results:
-            research.insert_ta(job_id, r, version_snapshot=version_snapshot)
-            if r.investment_decision:
-                research.insert_decision(
-                    job_id,
-                    r.ticker,
-                    r.investment_decision,
-                    r.investment_decision.thesis,
-                    r.investment_decision.risks,
-                )
-
-        self._index_ta_raw_reports(research, job_id, ta_results, raw_paths)
-
-        for kr in kronos_results:
-            research.insert_kronos(job_id, kr, version_snapshot=version_snapshot)
-
-        research.insert_signals(job_id, merged, version_snapshot=version_snapshot)
-
-        # ── 委员会审议：多 Agent 报告 → Bull/Bear Case → 最终推荐 ──
-        self._run_committee(
-            research=research,
-            job_id=job_id,
-            date=date,
+        # ── 元数据过滤 + 合并打分 ─────────────────────────────
+        merged = self._apply_post_processing(
             ta_results=ta_results,
             kronos_results=kronos_results,
+            kline_data=kline_data,
+            abnormal_flags_map=abnormal_flags_map,
+            output_json=output_json,
+            output_html=output_html,
+            date=date,
+            research=research,
+            job_id=job_id,
         )
-
-        elapsed = time.time() - t0
-        n_success = sum(1 for r in ta_results if r.error is None)
-        research.complete_job(job_id, n_success=n_success, elapsed=elapsed)
-        logger.info(
-            f"📊 研究作业完成: job={job_id} run_id={version_snapshot['run_id']} "
-            f"| 耗时 {elapsed:.1f}s | 结果 {len(merged)} 条 → 已记录到研究数据库",
-        )
-
-        if progress_cb:
-            progress_cb("完成", 2, 2)
 
         return merged
 
@@ -544,6 +394,134 @@ class QuantPipeline:
         if output:
             self.kronos.save_results(results, output)
         return results
+
+    def _apply_post_processing(
+        self,
+        *,
+        ta_results: list,
+        kronos_results: list,
+        kline_data: dict,
+        abnormal_flags_map: dict,
+        output_json: str | None,
+        output_html: str | None,
+        date: str,
+        research: Any,
+        job_id: str,
+    ) -> list[dict]:
+        """执行后处理：过滤、合并、风险上调、落盘、DB 写入、委员会审议。"""
+
+        # ── 元数据过滤 ────────────────────────────────────────
+        cfg = self._config
+        filter_engine = StockFilter.from_config(
+            min_confidence=self.min_confidence,
+            allowed_signals=self.allowed_signals,
+            market_cap_range=cfg.market_cap_range,
+            industry_whitelist=cfg.industry_whitelist,
+            industry_blacklist=cfg.industry_blacklist,
+            pe_range=cfg.pe_range,
+            pb_range=cfg.pb_range,
+            max_risk_score=cfg.max_risk_score,
+            min_volume_ratio=cfg.min_volume_ratio,
+            min_turnover_rate=cfg.min_turnover_rate,
+            exclude_st=cfg.exclude_st,
+        )
+
+        filtered_ta = filter_pool(
+            ta_results,
+            min_confidence=self.min_confidence,
+            allowed_signals=self.allowed_signals,
+        )
+
+        live_ta = [r for r in filtered_ta if r.error is None]
+        quote_data: dict[str, dict] = {
+            tk: fetch_realtime_quote(tk) for tk in [r.ticker for r in live_ta]
+        }
+
+        filtered_ta_list: list[StockAnalysisResult] = []
+        for r in filtered_ta:
+            if r.error is not None:
+                continue
+            af = abnormal_flags_map.get(r.ticker)
+            flag_names = af.flag_names() if af else []
+            severity = af.severity if af else 0.0
+            meta = StockMeta(
+                signal=r.signal,
+                confidence=r.confidence,
+                ticker=r.ticker,
+                abnormal_flags=flag_names,
+                abnormality_score=severity,
+                pe_ttm=quote_data.get(r.ticker, {}).get("pe"),
+                pb=quote_data.get(r.ticker, {}).get("pb"),
+            )
+            blocker_flags = {"ST", "SUSPENDED", "DELISTED"}
+            if blocker_flags & set(meta.abnormal_flags):
+                continue
+            filtered_ta_list.append(r)
+
+        meta_list = [
+            StockMeta(
+                signal=r.signal,
+                confidence=r.confidence,
+                ticker=r.ticker,
+                pe_ttm=quote_data.get(r.ticker, {}).get("pe"),
+                pb=quote_data.get(r.ticker, {}).get("pb"),
+            )
+            for r in filtered_ta_list
+        ]
+        passed_metas, _ = filter_engine.apply_batch(meta_list)
+        passed_tickers = {m.ticker for m in passed_metas}
+        filtered_ta_final = [r for r in filtered_ta_list if r.ticker in passed_tickers]
+
+        logger.info(
+            f"📋 元数据过滤完成: 保留 {len(filtered_ta_final)} 只 "
+            f"（原始池 {len(filtered_ta)}）",
+        )
+
+        # ── 合并 + 风险上调 ───────────────────────────────────
+        merged = merge_and_boost(
+            filtered_ta=filtered_ta_final,
+            kronos_results=kronos_results,
+            kline_data=kline_data,
+            quote_data=quote_data,
+            constraints_config=self.constraints_config,
+            config=self._config,
+            abnormal_flags_map=abnormal_flags_map,
+        )
+
+        # ── 落盘 + DB 写入 + 委员会审议 ──────────────────────
+        raw_paths = self.ta.save_raw_reports(ta_results, date)
+        write_results(
+            merged=merged,
+            ta_results=ta_results,
+            kronos_results=kronos_results,
+            research=research,
+            job_id=job_id,
+            date=date,
+            output_json=output_json,
+            output_html=output_html,
+            config=self._config,
+        )
+        self._index_ta_raw_reports(research, job_id, ta_results, raw_paths)
+        run_committee(
+            research=research,
+            job_id=job_id,
+            date=date,
+            ta_results=ta_results,
+            kronos_results=kronos_results,
+        )
+
+        elapsed = time.time() - self._start_time
+        n_success = sum(1 for r in ta_results if r.error is None)
+        research.complete_job(job_id, n_success=n_success, elapsed=elapsed)
+        logger.info(
+            f"📊 研究作业完成: job={job_id} "
+            f"| 耗时 {elapsed:.1f}s | 结果 {len(merged)} 条 → 已记录到研究数据库",
+        )
+
+        if self._progress_cb:
+            self._progress_cb("完成", 2, 2)
+
+        return merged
 
     def _run_committee(
         self, research, job_id: str, date: str, ta_results: list, kronos_results: list
