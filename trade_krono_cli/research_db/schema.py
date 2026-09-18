@@ -237,6 +237,8 @@ CREATE_SCRIPT = """
                 );
 
                 -- 性能索引：加速按 job_id 和 ticker 的查询
+                CREATE INDEX IF NOT EXISTS idx_jobs_run_at ON jobs(run_at);
+                CREATE INDEX IF NOT EXISTS idx_jobs_date ON jobs(date);
                 CREATE INDEX IF NOT EXISTS idx_ta_analysis_job_id ON ta_analysis(job_id);
                 CREATE INDEX IF NOT EXISTS idx_ta_analysis_ticker ON ta_analysis(ticker);
                 CREATE INDEX IF NOT EXISTS idx_kronos_forecast_job_id ON kronos_forecast(job_id);

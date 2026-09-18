@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date
 
 from loguru import logger
 
 from trade_krono_cli.constraints_config import ConstraintConfig
 from trade_krono_cli.security import validate_ticker
+from trade_krono_cli.t1_tracker import T1Tracker  # noqa: F401 — 向后兼容
 from trade_krono_cli.utils.st_cache import cached
 
 # ═══════════════════════════════════════════════════════
@@ -222,51 +223,6 @@ def check_limit_status(
         limit_down_price=limit_down,
     )
 
-
-# ═══════════════════════════════════════════════════════
-# T+1 约束
-# ═══════════════════════════════════════════════════════
-
-
-class T1Tracker:
-    """跟踪当日买入记录，支持 T+1 结算约束检查。
-
-    线程安全：内部使用 dict，建议每次 pipeline run 创建新实例。
-    """
-
-    def __init__(self) -> None:
-        # ticker -> buy_date (str "YYYY-MM-DD")
-        self._buys: dict[str, str] = {}
-
-    def record_buy(self, ticker: str, buy_date: str) -> None:
-        """记录一笔买入。"""
-        self._buys[ticker] = buy_date
-
-    def can_sell(self, ticker: str, sell_date: str) -> bool:
-        """检查是否可以在 sell_date 卖出 ticker。
-
-        T+1 规则：买入当日不能卖出，次日及之后可以。
-        """
-        buy_date = self._buys.get(ticker)
-        if buy_date is None:
-            return True  # 无买入记录，可以自由卖出
-        # 简单日期比较：sell_date > buy_date
-        return sell_date > buy_date
-
-    def locked_until(self, ticker: str) -> date | None:
-        """返回 ticker 被锁定的最早解锁日期。"""
-        buy_date = self._buys.get(ticker)
-        if buy_date is None:
-            return None
-        try:
-            bd = datetime.strptime(buy_date, "%Y-%m-%d").date()
-            return bd + timedelta(days=1)
-        except ValueError:
-            return None
-
-    def clear(self) -> None:
-        """清空所有买入记录（新交易日开始时调用）。"""
-        self._buys.clear()
 
 
 def enforce_t1(

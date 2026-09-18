@@ -27,8 +27,8 @@ from trade_krono_cli.risk.models import adjust_expected_return
 from trade_krono_cli.risk.risk_engine import RiskEngine
 from trade_krono_cli.scoring.registry import get_scorer_registry
 from trade_krono_cli.security import sanitize_for_log
+from trade_krono_cli.t1_tracker import T1Tracker
 from trade_krono_cli.trading_constraints import (
-    T1Tracker,
     check_all_constraints,
 )
 

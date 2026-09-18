@@ -13,9 +13,14 @@ class StatsMixin(ResearchDatabase):
     """Stats 和查询相关方法。"""
 
     def stats(self) -> dict:
-        """返回各 research 表统计。"""
+        """返回各 research 表统计。
+
+        使用单次 UNION ALL 查询替代 N 次 COUNT(*)，避免 N+1 性能问题。
+        """
         with self._conn as conn:
             result = {}
+            # 构建 UNION ALL 查询
+            select_parts: list[str] = []
             for table in (
                 "jobs",
                 "ta_analysis",
@@ -33,11 +38,39 @@ class StatsMixin(ResearchDatabase):
                 "experiments",
             ):
                 validated = validate_table_name(table, RESEARCH_TABLES)
-                try:
-                    count = conn.execute(f"SELECT COUNT(*) FROM {validated}").fetchone()[0]
-                    result[f"research_{table}"] = count
-                except sqlite3.OperationalError:
-                    result[f"research_{table}"] = 0
+                select_parts.append(f"SELECT '{table}' AS t, COUNT(*) AS c FROM {validated}")
+
+            query = " UNION ALL ".join(select_parts)
+            try:
+                rows = conn.execute(query).fetchall()
+                for table_name, count in rows:
+                    result[f"research_{table_name}"] = count
+            except sqlite3.OperationalError:
+                # 降级：逐表查询（表不存在等错误）
+                for table in (
+                    "jobs",
+                    "ta_analysis",
+                    "kronos_forecast",
+                    "signals",
+                    "decisions",
+                    "raw_reports",
+                    "backtest_results",
+                    "strategy_runs",
+                    "evaluation_results",
+                    "signal_history",
+                    "committee_deliberations",
+                    "data_snapshots",
+                    "walkforward_runs",
+                    "experiments",
+                ):
+                    validated = validate_table_name(table, RESEARCH_TABLES)
+                    try:
+                        count = conn.execute(
+                            f"SELECT COUNT(*) FROM {validated}"
+                        ).fetchone()[0]
+                        result[f"research_{table}"] = count
+                    except sqlite3.OperationalError:
+                        result[f"research_{table}"] = 0
             return result
 
     def query_history(

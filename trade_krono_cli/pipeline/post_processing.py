@@ -25,8 +25,8 @@ from trade_krono_cli.pipeline.orchestrator import CommitteeOrchestrator
 from trade_krono_cli.pipeline.reporter import save_html_report, save_json_report
 from trade_krono_cli.research_db import ResearchDatabase
 from trade_krono_cli.stock_filter import StockFilter, StockMeta
+from trade_krono_cli.t1_tracker import T1Tracker
 from trade_krono_cli.ta_runner import StockAnalysisResult
-from trade_krono_cli.trading_constraints import T1Tracker
 
 if TYPE_CHECKING:
     from trade_krono_cli.constraints_config import ConstraintConfig

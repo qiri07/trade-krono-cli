@@ -1,141 +1,32 @@
-"""Stock Filter — 股票过滤规则引擎。
+"""Stock Filter Engine — 过滤引擎与元数据获取。
 
-职责：
-  · 多条件规则链（置信度 / 信号 / 市值 / 行业 / PE / PB / 风险分 / 成交量）
-  · 支持白名单 / 黑名单 / 范围 / 子串匹配等操作符
-  · 从 baostock 批量获取过滤所需的元数据（PE / PB / 行业 / 市值）
-
-使用方式：
-    rules = [
-        MinValueRule("ta_confidence", 55.0),
-        InSetRule("signal", {"BUY", "HOLD"}),
-        RangeRule("market_cap_billion", 50.0, 5000.0),
-        SubstrRule("industry", "银行"),
-        MaxValueRule("risk_score", 0.7),
-    ]
-    passed = StockFilter(rules).apply(stock_meta)
+从 stock_filter.py 拆分，包含：
+  · StockMeta 数据类
+  · StockFilter 过滤引擎（apply / apply_batch / from_config）
+  · fetch_stock_meta（baostock 批量元数据获取）
 """
 
 from __future__ import annotations
 
 import contextlib
-import re
-from dataclasses import dataclass, field
-from enum import Enum
+
+# ── 股票元数据 ────────────────────────────────────────────────────────────────
+from dataclasses import dataclass, field  # noqa: E402
 
 from loguru import logger
 
-# ── 操作符枚举 ────────────────────────────────────────────────────────────────
-
-
-class FilterOp(str, Enum):
-    """过滤操作符。"""
-
-    # 范围类
-    MIN = "min"  # ≥ value（字段值 >= 下限）
-    MAX = "max"  # ≤ value（字段值 <= 上限）
-    RANGE = "range"  # [low, high]
-    # 集合类
-    IN = "in"  # 在白名单中
-    NOT_IN = "not_in"  # 不在黑名单中
-    # 子串类
-    CONTAINS = "contains"  # 字段包含子串（行业名模糊匹配）
-    # 正则类
-    MATCH = "match"  # 字段匹配正则表达式
-
-
-# ── 规则基类与具体规则 ─────────────────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class FilterRule:
-    """单条过滤规则（不可变）。"""
-
-    field: str  # 字段名（在 StockMeta 中）
-    op: FilterOp
-    value: object  # 比较值（float / set / str / tuple）
-    label: str = ""  # 人类可读描述（用于日志）
-
-    def __post_init__(self):
-        if not self.label:
-            object.__setattr__(self, "label", f"{self.field} {self.op.value}")
-
-
-class MinValueRule(FilterRule):
-    """字段值 >= value。"""
-
-    def __init__(self, field: str, value: float, label: str = "") -> None:
-        super().__init__(field=field, op=FilterOp.MIN, value=value, label=label or f">={value}")
-
-
-class MaxValueRule(FilterRule):
-    """字段值 <= value。"""
-
-    def __init__(self, field: str, value: float, label: str = "") -> None:
-        super().__init__(field=field, op=FilterOp.MAX, value=value, label=label or f"<={value}")
-
-
-class RangeRule(FilterRule):
-    """字段值在 [low, high] 范围内。"""
-
-    def __init__(self, field: str, low: float, high: float, label: str = "") -> None:
-        super().__init__(
-            field=field,
-            op=FilterOp.RANGE,
-            value=(low, high),
-            label=label or f"[{low}, {high}]",
-        )
-
-
-class InSetRule(FilterRule):
-    """字段值在集合中（白名单）。"""
-
-    def __init__(self, field: str, values: set, label: str = "") -> None:
-        super().__init__(
-            field=field,
-            op=FilterOp.IN,
-            value=frozenset(values),
-            label=label or f"IN {values}",
-        )
-
-
-class NotInSetRule(FilterRule):
-    """字段值不在集合中（黑名单）。"""
-
-    def __init__(self, field: str, values: set, label: str = "") -> None:
-        super().__init__(
-            field=field,
-            op=FilterOp.NOT_IN,
-            value=frozenset(values),
-            label=label or f"NOT_IN {values}",
-        )
-
-
-class ContainsRule(FilterRule):
-    """字段包含指定子串。"""
-
-    def __init__(self, field: str, substr: str, label: str = "") -> None:
-        super().__init__(
-            field=field,
-            op=FilterOp.CONTAINS,
-            value=substr,
-            label=label or f"contains '{substr}'",
-        )
-
-
-class MatchRule(FilterRule):
-    """字段匹配正则表达式。"""
-
-    def __init__(self, field: str, pattern: str, label: str = "") -> None:
-        super().__init__(
-            field=field,
-            op=FilterOp.MATCH,
-            value=re.compile(pattern),
-            label=label or f"matches '{pattern}'",
-        )
-
-
-# ── 股票元数据 ────────────────────────────────────────────────────────────────
+# Re-export for backward compatibility
+from trade_krono_cli.stock_filter.rules import (  # noqa: F401  # noqa: F401
+    ContainsRule,
+    FilterOp,
+    FilterRule,
+    InSetRule,
+    MatchRule,
+    MaxValueRule,
+    MinValueRule,
+    NotInSetRule,
+    RangeRule,
+)
 
 
 @dataclass
@@ -280,7 +171,7 @@ class StockFilter:
         min_volume_ratio: float | None = None,
         min_turnover_rate: float | None = None,
         exclude_st: bool = True,
-    ) -> StockFilter:
+    ) -> "StockFilter":
         """从配置参数构建 StockFilter。
 
         所有参数均为可选；None 表示不添加对应规则。
@@ -405,7 +296,7 @@ def fetch_stock_meta(
         return {t: StockMeta(ticker=t) for t in tickers}
 
     # 使用 BaostockProvider 的统一锁，确保与 fetch_kline 等并发调用不冲突
-    from trade_krono_cli.data_providers.baostock_provider import _bs_lock
+    from trade_krono_cli.data_providers.baostock_provider import _bs_lock  # noqa: PLC0415
 
     metas: dict[str, StockMeta] = {}
 
