@@ -1975,6 +1975,7 @@ tushare = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "coverage" },
     { name = "mypy" },
     { name = "pyarrow" },
     { name = "ruff" },
@@ -2016,6 +2017,7 @@ provides-extras = ["ta", "kronos", "akshare", "mootdx", "tushare", "data", "dev"
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "coverage", specifier = ">=7.15.4" },
     { name = "mypy", specifier = ">=2.3.1" },
     { name = "pyarrow", specifier = ">=25.0.1" },
     { name = "ruff", specifier = ">=0.16.4" },
