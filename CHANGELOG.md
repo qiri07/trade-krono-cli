@@ -6,6 +6,21 @@ The changelog is also available in Chinese: [中文版更新日志](./CHANGELOG_
 
 ---
 
+### v0.1.12 — 2026-09-18
+
+**Code review fixes + architecture optimization + test coverage:**
+
+- **fix(globals)**: Added `clear_analytics_singleton()` to `clear_all_globals()` — fixes DuckDB connection leak across tests (CRITICAL)
+- **fix(sync)**: Removed global factory mutation race condition in `_fetch_ticker_parallel` — concurrent threads now call target Provider directly instead of simultaneously reading/writing `factory.primary/fallbacks` (HIGH)
+- **fix(sync)**: Added `stop_event` lifecycle management to `_health_monitor` daemon thread — prevents orphan thread accumulation on repeated `_run_sync` calls (MEDIUM)
+- **fix(sync)**: Early termination when all Providers are unavailable, avoiding无效 concurrent fetches
+- **fix(base)**: Added `pandas` TYPE_CHECKING import to `data_providers/base.py`, fixing mypy error
+- **fix(backtest)**: Fixed position restoration logic on limit-up/limit-down blocks; simplified `profit_factor` zero-division guard
+- **test**: Added analytics singleton cleanup verification in `test_globals.py`; added limit-down block + profit_factor regression tests in `test_backtest_engine.py`
+- **test**: Fixed mock values in `test_sync_whitelist.py` for `provider_bench_workers` type error
+
+---
+
 ### v0.1.11 — 2026-09-15
 
 **Feishu push format optimization + data fill script + date updates:**

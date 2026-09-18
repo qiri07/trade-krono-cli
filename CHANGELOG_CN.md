@@ -6,6 +6,21 @@
 
 ---
 
+### v0.1.12 — 2026-09-18
+
+**代码审查修复 + 架构优化 + 测试补齐：**
+
+- **fix(globals)**：`clear_all_globals()` 新增 `clear_analytics_singleton()` — 修复 DuckDB 连接跨测试泄漏（CRITICAL）
+- **fix(sync)**：`_fetch_ticker_parallel` 移除全局工厂突变竞态 — 并发线程直接调用目标 Provider，不再同时读写 `factory.primary/fallbacks`（HIGH）
+- **fix(sync)**：`_health_monitor` 守护线程添加 `stop_event` 生命周期管理 — 避免多次调用 `_run_sync` 时累积孤儿线程（MEDIUM）
+- **fix(sync)**：所有 Provider 不可用时提前终止，避免无效并发拉取
+- **fix(base)**：`data_providers/base.py` 添加 `pandas` TYPE_CHECKING 导入，修复 mypy 错误
+- **fix(backtest)**：修复涨停/跌停阻塞时持仓恢复逻辑；简化 `profit_factor` 除零条件
+- **test**：`test_globals.py` 新增 analytics 单例清理验证；`test_backtest_engine.py` 新增跌停阻塞 + profit_factor 回归测试
+- **test**：`test_sync_whitelist.py` 补齐 mock 值修复 `provider_bench_workers` 类型错误
+
+---
+
 ### v0.1.11 — 2026-09-15
 
 **飞书推送格式优化 + 数据补齐脚本 + 日期更新：**
