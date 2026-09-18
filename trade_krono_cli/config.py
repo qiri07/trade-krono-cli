@@ -25,8 +25,9 @@ class Settings:
     project_root: Path = field(default_factory=lambda: _PROJECT_ROOT)
     results_dir: Path = field(
         default_factory=lambda: (
-            Path(os.getenv("TRADING_KRONO_RESULTS_DIR", ""))
-            or (_PROJECT_ROOT / "outputs" / "results")
+            _PROJECT_ROOT / "outputs" / "results"
+            if not (v := os.getenv("TRADING_KRONO_RESULTS_DIR", "")).strip()
+            else Path(v)
         ),
     )
     """结果目录，可通过环境变量 TRADING_KRONO_RESULTS_DIR 覆盖（测试隔离用）。"""
@@ -247,6 +248,16 @@ class Settings:
     # ── 同步白名单配置 ──────────────────────────────────────
     sync_whitelist: str = field(default_factory=lambda: os.getenv("SYNC_WHITELIST", ""))
     """同步白名单，逗号分隔的6位股票代码（不含sh./sz./bj.前缀），如 \"600519,000858\"。"""
+
+    # ── 每日分析白名单配置 ───────────────────────────────────
+    daily_analysis_whitelist: str = field(
+        default_factory=lambda: os.getenv(
+            "DAILY_ANALYSIS_WHITELIST",
+            "000001,002027,601668,000932,601061",
+        ),
+    )
+    """每日分析白名单，逗号分隔的6位股票代码（不含sh./sz./bj.前缀）。
+    可通过 DAILY_ANALYSIS_WHITELIST 环境变量覆盖；未设置时使用默认值。"""
 
     # ── 运行时路径 ────────────────────────────────────────
     def __post_init__(self):

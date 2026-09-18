@@ -212,10 +212,10 @@ class KronosPredictor:
             pred_dfs: list = []  # 初始化，防止 except 块中 UnboundLocalError
 
             try:
-                pred_dfs = self._runner._adapter.predict(  # type: ignore
-                    df=df_list,
-                    x_timestamp=x_ts_list,
-                    y_timestamp=y_ts_list,
+                pred_dfs = self._runner._adapter.predict_batch(  # type: ignore
+                    df_list=df_list,
+                    x_timestamp_list=x_ts_list,
+                    y_timestamp_list=y_ts_list,
                     pred_len=len(y_ts_list[0]) if y_ts_list else 0,
                     T=self._settings.kronos_T,
                     top_p=self._settings.kronos_top_p,
@@ -234,8 +234,10 @@ class KronosPredictor:
                         )
             except Exception as e:
                 logger.warning(f"批次 {batch_idx} 推理失败，降级逐只预测: {e}")
-                for pred_df, idx in zip(pred_dfs, idx_list):
-                    tk, _, _, _, last_close = prepared[idx]
-                    results[idx] = self.predict_one(tk, eval_date)  # type: ignore[misc,call-arg,assignment]  # smart_retry 装饰器使 mypy 误推断返回类型，实际运行时正常
+                # pred_dfs may be empty if failure occurred before any output;
+                # fall back to predict_one for every stock in this batch
+                for idx in idx_list:
+                    tk, _, _, _, _ = prepared[idx]
+                    results[idx] = self.predict_one(tk, eval_date)  # type: ignore[misc,call-arg,assignment]
 
         return results

@@ -9,8 +9,8 @@
   - Qlib Binary: 供 qlib 使用
 
 用法:
-  uv run python scripts/export_shared_data.py --format csv --dest ~/Work/shared_data
-  uv run python scripts/export_shared_data.py --format all --dest ~/Work/shared_data
+  uv run python scripts/export_shared_data.py --format csv --dest /run/media/onai/MyDisk/Work/shared_data
+  uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data
 """
 
 from __future__ import annotations
@@ -31,7 +31,8 @@ except ImportError:
 
 # ── 路径常量 ────────────────────────────────────────────────────────────────
 
-SHARED_DATA_ROOT = Path.home() / "Work" / "shared_data"
+WORK_DIR = Path("/run/media/onai/MyDisk/Work")
+SHARED_DATA_ROOT = WORK_DIR / "shared_data"
 
 CSV_DIR = SHARED_DATA_ROOT / "astock_daily_csv"
 QLIB_CSV_DIR = SHARED_DATA_ROOT / "astock_daily_qlib_csv"  # qlib 兼容格式（带 symbol 列）

@@ -28,7 +28,7 @@ uv run python scripts/check_data_integrity.py          # 数据完整性检查
 uv run python scripts/cleanup_duplicates.py            # 清理重复记录
 uv run python scripts/daily_analysis.py                # 每日白名单分析 + AI 验证 + 飞书推送
 uv run python scripts/fetch_reference_data.py          # 批量获取股票参考数据（PE/PB/行业等）
-uv run python scripts/export_shared_data.py --format all --dest ~/Work/shared_data  # 导出共享数据
+uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data  # 导出共享数据
 uv run python scripts/export_vnpy_data.py              # 导出 vnpy 格式
 bash scripts/post_sync_export.sh                       # 同步后一键导出所有格式
 uv run ruff check .                  # Lint 检查
@@ -118,7 +118,7 @@ outputs/results/             # 报告输出目录（gitignore 中 *.db/*.log，�
 scripts/                     # 运维脚本（数据同步 / 完整性检查 / 飞书通知 / 共享数据导出）
 scripts/export_shared_data.py  # 共享数据导出（pipeline_cache.db → CSV/Parquet/HDF5/qlib 等 7 种格式）
 scripts/export_vnpy_data.py    # vnpy parquet 格式导出（CSV → parquet，供 vnpy alpha 使用）
-scripts/post_sync_export.sh    # 同步后一键导出全部格式到 ~/Work/shared_data/
+scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media/onai/MyDisk/Work/shared_data/
 ```
 
 ### 核心数据流
@@ -249,7 +249,7 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 `trade-krono-cli` 是唯一数据源。同步后通过 `export_shared_data.py` / `export_vnpy_data.py` 导出为 7 种格式，
 各项目通过 symlink 直接读取，无需复制。
 
-### 共享数据目录：`~/Work/shared_data/`
+### 共享数据目录：`/run/media/onai/MyDisk/Work/shared_data/`
 
 | 格式 | 路径 | 目标项目 |
 |------|------|----------|
@@ -264,12 +264,12 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 ### 各项目 Symlink
 
 ```
-Kronos/data/astock_daily_csv          → ~/Work/shared_data/astock_daily_csv
-~/.tradingagents/cache                → ~/Work/shared_data/astock_daily_ta
-qlib/qlib/data/shared_data            → ~/Work/shared_data/qlib_data
-backtrader/datas/astock_daily_csv     → ~/Work/shared_data/astock_daily_csv
-vnpy/data/daily                       → ~/Work/shared_data/vnpy_daily
-~/.qlib/qlib_data/cn_data             → ~/Work/shared_data/qlib_data
+Kronos/data/astock_daily_csv          → /run/media/onai/MyDisk/Work/shared_data/astock_daily_csv
+~/.tradingagents/cache                → /run/media/onai/MyDisk/Work/shared_data/astock_daily_ta
+qlib/qlib/data/shared_data            → /run/media/onai/MyDisk/Work/shared_data/qlib_data
+backtrader/datas/astock_daily_csv     → /run/media/onai/MyDisk/Work/shared_data/astock_daily_csv
+vnpy/data/daily                       → /run/media/onai/MyDisk/Work/shared_data/vnpy_daily
+~/.qlib/qlib_data/cn_data             → /run/media/onai/MyDisk/Work/shared_data/qlib_data
 ```
 
 ### 更新数据
@@ -279,7 +279,7 @@ vnpy/data/daily                       → ~/Work/shared_data/vnpy_daily
 bash scripts/post_sync_export.sh
 
 # 或手动：
-uv run python scripts/export_shared_data.py --format all --dest ~/Work/shared_data
+uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data
 uv run python scripts/export_vnpy_data.py
 ```
 

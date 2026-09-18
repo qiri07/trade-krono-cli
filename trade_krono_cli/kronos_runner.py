@@ -160,7 +160,7 @@ class KronosRunner:
     def _load(self) -> None:
         """加载模型（由 KronosSession 管理）。"""
         if self._session:
-            self._session.load_model()
+            self._session.ensure_loaded()
 
     @staticmethod
     def _pad_df_to_length(df: pd.DataFrame, target_len: int) -> pd.DataFrame:

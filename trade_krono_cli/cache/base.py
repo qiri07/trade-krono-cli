@@ -110,25 +110,36 @@ class Cache:
                     created      REAL NOT NULL,
                     PRIMARY KEY (ticker, date, pred_len, sample_cnt, config_hash, model_ver)
                 );
+
+                -- 性能索引：加速按 ticker 的查询
+                CREATE INDEX IF NOT EXISTS idx_kline_cache_ticker ON kline_cache(ticker);
+                CREATE INDEX IF NOT EXISTS idx_ta_cache_ticker ON ta_cache(ticker);
+                CREATE INDEX IF NOT EXISTS idx_kronos_cache_ticker ON kronos_cache(ticker);
             """)
-        # 迁移：为旧表添加新列
+        # 迁移：为旧表添加新列和索引
         self._transaction(lambda conn: self._run_migrations(conn))
 
     def _run_migrations(self, conn: sqlite3.Connection) -> None:
         """执行缓存表结构迁移（向后兼容）。"""
-        for col_sql in [
+        migrations = [
+            # 新增列
             "ALTER TABLE ta_cache ADD COLUMN config_hash  TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE ta_cache ADD COLUMN prompt_ver   TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE ta_cache ADD COLUMN model_ver    TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE kronos_cache ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE kronos_cache ADD COLUMN model_ver   TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE kline_cache ADD COLUMN adjustflag  TEXT NOT NULL DEFAULT '1'",
-        ]:
+            # 新增索引（IF NOT EXISTS 避免重复创建错误）
+            "CREATE INDEX IF NOT EXISTS idx_kline_cache_ticker ON kline_cache(ticker)",
+            "CREATE INDEX IF NOT EXISTS idx_ta_cache_ticker ON ta_cache(ticker)",
+            "CREATE INDEX IF NOT EXISTS idx_kronos_cache_ticker ON kronos_cache(ticker)",
+        ]
+        for migration in migrations:
             try:
-                conn.execute(col_sql)
-                logger.debug("📦 缓存表迁移: 新增列")
+                conn.execute(migration)
+                logger.debug("📦 缓存表迁移: 执行成功")
             except sqlite3.OperationalError:
-                pass
+                pass  # 列或索引已存在，跳过
 
     # ── 向后兼容：直接调用方法（委托给子模块）──────────────────────────────────
 

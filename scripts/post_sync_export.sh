@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SHARED_DATA="${HOME}/Work/shared_data"
+SHARED_DATA="/run/media/onai/MyDisk/Work/shared_data"
 
 echo "📤 开始导出共享数据 → $SHARED_DATA"
 cd "$PROJECT_ROOT"
@@ -19,9 +19,9 @@ uv run python scripts/export_vnpy_data.py
 echo "✅ 共享数据导出完成"
 echo ""
 echo "📊 各项目数据映射:"
-echo "  Kronos       → ${HOME}/Work/shared_data/astock_daily_csv (已 symlink)"
+echo "  Kronos       → ${SHARED_DATA}/astock_daily_csv (已 symlink)"
 echo "  TradingAgents → ~/.tradingagents/cache (已 symlink)"
-echo "  qlib         → ${HOME}/Work/shared_data/qlib_data (已 symlink)"
+echo "  qlib         → ${SHARED_DATA}/qlib_data (已 symlink)"
 echo "  backtrader   → ${HOME}/Work/backtrader/datas/astock_daily_csv (已 symlink)"
-echo "  vnpy         → ${HOME}/Work/shared_data/vnpy_daily (已 symlink)"
-echo "  RD-Agent     → ${HOME}/Work/shared_data/qlib_data + daily_pv_full.{parquet,h5} (已同步)"
+echo "  vnpy         → ${SHARED_DATA}/vnpy_daily (已 symlink)"
+echo "  RD-Agent     → ${SHARED_DATA}/qlib_data + daily_pv_full.{parquet,h5} (已同步)"
