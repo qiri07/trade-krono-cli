@@ -78,6 +78,21 @@ include = ["trade_krono_cli*"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 
+[tool.coverage.run]
+source = ["trade_krono_cli"]
+omit = [
+    "trade_krono_cli/kronos_predictor/__init__.py",
+    "trade_krono_cli/cli_commands/export_daily_pv.py",
+    "trade_krono_cli/cli_commands.py",
+    "trade_krono_cli/research_db.py",
+    "trade_krono_cli/analytics_db/engine.py",
+]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_empty = true
+
 [tool.uv]
 environments = [
     "sys_platform == 'linux'",

@@ -142,7 +142,7 @@ class ResearchAnalytics:
         assert self._conn is not None
         return self._conn.execute(sql, params).fetchdf()
 
-    def query_one(self, sql: str, params: tuple | None = None):
+    def query_one(self, sql: str, params: tuple | None = None) -> tuple | None:
         """执行单值查询。"""
         _ensure_duckdb()
         assert self._conn is not None

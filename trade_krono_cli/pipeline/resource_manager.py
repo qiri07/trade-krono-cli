@@ -494,7 +494,7 @@ def clear_manager() -> None:
 # ── 向后兼容 ──────────────────────────────────────────────────────────────────
 
 
-def get_pool():
+def get_pool() -> ResourceManager:
     """向后兼容：返回 ResourceManager 实例。
 
     ResourceManager 提供与 ResourcePool 兼容的接口：

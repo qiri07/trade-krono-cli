@@ -203,7 +203,7 @@ class ResourcePool:
 
         return results
 
-    def llm(self):
+    def llm(self) -> _AsyncSemaphoreContext:
         """LLM API 并发限流异步上下文管理器。
 
         在异步代码中使用：
@@ -212,7 +212,7 @@ class ResourcePool:
         """
         return _AsyncSemaphoreContext(self._get_llm_semaphore())
 
-    def gpu(self):
+    def gpu(self) -> _AsyncSemaphoreContext:
         """GPU 推理排队异步上下文管理器。
 
         在异步代码中使用：
