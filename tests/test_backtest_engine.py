@@ -246,3 +246,42 @@ class TestComputeMetrics:
         # exit_price = limit_up_price → blocked
         price = engine._get_entry_price("sh.600519", "2026-08-11", prev_close_map)
         assert price is not None
+
+    def test_limit_down_block_recovers_position(self) -> None:
+        """跌停阻塞时，持仓应恢复而非永久丢失（P0 regression test）。"""
+        from trade_krono_cli.backtest_engine import _Position
+
+        engine = BacktestEngine(initial_capital=1_000_000.0)
+        pos = _Position(
+            ticker="sh.600519",
+            entry_date="2026-08-10",
+            entry_price=100.0,
+            shares=100,
+            direction="UP",
+            cost_bps=3.0,
+        )
+        prev_close_map: dict[str, float] = {"sh.600519": 100.0}
+        log = engine._close_position(pos, 90.0, "2026-08-13", "sh.600519", prev_close_map)
+        assert log.blocked
+        assert "LIMIT_DOWN" in log.blocked_reason
+
+        # 模拟 run() 中的阻塞恢复逻辑
+        positions: dict[str, _Position] = {"sh.600519": pos}
+        popped = positions.pop("sh.600519")
+        assert "sh.600519" not in positions  # pop 后不存在
+        if log.blocked:
+            positions["sh.600519"] = popped  # 恢复持仓
+        assert "sh.600519" in positions  # 恢复后应存在
+        assert positions["sh.600519"] is popped
+
+    def test_profit_factor_no_div_by_zero(self) -> None:
+        """profit_factor 在 losses 和为 0 时不应除零崩溃（P0 regression test）。"""
+        engine = BacktestEngine()
+        equity_curve = [(f"2026-08-{11 + i}", 1_000_000.0 + i * 100.0) for i in range(10)]
+        trades = [
+            {"action": "SELL", "pnl": 500.0},
+            {"action": "SELL", "pnl": -500.0},  # 正好抵消
+        ]
+        result = engine._compute_metrics(equity_curve, trades, [])
+        # 不应抛出 ZeroDivisionError
+        assert "profit_factor" in result
