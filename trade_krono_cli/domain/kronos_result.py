@@ -35,7 +35,6 @@ class KronosForecastResult:
     error                 错误信息（预测失败时填充）
     elapsed_sec           预测耗时（秒）
     prediction_uncertainty 预测不确定性分布
-
     """
 
     __slots__ = (
