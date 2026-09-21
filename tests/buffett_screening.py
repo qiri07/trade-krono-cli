@@ -1081,8 +1081,10 @@ def _extract_json_from_response(raw: str) -> str:
     return raw
 
 
-def _sanitize_feishu_md(text: str) -> str:
+def _sanitize_feishu_md(text: str | list) -> str:
     """移除可能破坏飞书卡片的危险 Markdown 模式（图片引用等）。"""
+    if isinstance(text, list):
+        text = "\n".join(str(item) for item in text)
     return re.sub(r"!\[.*?\]\(.*?\)", "", text)
 
 

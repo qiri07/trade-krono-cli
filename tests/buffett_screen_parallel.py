@@ -20,6 +20,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+# 确保项目根目录在 sys.path 中，使 `from tests.xxx` 能正常工作
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from tests.buffett_cache import (
     cache_clean,
     init_cache,
