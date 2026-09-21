@@ -165,9 +165,10 @@ class BacktestEngine:
                     continue  # 无退出价，跳过
                 pnl = self._close_position(pos, exit_price, day, ticker, prev_close_map)
                 cash += pnl.net_proceeds
-                trades.append(pnl.trade_log)  # type: ignore[arg-type]
+                if pnl.trade_log is not None:
+                    trades.append(pnl.trade_log)
                 if pnl.blocked:
-                    blocked_reason = pnl.trade_log.get("blocked_reason", "")  # type: ignore[union-attr]
+                    blocked_reason = pnl.blocked_reason
                     if "LIMIT_UP" in blocked_reason:
                         # 涨停无法卖出，恢复持仓到下一天
                         positions[ticker] = pos

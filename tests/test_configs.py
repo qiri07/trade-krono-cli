@@ -211,6 +211,55 @@ class TestRetryConfig:
         assert config.retry_base_delay == 5.0
         assert config.retry_jitter is False
 
+    def test_merge(self) -> None:
+        """merge() 方法合并参数。"""
+        base = RetryConfig()
+        merged = base.merge(retry_max_attempts=5, retry_jitter=False)
+        assert merged.retry_max_attempts == 5
+        assert merged.retry_jitter is False
+        assert merged.retry_base_delay == 2.0
+        assert merged.retry_rate_limit_backoff is True
+
+    def test_validate_default_ok(self) -> None:
+        """默认配置应无验证错误。"""
+        assert RetryConfig().validate() == []
+
+    def test_validate_max_attempts_too_low(self) -> None:
+        """retry_max_attempts < 1 应报错。"""
+        errors = RetryConfig(retry_max_attempts=0).validate()
+        assert len(errors) == 1
+        assert "RETRY_MAX_ATTEMPTS 必须 >= 1" in errors[0]
+
+    def test_validate_max_attempts_too_high(self) -> None:
+        """retry_max_attempts > 10 应报错。"""
+        errors = RetryConfig(retry_max_attempts=11).validate()
+        assert len(errors) == 1
+        assert "RETRY_MAX_ATTEMPTS 不应超过 10" in errors[0]
+
+    def test_validate_base_delay_zero(self) -> None:
+        """retry_base_delay <= 0 应报错。"""
+        errors = RetryConfig(retry_base_delay=0).validate()
+        assert len(errors) == 1
+        assert "RETRY_BASE_DELAY 必须 > 0" in errors[0]
+
+    def test_validate_base_delay_too_high(self) -> None:
+        """retry_base_delay > 60 应报错。"""
+        errors = RetryConfig(retry_base_delay=61).validate()
+        assert len(errors) == 1
+        assert "RETRY_BASE_DELAY 不应超过 60s" in errors[0]
+
+    def test_validate_rate_limit_max_wait_zero(self) -> None:
+        """retry_rate_limit_max_wait <= 0 应报错。"""
+        errors = RetryConfig(retry_rate_limit_max_wait=0).validate()
+        assert len(errors) == 1
+        assert "RETRY_RATE_LIMIT_MAX_WAIT 必须 > 0" in errors[0]
+
+    def test_validate_rate_limit_max_wait_too_high(self) -> None:
+        """retry_rate_limit_max_wait > 300 应报错。"""
+        errors = RetryConfig(retry_rate_limit_max_wait=301).validate()
+        assert len(errors) == 1
+        assert "RETRY_RATE_LIMIT_MAX_WAIT 不应超过 300s" in errors[0]
+
 
 class TestDegradationConfig:
     """测试降级配置。"""
