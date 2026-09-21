@@ -58,6 +58,7 @@ class TestCacheQueriesExportDailyPvH5:
     def test_export_with_h5(
         self, cache_with_multi_kline: tuple[Cache, CacheQueries], tmp_path: Path
     ) -> None:
+        pytest.importorskip("tables", reason="hdf5 support requires pytables")
         _, qc = cache_with_multi_kline
         parquet_path = str(tmp_path / "out.parquet")
         h5_path = str(tmp_path / "out.h5")
