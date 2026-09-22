@@ -43,6 +43,7 @@ _STOCK_NAMES: dict[str, str] = {
     "601061": "中信金属",
 }
 
+
 def _get_cache_db() -> Path:
     """获取缓存数据库路径，优先从 settings 读取以支持测试隔离。"""
     # 注意：使用局部变量而非模块级全局，避免测试间污染
@@ -359,11 +360,25 @@ def analyze_stock(ticker: str, end_date: str | None = None) -> dict[str, Any]:
 def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any]:
     """基于已有 DataFrame 执行技术分析。"""
     if len(df) < 20:
-        return {"status": "no_data", "ticker": ticker, "name": _get_stock_name(ticker),
-                "score": 0.0, "close": None, "change": None, "exrights": False,
-                "trend": "数据不足", "ma_signal": "无", "vol_signal": "无",
-                "ma5": None, "ma10": None, "ma20": None,
-                "buy_points": [], "sell_points": [], "high_20": None, "low_20": None}
+        return {
+            "status": "no_data",
+            "ticker": ticker,
+            "name": _get_stock_name(ticker),
+            "score": 0.0,
+            "close": None,
+            "change": None,
+            "exrights": False,
+            "trend": "数据不足",
+            "ma_signal": "无",
+            "vol_signal": "无",
+            "ma5": None,
+            "ma10": None,
+            "ma20": None,
+            "buy_points": [],
+            "sell_points": [],
+            "high_20": None,
+            "low_20": None,
+        }
 
     ts_col = "timestamps" if "timestamps" in df.columns else "date"
     df = df.copy()
@@ -408,7 +423,9 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
 
     # 趋势判断（近5日涨跌，排除除权日）
     _trend_src = close.iloc[-6:-1] if _is_exrights else close.iloc[-5:]
-    up_days = sum(1 for i in range(1, len(_trend_src)) if _trend_src.iloc[i] > _trend_src.iloc[i - 1])
+    up_days = sum(
+        1 for i in range(1, len(_trend_src)) if _trend_src.iloc[i] > _trend_src.iloc[i - 1]
+    )
     if up_days >= 4:
         trend = "强势上涨📈"
     elif up_days >= 3:
@@ -465,10 +482,16 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
     for i in range(-5, 0):
         if i - 1 < -len(ma5_series):
             continue
-        if ma5_series.iloc[i] > ma10_series.iloc[i] and ma5_series.iloc[i - 1] <= ma10_series.iloc[i - 1]:
+        if (
+            ma5_series.iloc[i] > ma10_series.iloc[i]
+            and ma5_series.iloc[i - 1] <= ma10_series.iloc[i - 1]
+        ):
             buy_points.append("MA5金叉MA10")
             break
-        if ma5_series.iloc[i] < ma10_series.iloc[i] and ma5_series.iloc[i - 1] >= ma10_series.iloc[i - 1]:
+        if (
+            ma5_series.iloc[i] < ma10_series.iloc[i]
+            and ma5_series.iloc[i - 1] >= ma10_series.iloc[i - 1]
+        ):
             sell_points.append("MA5死叉MA10")
             break
 
@@ -493,7 +516,7 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
 
     # 支撑/压力位
     if _sig_price < ma20 * 0.97:
-        sell_points.append(f"远低于MA20（{((_sig_price/ma20-1)*100):+.1f}%）")
+        sell_points.append(f"远低于MA20（{((_sig_price / ma20 - 1) * 100):+.1f}%）")
     elif abs(_sig_price - ma20) / ma20 * 100 < 1:
         buy_points.append("MA20附近支撑")
 

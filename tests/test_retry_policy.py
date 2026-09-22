@@ -239,10 +239,9 @@ class TestSmartRetry:
         from trade_krono_cli.retry_policy.policy import _exp_backoff
 
         delay = _exp_backoff(attempt=1, base_delay=1.0, jitter=True)
-        expected_min = 1.0 * (2 ** 0) * 0.5
-        expected_max = 1.0 * (2 ** 0) * 1.0
+        expected_min = 1.0 * (2**0) * 0.5
+        expected_max = 1.0 * (2**0) * 1.0
         assert expected_min <= delay <= expected_max
-
 
 
 # ═══════════════════════════════════════════════════════

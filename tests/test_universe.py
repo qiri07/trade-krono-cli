@@ -93,14 +93,20 @@ class TestAkshareUniverseProvider:
         assert p.health_check() is False
 
     def test_get_universe_import_error(self) -> None:
-        """Akshare 未安装时返回空列表。"""
-        import sys
+        """Akshare 未安装时返回空列表（mock __import__ 模拟 ImportError）。"""
+        import builtins
 
-        with pytest.MonkeyPatch().context() as mp:
-            mp.delitem(sys.modules, "akshare", raising=False)
+        original_import = builtins.__import__
+
+        def _fake_import(name, *args, **kwargs):
+            if name == "akshare":
+                raise ImportError(f"No module named {name!r}")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=_fake_import):
             p = AkshareUniverseProvider()
             result = p.get_universe()
-            assert result == []
+        assert result == []
 
     def test_get_universe_runtime_error(self) -> None:
         """Akshare 抛出异常时返回空列表。"""
@@ -647,6 +653,7 @@ class TestUniverseEngine:
         )
         # unwriteable 目录不存在，但 mkdir 会成功；用 readonly 路径模拟
         import os
+
         readonly_dir = tmp_path / "readonly"
         readonly_dir.mkdir()
         os.chmod(readonly_dir, 0o555)
@@ -656,6 +663,7 @@ class TestUniverseEngine:
             # 不应抛异常
         finally:
             os.chmod(readonly_dir, 0o755)
+
     def test_returns_list_of_strings(self) -> None:
         mock_provider = MagicMock(spec=UniverseProvider)
         mock_provider.name = "mock"
