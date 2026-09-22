@@ -25,6 +25,8 @@ import json
 import sys
 from pathlib import Path
 
+from loguru import logger
+
 # 确保脚本所在目录的父目录（仓库根）在 sys.path 中，
 # 使 from scripts.xxx 模式在直接执行时也能正常工作
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -206,7 +208,7 @@ def send_notification(
             title=str(kwargs.get("title", "通知")),
         )
     else:
-        print(f"❌ 未知模式: {mode}", file=sys.stderr)
+        logger.error(f"❌ 未知飞书通知模式: {mode}")
         return False
 
     return send_feishu(url, payload)

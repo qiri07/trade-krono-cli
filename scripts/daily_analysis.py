@@ -43,7 +43,14 @@ _STOCK_NAMES: dict[str, str] = {
     "601061": "中信金属",
 }
 
-_CACHE_DB = Path("outputs/cache/pipeline_cache.db")
+def _get_cache_db() -> Path:
+    """获取缓存数据库路径，优先从 settings 读取以支持测试隔离。"""
+    # 注意：使用局部变量而非模块级全局，避免测试间污染
+    try:
+        settings = get_settings()
+        return settings.cache_dir / "pipeline_cache.db"
+    except Exception:
+        return Path("outputs/cache/pipeline_cache.db")
 
 
 def _get_whitelist() -> str:
@@ -87,9 +94,13 @@ def _get_llm_client() -> Any | None:
         or os.getenv("DEEPSEEK_API_KEY", "")
         or os.getenv("OPENAI_API_KEY", "")
     )
-    base_url = os.getenv("BACKEND_URL", "") or os.getenv(
-        "LLM_BASE_URL", "https://api.deepseek.com/v1"
-    )
+    base_url = os.getenv("BACKEND_URL", "") or os.getenv("LLM_BASE_URL", "")
+    if not base_url:
+        logger.warning(
+            "BACKEND_URL 未配置，LLM 将回退到 deepseek。"
+            "建议在 .env 中设置 BACKEND_URL=https://apihub.agnes-ai.cn/v1"
+        )
+        base_url = "https://api.deepseek.com/v1"
     return OpenAI(api_key=key, base_url=base_url)
 
 
@@ -205,7 +216,7 @@ def get_kline(ticker: str, start: str | None = None, end: str | None = None) -> 
     # 无日期限制：直接读原始行
     import sqlite3
 
-    conn = sqlite3.connect(str(_CACHE_DB))
+    conn = sqlite3.connect(str(_get_cache_db()))
     row = conn.execute("SELECT data FROM kline_cache WHERE ticker = ?", (ticker,)).fetchone()
     conn.close()
     if not row:
@@ -347,6 +358,12 @@ def analyze_stock(ticker: str, end_date: str | None = None) -> dict[str, Any]:
 
 def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any]:
     """基于已有 DataFrame 执行技术分析。"""
+    if len(df) < 20:
+        return {"status": "no_data", "ticker": ticker, "name": _get_stock_name(ticker),
+                "score": 0.0, "close": None, "change": None, "exrights": False,
+                "trend": "数据不足", "ma_signal": "无", "vol_signal": "无",
+                "ma5": None, "ma10": None, "ma20": None,
+                "buy_points": [], "sell_points": [], "high_20": None, "low_20": None}
 
     ts_col = "timestamps" if "timestamps" in df.columns else "date"
     df = df.copy()
@@ -356,28 +373,42 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
     close = df["close"].astype(float)
     latest = close.iloc[-1]
     prev = close.iloc[-2] if len(close) > 1 else latest
+
+    # ── 除权检测：当日跌幅超过 30% 视为除权日，以最后一个非除权交易日为准 ──
     daily_change = (latest - prev) / prev * 100 if prev > 0 else 0
+    _is_exrights = bool(daily_change < -30)
+    if _is_exrights:
+        logger.info(
+            f"📌 {ticker} 检测到除权日：当日跌幅 {daily_change:+.1f}%，"
+            f"技术指标将基于前一日收盘价（{prev:.2f}）计算"
+        )
+    # 用于技术指标计算的有效收盘价（排除除权跳空当天）
+    _effective_close = close.iloc[-2] if _is_exrights and len(close) > 2 else latest
+    # 用于买卖信号计算的有效收盘价
+    _sig_price = _effective_close
+    daily_change_display = 0.0 if _is_exrights else daily_change
 
-    # 均线（5日、10日、20日、60日）
-    ma5 = close.rolling(5).mean().iloc[-1]
-    ma10 = close.rolling(10).mean().iloc[-1]
-    ma20 = close.rolling(20).mean().iloc[-1]
+    # 均线（基于有效收盘价序列，避免除权日污染）
+    _ma_src = close.iloc[:-1] if _is_exrights else close
+    ma5 = _ma_src.rolling(5).mean().iloc[-1] if len(_ma_src) >= 5 else latest
+    ma10 = _ma_src.rolling(10).mean().iloc[-1] if len(_ma_src) >= 10 else latest
+    ma20 = _ma_src.rolling(20).mean().iloc[-1] if len(_ma_src) >= 20 else latest
 
-    # 均线信号
-    if latest > ma5 > ma10 > ma20:
+    # 均线信号（使用有效收盘价）
+    if _sig_price > ma5 > ma10 > ma20:
         ma_signal = "多头排列✅"
-    elif latest < ma5 < ma10 < ma20:
+    elif _sig_price < ma5 < ma10 < ma20:
         ma_signal = "空头排列❌"
-    elif latest > ma5 and latest > ma10:
+    elif _sig_price > ma5 and _sig_price > ma10:
         ma_signal = "偏多"
-    elif latest < ma5 and latest < ma10:
+    elif _sig_price < ma5 and _sig_price < ma10:
         ma_signal = "偏空"
     else:
         ma_signal = "震荡"
 
-    # 趋势判断（近5日涨跌）
-    recent_5 = close.iloc[-5:]
-    up_days = sum(1 for i in range(1, len(recent_5)) if recent_5.iloc[i] > recent_5.iloc[i - 1])
+    # 趋势判断（近5日涨跌，排除除权日）
+    _trend_src = close.iloc[-6:-1] if _is_exrights else close.iloc[-5:]
+    up_days = sum(1 for i in range(1, len(_trend_src)) if _trend_src.iloc[i] > _trend_src.iloc[i - 1])
     if up_days >= 4:
         trend = "强势上涨📈"
     elif up_days >= 3:
@@ -387,13 +418,17 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
     else:
         trend = "横盘整理"
 
-    # 量能（近5日均量 vs 近20日均量）
+    # 量能（近5日均量 vs 近20日均量，排除除权日）
     vol_col = "volume" if "volume" in df.columns else None
     vol_signal = "无"
+    buy_points: list[str] = []
+    sell_points: list[str] = []
+
     if vol_col:
         vol = df[vol_col].astype(float)
-        avg_vol_5 = vol.iloc[-5:].mean()
-        avg_vol_20 = vol.iloc[-20:].mean()
+        _vol_src = vol.iloc[:-1] if _is_exrights else vol
+        avg_vol_5 = _vol_src.iloc[-5:].mean()
+        avg_vol_20 = _vol_src.iloc[-20:].mean()
         if avg_vol_20 > 0:
             vol_ratio = avg_vol_5 / avg_vol_20
             if vol_ratio > 1.5:
@@ -403,7 +438,66 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
             else:
                 vol_signal = "正常"
 
-    # 综合评分（0-100）
+    # ── 买点 / 卖点 信号分析 ─────────────────────────────────────────────
+    high_col = "high" if "high" in df.columns else None
+    low_col = "low" if "low" in df.columns else None
+    if high_col and low_col:
+        _sub = df.iloc[-30:].copy()
+        _close_sub = _sub["close"].astype(float)
+        _high_30 = float(_sub[high_col].astype(float).max())
+        # 若检测到除权日，剔除收盘异常低的行（除权后价格），只保留同一价格体系的数据
+        if _is_exrights:
+            _prev_close = close.iloc[-2]
+            # 标记：收盘价远低于前一日（除权后低价），这些行需要排除
+            _ex_mask = _close_sub < _prev_close * 0.5
+            _clean = _sub.loc[~_ex_mask]
+            if len(_clean) >= 5:
+                _sub = _clean
+        high_20 = float(_sub[high_col].astype(float).max())
+        low_20 = float(_sub[low_col].astype(float).min())
+    else:
+        high_20 = _sig_price
+        low_20 = _sig_price
+
+    # MA5/MA10 金叉 / 死叉（最近5日内出现）
+    ma5_series = _ma_src.rolling(5).mean()
+    ma10_series = _ma_src.rolling(10).mean()
+    for i in range(-5, 0):
+        if i - 1 < -len(ma5_series):
+            continue
+        if ma5_series.iloc[i] > ma10_series.iloc[i] and ma5_series.iloc[i - 1] <= ma10_series.iloc[i - 1]:
+            buy_points.append("MA5金叉MA10")
+            break
+        if ma5_series.iloc[i] < ma10_series.iloc[i] and ma5_series.iloc[i - 1] >= ma10_series.iloc[i - 1]:
+            sell_points.append("MA5死叉MA10")
+            break
+
+    # 超卖反弹：价格接近20日最低点（±3%）
+    dist_to_low = (_sig_price - low_20) / low_20 * 100 if low_20 > 0 else 999
+    if dist_to_low < 3 and dist_to_low > -1:
+        buy_points.append(f"20日低位（距低点{dist_to_low:+.1f}%）")
+
+    # 超买回调：价格远离MA5（>4%）
+    dist_to_ma5 = (_sig_price - ma5) / ma5 * 100 if ma5 > 0 else 0
+    if dist_to_ma5 > 4:
+        sell_points.append(f"远离MA5（偏高{dist_to_ma5:.1f}%）")
+
+    # 放量突破压力：量能放大 + 突破20日高点
+    if vol_col and avg_vol_20 > 0:
+        _vol_for_today = _vol_src.iloc[-1] if not _is_exrights else 0.0
+        vol_ratio_today = _vol_for_today / avg_vol_20 if avg_vol_20 > 0 else 0
+        if vol_ratio_today > 1.5 and _sig_price > high_20:
+            buy_points.append("放量突破20日高点")
+        elif vol_ratio_today > 1.5 and abs(daily_change_display) < 0.5:
+            sell_points.append("放量滞涨")
+
+    # 支撑/压力位
+    if _sig_price < ma20 * 0.97:
+        sell_points.append(f"远低于MA20（{((_sig_price/ma20-1)*100):+.1f}%）")
+    elif abs(_sig_price - ma20) / ma20 * 100 < 1:
+        buy_points.append("MA20附近支撑")
+
+    # ── 综合评分（0-100） ────────────────────────────────────────────────
     score = 50.0
     if ma_signal == "多头排列✅":
         score += 25
@@ -431,14 +525,19 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
         "name": _get_stock_name(ticker),
         "status": "ok",
         "score": round(score, 1),
-        "close": round(latest, 2),
-        "change": round(daily_change, 2),
+        "close": round(_sig_price, 2),
+        "change": round(daily_change_display, 2),
+        "exrights": _is_exrights,
         "trend": trend,
         "ma_signal": ma_signal,
         "vol_signal": vol_signal,
         "ma5": round(ma5, 2),
         "ma10": round(ma10, 2),
         "ma20": round(ma20, 2),
+        "buy_points": buy_points,
+        "sell_points": sell_points,
+        "high_20": round(high_20, 2),
+        "low_20": round(low_20, 2),
     }
 
 
@@ -449,14 +548,22 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
 
 def _build_stock_card(r: dict[str, Any], date_str: str) -> str:
     """构建单只股票的飞书消息文本。"""
+    is_exrights = r.get("exrights", False)
     emoji = "🟢" if r["score"] >= 65 else ("🟡" if r["score"] >= 45 else "🔴")
     action = "BUY" if r["score"] >= 65 else ("HOLD" if r["score"] >= 45 else "SELL")
+    buy = "、".join(r.get("buy_points", [])) or "暂无"
+    sell = "、".join(r.get("sell_points", [])) or "暂无"
+    exrights_tag = " 📌除权日" if is_exrights else ""
+    change_str = f"{r.get('change', 0):+.2f}%" if not is_exrights else "除权调整"
     return (
-        f"**📊 {date_str} · {r['ticker']} {r['name']}**\n"
+        f"**📊 {date_str} · {r['ticker']} {r['name']}{exrights_tag}**\n"
         f"{emoji} **综合分：{r['score']}**（{action}）\n"
-        f"收盘价：{r.get('close', '?')}  今日涨跌：{r.get('change', 0):+.2f}%\n"
+        f"收盘价：{r.get('close', '?')}  今日涨跌：{change_str}\n"
         f"趋势：{r['trend']}　均线信号：{r['ma_signal']}　量能信号：{r['vol_signal']}\n"
-        f"MA5={r.get('ma5', '?')}　MA10={r.get('ma10', '?')}　MA20={r.get('ma20', '?')}"
+        f"MA5={r.get('ma5', '?')}　MA10={r.get('ma10', '?')}　MA20={r.get('ma20', '?')}\n"
+        f"20日区间：{r.get('low_20', '?')} ~ {r.get('high_20', '?')}\n"
+        f"🟢 买点信号：{buy}\n"
+        f"🔴 卖点信号：{sell}"
     )
 
 
@@ -527,9 +634,11 @@ def run_analysis(date: str, tickers_str: str) -> None:
     ]
     for r in sorted(ok_results, key=lambda x: x["score"], reverse=True):
         emoji = "🔴" if r["score"] >= 65 else ("🟡" if r["score"] >= 45 else "⚪")
+        er_tag = " 📌除权日" if r.get("exrights", False) else ""
+        change_str = f"{r['change']:+.2f}%" if not r.get("exrights") else "除权日"
         summary_lines.append(
-            f"• {emoji} {r['ticker']} {r['name']}  分={r['score']}  趋势={r['trend']}  "
-            f"均线={r['ma_signal']}  量能={r['vol_signal']}  今日={r['change']:+.2f}%"
+            f"• {emoji} {r['ticker']} {r['name']}{er_tag}  分={r['score']}  趋势={r['trend']}  "
+            f"均线={r['ma_signal']}  量能={r['vol_signal']}  今日={change_str}"
         )
     if no_data_results:
         summary_lines.append(f"\n⚠️ 无数据：{', '.join(r['ticker'] for r in no_data_results)}")
