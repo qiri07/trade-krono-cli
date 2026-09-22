@@ -133,6 +133,58 @@ def _safe_float(v: object) -> float | None:
         return None
 
 
+# ── PE 历史分位（闸门⑥）─────────────────────────────────────────────────────────
+
+
+def fetch_pe_percentile(thscode: str, conn, cache: dict | None = None) -> tuple[float | None, dict | None]:
+    """通过 akshare 获取历史 PE(TTM) 序列，计算当前 PE 的历史分位。
+
+    Parameters
+    ----------
+    thscode : str
+        同花顺股票代码，如 "600519.SH"
+    conn : sqlite3.Connection
+        缓存数据库连接
+    cache : dict | None
+        内存缓存
+
+    Returns
+    -------
+    tuple[float | None, dict | None]
+        (PE 历史分位 0~100, 新缓存条目)
+    """
+    ticker = thscode.replace(".SH", "").replace(".SZ", "")
+    cache_key = f"pe_pct_{ticker}"
+    cached = cache[cache_key] if cache and cache_key in cache else None
+    if cached is not None:
+        return cached, None
+
+    try:
+        import akshare as _ak
+
+        df = _ak.stock_value_em(symbol=ticker)
+        if df is None or len(df) == 0:
+            return None, None
+
+        pe_col = "PE(TTM)"
+        pe_values = df[pe_col].dropna().astype(float)
+        pe_values = pe_values[pe_values > 0]
+        if len(pe_values) == 0:
+            return None, None
+
+        current_pe = float(pe_values.iloc[-1])
+        # 计算分位：当前 PE 在历史序列中的百分位排名
+        count_below = int((pe_values < current_pe).sum())
+        percentile = (count_below / len(pe_values)) * 100.0
+
+        result: float | None = round(percentile, 1)
+        entry = {cache_key: result} if result is not None else None
+        return result, entry
+    except Exception as e:
+        logger.opt(exception=True).debug(f"PE 历史分位获取失败 {thscode}: {e}")
+        return None, None
+
+
 # ── API 客户端 ──────────────────────────────────────────────────────────────────
 
 
@@ -629,6 +681,7 @@ class StockMetrics:
     is_financial: bool = False  # 是否金融行业（豁免部分规则）
     is_cyclic: bool = False  # 是否周期行业（豁免毛利率/ROE稳定性）
     data_notes: str = ""  # 数据缺失标记（"待核查" 而非直接排除）
+    pe_percentile: float | None = None  # PE 历史分位（0~100，越小越低估）
 
 
 def screen_one(
@@ -887,8 +940,23 @@ def process_one_stock(s: dict, vals: dict, conn, cache: dict) -> StockMetrics:
     # 做初步筛选（五闸门，含毛利率+行业豁免）
     metrics = screen_one(thscode, name, val, fin_latest, fin_prev, income_items, cfo)
 
-    # 仅对通过初步筛选的股票做三项深度验证
-    if metrics.cfo_ok or (metrics.gate_fail and metrics.gate_fail.startswith("⑥")):
+    # 闸门⑥：安全边际 — PE 历史分位 < 30% 为低估
+    if not metrics.gate_fail:
+        pe_pct, pe_entry = fetch_pe_percentile(thscode, conn, cache)
+        if pe_entry:
+            cache.update(pe_entry)
+        if pe_pct is not None:
+            metrics.pe_percentile = pe_pct
+            if pe_pct >= 30:
+                metrics.gate_fail = f"⑥PE分位={pe_pct:.1f}%≥30%"
+                metrics.data_notes = "PE分位偏高"
+        else:
+            # 数据缺失标记为"待核查"而非直接排除
+            metrics.pe_percentile = None
+            metrics.data_notes = ("PE历史分位数据缺失; " + metrics.data_notes).strip("; ")
+
+    # 仅对通过全部六闸门的股票做三项深度验证
+    if metrics.cfo_ok and not metrics.gate_fail:
         roe_history, roe_entry = fetch_roe_history(thscode, conn, cache)
         cfo_ratio_history, cfo_ratio_entry = fetch_cfo_ratio_history(thscode, conn, cache)
         cfo_history, cfo_hist_entry = fetch_cfo_history(thscode, conn, cache)
@@ -934,7 +1002,7 @@ def run_screening(
                 m = future.result()
             except Exception:
                 continue
-            if m.gate_fail == "" or (m.gate_fail and m.gate_fail.startswith("⑥")):
+            if m.gate_fail == "":
                 if m.ticker:
                     results_pass.append(m)
                 else:
@@ -966,21 +1034,22 @@ def write_result_file(
         f.write(f"通过五闸门（①~⑤）的股票共 {len(results_pass)} 只\n\n")
         f.write(
             f"  {'代码':<8} {'名称':<10} {'PE_TTM':>7} {'PB':>6} {'ROE%':>7} "
-            f"{'毛利率%':>7} {'负债率%':>7} {'CAGR%':>7}  {'稳定性':<6} {'现金流质量'} {'数据备注'}\n",
+            f"{'毛利率%':>7} {'负债率%':>7} {'CAGR%':>7} {'PE分位%':>7}  {'稳定性':<6} {'现金流质量'} {'数据备注'}\n",
         )
         f.write(
             f"  {'-' * 8} {'-' * 10} {'-' * 7} {'-' * 6} {'-' * 7} "
-            f"{'-' * 7} {'-' * 7} {'-' * 7}  {'-' * 8} {'-' * 10} {'-' * 12}\n",
+            f"{'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7}  {'-' * 8} {'-' * 10} {'-' * 12}\n",
         )
         for r in sorted(results_pass, key=lambda x: (x.pe_ttm or 999, -(x.roe or 0))):
             stability = r.profitability_stability or "-"
             cash_qual = r.cash_quality_rating or "-"
             margin = f"{r.gross_margin:.1f}" if r.gross_margin is not None else "N/A"
             notes = r.data_notes or "-"
+            pe_pct = f"{r.pe_percentile:.1f}" if r.pe_percentile is not None else "N/A"
             f.write(
                 f"  {r.ticker:<8} {r.name:<10} {r.pe_ttm:>7.1f} {r.pb:>6.2f} "
                 f"{r.roe:>7.1f} {margin:>7} {r.debt_ratio:>7.1f} {r.cagr_3y:>7.1f}"
-                f"  {stability:<6} {cash_qual} {notes}\n",
+                f" {pe_pct:>7}  {stability:<6} {cash_qual} {notes}\n",
             )
         f.write(f"\n失败分布（共 {len(results_fail)} 只）：\n")
         fail_gates: dict[str, int] = {}
@@ -990,7 +1059,8 @@ def write_result_file(
                 fail_gates[g] = fail_gates.get(g, 0) + 1
         for gate, count in sorted(fail_gates.items(), key=lambda x: -x[1]):
             f.write(f"  {gate}: {count} 只\n")
-        f.write("\n注：闸门②新增毛利率≥40%门槛（周期股豁免）；闸门③金融股豁免负债率<50%；")
+        f.write("\n注：闸门①~⑤见上表；闸门⑥PE历史分位<30%为安全边际（akshare stock_value_em计算）；")
+        f.write("闸门②毛利率≥40%门槛（周期股豁免）；闸门③金融股豁免负债率<50%；")
         f.write("闸门④CFO需连续3年为正；数据缺失标记为'待核查'而非直接排除。\n")
     print(f"结果已写入：{out_path}", flush=True)
 
