@@ -73,6 +73,8 @@ def clear_research_singleton() -> None:
     """清除研究数据库单例，使下一次 get_research() 重新初始化。用于测试隔离。"""
     global _research
     with _research_lock:
+        if _research is not None:
+            _research.close()
         _research = None
 
 

@@ -58,6 +58,13 @@ class Cache:
             self._local.conn = conn
         return conn
 
+    def close(self) -> None:
+        """关闭当前线程的 SQLite 连接（测试清理用）。"""
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+            self._local.conn = None
+
     def _transaction(self, fn: Callable[..., None]) -> None:
         """以事务方式执行操作。"""
         conn = self._conn

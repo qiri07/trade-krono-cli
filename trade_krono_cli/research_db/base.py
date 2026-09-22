@@ -53,8 +53,14 @@ class ResearchDatabase:
             self._local.conn = conn
         return conn
 
+    def close(self) -> None:
+        """关闭当前线程的 SQLite 连接（测试清理用）。"""
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+            self._local.conn = None
+
     def _init_db(self) -> None:
-        """创建所有表（幂等，IF NOT EXISTS）。"""
         with self._conn as conn:
             conn.executescript(CREATE_SCRIPT)
 

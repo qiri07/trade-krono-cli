@@ -96,10 +96,13 @@ def check_database(db_path: Path) -> HealthResult:
     """
     try:
         conn = sqlite3.connect(str(db_path), timeout=5)
-        with conn:
-            conn.execute("PRAGMA integrity_check")
-            conn.execute("SELECT 1 LIMIT 0")
-        return HealthResult("数据库", True, f"✅ {db_path.name} OK")
+        try:
+            with conn:
+                conn.execute("PRAGMA integrity_check")
+                conn.execute("SELECT 1 LIMIT 0")
+            return HealthResult("数据库", True, f"✅ {db_path.name} OK")
+        finally:
+            conn.close()
     except (sqlite3.Error, OSError) as e:
         return HealthResult("数据库", False, f"❌ {type(e).__name__}: {str(e)[:80]}")
 

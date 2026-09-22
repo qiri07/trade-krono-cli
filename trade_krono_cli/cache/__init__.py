@@ -58,4 +58,6 @@ def get_cache() -> Cache:
 def clear_cache_singleton() -> None:
     """清除 Cache 全局单例（测试隔离用）。"""
     global _cache
+    if _cache is not None:
+        _cache.close()
     _cache = None
