@@ -96,3 +96,27 @@ def test_print_summary(sample_merged, capsys) -> None:
     assert "600519" in captured.out
     assert "trade-krono-cli" in captured.out
     assert "最佳推荐" in captured.out
+
+
+def test_print_summary_overweight(capsys) -> None:
+    """OVERWEIGHT 信号在 summary 输出中可见。"""
+    merged = [
+        {
+            "rank": 1,
+            "ticker": "sh.600519",
+            "ta_signal": "OVERWEIGHT",
+            "ta_confidence": 90.0,
+            "kronos_direction": "UP",
+            "kronos_change_pct": 5.0,
+            "kronos_prediction_uncertainty": {"confidence_score": 85.0},
+            "expected_value": 4.5,
+            "prob_win": 0.72,
+            "composite_score": 92.0,
+            "ranking_score": 92.0,
+            "forecast_dict": {"timestamps": [], "close": []},
+        },
+    ]
+    print_summary(merged, "2026-08-11")
+    captured = capsys.readouterr()
+    assert "OVERWEIGHT" in captured.out
+    assert "600519" in captured.out

@@ -44,7 +44,7 @@ class ExperimentsMixin(ResearchDatabase):
                     data_snapshot_id,
                     json.dumps(run_ids or [], ensure_ascii=False),
                     json.dumps(result_summary or {}, ensure_ascii=False),
-                    1 if passed is True else (0 if passed is False else None),
+                    1 if bool(passed) else (0 if passed is False else None),
                     notes,
                     time.time(),
                 ),

@@ -210,3 +210,60 @@ def test_schema_migration_adds_columns(tmp_path) -> None:
     assert "config_hash" in col_names
     assert "prompt_ver" in col_names
     assert "model_ver" in col_names
+
+
+# ── K线缓存：pickle回退与日期范围查询 ──────────────────────────────────────────
+
+
+def test_kline_pickle_fallback(tmp_path) -> None:
+    """pd.read_pickle失败时回退到pickle.loads（line 49-57）。"""
+    import pickle as std_pickle
+
+    c = Cache(db_path=tmp_path / "cache.db")
+    df = _make_kline_df(3)
+    c.set_kline("sh.600519", "2026-01-01", "2026-01-03", "d", df, ttl=3600)
+
+    # 用标准pickle序列化原始数据，模拟旧格式
+    raw_buf = std_pickle.dumps(df)
+    conn = c._conn
+    conn.execute(
+        "UPDATE kline_cache SET data = ? WHERE ticker = ? AND start = ?",
+        (raw_buf, "sh.600519", "2026-01-01"),
+    )
+    conn.commit()
+    result = c.get_kline("sh.600519", "2026-01-01", "2026-01-03", "d")
+    assert result is not None
+    assert len(result) == 3
+
+
+def test_get_cached_date_range_with_overlap(tmp_path) -> None:
+    """有重叠区间时正确合并日期范围（line 195,199,205）。"""
+    c = Cache(db_path=tmp_path / "cache.db")
+    df1 = _make_kline_df(5)  # 2026-01-01 ~ 2026-01-05
+    df2 = _make_kline_df(5)  # 2026-01-04 ~ 2026-01-08（与df1重叠）
+    df2["timestamps"] = pd.date_range("2026-01-04", periods=5, freq="D")
+    c.set_kline("sh.600519", "2026-01-01", "2026-01-05", "d", df1, ttl=-1)
+    c.set_kline("sh.600519", "2026-01-04", "2026-01-08", "d", df2, ttl=-1)
+    result = c.get_cached_date_range("sh.600519", freq="d")
+    assert result is not None
+    assert result[0] == "2026-01-01"
+    assert result[1] == "2026-01-08"
+
+
+def test_get_cached_date_range_no_data(tmp_path) -> None:
+    """无缓存数据时返回None。"""
+    c = Cache(db_path=tmp_path / "cache.db")
+    result = c.get_cached_date_range("sh.999999", freq="d")
+    assert result is None
+
+
+def test_get_cached_date_range_all_expired(tmp_path) -> None:
+    """所有记录TTL过期时返回None。"""
+    import time as _time
+
+    c = Cache(db_path=tmp_path / "cache.db")
+    df = _make_kline_df(3)
+    c.set_kline("sh.600519", "2026-01-01", "2026-01-03", "d", df, ttl=0.001)
+    _time.sleep(0.01)
+    result = c.get_cached_date_range("sh.600519", freq="d")
+    assert result is None

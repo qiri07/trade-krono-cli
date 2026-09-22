@@ -67,7 +67,7 @@ def benchmark_provider(
         t0 = time.perf_counter()
         data = getattr(provider, "fetch_kline")(ticker, _bench_date(), _bench_date(), "d", "1")
         latency_ms = (time.perf_counter() - t0) * 1000
-        success = data is not None and getattr(data, "is_empty", False) is False
+        success = data is not None and not bool(getattr(data, "is_empty", False))
         return _BenchResult(name=name, latency_ms=latency_ms, success=success)
     except Exception as e:
         from loguru import logger

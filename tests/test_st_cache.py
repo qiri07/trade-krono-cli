@@ -220,3 +220,74 @@ class TestWrapsPreservation:
             return x
 
         assert "My docstring" in (documented.__doc__ or "")
+
+
+# ═══════════════════════════════════════════
+#  Truly unhashable args (lines 38-40)
+# ═══════════════════════════════════════════
+
+
+class TestUnhashableArgs:
+    def test_truly_unhashable_class_fallback(self) -> None:
+        """自定义不可哈希类（无__hash__）触发fallback分支。"""
+        call_count = 0
+
+        class UnhashableObj:
+            def __init__(self, value: int) -> None:
+                self.value = value
+
+            def __eq__(self, other: object) -> bool:
+                return isinstance(other, UnhashableObj) and self.value == other.value
+
+            def __repr__(self) -> str:
+                return f"UnhashableObj({self.value})"
+
+            __hash__ = None  # 显式设为不可哈希
+
+        @cached(ttl=60)
+        def fn(obj: UnhashableObj) -> int:
+            nonlocal call_count
+            call_count += 1
+            return obj.value
+
+        result = fn(UnhashableObj(42))
+        assert result == 42
+        assert call_count == 1
+        # 第二次调用因不可哈希而回退到直接调用
+        result2 = fn(UnhashableObj(42))
+        assert result2 == 42
+        assert call_count == 2
+
+    def test_unorderable_kwargs_values_fallback(self) -> None:
+        """kwargs值类型不可比较时，sorted()抛TypeError触发fallback（lines 38-40）。"""
+        call_count = 0
+
+        @cached(ttl=60)
+        def fn(x: int, **kwargs: object) -> int:
+            nonlocal call_count
+            call_count += 1
+            return x
+
+        # int和str不可比较，sorted()会抛TypeError
+        result = fn(1, a=1, b="hello")
+        assert result == 1
+        assert call_count == 1
+
+    def test_unhashable_return_value_fallback(self) -> None:
+        """返回不可哈希对象时，值仍可存入缓存（dict value无限制），命中缓存返回同一对象。"""
+        call_count = 0
+
+        @cached(ttl=60)
+        def fn(x: int) -> list:
+            nonlocal call_count
+            call_count += 1
+            return [x]
+
+        result = fn(1)
+        assert result == [1]
+        assert call_count == 1
+        # 第二次调用应命中缓存（key可哈希，value不可哈希不影响存储）
+        result2 = fn(1)
+        assert result2 == [1]
+        assert call_count == 1  # 未重新调用
+        assert result is result2  # 同一对象

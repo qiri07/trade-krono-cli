@@ -36,9 +36,9 @@ def repo_status() -> None:
             state = "[red]lock漂移[/red]"
         elif e.error:
             state = f"[red]{e.error}[/red]"
-        elif e.is_up_to_date is True:
+        elif e.is_up_to_date:
             state = "[green]最新[/green]"
-        elif e.is_up_to_date is False:
+        elif not e.is_up_to_date:
             state = "[yellow]落后[/yellow]"
         else:
             state = "—"

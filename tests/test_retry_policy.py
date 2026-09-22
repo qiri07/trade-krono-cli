@@ -223,17 +223,26 @@ class TestSmartRetry:
         with pytest.raises(DataNotFoundError):
             fn()
 
-    def test_explicit_retryable_subclass_is_retried(self) -> None:
-        """Any TradeKronoRetryableError subclass is retried."""
-        policy = RetryPolicy(max_attempts=2, base_delay=0.01, jitter=False)
+    def test_non_retriable_generic_exception_with_skip(self) -> None:
+        """generic Exception classified as non_retriable + skip_non_retriable=True → immediate raise (lines 100-101)."""
+        policy = RetryPolicy(max_attempts=3, base_delay=0.01, jitter=False, skip_non_retriable=True)
 
         @smart_retry(policy)
         def fn() -> NoReturn:
-            msg = "502 bad gateway"
-            raise Server5xxError(msg, status_code=502)
+            raise RuntimeError("some non-retryable generic error")
 
-        with pytest.raises(Server5xxError):
+        with pytest.raises(RuntimeError):
             fn()
+
+    def test_exp_backoff_with_jitter(self) -> None:
+        """jitter=True 时延迟落在 [base*2^(n-1)*0.5, base*2^(n-1)*1.0] 范围内。"""
+        from trade_krono_cli.retry_policy.policy import _exp_backoff
+
+        delay = _exp_backoff(attempt=1, base_delay=1.0, jitter=True)
+        expected_min = 1.0 * (2 ** 0) * 0.5
+        expected_max = 1.0 * (2 ** 0) * 1.0
+        assert expected_min <= delay <= expected_max
+
 
 
 # ═══════════════════════════════════════════════════════
@@ -300,6 +309,21 @@ class TestFailureStore:
         assert cleared == 1
         assert len(store.list_fails()) == 1
         assert store.list_fails()[0].date == "2026-01-16"
+
+    def test_clear_for_date_with_module_filter(self, store) -> None:
+        """按模块过滤清除：只清除指定 module 的记录（line 174 分支）。"""
+        store.record("sh.600519", "2026-01-15", "ta", NetworkError("e1"))
+        store.record("sh.000001", "2026-01-15", "kronos", DataNotFoundError("e2"))
+        store.record("sh.000002", "2026-01-16", "ta", ParameterError("e3"))
+        # Clear only ta records for 2026-01-15
+        cleared = store.clear_for_date("2026-01-15", module="ta")
+        assert cleared == 1
+        remaining = store.list_fails()
+        assert len(remaining) == 2
+        remaining_tickers = {r.ticker for r in remaining}
+        assert remaining_tickers == {"sh.000001", "sh.000002"}
+        # Verify the remaining kronos record is intact
+        assert any(r.ticker == "sh.000001" and r.module == "kronos" for r in remaining)
 
     def test_clear_all(self, store) -> None:
         store.record("sh.600519", "2026-01-15", "ta", NetworkError("e1"))

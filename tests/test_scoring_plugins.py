@@ -116,6 +116,17 @@ class TestLinearScorer:
         score = s.score(merged)
         assert 0 <= score <= 100
 
+    def test_uncertainty_low_penalty_branch(self) -> None:
+        """低置信度触发 uncertainty_low_penalty 分支（line 90）。"""
+        s = LinearScorer()
+        # confidence_score < uncertainty_med_threshold → low penalty
+        merged = _make_merged(uncertainty_confidence=20.0)
+        score = s.score(merged)
+        assert 0 <= score <= 100
+        # Should be lower than high-confidence counterpart
+        merged_high = _make_merged(uncertainty_confidence=90.0)
+        assert s.score(merged_high) > score
+
     def test_name(self) -> None:
         assert LinearScorer.name == "linear"
 
@@ -144,6 +155,30 @@ class TestMultiplicativeScorer:
         linear = LinearScorer().score(merged)
         multi = MultiplicativeScorer().score(merged)
         assert abs(linear - multi) < 0.01
+
+    def test_adjusted_expected_return_risk_factor_one(self) -> None:
+        """adjusted_expected_return 存在时 risk_factor=1.0（line 153 else 分支）。"""
+        s = MultiplicativeScorer()
+        merged = {
+            "ticker": "sh.600519",
+            "ta_confidence": 80.0,
+            "kronos_change_pct": 5.0,
+            "kronos_direction": "UP",
+            "adjusted_expected_return": 7.0,
+            "kronos_prediction_uncertainty": {"confidence_score": 30.0},
+            "risk_score_total": 30.0,
+        }
+        score_with_adj = s.score(merged)
+        # Same inputs but no adjusted_expected_return → should use risk_penalty path
+        merged_no_adj = _make_merged(
+            ta_confidence=80.0,
+            kronos_change_pct=5.0,
+            risk_score_total=30.0,
+            uncertainty_confidence=30.0,
+        )
+        score_without_adj = s.score(merged_no_adj)
+        # risk_factor=1.0 means no risk penalty applied, score should be higher
+        assert score_with_adj >= score_without_adj
 
     def test_clamp_to_0_100(self) -> None:
         s = MultiplicativeScorer()

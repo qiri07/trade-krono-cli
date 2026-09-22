@@ -475,8 +475,187 @@ class TestUniverseEngine:
         key_b = engine._cache_key("2026-08-14")
         assert key_a != key_b
 
+    def test_cache_requires_refresh_no_market_cap(self) -> None:
+        """无 market_cap_min 等参数时，不要求刷新缓存。"""
+        mock_provider = MagicMock(spec=UniverseProvider)
+        mock_provider.name = "mock"
+        stages = [StaticFilterStage()]
+        engine = UniverseEngine(
+            provider=mock_provider,
+            stages=stages,
+            cache_dir=MagicMock(),
+        )
+        assert engine._cache_requires_refresh() is False
 
-class TestGetUniverse:
+    def test_cache_requires_refresh_all_attrs_none(self) -> None:
+        """所有属性均为 None 时不要求刷新（覆盖 _cache_requires_refresh 全部 False 分支）。"""
+        from types import SimpleNamespace
+
+        mock_provider = MagicMock(spec=UniverseProvider)
+        mock_provider.name = "mock"
+        # Stage with all filter attrs set to None → all hasattr checks hit but all are None
+        stage = SimpleNamespace(
+            name="dummy",
+            market_cap_min=None,
+            pe_range=None,
+            pb_range=None,
+            min_pb=None,
+            min_volume=None,
+            min_volume_ratio=None,
+            min_turnover_rate=None,
+        )
+        engine = UniverseEngine(
+            provider=mock_provider,
+            stages=[stage],
+            cache_dir=MagicMock(),
+        )
+        assert engine._cache_requires_refresh() is False
+
+    def test_cache_requires_refresh_with_market_cap(self) -> None:
+        """含 market_cap_min 时要求刷新缓存。"""
+        mock_provider = MagicMock(spec=UniverseProvider)
+        mock_provider.name = "mock"
+        stages = [
+            StaticFilterStage(),
+            FundamentalFilterStage(market_cap_min=100.0),
+        ]
+        engine = UniverseEngine(
+            provider=mock_provider,
+            stages=stages,
+            cache_dir=MagicMock(),
+        )
+        assert engine._cache_requires_refresh() is True
+
+    def test_load_cache_miss(self, tmp_path) -> None:
+        """缓存文件不存在时返回 None。"""
+        mock_provider = MagicMock(spec=UniverseProvider)
+        mock_provider.name = "mock"
+        engine = UniverseEngine(
+            provider=mock_provider,
+            stages=[],
+            cache_dir=tmp_path,
+        )
+        result = engine._load_cache("nonexistent_key", "2026-08-13")
+        assert result is None
+
+    def test_save_and_load_cache(self, tmp_path) -> None:
+        """写入缓存后可正确读取。"""
+        mock_provider = MagicMock(spec=UniverseProvider)
+        mock_provider.name = "mock"
+        engine = UniverseEngine(
+            provider=mock_provider,
+            stages=[],
+            cache_dir=tmp_path,
+            cache_ttl_hours=24,
+        )
+        tickers = ["sh.600519", "sz.000858"]
+        engine._save_cache("test_key", tickers, "2026-08-13")
+        loaded = engine._load_cache("test_key", "2026-08-13")
+        assert loaded == tickers
+
+    def test_run_with_cache_hit(self, tmp_path) -> None:
+        """缓存命中时直接返回，不执行 provider 调用。"""
+        mock_provider = MagicMock(spec=UniverseProvider)
+        mock_provider.name = "mock"
+        mock_provider.get_universe.return_value = _make_tickets(5)
+
+        engine = UniverseEngine(
+            provider=mock_provider,
+            stages=[],
+            cache_dir=tmp_path,
+            cache_ttl_hours=24,
+        )
+        # Pre-populate cache
+        engine._save_cache("cached_key", ["sh.600519"], "2026-08-13")
+        with patch.object(engine, "_cache_key", return_value="cached_key"):
+            result = engine.run(eval_date="2026-08-13")
+        assert result == ["sh.600519"]
+        mock_provider.get_universe.assert_not_called()
+
+    def test_run_with_expired_cache(self, tmp_path) -> None:
+        """缓存过期时跳过缓存，重新执行。"""
+        mock_provider = MagicMock(spec=UniverseProvider)
+        mock_provider.name = "mock"
+        mock_provider.get_universe.return_value = _make_tickets(3)
+
+        engine = UniverseEngine(
+            provider=mock_provider,
+            stages=[],
+            cache_dir=tmp_path,
+            cache_ttl_hours=0,  # 立即过期
+        )
+        # Write cache with old timestamp
+        engine._save_cache("cached_key", ["sh.600519"], "2026-08-13")
+        with patch.object(engine, "_cache_key", return_value="cached_key"):
+            result = engine.run(eval_date="2026-08-13")
+        assert len(result) == 3
+        mock_provider.get_universe.assert_called_once()
+
+    def test_from_config_provider_unavailable(self) -> None:
+        """provider 全不可用时 from_config 抛出 ValueError。"""
+        with patch("trade_krono_cli.universe.engine.get_universe_provider") as mock_get:
+            mock_get.return_value = None
+            fc = FilterConfig(universe_source="nonexistent")
+            with pytest.raises(ValueError, match="无法初始化 UniverseProvider"):
+                UniverseEngine.from_config(fc, universe_source="nonexistent")
+
+    def test_run_requires_refresh_no_cache(self, tmp_path) -> None:
+        """cache_requires_refresh=True 且无缓存时执行完整管道。"""
+        mock_provider = MagicMock(spec=UniverseProvider)
+        mock_provider.name = "mock"
+        mock_provider.get_universe.return_value = _make_tickets(4)
+
+        stages = [
+            StaticFilterStage(),
+            FundamentalFilterStage(market_cap_min=100.0),  # triggers refresh
+        ]
+        engine = UniverseEngine(
+            provider=mock_provider,
+            stages=stages,
+            cache_dir=tmp_path,
+        )
+        result = engine.run(eval_date="2026-08-13")
+        assert len(result) == 4
+        mock_provider.get_universe.assert_called_once()
+
+    def test_run_stage_filters_to_empty(self, tmp_path) -> None:
+        """某阶段过滤后结果为空时提前终止。"""
+        mock_provider = MagicMock(spec=UniverseProvider)
+        mock_provider.name = "mock"
+        mock_provider.get_universe.return_value = _make_tickets(5)
+
+        stages = [
+            StaticFilterStage(),
+            FundamentalFilterStage(market_cap_range=(0, 1)),  # 过滤掉所有票
+        ]
+        engine = UniverseEngine(
+            provider=mock_provider,
+            stages=stages,
+            cache_dir=tmp_path,
+        )
+        result = engine.run(eval_date="2026-08-13")
+        assert result == []
+
+    def test_save_cache_exception_handled(self, tmp_path) -> None:
+        """缓存写入异常时不报错（只记 debug 日志）。"""
+        mock_provider = MagicMock(spec=UniverseProvider)
+        mock_provider.name = "mock"
+        engine = UniverseEngine(
+            provider=mock_provider,
+            stages=[],
+            cache_dir=tmp_path / "unwriteable",
+        )
+        # unwriteable 目录不存在，但 mkdir 会成功；用 readonly 路径模拟
+        import os
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir()
+        os.chmod(readonly_dir, 0o555)
+        try:
+            engine._cache_dir = readonly_dir
+            engine._save_cache("key", ["sh.600519"], "2026-08-13")
+            # 不应抛异常
+        finally:
+            os.chmod(readonly_dir, 0o755)
     def test_returns_list_of_strings(self) -> None:
         mock_provider = MagicMock(spec=UniverseProvider)
         mock_provider.name = "mock"
