@@ -256,3 +256,45 @@ class TestStrategyRunsMixin:
             notes=None,
         )
         # 应无异常
+
+    def test_query_strategy_history_with_avg_score(self, db: object) -> None:
+        """查询策略历史：含 composite_score 时 avg_score 被正确计算（覆盖 line 100, 114-121）。"""
+        db.insert_strategy_run(  # type: ignore[attr-defined]
+            run_at=1725235200.0,
+            strategy="linear",
+            params={},
+            tickers=["sh.600519", "sz.000858"],
+            results=[
+                {"ticker": "sh.600519", "composite_score": 85.0},
+                {"ticker": "sz.000858", "composite_score": 72.0},
+            ],
+        )
+        rows = db.query_strategy_history(strategy="linear")  # type: ignore[attr-defined]
+        assert len(rows) == 1
+        assert rows[0]["avg_score"] == 78.5
+        assert rows[0]["n_results"] == 2
+
+    def test_query_strategy_history_no_score(self, db: object) -> None:
+        """results 不含 composite_score 时 avg_score 为 None（覆盖 line 119-120）。"""
+        db.insert_strategy_run(  # type: ignore[attr-defined]
+            run_at=1725235200.0,
+            strategy="linear",
+            params={},
+            tickers=["sh.600519"],
+            results=[{"ticker": "sh.600519", "score": 85.0}],  # 无 composite_score
+        )
+        rows = db.query_strategy_history(strategy="linear")  # type: ignore[attr-defined]
+        assert rows[0]["avg_score"] is None
+
+    def test_query_strategy_history_invalid_json(self, db: object) -> None:
+        """composite_score 为非法字符串时 avg_score 返回 None（覆盖 line 122-123 except 分支）。"""
+        db.insert_strategy_run(  # type: ignore[attr-defined]
+            run_at=1725235200.0,
+            strategy="linear",
+            params={},
+            tickers=["sh.600519"],
+            results=[{"ticker": "sh.600519", "composite_score": "not_a_number"}],
+        )
+        rows = db.query_strategy_history(strategy="linear")  # type: ignore[attr-defined]
+        # composite_score 是字符串 "not_a_number"，float() 抛 ValueError → except 分支
+        assert rows[0]["avg_score"] is None

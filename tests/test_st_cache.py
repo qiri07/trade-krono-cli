@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import time
+from unittest.mock import patch
 
 from trade_krono_cli.utils.st_cache import cached
 
@@ -259,7 +260,7 @@ class TestUnhashableArgs:
         assert call_count == 2
 
     def test_unorderable_kwargs_values_fallback(self) -> None:
-        """kwargs值类型不可比较时，sorted()抛TypeError触发fallback（lines 38-40）。"""
+        """sorted() 抛 TypeError 时触发 fallback（lines 38-40）。"""
         call_count = 0
 
         @cached(ttl=60)
@@ -268,8 +269,10 @@ class TestUnhashableArgs:
             call_count += 1
             return x
 
-        # int和str不可比较，sorted()会抛TypeError
-        result = fn(1, a=1, b="hello")
+        # 用 mock 模拟 sorted 抛出 TypeError（真实场景中 kwargs 值类型不可比较会触发）
+        with patch("trade_krono_cli.utils.st_cache.sorted") as mock_sorted:
+            mock_sorted.side_effect = TypeError("unorderable")
+            result = fn(1, a=1, b="hello")
         assert result == 1
         assert call_count == 1
 
