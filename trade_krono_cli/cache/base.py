@@ -37,6 +37,10 @@ class Cache:
       · TA / Kronos：缓存 key 含 config_hash + 模型版本，配置变更自动失效
     """
 
+    # 类级别集合，追踪所有线程创建的连接，供 close() 统一关闭
+    _all_conns: set[sqlite3.Connection] = set()
+    _conn_lock = threading.Lock()
+
     def __init__(self, db_path: Path | None = None, settings: Settings | None = None) -> None:
         self._db_path = db_path or ((settings or get_settings()).cache_dir / "pipeline_cache.db")
         from trade_krono_cli.config import _validate_test_isolation
@@ -56,14 +60,33 @@ class Cache:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
             self._local.conn = conn
+            with Cache._conn_lock:
+                Cache._all_conns.add(conn)
         return conn
 
     def close(self) -> None:
-        """关闭当前线程的 SQLite 连接（测试清理用）。"""
+        """关闭所有线程的 SQLite 连接（测试清理用）。"""
+        # 先关当前线程的连接
         conn = getattr(self._local, "conn", None)
         if conn is not None:
-            conn.close()
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
             self._local.conn = None
+        # 再关其他线程遗留的连接
+        with Cache._conn_lock:
+            for c in list(Cache._all_conns):
+                try:
+                    c.execute("SELECT 1")
+                except sqlite3.Error:
+                    # 连接已失效，跳过
+                    continue
+                try:
+                    c.close()
+                except sqlite3.Error:
+                    pass
+            Cache._all_conns.clear()
 
     def _transaction(self, fn: Callable[..., None]) -> None:
         """以事务方式执行操作。"""
