@@ -64,7 +64,8 @@ def tmp_db(tmp_path: Path) -> sqlite3.Connection:
         )
     """)
     conn.commit()
-    return conn
+    yield conn
+    conn.close()
 
 
 # ── cache_get / cache_set ─────────────────────────────────────────────────────
