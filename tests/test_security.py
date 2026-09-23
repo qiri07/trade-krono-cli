@@ -1,10 +1,13 @@
 """测试安全工具。"""
 
+import os
 from typing import NoReturn
+from unittest.mock import patch
 
 import pytest
 
 from trade_krono_cli.security import (
+    _KEY_ENV_MAP,
     KeyVault,
     TokenBucket,
     retry,
@@ -169,3 +172,21 @@ def test_key_vault_get_key_unknown_provider() -> None:
     vault = KeyVault()
     result = vault.get_key("nonexistent_provider")
     assert result is None
+
+
+def test_key_vault_get_key_known_provider() -> None:
+    """已知供应商应返回对应环境变量值。"""
+    vault = KeyVault()
+    # _KEY_ENV_MAP 中至少有一个 provider（如 openai）
+    for provider, env_var in list(_KEY_ENV_MAP.items())[:1]:
+        with patch.dict(os.environ, {env_var: "test_secret_key_123"}):
+            result = vault.get_key(provider)
+            assert result == "test_secret_key_123"
+
+
+def test_validate_ticker_sz_default() -> None:
+    """以 '0' 开头的代码（非 6/5/9）应默认归为深交所 sz。"""
+    from trade_krono_cli.security import validate_ticker
+
+    assert validate_ticker("000001") == "sz.000001"
+    assert validate_ticker("000858") == "sz.000858"
