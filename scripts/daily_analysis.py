@@ -16,6 +16,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,23 @@ from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands._core_helpers import _load_env
 from trade_krono_cli.config import get_settings  # type: ignore[import-not-found]
 from trade_krono_cli.data_providers import get_data_factory
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LLM 请求限流（Agnes 免费版约 5 次/窗口，间隔 1.5s 可避免）
+# ─────────────────────────────────────────────────────────────────────────────
+_LLM_REQUEST_DELAY: float = 1.5  # 相邻 LLM 请求最小间隔（秒）
+_llm_request_timestamp: float = 0.0  # 上次 LLM 请求时间戳
+
+
+def _wait_for_llm_rate_limit() -> None:
+    """等待至距上次 LLM 请求已过去 _LLM_REQUEST_DELAY 秒。"""
+    global _llm_request_timestamp
+    now = time.monotonic()
+    elapsed = now - _llm_request_timestamp
+    if elapsed < _LLM_REQUEST_DELAY:
+        sleep_time = _LLM_REQUEST_DELAY - elapsed
+        time.sleep(sleep_time)
+    _llm_request_timestamp = time.monotonic()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 常量
@@ -194,21 +212,35 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
                 "risk_alerts": "无",
                 "conclusion": "无",
             }
-        response = client.chat.completions.create(
-            model=_AI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=800,
-        )
-        raw = (response.choices[0].message.content or "").strip()
-        result = _extract_json(raw)
-        if result:
-            return {
-                "analysis_summary": result.get("analysis_summary", ""),
-                "top_picks": result.get("top_picks", ""),
-                "risk_alerts": result.get("risk_alerts", ""),
-                "conclusion": result.get("conclusion", ""),
-            }
+
+        from openai import RateLimitError
+
+        _wait_for_llm_rate_limit()
+        for attempt in range(1, 4):
+            try:
+                response = client.chat.completions.create(
+                    model=_AI_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=800,
+                )
+                raw = (response.choices[0].message.content or "").strip()
+                result = _extract_json(raw)
+                if result:
+                    return {
+                        "analysis_summary": result.get("analysis_summary", ""),
+                        "top_picks": result.get("top_picks", ""),
+                        "risk_alerts": result.get("risk_alerts", ""),
+                        "conclusion": result.get("conclusion", ""),
+                    }
+                break
+            except RateLimitError as e:
+                if attempt >= 3:
+                    logger.warning(f"AI 核实限流（3次重试后仍失败）: {e}")
+                    break
+                wait = 2.0 * attempt
+                logger.warning(f"AI 核实触发限流，{wait:.0f}s 后重试 ({attempt}/3)...")
+                time.sleep(wait)
     except Exception as e:
         logger.warning(f"AI 核实调用失败: {e}")
     return {

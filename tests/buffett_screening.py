@@ -20,9 +20,10 @@ from urllib.parse import urlencode
 from loguru import logger
 
 try:
-    from openai import OpenAI
+    from openai import OpenAI, RateLimitError
 except ImportError:
     OpenAI = None  # type: ignore[misc,assignment]
+    RateLimitError = None  # type: ignore[misc,assignment]
 
 from tests.buffett_cache import (
     TTL_STOCKS,
@@ -54,6 +55,20 @@ def _get_llm_config() -> tuple[str | None, str]:
 
 
 _LLM_AVAILABLE = bool(_get_llm_config()[0])
+
+# LLM 请求限流：Agnes 免费版约 5 次/窗口，间隔 1.5s 可避免
+_LLM_REQUEST_DELAY: float = 1.5  # 相邻 LLM 请求最小间隔（秒）
+_llm_request_timestamp: float = 0.0
+
+
+def _wait_for_llm_rate_limit() -> None:
+    """等待至距上次 LLM 请求已过去 _LLM_REQUEST_DELAY 秒。"""
+    global _llm_request_timestamp
+    now = time.monotonic()
+    elapsed = now - _llm_request_timestamp
+    if elapsed < _LLM_REQUEST_DELAY:
+        time.sleep(_LLM_REQUEST_DELAY - elapsed)
+    _llm_request_timestamp = time.monotonic()
 
 
 def _verify_pe_percentile(ticker: str, name: str, pe_ttm: float | None) -> tuple[bool, str]:
@@ -1240,13 +1255,24 @@ def run_ai_verification(
             "}"
         )
 
-        response = client.chat.completions.create(
-            model=_AI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=1000,
-        )
-        raw = (response.choices[0].message.content or "").strip()
+        _wait_for_llm_rate_limit()
+        for attempt in range(1, 4):
+            try:
+                response = client.chat.completions.create(
+                    model=_AI_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=1000,
+                )
+                break
+            except RateLimitError as e:  # type: ignore[name-defined]
+                if attempt >= 3:
+                    logger.warning(f"AI 核实限流（3次重试后仍失败）: {e}")
+                    raise
+                wait = 2.0 * attempt
+                logger.warning(f"AI 核实触发限流，{wait:.0f}s 后重试 ({attempt}/3)...")
+                time.sleep(wait)
+        raw = (response.choices[0].message.content or "").strip()  # type: ignore[assignment]
         json_str = _extract_json_from_response(raw)
         analysis = json.loads(json_str)
     except Exception as e:
