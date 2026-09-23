@@ -162,3 +162,10 @@ def test_ensure_import_path() -> None:
     assert "/nonexistent_path_xyz" not in sys.path
     # Restore
     sys.path[:] = before
+
+
+def test_key_vault_get_key_unknown_provider() -> None:
+    """未知供应商返回 None（security.py line 165-168）。"""
+    vault = KeyVault()
+    result = vault.get_key("nonexistent_provider")
+    assert result is None

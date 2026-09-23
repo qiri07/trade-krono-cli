@@ -5,6 +5,11 @@ from __future__ import annotations
 from trade_krono_cli.configs.scoring import ScoringConfig
 from trade_krono_cli.scoring.base import CompositeScorer, RiskBoostStrategy
 from trade_krono_cli.scoring.registry import RiskBoostRegistry, ScorerRegistry
+from trade_krono_cli.scoring.risk_boosters import (
+    DiminishingBoostBooster,
+    FixedBoostBooster,
+    ScaledBoostBooster,
+)
 from trade_krono_cli.scoring.scorers import LinearScorer, MultiplicativeScorer, RankBasedScorer
 
 
@@ -104,6 +109,33 @@ class TestRiskBoostRegistry:
     def test_list_all(self) -> None:
         self.registry.register(DummyRiskBoost)
         assert "dummy_boost" in self.registry.list_all()
+
+    def test_lazy_load_builtin_strategies(self) -> None:
+        """未注册时通过 _lazy_load 获取内置策略。"""
+        # 确保 registry 是干净的（无内置策略）
+        self.registry.reset()
+        self.registry._registry.clear()
+
+        fixed = self.registry.get("fixed_boost")
+        assert fixed is not None
+        assert isinstance(fixed, FixedBoostBooster)
+
+        scaled = self.registry.get("scaled_boost")
+        assert scaled is not None
+        assert isinstance(scaled, ScaledBoostBooster)
+
+        dim = self.registry.get("diminishing_boost")
+        assert dim is not None
+        assert isinstance(dim, DiminishingBoostBooster)
+
+    def test_lazy_load_caches_instance(self) -> None:
+        """懒加载后实例应被缓存，多次 get 返回同一对象。"""
+        self.registry.reset()
+        self.registry._registry.clear()
+
+        first = self.registry.get("fixed_boost")
+        second = self.registry.get("fixed_boost")
+        assert first is second
 
 
 class TestLinearScorer:
