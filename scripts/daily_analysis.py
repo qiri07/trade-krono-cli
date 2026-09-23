@@ -64,6 +64,37 @@ def _get_whitelist() -> str:
         return "000001,002027,601668,000932,601061"
 
 
+_DYNAMIC_WHITELIST_PATH = Path("outputs/results/buffett_dynamic_whitelist.txt")
+
+
+def _get_dynamic_whitelist() -> list[str]:
+    """读取巴菲特动态白名单文件（逗号分隔的6位代码）。"""
+    if not _DYNAMIC_WHITELIST_PATH.exists():
+        return []
+    try:
+        content = _DYNAMIC_WHITELIST_PATH.read_text(encoding="utf-8").strip()
+        if not content:
+            return []
+        return [c.strip() for c in content.split(",") if c.strip()]
+    except Exception:
+        return []
+
+
+def _get_merged_whitelist() -> str:
+    """合并静态白名单 + 动态巴菲特白名单（去重）。"""
+    static = _get_whitelist()
+    static_codes = [c.strip() for c in static.split(",") if c.strip()]
+    dynamic = _get_dynamic_whitelist()
+    seen: set[str] = set()
+    merged: list[str] = []
+    for code in static_codes + dynamic:
+        code = code.strip()
+        if code and code not in seen:
+            seen.add(code)
+            merged.append(code)
+    return ",".join(merged)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # AI 核实
 # ─────────────────────────────────────────────────────────────────────────────
@@ -698,7 +729,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="白名单股票综合分析 + AI核实 + 飞书推送")
     parser.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"), help="分析日期")
-    parser.add_argument("--tickers", default=_get_whitelist(), help="股票代码（逗号分隔）")
+    parser.add_argument("--tickers", default=_get_merged_whitelist(), help="股票代码（逗号分隔，静态+动态白名单合并）")
     args = parser.parse_args()
 
     run_analysis(date=args.date, tickers_str=args.tickers)

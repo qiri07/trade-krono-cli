@@ -32,6 +32,7 @@ from tests.buffett_cache import (
 from tests.buffett_screening import (
     _CONCURRENCY,
     AiVerificationResult,
+    StockMetrics,
     batch_valuations,
     get_all_stocks,
     run_ai_verification,
@@ -66,6 +67,21 @@ def _notify_feishu(
             print(f"飞书推送失败：{result.stderr.strip()}", flush=True)
     except Exception as e:
         print(f"飞书通知异常（不影响结果）：{e}", flush=True)
+
+
+def _write_dynamic_whitelist(results_pass: list["StockMetrics"]) -> None:
+    """将本次通过筛选的股票代码写入动态白名单文件（覆盖旧内容）。
+
+    Parameters
+    ----------
+    results_pass : list[StockMetrics]
+        通过五闸门的筛选结果列表
+    """
+    whitelist_path = Path("outputs/results/buffett_dynamic_whitelist.txt")
+    whitelist_path.parent.mkdir(parents=True, exist_ok=True)
+    codes = [r.ticker for r in results_pass if r.ticker]
+    whitelist_path.write_text(",".join(codes), encoding="utf-8")
+    print(f"动态白名单已更新：{len(codes)} 只 → {whitelist_path}", flush=True)
 
 
 def _save_ai_result(ai_result: AiVerificationResult, result_txt_path: str) -> None:
@@ -166,6 +182,9 @@ def main() -> None:
         date_str = datetime.now().strftime("%Y%m%d")
         out_path = f"outputs/results/buffett_screen_{date_str}.txt"
         write_result_file(out_path, results_pass, results_fail)
+
+        # 4b. 生成动态白名单（清除旧内容，只保留本次通过者）
+        _write_dynamic_whitelist(results_pass)
 
         # 5. AI 核实与分析
         print("步骤 4/5：AI 核实...", flush=True)
