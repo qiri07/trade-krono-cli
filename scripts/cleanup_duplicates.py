@@ -18,16 +18,19 @@ def main() -> None:
     before = cur.fetchone()[0]
     print(f"清理前: {before} 条")
 
-    # 删除data_len不是最大的记录
+    # 对每个ticker，保留data最大的记录（完整历史优先），确保不丢失历史数据
     cur.execute("""
         DELETE FROM kline_cache
-        WHERE LENGTH(data) < (
-            SELECT max_len FROM (
-                SELECT ticker, MAX(LENGTH(data)) as max_len
+        WHERE rowid NOT IN (
+            SELECT rowid FROM (
+                SELECT rowid,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY ticker
+                           ORDER BY LENGTH(data) DESC
+                       ) as rn
                 FROM kline_cache
-                GROUP BY ticker
-            ) t
-            WHERE t.ticker = kline_cache.ticker
+            )
+            WHERE rn = 1
         )
     """)
     deleted = cur.rowcount

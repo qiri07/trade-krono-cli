@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-共享数据导出工具 — 将 trade-krono-cli 的 K 线缓存导出为多项目共用格式
+共享数据导出工具 — 将 trade-krono-cli 的 K 线缓存导出为 RD-Agent 格式
 
 支持格式:
-  - CSV (per-stock): 供 Kronos、backtrader 使用
-  - Parquet: 供 RD-Agent、qlib 使用
+  - Parquet: 供 RD-Agent 使用
   - HDF5: 供 RD-Agent 遗留脚本使用
-  - Qlib Binary: 供 qlib 使用
+  - Qlib Binary: 供 qlib / RD-Agent qlib 使用
 
 用法:
-  uv run python scripts/export_shared_data.py --format csv --dest /run/media/onai/MyDisk/Work/shared_data
+  uv run python scripts/export_shared_data.py --format parquet --dest /run/media/onai/MyDisk/Work/shared_data
   uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data
 """
 
@@ -73,50 +72,10 @@ def _symbol_to_ticker(symbol: str) -> str:
 
 
 # ── 导出：CSV（per-stock） ─────────────────────────────────────────────────
-
-
-def export_csv(db_path: Path, dest: Path, progress_interval: int = 500) -> dict:
-    """导出为 per-stock CSV 文件（Kronos / backtrader 格式）"""
-    dest.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-
-    cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
-    tickers = [r[0] for r in cur.fetchall()]
-
-    success = 0
-    failed: list[str] = []
-    total_rows = 0
-
-    for i, ticker in enumerate(tickers):
-        cur.execute("SELECT data FROM kline_cache WHERE ticker = ?", (ticker,))
-        row = cur.fetchone()
-        if row is None:
-            continue
-        try:
-            df = pd.read_pickle(pd.io.common.BytesIO(row[0]))
-            # 标准化列名 & 日期格式
-            df = df.rename(columns={"timestamps": "date"})
-            df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
-            cols = ["date", "open", "high", "low", "close", "volume", "amount"]
-            df = df[[c for c in cols if c in df.columns]]
-            safe_name = ticker.replace(".", "_")
-            out_path = dest / f"{safe_name}.csv"
-            df.to_csv(out_path, index=False)
-            success += 1
-            total_rows += len(df)
-        except Exception as e:
-            failed.append(f"{ticker}: {e}")
-        if (i + 1) % progress_interval == 0:
-            logger.info(f"  CSV 导出进度: {i + 1}/{len(tickers)}")
-
-    conn.close()
-    logger.info(f"  ✅ CSV 导出完成: {success} 只, 失败 {len(failed)} 只")
-    return {"success": success, "failed": failed, "total_rows": total_rows}
+# 已移除：CSV 格式不再导出（仅保留 RD-Agent 格式）
 
 
 # ── 导出：Parquet（panel） ─────────────────────────────────────────────────
-
 
 def export_parquet(db_path: Path, dest: Path) -> dict:
     """导出为 MultiIndex Parquet（RD-Agent / qlib 格式）"""
@@ -189,99 +148,11 @@ def export_hdf5(db_path: Path, dest: Path) -> dict:
 
 
 # ── 导出：TradingAgents-astock 兼容 CSV ─────────────────────────────────────
-
-
-def export_tradingagents_csv(db_path: Path, dest: Path, progress_interval: int = 500) -> dict:
-    """导出为 TradingAgents-astock 兼容的 CSV 格式（无 symbol 列，文件名为 {code}-astock-daily.csv）"""
-    dest.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-
-    cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
-    tickers = [r[0] for r in cur.fetchall()]
-
-    success = 0
-    failed: list[str] = []
-    total_rows = 0
-
-    for i, ticker in enumerate(tickers):
-        cur.execute("SELECT data FROM kline_cache WHERE ticker = ?", (ticker,))
-        row = cur.fetchone()
-        if row is None:
-            continue
-        try:
-            df = pd.read_pickle(pd.io.common.BytesIO(row[0]))
-            df = df.rename(columns={"timestamps": "Date"})
-            df["Date"] = pd.to_datetime(df["Date"]).dt.strftime("%Y-%m-%d")
-            # 列名大写，与 TradingAgents 期望一致
-            df = df.rename(
-                columns={
-                    "open": "Open",
-                    "high": "High",
-                    "low": "Low",
-                    "close": "Close",
-                    "volume": "Volume",
-                }
-            )
-            cols = ["Date", "Open", "High", "Low", "Close", "Volume"]
-            df = df[[c for c in cols if c in df.columns]]
-            # 文件名：sh.600519 → 600519-astock-daily.csv
-            code = ticker.split(".")[-1]
-            out_path = dest / f"{code}-astock-daily.csv"
-            df.to_csv(out_path, index=False)
-            success += 1
-            total_rows += len(df)
-        except Exception as e:
-            failed.append(f"{ticker}: {e}")
-        if (i + 1) % progress_interval == 0:
-            logger.info(f"  TA CSV 导出进度: {i + 1}/{len(tickers)}")
-
-    conn.close()
-    logger.info(f"  ✅ TradingAgents CSV 导出完成: {success} 只, 失败 {len(failed)} 只")
-    return {"success": success, "failed": failed, "total_rows": total_rows}
+# 已移除：TA CSV 格式不再导出（仅保留 RD-Agent 格式）
 
 
 # ── 导出：Qlib 兼容 CSV（带 symbol 列） ─────────────────────────────────────
-
-
-def export_qlib_csv(db_path: Path, dest: Path, progress_interval: int = 500) -> dict:
-    """导出为 qlib dump_bin 兼容的 CSV 格式（含 symbol 列，文件名用 SH600519 格式）"""
-    dest.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-
-    cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
-    tickers = [r[0] for r in cur.fetchall()]
-
-    success = 0
-    failed: list[str] = []
-    total_rows = 0
-
-    for i, ticker in enumerate(tickers):
-        cur.execute("SELECT data FROM kline_cache WHERE ticker = ?", (ticker,))
-        row = cur.fetchone()
-        if row is None:
-            continue
-        try:
-            df = pd.read_pickle(pd.io.common.BytesIO(row[0]))
-            df = df.rename(columns={"timestamps": "date"})
-            df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
-            # 注意：不包含 symbol 列，qlib dump_bin 从文件名推断 symbol
-            cols = ["date", "open", "high", "low", "close", "volume", "amount"]
-            df = df[[c for c in cols if c in df.columns]]
-            symbol = _ticker_to_symbol(ticker)
-            out_path = dest / f"{symbol}.csv"
-            df.to_csv(out_path, index=False)
-            success += 1
-            total_rows += len(df)
-        except Exception as e:
-            failed.append(f"{ticker}: {e}")
-        if (i + 1) % progress_interval == 0:
-            logger.info(f"  Qlib CSV 导出进度: {i + 1}/{len(tickers)}")
-
-    conn.close()
-    logger.info(f"  ✅ Qlib CSV 导出完成: {success} 只, 失败 {len(failed)} 只")
-    return {"success": success, "failed": failed, "total_rows": total_rows}
+# 已移除：Qlib CSV 格式不再单独导出（通过 export_qlib 内部调用）
 
 
 # ── 导出：Qlib Binary（dump_bin） ──────────────────────────────────────────
@@ -291,9 +162,36 @@ def export_qlib(db_path: Path, dest: Path, qlib_dir_name: str = "shared") -> dic
     """导出为 Qlib Binary 格式（CSV → dump_bin.py → .bin）"""
     import subprocess
 
-    # 先生成 qlib 兼容 CSV
+    # 生成 qlib 兼容 CSV（临时目录）
     csv_dest = dest / "csv_input"
-    csv_result = export_qlib_csv(db_path, csv_dest, progress_interval=1000)
+    csv_dest.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
+    tickers = [r[0] for r in cur.fetchall()]
+
+    success = 0
+    failed: list[str] = []
+    for i, ticker in enumerate(tickers):
+        cur.execute("SELECT data FROM kline_cache WHERE ticker = ?", (ticker,))
+        row = cur.fetchone()
+        if row is None:
+            continue
+        try:
+            df = pd.read_pickle(pd.io.common.BytesIO(row[0]))
+            df = df.rename(columns={"timestamps": "date"})
+            df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+            cols = ["date", "open", "high", "low", "close", "volume", "amount"]
+            df = df[[c for c in cols if c in df.columns]]
+            symbol = _ticker_to_symbol(ticker)
+            out_path = csv_dest / f"{symbol}.csv"
+            df.to_csv(out_path, index=False)
+            success += 1
+        except Exception as e:
+            failed.append(f"{ticker}: {e}")
+        if (i + 1) % 1000 == 0:
+            logger.info(f"  Qlib CSV 生成进度: {i + 1}/{len(tickers)}")
+    conn.close()
 
     # 生成 qlib 所需的 instruments 和 calendars 文件
     (dest / "calendars").mkdir(parents=True, exist_ok=True)
@@ -351,17 +249,18 @@ def export_qlib(db_path: Path, dest: Path, qlib_dir_name: str = "shared") -> dic
             if result.returncode == 0:
                 bin_count = len(list((dest / "features").glob("*")))
                 logger.info(f"  ✅ Qlib binary 导出完成: {bin_count} 个特征文件")
-                csv_result["bin_count"] = bin_count
+                result_data = {"success": success, "failed": failed, "bin_count": bin_count}
             else:
                 logger.warning(f"  ⚠️ dump_bin.py 失败: {result.stderr[:300]}")
-                csv_result["bin_count"] = 0
+                result_data = {"success": success, "failed": failed, "bin_count": 0}
         else:
             logger.warning(f"  ⚠️ dump_bin.py 不存在: {dump_bin_script}，仅生成 CSV 输入")
+            result_data = {"success": success, "failed": failed, "bin_count": 0}
     except Exception as e:
         logger.warning(f"  ⚠️ dump_bin.py 执行异常: {e}")
-        csv_result["bin_count"] = 0
+        result_data = {"success": success, "failed": failed, "bin_count": 0}
 
-    return csv_result
+    return result_data
 
 
 # ── 元数据写入 ─────────────────────────────────────────────────────────────
@@ -386,7 +285,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="导出 trade-krono-cli 数据为共享格式")
     parser.add_argument(
         "--format",
-        choices=["csv", "parquet", "hdf5", "qlib_csv", "qlib", "ta_csv", "all"],
+        choices=["parquet", "hdf5", "qlib", "all"],
         default="all",
     )
     parser.add_argument("--dest", type=Path, default=SHARED_DATA_ROOT)
@@ -404,16 +303,10 @@ def main() -> None:
     results: dict = {}
 
     fmt = args.format
-    if fmt in ("csv", "all"):
-        results["csv"] = export_csv(db_path, args.dest / "astock_daily_csv")
     if fmt in ("parquet", "all"):
         results["parquet"] = export_parquet(db_path, args.dest / "astock_daily.parquet")
     if fmt in ("hdf5", "all"):
         results["hdf5"] = export_hdf5(db_path, args.dest / "astock_daily.h5")
-    if fmt in ("qlib_csv", "qlib", "all"):
-        results["qlib_csv"] = export_qlib_csv(db_path, args.dest / "astock_daily_qlib_csv")
-    if fmt in ("ta_csv", "all"):
-        results["ta_csv"] = export_tradingagents_csv(db_path, args.dest / "astock_daily_ta")
     if fmt in ("qlib", "all"):
         results["qlib"] = export_qlib(db_path, args.dest / "qlib_data")
 

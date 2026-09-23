@@ -153,7 +153,7 @@ def fetch_pe_percentile(thscode: str, conn, cache: dict | None = None) -> tuple[
     tuple[float | None, dict | None]
         (PE 历史分位 0~100, 新缓存条目)
     """
-    ticker = thscode.replace(".SH", "").replace(".SZ", "")
+    ticker = thscode.replace(".SH", "").replace(".SZ", "").replace(".BJ", "")
     cache_key = f"pe_pct_{ticker}"
     cached = cache[cache_key] if cache and cache_key in cache else None
     if cached is not None:

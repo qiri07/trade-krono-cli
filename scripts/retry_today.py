@@ -11,7 +11,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import pandas as pd
 from loguru import logger
 
 from trade_krono_cli.cache import get_cache
@@ -28,7 +27,10 @@ _load_env()
 
 
 def get_missing_tickers() -> list[str]:
-    """获取真正缺失今日数据的非北交所股票（用 NOT EXISTS 避免误判）。"""
+    """获取真正缺失今日数据的非北交所股票。
+
+    策略：找出 end < 今日 的股票（历史数据未覆盖今日），或 end >= 今日 但 start > end 的异常记录。
+    """
     import sqlite3
 
     conn = sqlite3.connect(str(CACHE_DB))
@@ -36,10 +38,7 @@ def get_missing_tickers() -> list[str]:
         """
         SELECT DISTINCT k.ticker FROM kline_cache k
         WHERE k.ticker NOT LIKE 'bj.%'
-          AND NOT EXISTS (
-              SELECT 1 FROM kline_cache k2
-              WHERE k2.ticker = k.ticker AND k2.start >= ?
-          )
+          AND k.end < ?
         ORDER BY k.ticker
         """,
         (TODAY,),
@@ -49,12 +48,24 @@ def get_missing_tickers() -> list[str]:
 
 
 def fetch_today(factory, ticker: str) -> tuple[str, bool, str]:
-    """拉取今日增量数据并追加。"""
+    """拉取今日增量数据并追加，避免重复记录。"""
     try:
         if ticker.startswith("bj."):
             providers = ["tonghuashun"]
         else:
             providers = ["tonghuashun", "baostock"]
+
+        import sqlite3
+
+        conn = sqlite3.connect(str(CACHE_DB))
+        try:
+            # 直接检查数据库中是否已有今日数据
+            existing = conn.execute(
+                "SELECT rowid, data FROM kline_cache WHERE ticker=? AND end >= ?",
+                (ticker, TODAY),
+            ).fetchone()
+        finally:
+            conn.close()
 
         cache = get_cache()
         for pname in providers:
@@ -68,15 +79,10 @@ def fetch_today(factory, ticker: str) -> tuple[str, bool, str]:
                 df = result.to_dataframe()
                 if len(df) == 0:
                     continue
-                # 检查是否已存在今日数据
-                cur = cache.get_kline(ticker, TODAY, TODAY, "d", "1")
-                if cur is not None and len(cur) > 0:
-                    combined = pd.concat([cur, df], ignore_index=True)
-                    combined = combined.drop_duplicates(subset=["timestamps"], keep="last")
-                    combined = combined.sort_values("timestamps").reset_index(drop=True)
-                    cache.set_kline(ticker, TODAY, TODAY, "d", combined, ttl=0.0)
-                else:
-                    cache.set_kline(ticker, TODAY, TODAY, "d", df, ttl=0.0)
+                # 已有今日数据则跳过，否则追加
+                if existing is not None:
+                    return (ticker, True, f"skip:{pname}:已有今日数据")
+                cache.set_kline(ticker, TODAY, TODAY, "d", df, ttl=0.0)
                 return (ticker, True, f"{pname}:{len(df)}条")
             except Exception as e:
                 logger.opt(exception=True).debug(f"{ticker} {pname} 异常: {e}")
