@@ -179,22 +179,63 @@ def test_migrate_handles_operational_error_on_add_column(conn: sqlite3.Connectio
             sql_upper = str(sql).upper()
             if "ADD COLUMN" in sql_upper and any(e in sql_upper for e in self._errors):
                 raise sqlite3.OperationalError("duplicate column name")
-            return self._real.execute(sql, *args, **kwargs)
+            return self._real.execute(sql, *args, **kwargs)  # type: ignore[arg-type]
 
         def commit(self) -> None:
             self._real.commit()
 
         def __getattr__(self, name: str) -> object:
-            return getattr(self._real, name)
+            return getattr(self._real, name)  # type: ignore[arg-type]
 
     err_conn = ErrorConn(conn)
     err_conn._errors.add("RUN_ID")  # First ADD COLUMN will fail
     # Should not raise despite OperationalError on some columns
-    migrate_schema(err_conn)
+    migrate_schema(err_conn)  # type: ignore[arg-type]
     info = err_conn.execute("PRAGMA table_info(jobs)").fetchall()
     col_names = {row[1] for row in info}
     # run_id failed, but other version cols should still be added
     assert "data_version" in col_names
+
+
+class _ErrConn:
+    """Wrapper that raises OperationalError only on SQL containing a keyword."""
+
+    def __init__(self, real_conn: sqlite3.Connection, fail_keyword: str) -> None:
+        self._real = real_conn
+        self._fail = fail_keyword.upper()
+
+    def execute(self, sql: str, *args: object, **kwargs: object) -> sqlite3.Cursor:
+        if self._fail in str(sql).upper():
+            raise sqlite3.OperationalError("duplicate column name")
+        return self._real.execute(sql, *args, **kwargs)  # type: ignore[arg-type]
+
+    def commit(self) -> None:
+        self._real.commit()
+
+    def __getattr__(self, name: object) -> object:
+        return getattr(self._real, name)  # type: ignore[call-overload,arg-type]
+
+
+@pytest.mark.parametrize("keyword", [
+    "SCORING_STRATEGY",
+    "CONFIG_HASH",
+    "SIGNAL_ASSESSMENT_JSON",
+    "RANKING_SCORE",
+])
+def test_migrate_handles_operational_error_per_keyword(conn: sqlite3.Connection, keyword: str) -> None:
+    """Each migration block should survive an OperationalError without cascading failures."""
+    err_conn = _ErrConn(conn, keyword)  # type: ignore[arg-type]
+    migrate_schema(err_conn)  # type: ignore[arg-type]
+
+
+def test_migrate_external_repos_error(conn: sqlite3.Connection) -> None:
+    """Migration should survive OperationalError when adding external_repos column."""
+    err_conn = _ErrConn(conn, "EXTERNAL_REPOS")  # type: ignore[arg-type]
+    migrate_schema(err_conn)  # type: ignore[arg-type]
+    info = err_conn.execute("PRAGMA table_info(jobs)").fetchall()
+    col_names = {row[1] for row in info}
+    # external_repos addition failed, but other version cols should still be added
+    assert "run_id" in col_names
 
 
 def test_migrate_noop_when_all_cols_exist(conn: sqlite3.Connection) -> None:
