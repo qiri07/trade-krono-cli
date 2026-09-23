@@ -40,8 +40,7 @@ class TestGitTools:
         (repo_dir / ".git" / "refs" / "heads").mkdir(parents=True)
         (repo_dir / ".git" / "refs" / "heads" / "main").write_text("abc123def456789abc\n")
 
-        with patch("trade_krono_cli.artifact_manifest.subprocess.run") as mock_run:
-            # 一次 rev-parse HEAD + 一次 rev-parse --short=12 HEAD
+        with patch("trade_krono_cli.artifact_manifest.git_utils.subprocess.run") as mock_run:
             mock_run.side_effect = [
                 MagicMock(returncode=0, stdout="abc123def456789abc", stderr=""),
                 MagicMock(returncode=0, stdout="abc123def456", stderr=""),
@@ -58,7 +57,7 @@ class TestGitTools:
         repo_dir.mkdir()
         (repo_dir / ".git").mkdir()
 
-        with patch("trade_krono_cli.artifact_manifest.subprocess.run") as mock_run:
+        with patch("trade_krono_cli.artifact_manifest.git_utils.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             assert _git_dirty(repo_dir) is False
 
@@ -70,7 +69,7 @@ class TestGitTools:
         repo_dir.mkdir()
         (repo_dir / ".git").mkdir()
 
-        with patch("trade_krono_cli.artifact_manifest.subprocess.run") as mock_run:
+        with patch("trade_krono_cli.artifact_manifest.git_utils.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="?? newfile.txt\n", stderr="")
             assert _git_dirty(repo_dir) is True
 
@@ -272,11 +271,18 @@ class TestBuildManifest:
 
         with patch("trade_krono_cli.artifact_manifest._build_data_artifact") as mock_data:
             mock_data.return_value = MagicMock(source="baostock", latest_date=None)
-            with patch("trade_krono_cli.artifact_manifest._git_sha") as mock_sha:
-                mock_sha.side_effect = [
-                    ("cli_sha_abc123def456", "abc123def456"),
-                    ("ta_sha_def456ghi789", "def456ghi789"),
-                    ("kr_sha_ghi789jkl012", "ghi789jkl012"),
+            with patch("trade_krono_cli.artifact_manifest.git_utils.subprocess.run") as mock_run:
+                # Each repo: _git_sha(2 calls: full+short) + _git_dirty(1 call) = 3 calls × 3 repos = 9
+                mock_run.side_effect = [
+                    MagicMock(returncode=0, stdout="cli_sha_abc123def456", stderr=""),
+                    MagicMock(returncode=0, stdout="abc123def456", stderr=""),
+                    MagicMock(returncode=0, stdout="", stderr=""),
+                    MagicMock(returncode=0, stdout="ta_sha_def456ghi789", stderr=""),
+                    MagicMock(returncode=0, stdout="def456ghi789", stderr=""),
+                    MagicMock(returncode=0, stdout="", stderr=""),
+                    MagicMock(returncode=0, stdout="kr_sha_ghi789jkl012", stderr=""),
+                    MagicMock(returncode=0, stdout="ghi789jkl012", stderr=""),
+                    MagicMock(returncode=0, stdout="", stderr=""),
                 ]
                 manifest = build_manifest(settings=settings, project_root=tmp_path)
 

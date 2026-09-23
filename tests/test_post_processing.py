@@ -11,6 +11,7 @@ from trade_krono_cli.pipeline.post_processing import (
     apply_metadata_filter,
     merge_and_boost,
     run_committee,
+    write_results,
 )
 from trade_krono_cli.ta_runner import StockAnalysisResult
 
@@ -324,3 +325,124 @@ class TestRunCommittee:
             run_committee(mock_research, "job-1", "2026-09-15", [], [])
             MockOrch.assert_called_once_with(mock_research)
             MockOrch.return_value.run.assert_called_once()
+
+
+# ═══════════════════════════════════════════════════════
+# write_results 测试
+# ═══════════════════════════════════════════════════════
+
+
+class TestWriteResults:
+    """write_results 单元测试。"""
+
+    def _make_research(self) -> MagicMock:
+        mock = MagicMock()
+        mock.get_job.return_value = {
+            "run_id": "run-001",
+            "data_version": "v1",
+            "model_versions": {"ta": "v2", "kronos": "v1"},
+        }
+        return mock
+
+    def test_writes_json_and_html(self) -> None:
+        """output_json 和 output_html 均指定时应保存两种格式的报告。"""
+        research = self._make_research()
+        merged = [{"ticker": "sh.600519", "signal": "BUY"}]
+        ta_results = [
+            StockAnalysisResult(
+                ticker="sh.600519", date="2026-09-15", signal="BUY",
+                confidence=85.0, error=None,
+            )
+        ]
+        kronos_results = [MagicMock(ticker="sh.600519")]
+
+        with patch("trade_krono_cli.pipeline.post_processing.save_json_report") as mock_json, \
+             patch("trade_krono_cli.pipeline.post_processing.save_html_report") as mock_html:
+            write_results(
+                merged=merged,
+                ta_results=ta_results,
+                kronos_results=kronos_results,
+                research=research,
+                job_id="job-1",
+                date="2026-09-15",
+                output_json="out.json",
+                output_html="out.html",
+                config=None,
+            )
+            mock_json.assert_called_once_with(merged, "out.json")
+            mock_html.assert_called_once_with(merged, "out.html", "2026-09-15")
+
+    def test_writes_to_research_db(self) -> None:
+        """结果应写入研究数据库（TA/Kronos/Signals）。"""
+        research = self._make_research()
+        merged = [{"ticker": "sh.600519"}]
+        ta_results = [
+            StockAnalysisResult(
+                ticker="sh.600519", date="2026-09-15", signal="BUY",
+                confidence=85.0, error=None,
+            )
+        ]
+        mock_kr = MagicMock(ticker="sh.600519")
+        mock_kr.prediction_uncertainty = None
+
+        write_results(
+            merged=merged,
+            ta_results=ta_results,
+            kronos_results=[mock_kr],
+            research=research,
+            job_id="job-1",
+            date="2026-09-15",
+            output_json=None,
+            output_html=None,
+            config=None,
+        )
+        research.insert_ta.assert_called_once()
+        research.insert_kronos.assert_called_once()
+        research.insert_signals.assert_called_once()
+
+    def test_no_output_files_when_none(self) -> None:
+        """output_json 和 output_html 均为 None 时不应保存报告。"""
+        research = self._make_research()
+        merged = [{"ticker": "sh.600519"}]
+        ta_results = [
+            StockAnalysisResult(
+                ticker="sh.600519", date="2026-09-15", signal="BUY",
+                confidence=85.0, error=None,
+            )
+        ]
+
+        with patch("trade_krono_cli.pipeline.post_processing.save_json_report") as mock_json, \
+             patch("trade_krono_cli.pipeline.post_processing.save_html_report") as mock_html:
+            write_results(
+                merged=merged,
+                ta_results=ta_results,
+                kronos_results=[],
+                research=research,
+                job_id="job-1",
+                date="2026-09-15",
+                output_json=None,
+                output_html=None,
+                config=None,
+            )
+            mock_json.assert_not_called()
+            mock_html.assert_not_called()
+
+    def test_empty_results(self) -> None:
+        """空结果列表时应正常写入（不报错）。"""
+        research = self._make_research()
+        with patch("trade_krono_cli.pipeline.post_processing.save_json_report"), \
+             patch("trade_krono_cli.pipeline.post_processing.save_html_report"):
+            write_results(
+                merged=[],
+                ta_results=[],
+                kronos_results=[],
+                research=research,
+                job_id="job-1",
+                date="2026-09-15",
+                output_json=None,
+                output_html=None,
+                config=None,
+            )
+            research.insert_ta.assert_not_called()
+            research.insert_kronos.assert_not_called()
+            research.insert_signals.assert_called_once()

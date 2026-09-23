@@ -412,3 +412,124 @@ class TestQuantPipelineStreaming:
         )
         assert len(merged) >= 1
         assert merged[0]["ticker"] == "sh.600519"
+
+
+# ── StreamingPredictor 直接测试 ───────────────────────────────────────────────
+
+
+class TestStreamingPredictor:
+    """StreamingPredictor 直接单元测试。"""
+
+    def _make_predictor(self, runner=None):
+        from tests.conftest import make_mock_settings
+        from trade_krono_cli.kronos_predictor.streaming import StreamingPredictor
+
+        settings = make_mock_settings(
+            kronos_model="kronos-base",
+            kronos_tokenizer="kronos-base",
+            kronos_device="cpu",
+            kronos_lookback=400,
+            kronos_pred_len=30,
+            kronos_sample_count=1,
+        )
+        mock_runner = runner or MagicMock()
+        mock_runner.model_name = "kronos-base"
+        return StreamingPredictor(settings=settings, runner=mock_runner)  # type: ignore[arg-type]
+
+    def test_predict_success(self) -> None:
+        """predict 正常路径应返回 KronosForecastResult。"""
+
+        predictor = self._make_predictor()
+        df = pd.DataFrame(
+            {
+                "timestamps": pd.date_range("2025-01-01", periods=400, freq="B"),
+                "open": [100.0] * 400,
+                "high": [101.0] * 400,
+                "low": [99.0] * 400,
+                "close": [100.5] * 400,
+                "volume": [1e6] * 400,
+                "amount": [1e8] * 400,
+            },
+        )
+
+        with patch.object(
+            predictor,
+            "_prepare_stream",
+            return_value=(df, df["timestamps"], pd.Series(["2026-08-13"] * 30), 100.5),
+        ) as mock_prepare:
+            with patch.object(predictor._result_parser, "run_predict"):
+                result = predictor.predict("sh.600519", "2026-08-12", df)
+                mock_prepare.assert_called_once()
+                assert result.ticker == "sh.600519"
+                assert result.eval_date == "2026-08-12"
+                assert result.error is None
+                assert result.elapsed_sec is not None
+
+    def test_predict_exception_path(self) -> None:
+        """predict 内部异常时应返回带 error 的 KronosForecastResult。"""
+
+        predictor = self._make_predictor()
+        df = pd.DataFrame(
+            {
+                "timestamps": pd.date_range("2025-01-01", periods=400, freq="B"),
+                "open": [100.0] * 400,
+                "high": [101.0] * 400,
+                "low": [99.0] * 400,
+                "close": [100.5] * 400,
+                "volume": [1e6] * 400,
+                "amount": [1e8] * 400,
+            },
+        )
+
+        with patch.object(
+            predictor,
+            "_prepare_stream",
+            side_effect=RuntimeError("model load failed"),
+        ):
+            result = predictor.predict("sh.600519", "2026-08-12", df)
+            assert result.error is not None
+            assert "RuntimeError" in result.error
+            assert result.elapsed_sec is not None
+
+    def test_prepare_stream(self) -> None:
+        """_prepare_stream 应正确构造预测数据。"""
+
+        predictor = self._make_predictor()
+        df = pd.DataFrame(
+            {
+                "timestamps": pd.date_range("2025-01-01", periods=400, freq="B"),
+                "open": [100.0] * 400,
+                "high": [101.0] * 400,
+                "low": [99.0] * 400,
+                "close": [100.5] * 400,
+                "volume": [1e6] * 400,
+                "amount": [1e8] * 400,
+            },
+        )
+        x_df, x_ts, y_ts, last_close = predictor._prepare_stream(df, "sh.600519", "2026-08-12")
+        assert len(x_df) == 400
+        assert list(x_df.columns) == ["open", "high", "low", "close", "volume", "amount"]
+        assert last_close == 100.5
+        assert len(y_ts) == 30  # pred_len
+
+    def test_prepare_stream_uses_settings_pred_len(self) -> None:
+        """_prepare_stream 应使用 settings.kronos_pred_len 构造 y_ts。"""
+        from tests.conftest import make_mock_settings
+        from trade_krono_cli.kronos_predictor.streaming import StreamingPredictor
+
+        settings = make_mock_settings(kronos_pred_len=10)
+        predictor = StreamingPredictor(settings=settings, runner=MagicMock())  # type: ignore[arg-type]
+        df = pd.DataFrame(
+            {
+                "timestamps": pd.date_range("2025-01-01", periods=100, freq="B"),
+                "open": [100.0] * 100,
+                "high": [101.0] * 100,
+                "low": [99.0] * 100,
+                "close": [100.5] * 100,
+                "volume": [1e6] * 100,
+                "amount": [1e8] * 100,
+            },
+        )
+        _, _, y_ts, _ = predictor._prepare_stream(df, "sh.600519", "2026-08-12")
+        assert len(y_ts) == 10
+

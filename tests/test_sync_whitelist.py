@@ -121,11 +121,11 @@ class TestSyncWhitelist:
             patch("trade_krono_cli.cli_commands.sync_whitelist._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
-                "trade_krono_cli.cli_commands._sync_helpers._check_provider_health",
+                "trade_krono_cli.cli_commands.sync_helpers._check_provider_health",
                 return_value={"baostock": True, "mootdx": True},
             ),
             patch(
-                "trade_krono_cli.cli_commands._sync_helpers._fetch_ticker_parallel",
+                "trade_krono_cli.cli_commands.sync_helpers._fetch_ticker_parallel",
                 side_effect=mock_fetch_ticker,
             ),
         ):
@@ -153,11 +153,11 @@ class TestSyncWhitelist:
             patch("trade_krono_cli.cli_commands.sync_whitelist._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
             patch(
-                "trade_krono_cli.cli_commands._sync_helpers._check_provider_health",
+                "trade_krono_cli.cli_commands.sync_helpers._check_provider_health",
                 return_value={"baostock": True, "mootdx": True},
             ),
             patch(
-                "trade_krono_cli.cli_commands._sync_helpers._fetch_ticker_parallel",
+                "trade_krono_cli.cli_commands.sync_helpers._fetch_ticker_parallel",
                 side_effect=mock_fetch_ticker,
             ),
         ):
@@ -207,11 +207,11 @@ class TestSyncUniverseWhitelist:
                 "trade_krono_cli.universe.provider.TongHuaShunUniverseProvider",
             ) as mock_provider_cls,
             patch(
-                "trade_krono_cli.cli_commands._sync_helpers._check_provider_health",
+                "trade_krono_cli.cli_commands.sync_helpers._check_provider_health",
                 return_value={"baostock": True, "mootdx": True},
             ),
             patch(
-                "trade_krono_cli.cli_commands._sync_helpers._fetch_ticker_parallel",
+                "trade_krono_cli.cli_commands.sync_helpers._fetch_ticker_parallel",
                 side_effect=mock_fetch_ticker,
             ),
         ):

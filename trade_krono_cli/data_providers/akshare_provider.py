@@ -53,7 +53,7 @@ class AkShareProvider(DataProvider):
 
             cls._ak = ak
         except ImportError:
-            msg = "akshare 未安装，无法使用 akshare 数据源。请运行: pip install akshare"
+            msg = "akshare 未安装，无法使用 akshare 数据源。请运行: uv add akshare"
             raise RuntimeError(
                 msg,
             )

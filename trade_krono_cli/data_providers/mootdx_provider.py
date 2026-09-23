@@ -46,7 +46,7 @@ class MootDxProvider(DataProvider):
             cls._client = Quotes.factory(market="std")
             cls._connected = True
         except ImportError:
-            msg = "mootdx 未安装，无法使用 mootdx 数据源。请运行: pip install mootdx"
+            msg = "mootdx 未安装，无法使用 mootdx 数据源。请运行: uv add mootdx"
             raise RuntimeError(msg)
         except Exception as e:
             # 连接失败时重置状态，下次调用会重新建立

@@ -59,7 +59,7 @@ class TushareProvider(DataProvider):
             ts.set_token(cls._token)
             cls._ts = ts
         except ImportError:
-            msg = "tushare 未安装，无法使用 tushare 数据源。请运行: pip install tushare"
+            msg = "tushare 未安装，无法使用 tushare 数据源。请运行: uv add tushare"
             raise RuntimeError(
                 msg,
             )
