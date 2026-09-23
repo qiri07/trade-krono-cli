@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import pickle
 import sqlite3
 import time
@@ -15,6 +16,17 @@ from trade_krono_cli.cache.base import (
     KLINE_HISTORICAL_TTL,
     Cache,
 )
+
+# 数据完整性协议版本前缀（写入时拼接到数据头部，读取时验证）
+_CACHE_FMT_VERSION = b"TKC1"
+
+
+def _compute_data_hash(data: bytes) -> str:
+    """计算 K 线数据的 SHA-256 校验和（含版本前缀防重放）。"""
+    h = hashlib.sha256()
+    h.update(_CACHE_FMT_VERSION)
+    h.update(data)
+    return h.hexdigest()
 
 
 class KlineCache:
@@ -33,7 +45,7 @@ class KlineCache:
     ) -> pd.DataFrame | None:
         # 查询所有与目标区间有重叠或相邻的记录
         rows = self._cache._query_all(
-            "SELECT data, created, ttl FROM kline_cache "
+            "SELECT data, created, ttl, data_hash FROM kline_cache "
             "WHERE ticker=? AND freq=? AND adjustflag=? "
             "AND end >= ? AND start <= ?",  # 重叠或相邻：现有end >= 查询start 且 现有start <= 查询end
             (ticker, freq, adjustflag, start, end),
@@ -41,14 +53,28 @@ class KlineCache:
         if not rows:
             return None
         dfs: list[pd.DataFrame] = []
-        for data, created, ttl in rows:
+        for data, created, ttl, data_hash in rows:
             if ttl < 0 or (ttl > 0 and time.time() - created > ttl):
                 continue
+            # 数据完整性校验（仅对新格式数据验证 hash）
+            if data_hash is not None:
+                expected = _compute_data_hash(data)
+                if expected != data_hash:
+                    logger.warning(
+                        f"⚠️ 缓存数据完整性校验失败 ticker={ticker} "
+                        f"start={start} end={end}，数据可能已被篡改或损坏，跳过"
+                    )
+                    continue
             try:
                 dfs.append(pd.read_pickle(BytesIO(data)))
             except (ModuleNotFoundError, AttributeError, TypeError, OSError):
                 # pickle.loads 作为回退：仅在数据为合法 pickle 字节时执行
                 if isinstance(data, (bytes, bytearray)) and len(data) > 4:
+                    # 旧格式无 hash，允许降级读取但记录警告
+                    if data_hash is None:
+                        logger.warning(
+                            f"⚠️ 缓存数据为旧格式（无完整性校验），建议重新写入: {ticker}"
+                        )
                     try:
                         dfs.append(pickle.loads(data))
                     except Exception as e2:
@@ -79,8 +105,11 @@ class KlineCache:
         buf = BytesIO()
         df.to_pickle(buf)
         buf.seek(0)
+        raw_bytes = buf.read()
+        buf.seek(0)
+        data_hash = _compute_data_hash(raw_bytes)
         self._cache._transaction(
-            lambda conn: self._set_kline(conn, ticker, start, end, freq, buf, ttl, adjustflag)
+            lambda conn: self._set_kline(conn, ticker, start, end, freq, raw_bytes, data_hash, ttl, adjustflag)
         )
 
     def _set_kline(
@@ -90,7 +119,8 @@ class KlineCache:
         start: str,
         end: str,
         freq: str,
-        buf: BytesIO,
+        raw_bytes: bytes,
+        data_hash: str,
         ttl: float,
         adjustflag: str,
     ) -> None:
@@ -110,7 +140,7 @@ class KlineCache:
                     all_dfs.append(pd.read_pickle(BytesIO(old_data)))
                 except Exception as e:
                     logger.warning(f"⚠️ 缓存数据损坏，跳过 ticker={ticker} rowid={rows[0][0]}: {e}")
-            all_dfs.append(pd.read_pickle(buf))
+            all_dfs.append(pd.read_pickle(BytesIO(raw_bytes)))
             merged = (
                 pd.concat(all_dfs)
                 .drop_duplicates(subset=["timestamps"], keep="last")
@@ -119,6 +149,8 @@ class KlineCache:
             merged_buf = BytesIO()
             merged.to_pickle(merged_buf)
             merged_buf.seek(0)
+            merged_bytes = merged_buf.read()
+            merged_hash = _compute_data_hash(merged_bytes)
 
             # 删除重叠记录
             conn.executemany(
@@ -128,8 +160,8 @@ class KlineCache:
             # 插入合并后记录
             conn.execute(
                 "INSERT INTO kline_cache "
-                "(ticker, start, end, freq, adjustflag, ttl, data, created) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(ticker, start, end, freq, adjustflag, ttl, data, data_hash, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     ticker,
                     merged["timestamps"].min().strftime("%Y-%m-%d"),
@@ -137,18 +169,18 @@ class KlineCache:
                     freq,
                     adjustflag,
                     ttl,
-                    merged_buf.read(),
+                    merged_bytes,
+                    merged_hash,
                     time.time(),
                 ),
             )
         else:
             # 无重叠，直接插入
-            buf.seek(0)
             conn.execute(
                 "INSERT INTO kline_cache "
-                "(ticker, start, end, freq, adjustflag, ttl, data, created) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (ticker, start, end, freq, adjustflag, ttl, buf.read(), time.time()),
+                "(ticker, start, end, freq, adjustflag, ttl, data, data_hash, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ticker, start, end, freq, adjustflag, ttl, raw_bytes, data_hash, time.time()),
             )
 
     def warm_history(self, ticker: str, end_date: str, lookback_days: int = 730) -> tuple[int, int]:

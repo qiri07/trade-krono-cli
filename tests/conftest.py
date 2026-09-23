@@ -81,8 +81,10 @@ def pytest_configure(config: object) -> None:
 
     test_cache = Path(mkdtemp(prefix="tk_cache_"))
     test_results = Path(mkdtemp(prefix="tk_results_"))
+    test_research_db = test_cache / "research.db"
     os.environ["TRADING_KRONO_CACHE_DIR"] = str(test_cache)
     os.environ["TRADING_KRONO_RESULTS_DIR"] = str(test_results)
+    os.environ["RESEARCH_DB_PATH"] = str(test_research_db)
     # 立即清除已有全局单例，确保新 settings 在首次调用时生效
     clear_all_globals()
 
@@ -127,6 +129,7 @@ def make_mock_settings(
         or Path(os.getenv("TRADING_KRONO_CACHE_DIR", "/tmp/test-project/outputs/cache")),
         results_dir=results_dir
         or Path(os.getenv("TRADING_KRONO_RESULTS_DIR", "/tmp/test-project/outputs/results")),
+        research_db_path=Path(os.getenv("RESEARCH_DB_PATH", "/tmp/test-project/outputs/cache/research.db")),
         tradingagents_root=Path("/tmp/test-project/external/TradingAgents-astock"),
         kronos_root=Path("/tmp/test-project/external/Kronos"),
         llm_provider="deepseek",

@@ -39,6 +39,14 @@ class Settings:
         ),
     )
     """缓存目录，可通过环境变量 TRADING_KRONO_CACHE_DIR 覆盖（测试隔离用）。"""
+    research_db_path: Path = field(
+        default_factory=lambda: (
+            _PROJECT_ROOT / "outputs" / "cache" / "research.db"
+            if not (v := os.getenv("RESEARCH_DB_PATH", "")).strip()
+            else Path(v)
+        ),
+    )
+    """研究数据库路径，可通过环境变量 RESEARCH_DB_PATH 覆盖。默认为 cache_dir/research.db。"""
     memory_log_path: Path = field(
         default_factory=lambda: _PROJECT_ROOT / "outputs" / "memory_log.jsonl",
     )
@@ -328,14 +336,15 @@ def clear_settings() -> None:
 
 
 def _validate_test_isolation(db_path: Path) -> None:
-    """测试隔离守卫：当 TRADING_KRONO_CACHE_DIR 已设置时，拒绝访问生产目录。
+    """测试隔离守卫：当 TRADING_KRONO_CACHE_DIR 或 RESEARCH_DB_PATH 已设置时，拒绝访问生产目录。
 
     此函数必须在 Cache / ResearchDatabase 初始化时调用，防止测试意外写入正式数据库。
     如果环境变量未设置（生产环境），则不进行检查直接返回。
     仅阻止指向生产 cache_dir 的路径，允许测试使用任意其他路径（如 pytest tmp_path）。
     """
     test_cache_dir = os.getenv("TRADING_KRONO_CACHE_DIR")
-    if not test_cache_dir:
+    test_research_db = os.getenv("RESEARCH_DB_PATH")
+    if not test_cache_dir and not test_research_db:
         return  # 生产环境，不做检查
     prod_cache_dir = _PROJECT_ROOT / "outputs" / "cache"
     resolved = db_path.resolve()
@@ -346,13 +355,10 @@ def _validate_test_isolation(db_path: Path) -> None:
         return  # 不在生产目录下，安全
     msg = (
         f"⛔ 测试隔离违规！尝试访问生产数据库路径：\n"
-        f"  生产缓存目录：{prod_resolved}\n"
-        f"  目标数据库路径：{resolved}\n"
-        f"  请检查是否绕过了 get_settings() 或直接硬编码了生产路径。"
+        f"  请求路径：{resolved}\n"
+        f"  生产缓存目录：{prod_resolved}"
     )
-    raise RuntimeError(
-        msg,
-    )
+    raise RuntimeError(msg)
 
 
 def run_validation() -> tuple[list[str], list[str]]:

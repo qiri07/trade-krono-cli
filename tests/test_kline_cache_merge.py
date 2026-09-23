@@ -262,3 +262,65 @@ class TestKlineCacheMergeLogic:
         result = kline_cache.get_kline("sh.600519", "2026-01-01", "2026-01-05", "d")
         assert result is not None
         assert len(result) == 5
+
+
+class TestKlineCacheDataHash:
+    """K 线缓存数据完整性校验（P0 安全修复）。"""
+
+    @pytest.fixture
+    def cache(self, tmp_path) -> Cache:
+        return Cache(db_path=tmp_path / "test.db")
+
+    @pytest.fixture
+    def kline_cache(self, cache) -> KlineCache:
+        return KlineCache(cache)
+
+    def test_set_kline_stores_hash(self, kline_cache: KlineCache) -> None:
+        """写入时自动计算并存储 SHA-256 hash。"""
+        import hashlib
+
+        df = _make_df("2026-01-01", "2026-01-03")
+        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-03", "d", df, ttl=-1)
+
+        row = kline_cache._cache._conn.execute(
+            "SELECT data, data_hash FROM kline_cache WHERE ticker=?",
+            ("sh.600519",),
+        ).fetchone()
+        assert row is not None
+        data_bytes, stored_hash = row
+        assert stored_hash is not None
+        expected = hashlib.sha256(b"TKC1" + data_bytes).hexdigest()
+        assert stored_hash == expected
+
+    def test_merge_computes_new_hash(self, kline_cache: KlineCache) -> None:
+        """合并区间后，新记录存储正确的 hash。"""
+        df1 = _make_df("2026-01-01", "2026-01-03")
+        df2 = _make_df("2026-01-04", "2026-01-06")
+        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-03", "d", df1, ttl=-1)
+        kline_cache.set_kline("sh.600519", "2026-01-04", "2026-01-06", "d", df2, ttl=-1)
+
+        # 再次写入重叠区间触发合并
+        df3 = _make_df("2026-01-01", "2026-01-06")
+        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-06", "d", df3, ttl=-1)
+
+        row = kline_cache._cache._conn.execute(
+            "SELECT COUNT(*), data_hash FROM kline_cache WHERE ticker=?",
+            ("sh.600519",),
+        ).fetchone()
+        count, hash_val = row
+        assert count == 1  # 合并为一条
+        assert hash_val is not None  # hash 已计算
+
+    def test_tampered_data_rejected(self, kline_cache: KlineCache) -> None:
+        """篡改数据后 hash 校验失败，数据被跳过。"""
+        df = _make_df("2026-01-01", "2026-01-05")
+        kline_cache.set_kline("sh.600519", "2026-01-01", "2026-01-05", "d", df, ttl=-1)
+
+        # 篡改数据字节
+        conn = kline_cache._cache._conn
+        conn.execute("UPDATE kline_cache SET data = X'cafebabedeadbeef' WHERE ticker=?",
+                     ("sh.600519",))
+        conn.commit()
+
+        result = kline_cache.get_kline("sh.600519", "2026-01-01", "2026-01-05", "d")
+        assert result is None

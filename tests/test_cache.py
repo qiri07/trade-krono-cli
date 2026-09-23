@@ -236,6 +236,47 @@ def test_kline_pickle_fallback(tmp_path) -> None:
     assert len(result) == 3
 
 
+def test_kline_data_hash_verification_pass(tmp_path) -> None:
+    """新格式数据：hash 校验通过，正常返回。"""
+    import hashlib
+
+    c = Cache(db_path=tmp_path / "cache.db")
+    df = _make_kline_df(3)
+    c.set_kline("sh.600519", "2026-01-01", "2026-01-03", "d", df, ttl=3600)
+
+    # 验证 hash 已存储
+    row = c._conn.execute(
+        "SELECT data, data_hash FROM kline_cache WHERE ticker=? AND start=?",
+        ("sh.600519", "2026-01-01"),
+    ).fetchone()
+    assert row is not None
+    data_bytes, stored_hash = row
+    assert stored_hash is not None
+    expected = hashlib.sha256(b"TKC1" + data_bytes).hexdigest()
+    assert stored_hash == expected
+
+    # 读取应成功
+    result = c.get_kline("sh.600519", "2026-01-01", "2026-01-03", "d")
+    assert result is not None
+    assert len(result) == 3
+
+
+def test_kline_data_hash_verification_rejects_tampered(tmp_path) -> None:
+    """新格式数据：hash 校验失败时跳过被篡改的记录，返回 None。"""
+    c = Cache(db_path=tmp_path / "cache.db")
+    df = _make_kline_df(3)
+    c.set_kline("sh.600519", "2026-01-01", "2026-01-03", "d", df, ttl=3600)
+
+    # 篡改缓存数据
+    conn = c._conn
+    conn.execute("UPDATE kline_cache SET data = X'deadbeef' WHERE ticker=?", ("sh.600519",))
+    conn.commit()
+
+    # 读取应返回 None（唯一一条记录被完整性校验拦截）
+    result = c.get_kline("sh.600519", "2026-01-01", "2026-01-03", "d")
+    assert result is None
+
+
 def test_get_cached_date_range_with_overlap(tmp_path) -> None:
     """有重叠区间时正确合并日期范围（line 195,199,205）。"""
     c = Cache(db_path=tmp_path / "cache.db")

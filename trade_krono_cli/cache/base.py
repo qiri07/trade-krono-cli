@@ -146,7 +146,7 @@ class Cache:
                 CREATE INDEX IF NOT EXISTS idx_ta_cache_ticker ON ta_cache(ticker);
                 CREATE INDEX IF NOT EXISTS idx_kronos_cache_ticker ON kronos_cache(ticker);
             """)
-        # 迁移：为旧表添加新列和索引
+            # 迁移：为旧表添加新列和索引
         self._transaction(lambda conn: self._run_migrations(conn))
 
     def _run_migrations(self, conn: sqlite3.Connection) -> None:
@@ -159,6 +159,7 @@ class Cache:
             "ALTER TABLE kronos_cache ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE kronos_cache ADD COLUMN model_ver   TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE kline_cache ADD COLUMN adjustflag  TEXT NOT NULL DEFAULT '1'",
+            "ALTER TABLE kline_cache ADD COLUMN data_hash   TEXT",
             # 新增索引（IF NOT EXISTS 避免重复创建错误）
             "CREATE INDEX IF NOT EXISTS idx_kline_cache_ticker ON kline_cache(ticker)",
             "CREATE INDEX IF NOT EXISTS idx_ta_cache_ticker ON ta_cache(ticker)",

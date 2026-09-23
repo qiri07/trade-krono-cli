@@ -36,7 +36,13 @@ class ResearchDatabase:
     _conn_lock = threading.Lock()
 
     def __init__(self, db_path: Path | None = None, settings: Settings | None = None) -> None:
-        self._db_path = db_path or ((settings or get_settings()).cache_dir / "pipeline_cache.db")
+        # 优先使用显式传入的 db_path，其次使用 settings.research_db_path，最后回退到 pipeline_cache.db
+        if db_path is not None:
+            self._db_path = db_path
+        elif settings is not None:
+            self._db_path = settings.research_db_path
+        else:
+            self._db_path = get_settings().research_db_path
         from trade_krono_cli.config import _validate_test_isolation
 
         _validate_test_isolation(self._db_path)
