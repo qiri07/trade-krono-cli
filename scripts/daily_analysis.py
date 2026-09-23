@@ -33,21 +33,47 @@ from trade_krono_cli.config import get_settings  # type: ignore[import-not-found
 from trade_krono_cli.data_providers import get_data_factory
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LLM 请求限流（Agnes 免费版约 5 次/窗口，间隔 1.5s 可避免）
+# LLM 请求限流（Agnes 免费版：1.5s 间隔 + 60s 内最多 10 次）
 # ─────────────────────────────────────────────────────────────────────────────
-_LLM_REQUEST_DELAY: float = 1.5  # 相邻 LLM 请求最小间隔（秒）
-_llm_request_timestamp: float = 0.0  # 上次 LLM 请求时间戳
+_LLM_MIN_DELAY: float = 1.5  # 相邻请求最小间隔（秒）
+_LLM_WINDOW_SECONDS: float = 60.0  # 滑动窗口大小（秒）
+_LLM_MAX_REQUESTS_PER_WINDOW: int = 10  # 每窗口最大请求数
+
+_llm_request_log: list[float] = []  # 最近请求时间戳列表
 
 
 def _wait_for_llm_rate_limit() -> None:
-    """等待至距上次 LLM 请求已过去 _LLM_REQUEST_DELAY 秒。"""
-    global _llm_request_timestamp
+    """等待至满足限流条件：①距上次请求≥1.5s ②60s内请求数<10。"""
+    global _llm_request_log
     now = time.monotonic()
-    elapsed = now - _llm_request_timestamp
-    if elapsed < _LLM_REQUEST_DELAY:
-        sleep_time = _LLM_REQUEST_DELAY - elapsed
-        time.sleep(sleep_time)
-    _llm_request_timestamp = time.monotonic()
+
+    # 清理窗口外的记录
+    cutoff = now - _LLM_WINDOW_SECONDS
+    _llm_request_log = [t for t in _llm_request_log if t > cutoff]
+
+    # 规则1：检查窗口内请求数
+    if len(_llm_request_log) >= _LLM_MAX_REQUESTS_PER_WINDOW:
+        # 等待最早的一个请求滑出窗口
+        oldest = _llm_request_log[0]
+        wait_time = oldest + _LLM_WINDOW_SECONDS - now
+        if wait_time > 0:
+            logger.debug(f"LLM 限流：60s内已达 {len(_llm_request_log)} 次请求，等待 {wait_time:.1f}s...")
+            time.sleep(wait_time)
+            # 重新清理
+            now = time.monotonic()
+            cutoff = now - _LLM_WINDOW_SECONDS
+            _llm_request_log = [t for t in _llm_request_log if t > cutoff]
+
+    # 规则2：检查最小间隔
+    if _llm_request_log:
+        elapsed = now - _llm_request_log[-1]
+        if elapsed < _LLM_MIN_DELAY:
+            sleep_time = _LLM_MIN_DELAY - elapsed
+            time.sleep(sleep_time)
+            now = time.monotonic()
+
+    # 记录本次请求
+    _llm_request_log.append(time.monotonic())
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 常量
