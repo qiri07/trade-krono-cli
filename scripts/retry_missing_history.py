@@ -62,9 +62,7 @@ def get_provider_chain(ticker: str) -> list[str]:
     return ["baostock", "tonghuashun"]
 
 
-def fetch_full_range(
-    factory, ticker: str, provider_chain: list[str]
-) -> tuple[str, int, str]:
+def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[str, int, str]:
     """带超时的全量历史数据拉取。"""
     result_container: list[tuple[str, int, str]] = []
     error_container: list[str] = []
@@ -136,7 +134,9 @@ def main() -> None:
     for batch_start in range(0, total, batch_size):
         batch = tickers[batch_start : batch_start + batch_size]
         batch_num = batch_start // batch_size + 1
-        print(f"  批次 {batch_num} ({batch_start + 1}~{min(batch_start + batch_size, total)}/{total})")
+        print(
+            f"  批次 {batch_num} ({batch_start + 1}~{min(batch_start + batch_size, total)}/{total})"
+        )
 
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
             futures = {
@@ -157,9 +157,7 @@ def main() -> None:
                         print(f"    ❌ {ticker} ({detail[:40]})")
                     else:
                         success += 1
-                        print(
-                            f"    ✅ {ticker}: {provider} {n_rows}条 {detail}"
-                        )
+                        print(f"    ✅ {ticker}: {provider} {n_rows}条 {detail}")
                 except Exception as e:
                     failed += 1
                     failed_list.append((ticker, str(e)))

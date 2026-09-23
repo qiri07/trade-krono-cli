@@ -318,8 +318,9 @@ class TestKlineCacheDataHash:
 
         # 篡改数据字节
         conn = kline_cache._cache._conn
-        conn.execute("UPDATE kline_cache SET data = X'cafebabedeadbeef' WHERE ticker=?",
-                     ("sh.600519",))
+        conn.execute(
+            "UPDATE kline_cache SET data = X'cafebabedeadbeef' WHERE ticker=?", ("sh.600519",)
+        )
         conn.commit()
 
         result = kline_cache.get_kline("sh.600519", "2026-01-01", "2026-01-05", "d")

@@ -350,14 +350,19 @@ class TestWriteResults:
         merged = [{"ticker": "sh.600519", "signal": "BUY"}]
         ta_results = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-09-15", signal="BUY",
-                confidence=85.0, error=None,
+                ticker="sh.600519",
+                date="2026-09-15",
+                signal="BUY",
+                confidence=85.0,
+                error=None,
             )
         ]
         kronos_results = [MagicMock(ticker="sh.600519")]
 
-        with patch("trade_krono_cli.pipeline.post_processing.save_json_report") as mock_json, \
-             patch("trade_krono_cli.pipeline.post_processing.save_html_report") as mock_html:
+        with (
+            patch("trade_krono_cli.pipeline.post_processing.save_json_report") as mock_json,
+            patch("trade_krono_cli.pipeline.post_processing.save_html_report") as mock_html,
+        ):
             write_results(
                 merged=merged,
                 ta_results=ta_results,
@@ -378,8 +383,11 @@ class TestWriteResults:
         merged = [{"ticker": "sh.600519"}]
         ta_results = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-09-15", signal="BUY",
-                confidence=85.0, error=None,
+                ticker="sh.600519",
+                date="2026-09-15",
+                signal="BUY",
+                confidence=85.0,
+                error=None,
             )
         ]
         mock_kr = MagicMock(ticker="sh.600519")
@@ -406,13 +414,18 @@ class TestWriteResults:
         merged = [{"ticker": "sh.600519"}]
         ta_results = [
             StockAnalysisResult(
-                ticker="sh.600519", date="2026-09-15", signal="BUY",
-                confidence=85.0, error=None,
+                ticker="sh.600519",
+                date="2026-09-15",
+                signal="BUY",
+                confidence=85.0,
+                error=None,
             )
         ]
 
-        with patch("trade_krono_cli.pipeline.post_processing.save_json_report") as mock_json, \
-             patch("trade_krono_cli.pipeline.post_processing.save_html_report") as mock_html:
+        with (
+            patch("trade_krono_cli.pipeline.post_processing.save_json_report") as mock_json,
+            patch("trade_krono_cli.pipeline.post_processing.save_html_report") as mock_html,
+        ):
             write_results(
                 merged=merged,
                 ta_results=ta_results,
@@ -430,8 +443,10 @@ class TestWriteResults:
     def test_empty_results(self) -> None:
         """空结果列表时应正常写入（不报错）。"""
         research = self._make_research()
-        with patch("trade_krono_cli.pipeline.post_processing.save_json_report"), \
-             patch("trade_krono_cli.pipeline.post_processing.save_html_report"):
+        with (
+            patch("trade_krono_cli.pipeline.post_processing.save_json_report"),
+            patch("trade_krono_cli.pipeline.post_processing.save_html_report"),
+        ):
             write_results(
                 merged=[],
                 ta_results=[],

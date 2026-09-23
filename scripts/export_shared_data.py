@@ -77,6 +77,7 @@ def _symbol_to_ticker(symbol: str) -> str:
 
 # ── 导出：Parquet（panel） ─────────────────────────────────────────────────
 
+
 def export_parquet(db_path: Path, dest: Path) -> dict:
     """导出为 MultiIndex Parquet（RD-Agent / qlib 格式）"""
     conn = sqlite3.connect(db_path)

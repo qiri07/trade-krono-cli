@@ -532,4 +532,3 @@ class TestStreamingPredictor:
         )
         _, _, y_ts, _ = predictor._prepare_stream(df, "sh.600519", "2026-08-12")
         assert len(y_ts) == 10
-

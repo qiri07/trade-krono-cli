@@ -139,7 +139,9 @@ def _safe_float(v: object) -> float | None:
 # ── PE 历史分位（闸门⑥）─────────────────────────────────────────────────────────
 
 
-def fetch_pe_percentile(thscode: str, conn, cache: dict | None = None) -> tuple[float | None, dict | None]:
+def fetch_pe_percentile(
+    thscode: str, conn, cache: dict | None = None
+) -> tuple[float | None, dict | None]:
     """通过 akshare 获取历史 PE(TTM) 序列，计算当前 PE 的历史分位。
 
     Parameters
@@ -1062,7 +1064,9 @@ def write_result_file(
                 fail_gates[g] = fail_gates.get(g, 0) + 1
         for gate, count in sorted(fail_gates.items(), key=lambda x: -x[1]):
             f.write(f"  {gate}: {count} 只\n")
-        f.write("\n注：闸门①~⑤见上表；闸门⑥PE历史分位<30%为安全边际（akshare stock_value_em计算）；")
+        f.write(
+            "\n注：闸门①~⑤见上表；闸门⑥PE历史分位<30%为安全边际（akshare stock_value_em计算）；"
+        )
         f.write("闸门②毛利率≥40%门槛（周期股豁免）；闸门③金融股豁免负债率<50%；")
         f.write("闸门④CFO需连续3年为正；数据缺失标记为'待核查'而非直接排除。\n")
     print(f"结果已写入：{out_path}", flush=True)

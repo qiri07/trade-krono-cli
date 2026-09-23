@@ -52,4 +52,3 @@ def _git_dirty(repo_path: Path) -> bool:
     except Exception as e:
         logger.debug(f"git 脏检测失败: {e}")
         return False
-

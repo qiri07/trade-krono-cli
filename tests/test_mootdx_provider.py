@@ -96,7 +96,6 @@ class TestMootDxProvider:
         """_ensure_client 连接失败时应重置状态并重抛异常。"""
         from unittest.mock import patch
 
-
         with patch(
             "trade_krono_cli.data_providers.mootdx_provider.Quotes",
             side_effect=ConnectionError("network down"),

@@ -129,7 +129,9 @@ def make_mock_settings(
         or Path(os.getenv("TRADING_KRONO_CACHE_DIR", "/tmp/test-project/outputs/cache")),
         results_dir=results_dir
         or Path(os.getenv("TRADING_KRONO_RESULTS_DIR", "/tmp/test-project/outputs/results")),
-        research_db_path=Path(os.getenv("RESEARCH_DB_PATH", "/tmp/test-project/outputs/cache/research.db")),
+        research_db_path=Path(
+            os.getenv("RESEARCH_DB_PATH", "/tmp/test-project/outputs/cache/research.db")
+        ),
         tradingagents_root=Path("/tmp/test-project/external/TradingAgents-astock"),
         kronos_root=Path("/tmp/test-project/external/Kronos"),
         llm_provider="deepseek",

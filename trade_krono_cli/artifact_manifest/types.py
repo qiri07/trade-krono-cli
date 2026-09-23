@@ -111,9 +111,7 @@ class EnvironmentArtifact:
     platform_system: str = platform.system()
     platform_machine: str = platform.machine()
     hostname: str = ""
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def __post_init__(self) -> None:
         if not self.hostname:

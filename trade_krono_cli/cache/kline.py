@@ -109,7 +109,9 @@ class KlineCache:
         buf.seek(0)
         data_hash = _compute_data_hash(raw_bytes)
         self._cache._transaction(
-            lambda conn: self._set_kline(conn, ticker, start, end, freq, raw_bytes, data_hash, ttl, adjustflag)
+            lambda conn: self._set_kline(
+                conn, ticker, start, end, freq, raw_bytes, data_hash, ttl, adjustflag
+            )
         )
 
     def _set_kline(

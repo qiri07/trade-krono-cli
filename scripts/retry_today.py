@@ -108,7 +108,9 @@ def main() -> None:
     for batch_start in range(0, total, batch_size):
         batch = tickers[batch_start : batch_start + batch_size]
         batch_num = batch_start // batch_size + 1
-        logger.info(f"  批次 {batch_num} ({batch_start + 1}~{min(batch_start + batch_size, total)}/{total})")
+        logger.info(
+            f"  批次 {batch_num} ({batch_start + 1}~{min(batch_start + batch_size, total)}/{total})"
+        )
 
         results: list[tuple[str, bool, str]] = []
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
@@ -149,7 +151,9 @@ def main() -> None:
     conn.close()
     logger.info("\n📊 最终统计:")
     logger.info(f"   非北交所总股票数: {total_stocks}")
-    logger.info(f"   今日({TODAY})数据: {today_cnt}/{total_stocks} ({today_cnt * 100 / total_stocks:.1f}%)")
+    logger.info(
+        f"   今日({TODAY})数据: {today_cnt}/{total_stocks} ({today_cnt * 100 / total_stocks:.1f}%)"
+    )
     logger.info("✅ 完成")
 
 

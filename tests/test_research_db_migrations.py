@@ -216,13 +216,18 @@ class _ErrConn:
         return getattr(self._real, name)  # type: ignore[call-overload,arg-type]
 
 
-@pytest.mark.parametrize("keyword", [
-    "SCORING_STRATEGY",
-    "CONFIG_HASH",
-    "SIGNAL_ASSESSMENT_JSON",
-    "RANKING_SCORE",
-])
-def test_migrate_handles_operational_error_per_keyword(conn: sqlite3.Connection, keyword: str) -> None:
+@pytest.mark.parametrize(
+    "keyword",
+    [
+        "SCORING_STRATEGY",
+        "CONFIG_HASH",
+        "SIGNAL_ASSESSMENT_JSON",
+        "RANKING_SCORE",
+    ],
+)
+def test_migrate_handles_operational_error_per_keyword(
+    conn: sqlite3.Connection, keyword: str
+) -> None:
     """Each migration block should survive an OperationalError without cascading failures."""
     err_conn = _ErrConn(conn, keyword)  # type: ignore[arg-type]
     migrate_schema(err_conn)  # type: ignore[arg-type]

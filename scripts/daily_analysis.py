@@ -747,7 +747,11 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="白名单股票综合分析 + AI核实 + 飞书推送")
     parser.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"), help="分析日期")
-    parser.add_argument("--tickers", default=_get_merged_whitelist(), help="股票代码（逗号分隔，静态+动态白名单合并）")
+    parser.add_argument(
+        "--tickers",
+        default=_get_merged_whitelist(),
+        help="股票代码（逗号分隔，静态+动态白名单合并）",
+    )
     args = parser.parse_args()
 
     run_analysis(date=args.date, tickers_str=args.tickers)
