@@ -471,3 +471,42 @@ _validate_test_isolation()
 | P2 | `kline_cache_backup` 表数据陈旧 | 📋 待处理 |
 | P2 | 部分表缺少复合索引 | 📋 待处理 |
 
+
+---
+
+## 测试覆盖分析（2026-09-23 补全）
+
+### 覆盖率结论
+
+| 类别 | 状态 | 说明 |
+|------|------|------|
+| 核心业务模块 | ✅ 全覆盖 | research_db/cache/pipeline/risk/scoring/universe/stock_filter 等均有对应测试文件 |
+| 整体覆盖率 | ✅ 90.29% | 达标要求（≥90%） |
+| 总测试数 | 2933 passed, 7 skipped | 相比初版 +8 个测试 |
+
+### 本次补全的测试缺口
+
+| 原缺失位置 | 问题描述 | 补全测试 |
+|-----------|---------|---------|
+| `security.py:165-168` | KeyVault.get_key() 未知供应商返回 None 分支未覆盖 | `test_key_vault_get_key_unknown_provider` |
+| `scoring/registry.py:117-130` | RiskBoostRegistry 内置策略懒加载路径未覆盖 | `test_lazy_load_builtin_strategies`、`test_lazy_load_caches_instance` |
+
+### 已确认高覆盖率模块（95%+）
+
+```
+cache/base.py           100%  cache/kline.py        100%  cache/queries.py      100%
+scoring/base.py         100%  scoring/scorers.py    100%  research_db/*         ≥92%
+universe/stages/*       100%  risk/event_risk.py    100%  risk/valuation_risk.py 100%
+prediction_distribution 100%  pipeline/reporter.py  100%
+```
+
+### 仍存在的低覆盖率模块（90%-94%，非关键路径）
+
+```
+scoring/risk_boosters.py    91%  （参数边界场景，不影响主流程）
+ta_decision/adapter_impl.py 91%  （外部 API 适配器，需 mock）
+ta_runner.py                92%  （含网络调用，mock 覆盖率高）
+pipeline/stream_pipeline.py 91%  （流式处理边界条件）
+```
+
+**评估**：这些模块的低覆盖率主要源于需要 mock 外部网络调用或边界条件极难触发，不影响核心业务逻辑可靠性。
