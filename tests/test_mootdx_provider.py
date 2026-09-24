@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import types
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -97,7 +98,7 @@ class TestMootDxProvider:
         from unittest.mock import patch
 
         with patch(
-            "trade_krono_cli.data_providers.mootdx_provider.Quotes",
+            "mootdx.quotes.Quotes.factory",
             side_effect=ConnectionError("network down"),
         ):
             provider.__class__._client = None
@@ -166,9 +167,11 @@ class TestMootDxProvider:
 
         provider.__class__._client = None
         provider.__class__._connected = False
-        with patch(
-            "trade_krono_cli.data_providers.mootdx_provider.Quotes",
-            side_effect=ImportError("no module"),
+        # 用 fake module 替代 sys.modules 中的条目，使 from-import 失败
+        fake_module = types.ModuleType("mootdx")
+        with patch.dict(
+            "sys.modules",
+            {"mootdx": fake_module, "mootdx.quotes": fake_module},
         ):
             with pytest.raises(RuntimeError, match="uv add mootdx"):
                 provider._ensure_client()

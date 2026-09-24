@@ -223,11 +223,11 @@ def test_kline_pickle_fallback(tmp_path) -> None:
     df = _make_kline_df(3)
     c.set_kline("sh.600519", "2026-01-01", "2026-01-03", "d", df, ttl=3600)
 
-    # 用标准pickle序列化原始数据，模拟旧格式
+    # 用标准pickle序列化原始数据，模拟旧格式（无hash校验）
     raw_buf = std_pickle.dumps(df)
     conn = c._conn
     conn.execute(
-        "UPDATE kline_cache SET data = ? WHERE ticker = ? AND start = ?",
+        "UPDATE kline_cache SET data = ?, data_hash = NULL WHERE ticker = ? AND start = ?",
         (raw_buf, "sh.600519", "2026-01-01"),
     )
     conn.commit()

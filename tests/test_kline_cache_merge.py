@@ -249,11 +249,11 @@ class TestKlineCacheMergeLogic:
         kline_cache.set_kline(
             "sh.600519", "2026-01-01", "2026-01-05", "d", df, ttl=_KLINE_HISTORICAL_TTL
         )
-        # 用 pickle.dumps（而非 pd.to_pickle）序列化，模拟旧格式
+        # 用 pickle.dumps（而非 pd.to_pickle）序列化，模拟旧格式（无hash校验）
         conn = kline_cache._cache._conn
         raw_pickle = pickle_mod.dumps(df)
         conn.execute(
-            "UPDATE kline_cache SET data = ? WHERE ticker = ? AND start = ?",
+            "UPDATE kline_cache SET data = ?, data_hash = NULL WHERE ticker = ? AND start = ?",
             (raw_pickle, "sh.600519", "2026-01-01"),
         )
         conn.commit()
