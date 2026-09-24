@@ -112,7 +112,7 @@ def main() -> None:
         logger.error(f"❌ 缓存数据库不存在: {db_path}")
         sys.exit(1)
 
-    logger.info(f"🚀 开始导出 RD-Agent 格式")
+    logger.info("🚀 开始导出 RD-Agent 格式")
     logger.info(f"   源数据库: {db_path}")
     logger.info(f"   目标路径: {PARQUET_DEST}")
 
