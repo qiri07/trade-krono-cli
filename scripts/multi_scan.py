@@ -6,12 +6,12 @@
   uv run python scripts/multi_scan.py --top 50
   uv run python scripts/multi_scan.py --date 2026-09-24
 """
+
 from __future__ import annotations
 
 import argparse
 import sqlite3
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -19,12 +19,10 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import pandas as pd
 from loguru import logger
 
+from scripts.daily_analysis import _load_env, analyze_stock
 from scripts.feishu_core import load_config, send_notification
-from scripts.daily_analysis import analyze_stock, _get_stock_name, _load_env
-from trade_krono_cli.cache import get_cache
 from trade_krono_cli.config import get_settings
 
 # ── 路径常量 ────────────────────────────────────────────────────────────────
@@ -76,17 +74,14 @@ def scan_multi_head_stocks(
 
     # 批量分析
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_ticker = {
-            executor.submit(analyze_stock, ticker): ticker
-            for ticker in tickers
-        }
+        future_to_ticker = {executor.submit(analyze_stock, ticker): ticker for ticker in tickers}
 
         completed = 0
         for future in as_completed(future_to_ticker):
             ticker = future_to_ticker[future]
             completed += 1
             if completed % 500 == 0:
-                logger.info(f"  进度: {completed}/{total} ({completed*100//total}%)")
+                logger.info(f"  进度: {completed}/{total} ({completed * 100 // total}%)")
 
             try:
                 result = future.result()
@@ -123,8 +118,7 @@ def _build_summary_card(results: list[dict[str, Any]], date_str: str) -> str:
         lines.append(f"🟢 **买入关注**（{len(buy_stocks)}只）")
         for r in buy_stocks[:10]:
             lines.append(
-                f"  • {r['ticker']} {r['name']}: {r['score']}分 "
-                f"{r['trend']} {r['vol_signal']}"
+                f"  • {r['ticker']} {r['name']}: {r['score']}分 {r['trend']} {r['vol_signal']}"
             )
         lines.append("")
 
@@ -132,8 +126,7 @@ def _build_summary_card(results: list[dict[str, Any]], date_str: str) -> str:
         lines.append(f"🟡 **观望等待**（{len(hold_stocks)}只）")
         for r in hold_stocks[:10]:
             lines.append(
-                f"  • {r['ticker']} {r['name']}: {r['score']}分 "
-                f"{r['trend']} {r['vol_signal']}"
+                f"  • {r['ticker']} {r['name']}: {r['score']}分 {r['trend']} {r['vol_signal']}"
             )
         lines.append("")
 
@@ -181,9 +174,7 @@ def main() -> None:
     # 保存结果
     date_str = args.date.replace("-", "")
     result_file = RESULTS_DIR / f"multi_head_{date_str}.txt"
-    result_file.write_text(
-        _build_summary_card(results, args.date), encoding="utf-8"
-    )
+    result_file.write_text(_build_summary_card(results, args.date), encoding="utf-8")
     logger.info(f"💾 结果已保存: {result_file}")
 
     # 飞书推送
@@ -203,7 +194,9 @@ def main() -> None:
             buy_points = r.get("buy_points", [])
             if buy_points:
                 card += f"🟢 买点信号：{'、'.join(buy_points[:3])}\n"
-            ok = send_notification(mode="text", config=config, content=card, title=f"{r['ticker']} {r['name']}")
+            ok = send_notification(
+                mode="text", config=config, content=card, title=f"{r['ticker']} {r['name']}"
+            )
             logger.info(f"  {'✅' if ok else '❌'} 已推送飞书: {r['ticker']} {r['name']}")
 
         # 汇总推送
