@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 import subprocess
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -92,7 +93,7 @@ def _trigger_sync() -> bool:
         return False
 
 
-def check_data_freshness(logger_fn=None) -> str:
+def check_data_freshness(logger_fn: Callable[[str], None] | None = None) -> str:
     """检查 K 线缓存数据是否已更新至预期日期，未达标则自动触发增量同步。
 
     Parameters

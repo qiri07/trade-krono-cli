@@ -37,6 +37,30 @@ class TestExtractJson:
     def test_empty_string(self) -> None:
         assert _extract_json("") is None
 
+    def test_code_block_extraction(self) -> None:
+        """Extract JSON from ```json ... ``` code block."""
+        raw = '```json\n{"a": 1, "b": 2}\n```'
+        assert _extract_json(raw) == {"a": 1, "b": 2}
+
+    def test_code_block_no_lang(self) -> None:
+        """Extract JSON from ``` ... ``` without lang hint."""
+        raw = '```\n{"x": true}\n```'
+        assert _extract_json(raw) == {"x": True}
+
+    def test_trailing_comma_in_snippet(self) -> None:
+        """Trailing comma inside extracted {..} substring is cleaned."""
+        raw = '{"a": 1,}'
+        assert _extract_json(raw) == {"a": 1}
+
+    def test_trailing_comma_with_prefix_suffix(self) -> None:
+        """Trailing comma cleanup works when JSON is embedded in text."""
+        raw = 'result: {"a": 1, } done'
+        assert _extract_json(raw) == {"a": 1}
+
+    def test_no_json_multiple_braces(self) -> None:
+        """Multiple unrelated brace pairs: no valid JSON found."""
+        assert _extract_json('{ "a": 1 } no json { "b": 2 }') is None
+
 
 class TestGetKline:
     """K-line data retrieval from cache."""
@@ -220,6 +244,57 @@ class TestAiVerify:
         """Empty stock list should not crash."""
         result = ai_verify([], "2026-09-15")
         assert isinstance(result, dict)
+
+    def test_batch_processing_with_mock_client(self) -> None:
+        """When stock count exceeds batch size, multiple calls are made and aggregated."""
+        from unittest.mock import MagicMock
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content='{"analysis_summary": "OK", "top_picks": "p1", "risk_alerts": "r1", "conclusion": "c1"}'))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        results = [{"ticker": f"sh.600{i:03d}", "score": 60} for i in range(5)]
+        with patch("scripts.daily_analysis._get_llm_client", return_value=mock_client):
+            result = ai_verify(results, "2026-09-15")
+
+        assert result["analysis_summary"] == "OK"
+        assert result["top_picks"] == "p1"
+        assert mock_client.chat.completions.create.call_count == 1  # 5 stocks fit in one batch of 30
+
+    def test_batch_processing_split_across_batches(self) -> None:
+        """Large stock lists trigger multiple batch calls."""
+        from unittest.mock import MagicMock
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content='{"analysis_summary": "ok", "top_picks": "t", "risk_alerts": "r", "conclusion": "c"}'))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        results = [{"ticker": f"sh.600{i:03d}", "score": 60} for i in range(70)]
+        with patch("scripts.daily_analysis._get_llm_client", return_value=mock_client):
+            with patch("scripts.daily_analysis.os.getenv", return_value="10"):  # batch_size=10
+                result = ai_verify(results, "2026-09-15")
+
+        assert result["analysis_summary"] == "ok；ok；ok"  # 7 identical summaries, capped at 3, joined by ；
+        assert mock_client.chat.completions.create.call_count == 7  # 70 / 10 = 7 batches
+
+    def test_all_batches_fail_returns_default(self) -> None:
+        """When every batch call fails, returns default empty result."""
+        from unittest.mock import MagicMock
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        # Return invalid JSON every time
+        mock_response.choices = [MagicMock(message=MagicMock(content='not json at all'))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        results = [{"ticker": "sh.600519", "score": 60}]
+        with patch("scripts.daily_analysis._get_llm_client", return_value=mock_client):
+            result = ai_verify(results, "2026-09-15")
+
+        assert result["analysis_summary"] == "AI 核实失败"
+        assert result["top_picks"] == "无"
 
 
 class TestConstants:

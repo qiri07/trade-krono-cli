@@ -167,11 +167,17 @@ def _extract_json(text: str) -> dict | None:
     start = text.find("{")
     end = text.rfind("}")
     if start >= 0 and end > start:
+        snippet = text[start : end + 1]
         try:
-            return json.loads(text[start : end + 1])
+            return json.loads(snippet)
         except json.JSONDecodeError:
-            pass
-    # 4. 尝试去掉末尾逗号等常见瑕疵
+            # 常见瑕疵：尾部多余逗号（{"a": 1, } → {"a": 1}）
+            cleaned = re.sub(r",\s*}", "}", snippet)
+            try:
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                pass
+    # 4. 对完整文本尝试去掉末尾逗号等常见瑕疵
     cleaned = re.sub(r",\s*}", "}", text)
     cleaned = re.sub(r",\s*$", "", cleaned)
     try:
