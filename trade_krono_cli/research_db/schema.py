@@ -132,7 +132,7 @@ CREATE_SCRIPT = """
                     FOREIGN KEY (job_id) REFERENCES jobs(job_id)
                 );
 
-                -- 预留表
+                -- 预留表（当前 pipeline 未写入，供未来扩展使用）
                 CREATE TABLE IF NOT EXISTS backtest_results (
                     id             INTEGER PRIMARY KEY AUTOINCREMENT,
                     job_id         TEXT NOT NULL,
@@ -145,6 +145,7 @@ CREATE_SCRIPT = """
                     scoring_strategy TEXT
                 );
 
+                -- 预留表（当前 pipeline 未写入，供未来策略运行记录使用）
                 CREATE TABLE IF NOT EXISTS strategy_runs (
                     id             INTEGER PRIMARY KEY AUTOINCREMENT,
                     run_at         REAL NOT NULL,
@@ -192,6 +193,7 @@ CREATE_SCRIPT = """
                 );
 
                 -- Point-in-Time 数据快照
+                -- 预留表（当前 pipeline 未写入，供未来 Point-in-Time 数据快照使用）
                 CREATE TABLE IF NOT EXISTS data_snapshots (
                     snapshot_id   TEXT PRIMARY KEY,
                     cut_date      TEXT NOT NULL,
@@ -202,6 +204,7 @@ CREATE_SCRIPT = """
                 );
 
                 -- Walk-Forward 评估结果
+                -- 预留表（当前 pipeline 未写入，供未来 walk-forward 验证使用）
                 CREATE TABLE IF NOT EXISTS walkforward_runs (
                     run_id         TEXT PRIMARY KEY,
                     experiment_id  TEXT,
@@ -221,6 +224,7 @@ CREATE_SCRIPT = """
                 );
 
                 -- 实验注册表
+                -- 预留表（当前 pipeline 未写入，供未来 A/B 实验追踪使用）
                 CREATE TABLE IF NOT EXISTS experiments (
                     experiment_id   TEXT PRIMARY KEY,
                     full_id         TEXT NOT NULL,
