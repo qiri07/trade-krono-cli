@@ -29,11 +29,23 @@ from scripts.daily_analysis import _load_env, ai_verify, analyze_stock
 from scripts.feishu_core import load_config, send_notification
 from trade_krono_cli.config import get_settings
 
+
+def _get_results_dir() -> Path:
+    """获取结果目录（优先从配置，回退到项目默认路径）。"""
+    try:
+        s = get_settings()
+        return Path(s.results_dir)
+    except Exception:
+        pass
+    # 回退：项目 outputs/results/
+    project_root = Path(__file__).resolve().parent.parent
+    return project_root / "outputs" / "results"
+
+
 # ── 路径常量 ────────────────────────────────────────────────────────────────
 
-WORK_DIR = Path("/run/media/onai/MyDisk/Work")
-RESULTS_DIR = WORK_DIR / "trade-krono-cli" / "outputs" / "results"
-RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+_RESULTS_DIR = _get_results_dir()
+_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── 同花顺 Fuyao API（估值快照）─────────────────────────────────────────────
 _FUYAO_BASE = "https://fuyao.aicubes.cn"
@@ -334,7 +346,7 @@ def main() -> None:
 
     # 保存结果
     date_str = args.date.replace("-", "")
-    result_file = RESULTS_DIR / f"multi_head_{date_str}.txt"
+    result_file = _RESULTS_DIR / f"multi_head_{date_str}.txt"
     result_file.write_text(_build_summary_card(results, args.date, ai_result), encoding="utf-8")
     logger.info(f"💾 结果已保存: {result_file}")
 

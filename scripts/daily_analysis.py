@@ -21,6 +21,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from openai import RateLimitError
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
@@ -209,8 +211,6 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
             "risk_alerts": "无",
             "conclusion": "无",
         }
-
-    from openai import RateLimitError
 
     _batch_size = int(os.getenv("AI_VERIFY_BATCH_SIZE", "30"))
     batches = [stock_results[i : i + _batch_size] for i in range(0, len(stock_results), _batch_size)]

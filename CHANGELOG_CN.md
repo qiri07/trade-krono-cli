@@ -6,6 +6,30 @@
 
 ---
 
+### v0.1.13 — 2026-09-25
+
+**Pipeline 修复 + 脚本增强 + Code Review 修复：**
+
+- **fix(pipeline)**：`min_confidence` 默认值从 55.0 降至 30.0，避免过度过滤导致 decisions 表为空
+- **fix(pipeline)**：`ALLOWED_SIGNALS` 默认加入 SELL，兼容 Kronos DOWN 信号写入 decisions 表
+- **fix(pipeline)**：`ta_cache_fallback_enabled` 默认值改为 true，TA 失败时自动降级使用缓存，提升作业成功率
+- **fix(pipeline)**：`merge_results()` 集成 `detect_conflict()`，标记 TA/Kronos 多源信号冲突
+- **fix(pipeline)**：`ta_runner.py` 覆盖 TA 缓存目录路径，修复 `FileExistsError`（`/home/onai/.tradingagents/cache`）
+- **fix(extract_json)**：修复策略3提取子串后 trailing comma 清理作用域错误（嵌入文本中的 `{"a": 1, }` 无法解析）
+- **feat(daily_analysis)**：`ai_verify` 支持分批调用 LLM（默认 30 只/批），结果聚合后返回
+- **feat(daily_analysis)**：`_extract_json` 新增 code block、trailing comma 容错等 4 种解析策略
+- **feat(daily_analysis)**：白名单合并逻辑剔除北交所股票（`.BJ` / `92` 开头）
+- **feat(daily_analysis)**：新增 `check_data_freshness` 前置检查，数据过时自动触发增量同步
+- **feat(multi_scan)**：新增 `scripts/multi_scan.py` 全市场多头排列扫描脚本（PE 过滤 + AI 核实 + 飞书推送）
+- **feat(rdagent)**：新增 `scripts/export_rdagent.py` RD-Agent parquet 格式导出脚本；路径支持 `RD_AGENT_WORK_DIR` 环境变量覆盖
+- **docs(schema)**：为 walkforward_runs / experiments / backtest_results / strategy_runs 等实验表添加预留注释
+- **test**：新增 `tests/test__utils.py`（11 个用例）覆盖 `check_data_freshness` 全路径
+- **test**：新增 `_extract_json` code block / trailing comma 场景 + `ai_verify` 分批处理 + 全批次失败回归测试
+
+---
+
+---
+
 ### v0.1.12 — 2026-09-18
 
 **代码审查修复 + 架构优化 + 测试补齐：**

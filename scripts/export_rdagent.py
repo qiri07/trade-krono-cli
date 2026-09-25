@@ -9,6 +9,7 @@ RD-Agent 格式要求:
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -23,8 +24,10 @@ except ImportError:
 
 # ── 路径常量 ────────────────────────────────────────────────────────────────
 
-WORK_DIR = Path("/run/media/onai/MyDisk/Work")
-RD_AGENT_SOURCE = WORK_DIR / "RD-Agent-Work" / "git_ignore_folder" / "factor_implementation_source_data"
+_WORK_DIR = Path(
+    os.getenv("RD_AGENT_WORK_DIR", "/run/media/onai/MyDisk/Work")
+)  # 可通过 RD_AGENT_WORK_DIR 环境变量覆盖
+RD_AGENT_SOURCE = _WORK_DIR / "RD-Agent-Work" / "git_ignore_folder" / "factor_implementation_source_data"
 PARQUET_DEST = RD_AGENT_SOURCE / "daily_pv_full.parquet"
 
 
