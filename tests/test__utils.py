@@ -76,8 +76,10 @@ class TestCheckDataFreshness:
     def test_already_fresh(self) -> None:
         from scripts._utils import check_data_freshness
 
-        with patch("scripts._utils._get_expected_date", return_value="2026-09-23"), \
-             patch("scripts._utils._get_cache_latest_date", return_value="2026-09-24"):
+        with (
+            patch("scripts._utils._get_expected_date", return_value="2026-09-23"),
+            patch("scripts._utils._get_cache_latest_date", return_value="2026-09-24"),
+        ):
             result = check_data_freshness()
         assert result.startswith("✅ 缓存已更新至")
         assert "2026-09-24" in result
@@ -85,18 +87,24 @@ class TestCheckDataFreshness:
     def test_stale_triggers_sync(self) -> None:
         from scripts._utils import check_data_freshness
 
-        with patch("scripts._utils._get_expected_date", return_value="2026-09-24"), \
-             patch("scripts._utils._get_cache_latest_date", side_effect=["2026-09-20", "2026-09-24"]), \
-             patch("scripts._utils._trigger_sync", return_value=True):
+        with (
+            patch("scripts._utils._get_expected_date", return_value="2026-09-24"),
+            patch(
+                "scripts._utils._get_cache_latest_date", side_effect=["2026-09-20", "2026-09-24"]
+            ),
+            patch("scripts._utils._trigger_sync", return_value=True),
+        ):
             result = check_data_freshness()
         assert "同步完成" in result
 
     def test_sync_failure_returns_warning(self) -> None:
         from scripts._utils import check_data_freshness
 
-        with patch("scripts._utils._get_expected_date", return_value="2026-09-24"), \
-             patch("scripts._utils._get_cache_latest_date", return_value="2026-09-20"), \
-             patch("scripts._utils._trigger_sync", return_value=False):
+        with (
+            patch("scripts._utils._get_expected_date", return_value="2026-09-24"),
+            patch("scripts._utils._get_cache_latest_date", return_value="2026-09-20"),
+            patch("scripts._utils._trigger_sync", return_value=False),
+        ):
             result = check_data_freshness()
         assert "缓存较旧" in result
         assert "已尝试同步但失败" in result
@@ -104,9 +112,11 @@ class TestCheckDataFreshness:
     def test_empty_cache_triggers_sync(self) -> None:
         from scripts._utils import check_data_freshness
 
-        with patch("scripts._utils._get_expected_date", return_value="2026-09-24"), \
-             patch("scripts._utils._get_cache_latest_date", side_effect=[None, "2026-09-24"]), \
-             patch("scripts._utils._trigger_sync", return_value=True):
+        with (
+            patch("scripts._utils._get_expected_date", return_value="2026-09-24"),
+            patch("scripts._utils._get_cache_latest_date", side_effect=[None, "2026-09-24"]),
+            patch("scripts._utils._trigger_sync", return_value=True),
+        ):
             result = check_data_freshness()
         assert "✅" in result
 
@@ -114,11 +124,14 @@ class TestCheckDataFreshness:
         from scripts._utils import check_data_freshness
 
         messages: list[str] = []
+
         def log(msg: str) -> None:
             messages.append(msg)
 
-        with patch("scripts._utils._get_expected_date", return_value="2026-09-24"), \
-             patch("scripts._utils._get_cache_latest_date", return_value="2026-09-23"):
+        with (
+            patch("scripts._utils._get_expected_date", return_value="2026-09-24"),
+            patch("scripts._utils._get_cache_latest_date", return_value="2026-09-23"),
+        ):
             check_data_freshness(logger_fn=log)
         assert len(messages) == 1
         assert "缓存较旧" in messages[0]

@@ -213,7 +213,9 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
         }
 
     _batch_size = int(os.getenv("AI_VERIFY_BATCH_SIZE", "30"))
-    batches = [stock_results[i : i + _batch_size] for i in range(0, len(stock_results), _batch_size)]
+    batches = [
+        stock_results[i : i + _batch_size] for i in range(0, len(stock_results), _batch_size)
+    ]
 
     def _build_prompt(batch: list[dict]) -> str:
         stock_lines = []
@@ -256,7 +258,9 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
                 result = _extract_json(raw)
                 if result:
                     return result
-                logger.warning(f"AI 核实 JSON 解析失败（attempt {attempt}），原始响应前200字: {raw[:200]}")
+                logger.warning(
+                    f"AI 核实 JSON 解析失败（attempt {attempt}），原始响应前200字: {raw[:200]}"
+                )
                 break
             except RateLimitError as e:
                 if attempt >= 3:

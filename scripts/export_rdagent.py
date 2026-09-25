@@ -7,6 +7,7 @@ RD-Agent 格式要求:
   - Columns: $open, $close, $high, $low, $volume, $factor
   - 保存路径: /run/media/onai/MyDisk/Work/RD-Agent-Work/git_ignore_folder/factor_implementation_source_data/daily_pv_full.parquet
 """
+
 from __future__ import annotations
 
 import os
@@ -27,7 +28,9 @@ except ImportError:
 _WORK_DIR = Path(
     os.getenv("RD_AGENT_WORK_DIR", "/run/media/onai/MyDisk/Work")
 )  # 可通过 RD_AGENT_WORK_DIR 环境变量覆盖
-RD_AGENT_SOURCE = _WORK_DIR / "RD-Agent-Work" / "git_ignore_folder" / "factor_implementation_source_data"
+RD_AGENT_SOURCE = (
+    _WORK_DIR / "RD-Agent-Work" / "git_ignore_folder" / "factor_implementation_source_data"
+)
 PARQUET_DEST = RD_AGENT_SOURCE / "daily_pv_full.parquet"
 
 
@@ -103,7 +106,9 @@ def export_to_rdagent(db_path: Path, dest: Path) -> dict:
     n_stocks = panel.index.get_level_values("instrument").nunique()
     n_rows = len(panel)
     logger.info(f"  ✅ RD-Agent Parquet 导出完成: {n_rows:,} 行, {n_stocks} 只股票")
-    logger.info(f"     数据范围: {panel.index.get_level_values('date').min()} ~ {panel.index.get_level_values('date').max()}")
+    logger.info(
+        f"     数据范围: {panel.index.get_level_values('date').min()} ~ {panel.index.get_level_values('date').max()}"
+    )
     logger.info(f"     保存路径: {dest}")
 
     return {"success": n_stocks, "rows": n_rows, "path": str(dest)}

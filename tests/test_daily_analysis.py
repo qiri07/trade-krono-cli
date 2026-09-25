@@ -137,8 +137,12 @@ class TestAnalyzeStock:
         ]
 
     def test_no_data(self) -> None:
-        """Mock sqlite3 to return no data for non-existent ticker in CI."""
-        with patch("sqlite3.connect") as mock_connect:
+        """Mock sqlite3 and external fetch to avoid network calls in CI."""
+        with (
+            patch("scripts.daily_analysis._fetch_and_save_kline", return_value=None),
+            patch("scripts.daily_analysis._get_stock_name", return_value="未知"),
+            patch("sqlite3.connect") as mock_connect,
+        ):
             mock_conn = mock_connect.return_value
             mock_conn.execute.return_value.fetchone.return_value = None
             result = analyze_stock("sh.999999")
@@ -182,7 +186,11 @@ class TestAnalyzeStock:
         buf = BytesIO()
         tiny_df.to_pickle(buf)
         buf.seek(0)
-        with patch("sqlite3.connect") as mock_connect:
+        with (
+            patch("scripts.daily_analysis._fetch_and_save_kline", return_value=None),
+            patch("scripts.daily_analysis._get_stock_name", return_value="未知"),
+            patch("sqlite3.connect") as mock_connect,
+        ):
             mock_conn = mock_connect.return_value
             mock_conn.execute.return_value.fetchone.return_value = (buf.read(),)
             result = analyze_stock("sh.999998")
@@ -251,7 +259,13 @@ class TestAiVerify:
 
         mock_client = MagicMock()
         mock_response = MagicMock()
-        mock_response.choices = [MagicMock(message=MagicMock(content='{"analysis_summary": "OK", "top_picks": "p1", "risk_alerts": "r1", "conclusion": "c1"}'))]
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content='{"analysis_summary": "OK", "top_picks": "p1", "risk_alerts": "r1", "conclusion": "c1"}'
+                )
+            )
+        ]
         mock_client.chat.completions.create.return_value = mock_response
 
         results = [{"ticker": f"sh.600{i:03d}", "score": 60} for i in range(5)]
@@ -260,7 +274,9 @@ class TestAiVerify:
 
         assert result["analysis_summary"] == "OK"
         assert result["top_picks"] == "p1"
-        assert mock_client.chat.completions.create.call_count == 1  # 5 stocks fit in one batch of 30
+        assert (
+            mock_client.chat.completions.create.call_count == 1
+        )  # 5 stocks fit in one batch of 30
 
     def test_batch_processing_split_across_batches(self) -> None:
         """Large stock lists trigger multiple batch calls."""
@@ -268,7 +284,13 @@ class TestAiVerify:
 
         mock_client = MagicMock()
         mock_response = MagicMock()
-        mock_response.choices = [MagicMock(message=MagicMock(content='{"analysis_summary": "ok", "top_picks": "t", "risk_alerts": "r", "conclusion": "c"}'))]
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content='{"analysis_summary": "ok", "top_picks": "t", "risk_alerts": "r", "conclusion": "c"}'
+                )
+            )
+        ]
         mock_client.chat.completions.create.return_value = mock_response
 
         results = [{"ticker": f"sh.600{i:03d}", "score": 60} for i in range(70)]
@@ -276,7 +298,9 @@ class TestAiVerify:
             with patch("scripts.daily_analysis.os.getenv", return_value="10"):  # batch_size=10
                 result = ai_verify(results, "2026-09-15")
 
-        assert result["analysis_summary"] == "ok；ok；ok"  # 7 identical summaries, capped at 3, joined by ；
+        assert (
+            result["analysis_summary"] == "ok；ok；ok"
+        )  # 7 identical summaries, capped at 3, joined by ；
         assert mock_client.chat.completions.create.call_count == 7  # 70 / 10 = 7 batches
 
     def test_all_batches_fail_returns_default(self) -> None:
@@ -286,7 +310,7 @@ class TestAiVerify:
         mock_client = MagicMock()
         mock_response = MagicMock()
         # Return invalid JSON every time
-        mock_response.choices = [MagicMock(message=MagicMock(content='not json at all'))]
+        mock_response.choices = [MagicMock(message=MagicMock(content="not json at all"))]
         mock_client.chat.completions.create.return_value = mock_response
 
         results = [{"ticker": "sh.600519", "score": 60}]
