@@ -160,8 +160,8 @@ class StockFilter:
     @classmethod
     def from_config(
         cls,
-        min_confidence: float = 55.0,
-        allowed_signals: tuple[str, ...] = ("BUY", "OVERWEIGHT", "HOLD"),
+        min_confidence: float = 30.0,
+        allowed_signals: tuple[str, ...] = ("BUY", "OVERWEIGHT", "HOLD", "SELL"),
         market_cap_range: tuple[float, float] | None = None,
         industry_whitelist: list[str] | None = None,
         industry_blacklist: list[str] | None = None,

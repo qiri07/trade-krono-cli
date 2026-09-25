@@ -220,8 +220,8 @@ class TestBuildManifest:
             output_language="Chinese",
             scoring_strategy="linear",
             risk_boost_strategy="fixed_boost",
-            default_min_confidence=55.0,
-            default_allowed_signals=["BUY", "HOLD"],
+            default_min_confidence=30.0,
+            default_allowed_signals=["BUY", "OVERWEIGHT", "HOLD", "SELL"],
         )
 
     def test_build_manifest_all_fields(self, tmp_path) -> None:

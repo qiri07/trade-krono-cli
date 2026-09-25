@@ -138,7 +138,7 @@ def test_build_run_snapshot() -> None:
         kronos_T = 1.0
         kronos_top_p = 0.9
         kronos_use_sample_confidence = False
-        default_min_confidence = 55.0
+        default_min_confidence = 30.0
         llm_provider = "deepseek"
         deep_think_llm = "deepseek-chat"
         quick_think_llm = "deepseek-chat"
@@ -172,7 +172,7 @@ def test_compute_config_hash_excludes_keys() -> None:
         kronos_T = 1.0
         kronos_top_p = 0.9
         kronos_use_sample_confidence = False
-        default_min_confidence = 55.0
+        default_min_confidence = 30.0
         llm_provider = "deepseek"
         deep_think_llm = "deepseek-chat"
         quick_think_llm = "deepseek-chat"

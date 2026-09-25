@@ -329,7 +329,7 @@ class TestConfigValidation:
         cfg = PipelineConfig.from_dict({})
         assert cfg is not None
         assert cfg.sample_count == 5
-        assert cfg.min_confidence == 55.0
+        assert cfg.min_confidence == 30.0
 
 
 # ═══════════════════════════════════════════════════════

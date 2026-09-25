@@ -15,8 +15,8 @@ def test_default_config() -> None:
     assert cfg.pred_len == 30
     assert cfg.lookback == 400
     assert cfg.model_name.lower() == "kronos-base"
-    assert cfg.min_confidence == 55.0
-    assert cfg.allowed_signals == ("BUY", "OVERWEIGHT", "HOLD")
+    assert cfg.min_confidence == 30.0
+    assert cfg.allowed_signals == ("BUY", "OVERWEIGHT", "HOLD", "SELL")
     assert cfg.log_level == "INFO"
     assert cfg.log_json is False
     assert isinstance(cfg.constraints, ConstraintConfig)

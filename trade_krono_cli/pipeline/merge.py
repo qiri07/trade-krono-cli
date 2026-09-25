@@ -22,7 +22,14 @@ from loguru import logger
 
 from trade_krono_cli.configs.scoring import ScoringConfig, ScoringStrategyConfig
 from trade_krono_cli.constraints_config import ConstraintConfig
-from trade_krono_cli.domain.signal import _compute_ev as _domain_compute_ev
+from trade_krono_cli.domain.signal import (
+    _compute_ev as _domain_compute_ev,
+)
+from trade_krono_cli.domain.signal import (
+    detect_conflict,
+)
+from trade_krono_cli.domain.types import Direction
+from trade_krono_cli.domain.types import Signal as DomainSignal
 from trade_krono_cli.risk.models import adjust_expected_return
 from trade_krono_cli.risk.risk_engine import RiskEngine
 from trade_krono_cli.scoring.registry import get_scorer_registry
@@ -351,6 +358,15 @@ def merge_results(
         item["prob_win"] = prob_win
         item["risk_adjusted_ev"] = raev
 
+        # ── 多源信号冲突检测 ──────────────────────────────────────
+        ta_sig = item.get("ta_signal")
+        kr_dir = item.get("kronos_direction")
+        item["conflict"] = detect_conflict(
+            DomainSignal(ta_sig) if ta_sig else None,
+            Direction.from_str(kr_dir) if kr_dir else None,
+            None,  # committee signal not available at merge stage
+        )
+
         merged.append(item)
 
     # V0.3: 主要按 expected_value 降序，次要按 ranking_score 降序
@@ -374,8 +390,8 @@ def merge_results(
 
 def filter_pool(
     ta_results: list[StockAnalysisResult],
-    min_confidence: float = 55.0,
-    allowed_signals: tuple[str, ...] = ("BUY", "OVERWEIGHT", "HOLD"),
+    min_confidence: float = 30.0,
+    allowed_signals: tuple[str, ...] = ("BUY", "OVERWEIGHT", "HOLD", "SELL"),
 ) -> list[StockAnalysisResult]:
     """按信号 + 置信度过滤出可行股票池。"""
     pool: list[StockAnalysisResult] = []

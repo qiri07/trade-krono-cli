@@ -303,13 +303,13 @@ class TestPipelineConfigDegradation:
     def test_default_degrade_mode(self) -> None:
         cfg = PipelineConfig.default()
         assert cfg.degrade_mode == "strict"
-        assert cfg.ta_cache_fallback_enabled is False
+        assert cfg.ta_cache_fallback_enabled is True  # 默认开启，提升作业成功率
         assert cfg.ta_cache_max_age_days == 7
 
     def test_override_degrade_mode(self) -> None:
         cfg = PipelineConfig.default().override(degrade_mode="ta_only_on_kronos_fail")
         assert cfg.degrade_mode == "ta_only_on_kronos_fail"
-        assert cfg.ta_cache_fallback_enabled is False
+        assert cfg.ta_cache_fallback_enabled is True  # 未显式覆盖时保持默认值
 
     def test_override_ta_cache_fallback(self) -> None:
         cfg = PipelineConfig.default().override(

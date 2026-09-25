@@ -33,7 +33,7 @@ def run(
         help="股票列表文件路径（每行一只，支持 # 注释）",
     ),
     date: str = typer.Option(..., "--date", "-d", help="分析日期 YYYY-MM-DD"),
-    min_confidence: float = typer.Option(55.0, "--min-confidence", help="最低 TA 置信度"),
+    min_confidence: float = typer.Option(30.0, "--min-confidence", help="最低 TA 置信度"),
     signals: str = typer.Option("BUY,HOLD", "--signals", help="允许的 TA 信号，逗号分隔"),
     skip_kronos: bool = typer.Option(False, "--skip-kronos", help="跳过 Kronos 预测，仅运行 TA"),
     pred_len: int = typer.Option(30, "--pred-len", help="Kronos 预测步长"),

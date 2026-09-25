@@ -152,8 +152,8 @@ def make_mock_settings(
         kronos_top_p=0.9,
         kronos_use_sample_confidence=False,
         kronos_batch_size=8,
-        default_min_confidence=55.0,
-        default_allowed_signals=["BUY", "HOLD"],
+        default_min_confidence=30.0,
+        default_allowed_signals=["BUY", "OVERWEIGHT", "HOLD", "SELL"],
         baostock_sleep_sec=1.0,
         memory_log_path=Path("/tmp/test-project/outputs/memory_log.jsonl"),
         # ── 重试策略配置 ───────────────────────────────────

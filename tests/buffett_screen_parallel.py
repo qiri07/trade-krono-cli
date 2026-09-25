@@ -23,6 +23,7 @@ from pathlib import Path
 # 确保项目根目录在 sys.path 中，使 `from tests.xxx` 能正常工作
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts._utils import check_data_freshness
 from tests.buffett_cache import (
     cache_clean,
     init_cache,
@@ -39,6 +40,7 @@ from tests.buffett_screening import (
     run_screening,
     write_result_file,
 )
+from trade_krono_cli.cli_commands._core_helpers import _load_env
 
 
 def _notify_feishu(
@@ -116,12 +118,18 @@ def _save_ai_result(ai_result: AiVerificationResult, result_txt_path: str) -> No
 
 
 def main() -> None:
+    # 前置：加载 .env 环境变量（LLM API Key 等）
+    _load_env()
+
     if (
         not os.getenv("HITHINK_FINANCE_API_KEY", "").strip()
         and not os.getenv("FUYAO_API_KEY", "").strip()
     ):
         print("ERROR: HITHINK_FINANCE_API_KEY not set", file=sys.stderr)
         sys.exit(1)
+
+    # 前置：检查缓存数据新鲜度
+    print(f"[数据检查] {check_data_freshness(print)}", flush=True)
 
     # 初始化缓存
     conn = init_cache()

@@ -67,8 +67,8 @@ class TestFilterConfig:
     def test_default_config(self) -> None:
         """默认过滤配置。"""
         config = FilterConfig()
-        assert config.min_confidence == 55.0
-        assert config.allowed_signals == ("BUY", "OVERWEIGHT", "HOLD")
+        assert config.min_confidence == 30.0
+        assert config.allowed_signals == ("BUY", "OVERWEIGHT", "HOLD", "SELL")
         assert config.exclude_st is True
         assert config.exclude_low_price is True
         assert config.low_price_threshold == 3.0

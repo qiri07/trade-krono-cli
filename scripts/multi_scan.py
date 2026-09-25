@@ -10,7 +10,10 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sqlite3
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -21,7 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts.daily_analysis import _load_env, analyze_stock
+from scripts._utils import check_data_freshness
+from scripts.daily_analysis import _load_env, ai_verify, analyze_stock
 from scripts.feishu_core import load_config, send_notification
 from trade_krono_cli.config import get_settings
 
@@ -30,6 +34,14 @@ from trade_krono_cli.config import get_settings
 WORK_DIR = Path("/run/media/onai/MyDisk/Work")
 RESULTS_DIR = WORK_DIR / "trade-krono-cli" / "outputs" / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── 同花顺 Fuyao API（估值快照）─────────────────────────────────────────────
+_FUYAO_BASE = "https://fuyao.aicubes.cn"
+_FUYAO_API_KEY = (
+    os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
+)
+
+_ST_KEYWORDS = ("ST", "*ST", "退市", "N", "C")
 
 
 def _get_cache_db_path() -> Path:
@@ -55,10 +67,114 @@ def _get_all_tickers(db_path: Path) -> list[str]:
     return astock_tickers
 
 
+def _strip_prefix(ticker: str) -> str:
+    """去除交易所前缀，返回 6 位纯数字代码。"""
+    return ticker.split(".", 1)[1] if "." in ticker else ticker
+
+
+def _is_st(name: str) -> bool:
+    """判断股票名称是否含 ST 标识。"""
+    return any(kw in name for kw in _ST_KEYWORDS)
+
+
+def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, float]:
+    """批量获取股票的 PE_TTM（带并行请求，避免同花顺 API 限流）。
+
+    Parameters
+    ----------
+    tickers : list[str]
+        6 位纯数字股票代码列表
+    batch_size : int
+        每批数量，默认 50
+
+    Returns
+    -------
+    dict[str, float]
+        {ticker_code: pe_ttm}，获取失败的 code 不出现在结果中
+    """
+    if not _FUYAO_API_KEY:
+        logger.warning("FUYAO_API_KEY 未配置，跳过 PE 过滤")
+        return {}
+
+    result: dict[str, float] = {}
+    for i in range(0, len(tickers), batch_size):
+        batch = tickers[i : i + batch_size]
+        ths_param = ",".join(batch)
+        url = f"{_FUYAO_BASE}/api/a-share/valuations/snapshot?thscodes={ths_param}"
+        cmd = [
+            "curl",
+            "-s",
+            "--max-time",
+            "10",
+            "-w",
+            "\n%{http_code}",
+            url,
+            "-H",
+            f"X-api-key: {_FUYAO_API_KEY}",
+            "-A",
+            "MultiScan/1.0",
+        ]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
+            stdout = r.stdout.strip()
+            nl = stdout.rfind("\n")
+            if nl < 0:
+                continue
+            body, http_code = stdout[:nl], int(stdout[nl + 1 :])
+            if http_code != 200:
+                continue
+            data = json.loads(body)
+            if data.get("code") != 0:
+                continue
+            for item in data.get("data", {}).get("item", []):
+                code = _strip_prefix(item.get("thscode", ""))
+                pe = item.get("pe_ttm")
+                if pe is not None:
+                    try:
+                        pe_f = float(pe)
+                        if pe_f > 0:
+                            result[code] = pe_f
+                    except (TypeError, ValueError):
+                        pass
+        except Exception as e:
+            logger.debug(f"PE 获取失败（批次 {i // batch_size + 1}）: {e}")
+    return result
+
+
+def _filter_by_pe(
+    results: list[dict[str, Any]], pe_map: dict[str, float]
+) -> tuple[list[dict[str, Any]], int]:
+    """根据 PE 过滤结果，剔除亏损（PE<0）和 PE≥40 的股票。
+
+    Parameters
+    ----------
+    results : list[dict[str, Any]]
+        扫描结果列表，每条含 'ticker' 字段
+    pe_map : dict[str, float]
+        {6位代码: pe_ttm}
+
+    Returns
+    -------
+    tuple[list[dict[str, Any]], int]
+        (过滤后结果, 剔除数量)
+    """
+    filtered: list[dict[str, Any]] = []
+    removed = 0
+    for r in results:
+        code = _strip_prefix(r.get("ticker", ""))
+        pe = pe_map.get(code)
+        if pe is not None and (pe < 0 or pe >= 40):
+            removed += 1
+            logger.debug(f"  剔除 {r.get('ticker')} PE={pe:.1f}（{'亏损' if pe < 0 else '过高'}）")
+            continue
+        filtered.append(r)
+    return filtered, removed
+
+
 def scan_multi_head_stocks(
     tickers: list[str], max_workers: int = 20, top_n: int | None = None
 ) -> list[dict[str, Any]]:
-    """扫描全市场，找出多头排列的股票。
+    """扫描全市场，找出多头排列的股票（ST 股在内部剔除）。
 
     Args:
         tickers: 股票代码列表（带 sh./sz. 前缀）
@@ -86,6 +202,11 @@ def scan_multi_head_stocks(
             try:
                 result = future.result()
                 if result.get("status") == "ok":
+                    name = result.get("name", "")
+                    # 剔除 ST / *ST 等异常股票
+                    if _is_st(name):
+                        logger.debug(f"  剔除 ST 股: {ticker} {name}")
+                        continue
                     # 筛选多头排列且分数>=50的股票
                     if result.get("ma_signal") == "多头排列✅" and result.get("score", 0) >= 50:
                         results.append(result)
@@ -98,12 +219,14 @@ def scan_multi_head_stocks(
     if top_n:
         results = results[:top_n]
 
-    logger.info(f"✅ 扫描完成：找到 {len(results)} 只多头排列股票（分数≥50）")
+    logger.info(f"✅ 扫描完成：找到 {len(results)} 只多头排列股票（分数≥50，已剔除 ST）")
     return results
 
 
-def _build_summary_card(results: list[dict[str, Any]], date_str: str) -> str:
-    """构建汇总消息卡片"""
+def _build_summary_card(
+    results: list[dict[str, Any]], date_str: str, ai_result: dict[str, str] | None = None
+) -> str:
+    """构建汇总消息卡片，可选附加 AI 核实摘要。"""
     if not results:
         return f"📊 {date_str} 全市场扫描结果\n\n未找到多头排列且分数≥50的股票"
 
@@ -147,6 +270,24 @@ def _build_summary_card(results: list[dict[str, Any]], date_str: str) -> str:
         if sell_points:
             lines.append(f"   卖点: {'、'.join(sell_points[:3])}")
 
+    # AI 核实摘要
+    if ai_result:
+        lines.append("")
+        lines.append("---")
+        lines.append("🤖 **AI 核实摘要**")
+        summary = ai_result.get("analysis_summary", "")
+        if summary:
+            lines.append(f"\n{summary}")
+        top_picks = ai_result.get("top_picks", "")
+        if top_picks and top_picks != "无":
+            lines.append(f"\n**🏆 Top 推荐：** {top_picks}")
+        risk_alerts = ai_result.get("risk_alerts", "")
+        if risk_alerts and risk_alerts != "无" and risk_alerts != "无明显异常风险":
+            lines.append(f"\n**⚠️ 风险提示：** {risk_alerts}")
+        conclusion = ai_result.get("conclusion", "")
+        if conclusion:
+            lines.append(f"\n**📝 结论：** {conclusion}")
+
     return "\n".join(lines)
 
 
@@ -158,6 +299,9 @@ def main() -> None:
     args = parser.parse_args()
 
     _load_env()
+
+    # 前置：检查缓存数据新鲜度
+    logger.info(f"[数据检查] {check_data_freshness(logger.info)}")
 
     # 获取数据库路径
     db_path = _get_cache_db_path()
@@ -171,16 +315,33 @@ def main() -> None:
     # 扫描多头排列股票
     results = scan_multi_head_stocks(tickers, max_workers=args.workers, top_n=args.top)
 
+    # PE 过滤：剔除亏损（PE<0）和 PE≥40 的股票
+    pe_map: dict[str, float] = {}
+    if results:
+        pe_codes = [_strip_prefix(r["ticker"]) for r in results]
+        logger.info(f"📊 获取 {len(pe_codes)} 只股票的 PE 数据用于过滤...")
+        pe_map = _fetch_pe_snapshot(pe_codes)
+        results, pe_removed = _filter_by_pe(results, pe_map)
+        logger.info(f"PE 过滤：剔除 {pe_removed} 只（亏损或 PE≥40），剩余 {len(results)} 只")
+
+    # AI 核实
+    logger.info("🤖 启动 AI 核实...")
+    ai_result = ai_verify(results, args.date)
+    if ai_result.get("analysis_summary", "").startswith("LLM"):
+        logger.info("AI 核实跳过：LLM 未配置")
+    else:
+        logger.info(f"AI 核实完成：{ai_result.get('analysis_summary', '')}")
+
     # 保存结果
     date_str = args.date.replace("-", "")
     result_file = RESULTS_DIR / f"multi_head_{date_str}.txt"
-    result_file.write_text(_build_summary_card(results, args.date), encoding="utf-8")
+    result_file.write_text(_build_summary_card(results, args.date, ai_result), encoding="utf-8")
     logger.info(f"💾 结果已保存: {result_file}")
 
     # 飞书推送
     if results:
         config = load_config()
-        summary = _build_summary_card(results, args.date)
+        summary = _build_summary_card(results, args.date, ai_result)
 
         # 逐只推送详情
         for r in results[:20]:  # 最多推送20只

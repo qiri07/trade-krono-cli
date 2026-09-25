@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
+from scripts._utils import check_data_freshness
 from scripts.feishu_core import load_config, send_notification
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands._core_helpers import _load_env
@@ -85,7 +86,7 @@ def _get_dynamic_whitelist() -> list[str]:
 
 
 def _get_merged_whitelist() -> str:
-    """合并静态白名单 + 动态巴菲特白名单（去重）。"""
+    """合并静态白名单 + 动态巴菲特白名单（去重，剔除北交所股票）。"""
     static = _get_whitelist()
     static_codes = [c.strip() for c in static.split(",") if c.strip()]
     dynamic = _get_dynamic_whitelist()
@@ -93,9 +94,14 @@ def _get_merged_whitelist() -> str:
     merged: list[str] = []
     for code in static_codes + dynamic:
         code = code.strip()
-        if code and code not in seen:
-            seen.add(code)
-            merged.append(code)
+        if not code or code in seen:
+            continue
+        # 剔除北交所股票
+        if code.upper().endswith(".BJ") or code.startswith("92"):
+            logger.debug(f"  跳过北交所股票: {code}")
+            continue
+        seen.add(code)
+        merged.append(code)
     return ",".join(merged)
 
 
@@ -141,19 +147,45 @@ def _get_llm_client() -> Any | None:
 
 
 def _extract_json(text: str) -> dict | None:
-    """从 LLM 响应中提取 JSON。"""
+    """从 LLM 响应中提取 JSON，支持代码块、尾随文本等常见格式。"""
     text = text.strip()
-    m = re.search(r"\{[\s\S]*\}", text)
-    if m:
+    if not text:
+        return None
+    # 1. 直接解析
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # 2. 提取 ```json ... ``` 或 ``` ... ``` 代码块
+    block = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    if block:
         try:
-            return json.loads(m.group())
+            return json.loads(block.group(1).strip())
         except json.JSONDecodeError:
             pass
+    # 3. 找第一个 { 和最后一个 } 之间的内容
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+    # 4. 尝试去掉末尾逗号等常见瑕疵
+    cleaned = re.sub(r",\s*}", "}", text)
+    cleaned = re.sub(r",\s*$", "", cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
     return None
 
 
 def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
-    """调用 LLM 对分析结果进行核实和摘要。"""
+    """调用 LLM 对分析结果进行核实和摘要。
+
+    股票数量超过 _BATCH_SIZE 时自动分批调用，结果聚合后返回。
+    """
     if not _ai_available():
         logger.warning("AI 核实跳过：LLM 未配置")
         return {
@@ -163,44 +195,47 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
             "conclusion": "无",
         }
 
-    stock_lines = []
-    for r in stock_results:
-        ticker = r.get("ticker", "?")
-        name = r.get("name", "")
-        trend = r.get("trend", "?")
-        ma_signal = r.get("ma_signal", "?")
-        vol_signal = r.get("vol_signal", "?")
-        score = r.get("score", 0)
-        stock_lines.append(
-            f"• {ticker} {name}：趋势={trend}  "
-            f"均线信号={ma_signal}  量能信号={vol_signal}  综合分={score:.1f}"
+    client = _get_llm_client()
+    if client is None:
+        return {
+            "analysis_summary": "LLM 不可用",
+            "top_picks": "无",
+            "risk_alerts": "无",
+            "conclusion": "无",
+        }
+
+    from openai import RateLimitError
+
+    _batch_size = int(os.getenv("AI_VERIFY_BATCH_SIZE", "30"))
+    batches = [stock_results[i : i + _batch_size] for i in range(0, len(stock_results), _batch_size)]
+
+    def _build_prompt(batch: list[dict]) -> str:
+        stock_lines = []
+        for r in batch:
+            ticker = r.get("ticker", "?")
+            name = r.get("name", "")
+            trend = r.get("trend", "?")
+            ma_signal = r.get("ma_signal", "?")
+            vol_signal = r.get("vol_signal", "?")
+            score = r.get("score", 0)
+            stock_lines.append(
+                f"• {ticker} {name}：趋势={trend}  "
+                f"均线信号={ma_signal}  量能信号={vol_signal}  综合分={score:.1f}"
+            )
+        stock_text = "\n".join(stock_lines) or "（无数据）"
+        return (
+            f"以下是 {date_str} 股票的技术分析结果，请给出综合评估：\n\n"
+            f"{stock_text}\n\n"
+            "请按以下格式输出严格合法的 JSON（不要有任何额外文字）：\n"
+            "{\n"
+            '  "analysis_summary": "整体市场概况一句话总结",\n'
+            '  "top_picks": "推荐Top 3股票及简短理由，无则写"无明确推荐"",\n'
+            '  "risk_alerts": "需关注的主要风险，如无写无明显异常风险",\n'
+            '  "conclusion": "简要评价1-2句话"\n'
+            "}\n"
         )
-    stock_text = "\n".join(stock_lines) or "（无数据）"
 
-    prompt = (
-        f"以下是 {date_str} 白名单股票的技术分析结果，请给出综合评估：\n\n"
-        f"{stock_text}\n\n"
-        "请按以下格式输出严格合法的 JSON（不要有任何额外文字）：\n"
-        "{\n"
-        '  "analysis_summary": "整体市场概况一句话总结",\n'
-        '  "top_picks": "推荐Top 3股票及简短理由",\n'
-        '  "risk_alerts": "需关注的主要风险，如无写无明显异常风险",\n'
-        '  "conclusion": "简要评价1-2句话"\n'
-        "}\n"
-    )
-
-    try:
-        client = _get_llm_client()
-        if client is None:
-            return {
-                "analysis_summary": "LLM 不可用",
-                "top_picks": "无",
-                "risk_alerts": "无",
-                "conclusion": "无",
-            }
-
-        from openai import RateLimitError
-
+    def _call_one(prompt: str) -> dict | None:
         wait_for_rate_limit()
         for attempt in range(1, 4):
             try:
@@ -209,16 +244,13 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     max_tokens=800,
+                    timeout=60,
                 )
                 raw = (response.choices[0].message.content or "").strip()
                 result = _extract_json(raw)
                 if result:
-                    return {
-                        "analysis_summary": result.get("analysis_summary", ""),
-                        "top_picks": result.get("top_picks", ""),
-                        "risk_alerts": result.get("risk_alerts", ""),
-                        "conclusion": result.get("conclusion", ""),
-                    }
+                    return result
+                logger.warning(f"AI 核实 JSON 解析失败（attempt {attempt}），原始响应前200字: {raw[:200]}")
                 break
             except RateLimitError as e:
                 if attempt >= 3:
@@ -227,13 +259,51 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
                 wait = 2.0 * attempt
                 logger.warning(f"AI 核实触发限流，{wait:.0f}s 后重试 ({attempt}/3)...")
                 time.sleep(wait)
-    except Exception as e:
-        logger.warning(f"AI 核实调用失败: {e}")
+            except Exception as e:
+                logger.warning(f"AI 核实调用失败（attempt {attempt}）: {type(e).__name__}: {e}")
+        return None
+
+    # 分批调用并聚合
+    agg_summary: list[str] = []
+    agg_top_picks: list[str] = []
+    agg_risk_alerts: set[str] = set()
+    agg_conclusion: str = ""
+    failed_batches = 0
+
+    for i, batch in enumerate(batches):
+        logger.info(f"🤖 AI 核实 批次 {i + 1}/{len(batches)}（{len(batch)}只）...")
+        prompt = _build_prompt(batch)
+        result = _call_one(prompt)
+        if result:
+            s = result.get("analysis_summary", "")
+            if s and s not in ("无", "无数据"):
+                agg_summary.append(str(s))
+            t = result.get("top_picks", "")
+            if t and t != "无" and t != "无明确推荐":
+                agg_top_picks.append(str(t))
+            r = result.get("risk_alerts", "")
+            if r and r != "无" and r != "无明显异常风险":
+                agg_risk_alerts.add(str(r))
+            c = result.get("conclusion", "")
+            if c:
+                agg_conclusion = str(c)
+        else:
+            failed_batches += 1
+
+    if failed_batches == len(batches):
+        logger.warning("AI 核实全部批次失败")
+        return {
+            "analysis_summary": "AI 核实失败",
+            "top_picks": "无",
+            "risk_alerts": "无",
+            "conclusion": "无",
+        }
+
     return {
-        "analysis_summary": "AI 核实失败",
-        "top_picks": "无",
-        "risk_alerts": "无",
-        "conclusion": "无",
+        "analysis_summary": "；".join(agg_summary[:3]) if agg_summary else "AI 核实完成",
+        "top_picks": "；".join(agg_top_picks[:5]) if agg_top_picks else "无",
+        "risk_alerts": "；".join(sorted(agg_risk_alerts)) if agg_risk_alerts else "无明显异常风险",
+        "conclusion": agg_conclusion or "无",
     }
 
 
@@ -642,6 +712,9 @@ def _build_stock_card(r: dict[str, Any], date_str: str) -> str:
 def run_analysis(date: str, tickers_str: str) -> None:
     """执行白名单技术分析 + 逐只飞书推送 + AI核实 + 汇总推送。"""
     _load_env()
+
+    # 前置：检查缓存数据新鲜度
+    logger.info(f"[数据检查] {check_data_freshness(logger.info)}")
 
     # ── Step 1: 解析股票代码 ─────────────────────────────────────────────
     raw_codes = [c.strip() for c in tickers_str.split(",") if c.strip()]

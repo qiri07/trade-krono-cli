@@ -35,8 +35,8 @@ def _make_settings(**overrides) -> SimpleNamespace:
         kronos_top_p=0.9,
         kronos_use_sample_confidence=False,
         kronos_batch_size=8,
-        default_min_confidence=55.0,
-        default_allowed_signals=["BUY", "HOLD"],
+        default_min_confidence=30.0,
+        default_allowed_signals=["BUY", "OVERWEIGHT", "HOLD", "SELL"],
         # 新增股票过滤配置（默认空，不触发校验错误）
         filter_market_cap_range="",
         filter_industry_whitelist="",

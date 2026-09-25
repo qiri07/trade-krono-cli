@@ -1255,6 +1255,7 @@ def run_ai_verification(
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     max_tokens=1000,
+                    timeout=60,
                 )
                 break
             except RateLimitError as e:  # type: ignore[name-defined]
@@ -1266,7 +1267,13 @@ def run_ai_verification(
                 time.sleep(wait)
         raw = (response.choices[0].message.content or "").strip()  # type: ignore[assignment]
         json_str = _extract_json_from_response(raw)
-        analysis = json.loads(json_str)
+        try:
+            analysis = json.loads(json_str)
+        except json.JSONDecodeError:
+            logger.warning(f"AI 核实 JSON 解析失败，原始响应前300字: {raw[:300]}")
+            return AiVerificationResult.empty(
+                date_str, total_stocks, len(results_pass), len(results_fail)
+            )
     except Exception as e:
         logger.warning(f"AI 核实调用失败: {e}")
         return AiVerificationResult.empty(

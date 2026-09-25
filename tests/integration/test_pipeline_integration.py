@@ -157,7 +157,13 @@ class TestPipelineOrchestrator:
             mock_kr = MagicMock()
             mock_kr.predict_batch.return_value = []
 
-            pipeline = QuantPipeline(ta_runner=mock_ta, kronos_runner=mock_kr, no_cache=True)
+            pipeline = QuantPipeline(
+                ta_runner=mock_ta,
+                kronos_runner=mock_kr,
+                no_cache=True,
+                min_confidence=55.0,
+                allowed_signals=("BUY", "OVERWEIGHT", "HOLD"),
+            )
             merged = pipeline.run_parallel(
                 tickers=["600519", "000858", "600036"], date="2026-08-12"
             )

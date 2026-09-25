@@ -59,8 +59,8 @@ def sample_ta_results() -> list[StockAnalysisResult]:
 def sample_pipeline_config() -> SimpleNamespace:
     """创建示例 PipelineConfig。"""
     return SimpleNamespace(
-        min_confidence=55.0,
-        allowed_signals=("BUY", "HOLD"),
+        min_confidence=30.0,
+        allowed_signals=("BUY", "HOLD", "SELL"),
         market_cap_range=None,
         industry_whitelist=None,
         industry_blacklist=None,

@@ -133,7 +133,7 @@ class StockAnalysisResult:
             thesis=self.reasoning or "",
         )
 
-    def is_buy(self, min_confidence: float = 55.0) -> bool:
+    def is_buy(self, min_confidence: float = 30.0) -> bool:
         d = self.decision
         return (
             d.signal in (Signal.BUY, Signal.OVERWEIGHT)
@@ -387,6 +387,10 @@ class TradingAgentsRunner:
                 backend_url=self.backend_url,
                 checkpoint=self.checkpoint_enabled,
             )
+            # build_config() 从环境变量读取路径，覆盖以确保使用项目缓存目录
+            config["data_cache_dir"] = str(self._settings.cache_dir / "tradingagents")
+            config["results_dir"] = str(self._settings.results_dir)
+            config["memory_log_path"] = str(self._settings.memory_log_path)
 
             logger.info(f"🔍 TA 分析 {ticker} @ {date}")
             analysis_result = adapter.run_analysis(

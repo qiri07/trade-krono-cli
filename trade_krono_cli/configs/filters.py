@@ -13,8 +13,10 @@ if TYPE_CHECKING:
 class FilterConfig:
     """股票过滤参数。"""
 
-    min_confidence: float = 55.0
-    allowed_signals: tuple[str, ...] = field(default=("BUY", "OVERWEIGHT", "HOLD"))
+    min_confidence: float = 30.0
+    allowed_signals: tuple[str, ...] = field(
+        default=("BUY", "OVERWEIGHT", "HOLD", "SELL"),
+    )
 
     # ── 前置市场范围过滤（UniverseEngine）────────────────
     exclude_st: bool = True

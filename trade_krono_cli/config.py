@@ -91,12 +91,12 @@ class Settings:
 
     # ── 过滤配置 ──────────────────────────────────────────
     default_min_confidence: float = field(
-        default_factory=lambda: float(os.getenv("MIN_CONFIDENCE", "55.0")),
+        default_factory=lambda: float(os.getenv("MIN_CONFIDENCE", "30.0")),
     )
     default_allowed_signals: list[str] = field(
         default_factory=lambda: [
             s.strip().upper()
-            for s in os.getenv("ALLOWED_SIGNALS", "BUY,OVERWEIGHT,HOLD").split(",")
+            for s in os.getenv("ALLOWED_SIGNALS", "BUY,OVERWEIGHT,HOLD,SELL").split(",")
             if s.strip()
         ],
     )
@@ -212,9 +212,9 @@ class Settings:
     degrade_mode: str = field(default_factory=lambda: os.getenv("DEGRADE_MODE", "strict"))
     """降级策略：strict | ta_only_on_kronos_fail | ta_cache_fallback"""
     ta_cache_fallback_enabled: bool = field(
-        default_factory=lambda: os.getenv("TA_CACHE_FALLBACK_ENABLED", "false").lower() == "true",
+        default_factory=lambda: os.getenv("TA_CACHE_FALLBACK_ENABLED", "true").lower() == "true",
     )
-    """是否允许在 TA 失败时回退到最近一次缓存的 TA 结果（需显式开启）。"""
+    """是否允许在 TA 失败时回退到最近一次缓存的 TA 结果（默认开启）。"""
     ta_cache_max_age_days: int = field(
         default_factory=lambda: int(os.getenv("TA_CACHE_MAX_AGE_DAYS", "7")),
     )
