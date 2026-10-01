@@ -687,6 +687,11 @@ class StockMetrics:
     is_cyclic: bool = False  # 是否周期行业（豁免毛利率/ROE稳定性）
     data_notes: str = ""  # 数据缺失标记（"待核查" 而非直接排除）
     pe_percentile: float | None = None  # PE 历史分位（0~100，越小越低估）
+    eps_ttm: float | None = None  # EPS TTM（由价格/PE反推）
+    book_value_per_share: float | None = None  # 每股净资产（由价格/PB反推）
+    valuation_score: float | None = None  # 估值综合评分 0-100
+    buy_price_suggested: float | None = None  # 建议买入价
+    valuation_conclusion: str = ""  # 估值评估结论
 
 
 def screen_one(
@@ -978,7 +983,38 @@ def process_one_stock(s: dict, vals: dict, conn, cache: dict) -> StockMetrics:
         metrics.profitability_stability = evaluate_profitability_stability(roe_history)
         metrics.cash_quality_rating = evaluate_cash_quality(cfo_ratio_history)
 
+    # 估值评估（所有通过闸门的股票）
+    if not metrics.gate_fail and metrics.pe_ttm is not None and metrics.pe_ttm > 0:
+        # 当前价格需从外部传入，此处用 PE/PB 反推合理估值
+        # eps_ttm = current_price / pe_ttm（需要外部提供当前价）
+        # book_value_per_share = current_price / pb（需要外部提供当前价）
+        # 此处只做基本估值评分，买入价由调用方计算
+        try:
+            from scripts.valuation import calc_valuation_score
+
+            score, methods = calc_valuation_score(
+                pe_ttm=metrics.pe_ttm,
+                pb=metrics.pb,
+                pe_percentile=metrics.pe_percentile,
+                roe=metrics.roe,
+            )
+            metrics.valuation_score = score
+            metrics.valuation_conclusion = _build_valuation_conclusion(score, methods)
+        except Exception as e:
+            logger.debug(f"{thscode} 估值评估失败: {e}")
+
     return metrics
+
+
+def _build_valuation_conclusion(score: float, methods: list[str]) -> str:
+    """根据估值评分生成文字结论。"""
+    if score >= 70:
+        label = "🟢 低估值，具备安全边际"
+    elif score >= 50:
+        label = "🟡 合理估值，观望为主"
+    else:
+        label = "🔴 高估值，谨慎介入"
+    return f"{label}（评分{score:.0f}分，方法：{','.join(methods) if methods else 'PE/PB'}）"
 
 
 def run_screening(
@@ -1039,11 +1075,13 @@ def write_result_file(
         f.write(f"通过五闸门（①~⑤）的股票共 {len(results_pass)} 只\n\n")
         f.write(
             f"  {'代码':<8} {'名称':<10} {'PE_TTM':>7} {'PB':>6} {'ROE%':>7} "
-            f"{'毛利率%':>7} {'负债率%':>7} {'CAGR%':>7} {'PE分位%':>7}  {'稳定性':<6} {'现金流质量'} {'数据备注'}\n",
+            f"{'毛利率%':>7} {'负债率%':>7} {'CAGR%':>7} {'PE分位%':>7}  {'稳定性':<6} {'现金流质量'} "
+            f"{'估值评分':>6} {'建议买入价':>9}  {'数据备注'}\n",
         )
         f.write(
             f"  {'-' * 8} {'-' * 10} {'-' * 7} {'-' * 6} {'-' * 7} "
-            f"{'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7}  {'-' * 8} {'-' * 10} {'-' * 12}\n",
+            f"{'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7}  {'-' * 8} {'-' * 10} "
+            f"{'-' * 6} {'-' * 9}  {'-' * 12}\n",
         )
         for r in sorted(results_pass, key=lambda x: (x.pe_ttm or 999, -(x.roe or 0))):
             stability = r.profitability_stability or "-"
@@ -1051,10 +1089,12 @@ def write_result_file(
             margin = f"{r.gross_margin:.1f}" if r.gross_margin is not None else "N/A"
             notes = r.data_notes or "-"
             pe_pct = f"{r.pe_percentile:.1f}" if r.pe_percentile is not None else "N/A"
+            val_score = f"{r.valuation_score:.0f}" if r.valuation_score is not None else "N/A"
+            buy_price = f"{r.buy_price_suggested:.2f}" if r.buy_price_suggested is not None else "-"
             f.write(
                 f"  {r.ticker:<8} {r.name:<10} {r.pe_ttm:>7.1f} {r.pb:>6.2f} "
                 f"{r.roe:>7.1f} {margin:>7} {r.debt_ratio:>7.1f} {r.cagr_3y:>7.1f}"
-                f" {pe_pct:>7}  {stability:<6} {cash_qual} {notes}\n",
+                f" {pe_pct:>7}  {stability:<6} {cash_qual} {val_score:>6} {buy_price:>9}  {notes}\n",
             )
         f.write(f"\n失败分布（共 {len(results_fail)} 只）：\n")
         fail_gates: dict[str, int] = {}

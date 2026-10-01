@@ -15,6 +15,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +28,7 @@ from loguru import logger
 from scripts._utils import check_data_freshness
 from scripts.daily_analysis import _load_env, ai_verify, analyze_stock
 from scripts.feishu_core import load_config, send_notification
+from scripts.valuation import _safe_float, evaluate_valuation
 from trade_krono_cli.config import get_settings
 
 
@@ -89,29 +91,40 @@ def _is_st(name: str) -> bool:
     return any(kw in name for kw in _ST_KEYWORDS)
 
 
-def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, float]:
-    """批量获取股票的 PE_TTM（带并行请求，避免同花顺 API 限流）。
+def _ticker_to_thscode(ticker: str) -> str:
+    """将 sh.600887 / sz.000001 转换为同花顺 thscode 格式 (600887.SH / 000001.SZ)。"""
+    code = _strip_prefix(ticker)
+    if ticker.startswith("sh."):
+        return f"{code}.SH"
+    elif ticker.startswith("sz."):
+        return f"{code}.SZ"
+    return code
+
+
+def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, dict]:
+    """批量获取股票的 PE_TTM 和名称（通过同花顺 Fuyao API）。
 
     Parameters
     ----------
     tickers : list[str]
-        6 位纯数字股票代码列表
+        sh./sz. 前缀的股票代码列表
     batch_size : int
         每批数量，默认 50
 
     Returns
     -------
-    dict[str, float]
-        {ticker_code: pe_ttm}，获取失败的 code 不出现在结果中
+    dict[str, dict]
+        {ticker（6位代码）: {"pe": pe_ttm, "name": stock_name}}，
+        获取失败或 PE 缺失的 code 不出现在结果中
     """
     if not _FUYAO_API_KEY:
         logger.warning("FUYAO_API_KEY 未配置，跳过 PE 过滤")
         return {}
 
-    result: dict[str, float] = {}
+    result: dict[str, dict] = {}
     for i in range(0, len(tickers), batch_size):
-        batch = tickers[i : i + batch_size]
-        ths_param = ",".join(batch)
+        batch_tickers = tickers[i : i + batch_size]
+        ths_param = ",".join(_ticker_to_thscode(t) for t in batch_tickers)
         url = f"{_FUYAO_BASE}/api/a-share/valuations/snapshot?thscodes={ths_param}"
         cmd = [
             "curl",
@@ -139,31 +152,35 @@ def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, fl
             if data.get("code") != 0:
                 continue
             for item in data.get("data", {}).get("item", []):
-                code = _strip_prefix(item.get("thscode", ""))
-                pe = item.get("pe_ttm")
-                if pe is not None:
-                    try:
-                        pe_f = float(pe)
-                        if pe_f > 0:
-                            result[code] = pe_f
-                    except (TypeError, ValueError):
-                        pass
+                thscode = item.get("thscode", "")
+                # thscode 格式: 600887.SH → 取前6位作为 key
+                code_key = thscode.split(".")[0] if "." in thscode else thscode
+                pe_raw = item.get("pe_ttm")
+                name = item.get("name", "").strip()
+                if pe_raw is None:
+                    continue
+                try:
+                    pe_f = float(pe_raw)
+                    if pe_f > 0:
+                        result[code_key] = {"pe": pe_f, "name": name}
+                except (TypeError, ValueError):
+                    pass
         except Exception as e:
             logger.debug(f"PE 获取失败（批次 {i // batch_size + 1}）: {e}")
     return result
 
 
 def _filter_by_pe(
-    results: list[dict[str, Any]], pe_map: dict[str, float]
+    results: list[dict[str, Any]], pe_map: dict[str, dict]
 ) -> tuple[list[dict[str, Any]], int]:
-    """根据 PE 过滤结果，剔除亏损（PE<0）和 PE≥40 的股票。
+    """根据 PE 过滤结果，剔除亏损（PE<0）、PE≥40 及 PE 缺失的股票。
 
     Parameters
     ----------
     results : list[dict[str, Any]]
         扫描结果列表，每条含 'ticker' 字段
-    pe_map : dict[str, float]
-        {6位代码: pe_ttm}
+    pe_map : dict[str, dict]
+        {6位代码: {"pe": pe_ttm, "name": stock_name}}
 
     Returns
     -------
@@ -174,13 +191,70 @@ def _filter_by_pe(
     removed = 0
     for r in results:
         code = _strip_prefix(r.get("ticker", ""))
-        pe = pe_map.get(code)
-        if pe is not None and (pe < 0 or pe >= 40):
+        entry = pe_map.get(code)
+        if entry is None:
+            # PE 数据缺失，剔除
+            removed += 1
+            logger.debug(f"  剔除 {r.get('ticker')} PE=缺失")
+            continue
+        pe = entry["pe"]
+        if pe < 0 or pe >= 40:
             removed += 1
             logger.debug(f"  剔除 {r.get('ticker')} PE={pe:.1f}（{'亏损' if pe < 0 else '过高'}）")
             continue
+        # 填充股票名称（如果当前结果为空）
+        if not r.get("name"):
+            r["name"] = entry.get("name", "")
         filtered.append(r)
     return filtered, removed
+
+
+def _fetch_pe_percentiles(tickers: list[str], batch_size: int = 10) -> dict[str, float]:
+    """批量获取股票的 PE 历史分位（0-100）。
+
+    使用 akshare 的 stock_value_em 接口获取每只股票的历史 PE 序列并计算分位。
+
+    Parameters
+    ----------
+    tickers : list[str]
+        6位纯数字股票代码列表
+    batch_size : int
+        每批处理数量，默认 10
+
+    Returns
+    -------
+    dict[str, float]
+        {code: pe_percentile}，获取失败则不出现在结果中
+    """
+    try:
+        import akshare as _ak
+    except ImportError:
+        logger.warning("akshare 未安装，跳过 PE 历史分位获取")
+        return {}
+
+    result: dict[str, float] = {}
+    total = len(tickers)
+    for i in range(0, total, batch_size):
+        batch = tickers[i : i + batch_size]
+        logger.info(f"  PE分位批次 [{i+1}~{i+len(batch)}/{total}]...")
+        for code in batch:
+            try:
+                df = _ak.stock_value_em(symbol=code)
+                if df is None or len(df) == 0:
+                    continue
+                pe_col = "PE(TTM)"
+                pe_values = df[pe_col].dropna().astype(float)
+                pe_values = pe_values[pe_values > 0]
+                if len(pe_values) == 0:
+                    continue
+                current_pe = float(pe_values.iloc[-1])
+                count_below = int((pe_values < current_pe).sum())
+                percentile = round((count_below / len(pe_values)) * 100.0, 1)
+                result[code] = percentile
+            except Exception as e:
+                logger.debug(f"{code} PE分位获取失败: {e}")
+        time.sleep(0.5)  # 避免限流
+    return result
 
 
 def scan_multi_head_stocks(
@@ -252,8 +326,14 @@ def _build_summary_card(
     if buy_stocks:
         lines.append(f"🟢 **买入关注**（{len(buy_stocks)}只）")
         for r in buy_stocks[:10]:
+            val_extra = ""
+            if r.get("valuation_score") is not None:
+                v_emoji = "🟢" if r["valuation_score"] >= 70 else ("🟡" if r["valuation_score"] >= 50 else "🔴")
+                vp = r.get("buy_price_suggested")
+                vp_str = f" 建议买入价={vp:.2f}" if vp else ""
+                val_extra = f"  估值{v_emoji}{r['valuation_score']:.0f}分{vp_str}"
             lines.append(
-                f"  • {r['ticker']} {r['name']}: {r['score']}分 {r['trend']} {r['vol_signal']}"
+                f"  • {r['ticker']} {r['name']}: {r['score']}分 {r['trend']} {r['vol_signal']}{val_extra}"
             )
         lines.append("")
 
@@ -281,6 +361,14 @@ def _build_summary_card(
         sell_points = r.get("sell_points", [])
         if sell_points:
             lines.append(f"   卖点: {'、'.join(sell_points[:3])}")
+        # 估值信息
+        if r.get("valuation_score") is not None:
+            v_emoji = "🟢" if r["valuation_score"] >= 70 else ("🟡" if r["valuation_score"] >= 50 else "🔴")
+            lines.append(f"   估值{v_emoji} {r['valuation_score']:.0f}分  PE分位={r.get('pe_percentile', 'N/A')}")
+            if r.get("buy_price_suggested") is not None:
+                lines.append(f"   💡 建议买入价: {r['buy_price_suggested']:.2f}")
+            if r.get("valuation_conclusion"):
+                lines.append(f"   📝 {r['valuation_conclusion']}")
 
     # AI 核实摘要
     if ai_result:
@@ -327,14 +415,51 @@ def main() -> None:
     # 扫描多头排列股票
     results = scan_multi_head_stocks(tickers, max_workers=args.workers, top_n=args.top)
 
-    # PE 过滤：剔除亏损（PE<0）和 PE≥40 的股票
-    pe_map: dict[str, float] = {}
+    # PE 过滤：剔除亏损（PE<0）、PE≥40、PE 缺失的股票
+    pe_map: dict[str, dict] = {}
     if results:
-        pe_codes = [_strip_prefix(r["ticker"]) for r in results]
-        logger.info(f"📊 获取 {len(pe_codes)} 只股票的 PE 数据用于过滤...")
-        pe_map = _fetch_pe_snapshot(pe_codes)
+        pe_tickers = [r["ticker"] for r in results]
+        logger.info(f"📊 获取 {len(pe_tickers)} 只股票的 PE 数据用于过滤...")
+        pe_map = _fetch_pe_snapshot(pe_tickers)
+        logger.info(f"  PE API 返回 {len(pe_map)} 只有效数据")
         results, pe_removed = _filter_by_pe(results, pe_map)
-        logger.info(f"PE 过滤：剔除 {pe_removed} 只（亏损或 PE≥40），剩余 {len(results)} 只")
+        logger.info(f"PE 过滤：剔除 {pe_removed} 只（亏损/PE≥40/缺失），剩余 {len(results)} 只")
+
+    # 估值评估：为每只股票计算估值评分和建议买入价
+    if results:
+        logger.info("📊 启动估值评估...")
+        val_tickers = [_strip_prefix(r["ticker"]) for r in results]
+        # 批量获取 PE 分位（akshare）
+        pe_percentiles = _fetch_pe_percentiles(val_tickers)
+        for r in results:
+            code = _strip_prefix(r["ticker"])
+            price = r.get("close", 0)
+            pe = _safe_float(pe_map.get(code, {}).get("pe"))
+            try:
+                pe_pct = pe_percentiles.get(code)
+                # 反推 EPS 和每股净资产（PB 从估值快照中获取）
+                eps = price / pe if pe and pe > 0 else None
+                # PB 不在 pe_map 中，用默认值估算
+                val_result = evaluate_valuation(
+                    ticker=code,
+                    name=r.get("name", ""),
+                    current_price=price,
+                    pe_ttm=pe,
+                    pb=None,  # 暂不获取 PB，避免额外 API 调用
+                    roe=None,
+                    pe_percentile=pe_pct,
+                    eps_ttm=eps,
+                )
+                r["valuation_score"] = val_result.valuation_score
+                r["buy_price_suggested"] = val_result.combined_price
+                r["valuation_conclusion"] = val_result.conclusion
+                r["pe_percentile"] = pe_pct
+            except Exception as e:
+                logger.debug(f"{r['ticker']} 估值评估失败: {e}")
+                r["valuation_score"] = None
+                r["buy_price_suggested"] = None
+                r["valuation_conclusion"] = ""
+        logger.info(f"✅ 估值评估完成：{len(results)} 只股票")
 
     # AI 核实
     logger.info("🤖 启动 AI 核实...")

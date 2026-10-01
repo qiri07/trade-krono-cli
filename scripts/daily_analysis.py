@@ -30,6 +30,7 @@ from loguru import logger
 
 from scripts._utils import check_data_freshness
 from scripts.feishu_core import load_config, send_notification
+from scripts.valuation import _safe_float, evaluate_valuation
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands._core_helpers import _load_env
 from trade_krono_cli.config import get_settings  # type: ignore[import-not-found]
@@ -486,6 +487,55 @@ def analyze_stock(ticker: str, end_date: str | None = None) -> dict[str, Any]:
     }
 
 
+def _fetch_pe_data(ticker: str) -> dict[str, float | None]:
+    """从同花顺 API 获取单只股票的 PE_TTM 和 PB。
+
+    Parameters
+    ----------
+    ticker : str
+        股票代码（带交易所前缀，如 sh.600519）
+
+    Returns
+    -------
+    dict[str, float | None]
+        {"pe_ttm": float | None, "pb": float | None}
+    """
+    import subprocess
+
+    api_key = os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
+    if not api_key:
+        return {"pe_ttm": None, "pb": None}
+
+    code = ticker.split(".", 1)[1] if "." in ticker else ticker
+    prefix = "sh" if ticker.startswith("sh.") else "sz" if ticker.startswith("sz.") else "bj"
+    thscode = f"{code}.{prefix.upper()}"
+
+    try:
+        url = f"https://fuyao.aicubes.cn/api/a-share/valuations/snapshot?thscodes={thscode}"
+        cmd = [
+            "curl", "-s", "--max-time", "8", "-w", "\n%{http_code}",
+            url, "-H", f"X-api-key: {api_key}", "-A", "DailyAnalysis/1.0",
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        stdout = r.stdout.strip()
+        nl = stdout.rfind("\n")
+        if nl < 0:
+            return {"pe_ttm": None, "pb": None}
+        body, http_code = stdout[:nl], int(stdout[nl + 1:])
+        if http_code != 200:
+            return {"pe_ttm": None, "pb": None}
+        data = json.loads(body)
+        if data.get("code") != 0:
+            return {"pe_ttm": None, "pb": None}
+        item = data.get("data", {}).get("item", [{}])[0]
+        pe = _safe_float(item.get("pe_ttm"))
+        pb = _safe_float(item.get("pb_mrq"))
+        return {"pe_ttm": pe, "pb": pb}
+    except Exception as e:
+        logger.debug(f"{ticker} PE 获取失败: {e}")
+        return {"pe_ttm": None, "pb": None}
+
+
 def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any]:
     """基于已有 DataFrame 执行技术分析。"""
     if len(df) < 20:
@@ -507,6 +557,11 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
             "sell_points": [],
             "high_20": None,
             "low_20": None,
+            "pe_ttm": None,
+            "pb": None,
+            "valuation_score": None,
+            "buy_price_suggested": None,
+            "valuation_conclusion": "",
         }
 
     ts_col = "timestamps" if "timestamps" in df.columns else "date"
@@ -672,6 +727,54 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
 
     score = max(0, min(100, score))
 
+    # ── 估值评估 ────────────────────────────────────────────────────
+    pe_pb = _fetch_pe_data(ticker)
+    pe_ttm = pe_pb.get("pe_ttm")
+    pb = pe_pb.get("pb")
+    valuation_score: float | None = None
+    buy_price_suggested: float | None = None
+    valuation_conclusion = ""
+
+    if pe_ttm is not None and pe_ttm > 0 and _sig_price > 0:
+        try:
+            # 反推 EPS 和每股净资产
+            eps_ttm = _sig_price / pe_ttm if pe_ttm > 0 else None
+            bvps = _sig_price / pb if pb is not None and pb > 0 else None
+
+            # 获取 PE 历史分位（来自 akshare）
+            pe_percentile: float | None = None
+            try:
+                import akshare as _ak
+                thscode = ticker.replace("sh.", "").replace("sz.", "")
+                df_pe = _ak.stock_value_em(symbol=thscode)
+                if df_pe is not None and len(df_pe) > 0:
+                    pe_col = "PE(TTM)"
+                    pe_values = df_pe[pe_col].dropna().astype(float)
+                    pe_values = pe_values[pe_values > 0]
+                    if len(pe_values) > 0:
+                        current_pe = float(pe_values.iloc[-1])
+                        count_below = int((pe_values < current_pe).sum())
+                        pe_percentile = round((count_below / len(pe_values)) * 100.0, 1)
+            except Exception:
+                pass  # PE 分位获取失败不影响主流程
+
+            val_result = evaluate_valuation(
+                ticker=thscode,
+                name=_get_stock_name(ticker) or "",
+                current_price=_sig_price,
+                pe_ttm=pe_ttm,
+                pb=pb,
+                roe=None,  # 需从财务数据获取，暂不传入
+                pe_percentile=pe_percentile,
+                eps_ttm=eps_ttm,
+                book_value_per_share=bvps,
+            )
+            valuation_score = val_result.valuation_score
+            buy_price_suggested = val_result.combined_price
+            valuation_conclusion = val_result.conclusion
+        except Exception as e:
+            logger.debug(f"{ticker} 估值分析失败: {e}")
+
     return {
         "ticker": ticker,
         "name": _get_stock_name(ticker),
@@ -690,6 +793,12 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
         "sell_points": sell_points,
         "high_20": round(high_20, 2),
         "low_20": round(low_20, 2),
+        # ── 估值评估 ────────────────────────────────────────────────────
+        "pe_ttm": pe_ttm,
+        "pb": pb,
+        "valuation_score": valuation_score,
+        "buy_price_suggested": buy_price_suggested,
+        "valuation_conclusion": valuation_conclusion,
     }
 
 
@@ -707,6 +816,28 @@ def _build_stock_card(r: dict[str, Any], date_str: str) -> str:
     sell = "、".join(r.get("sell_points", [])) or "暂无"
     exrights_tag = " 📌除权日" if is_exrights else ""
     change_str = f"{r.get('change', 0):+.2f}%" if not is_exrights else "除权调整"
+
+    # ── 估值信息 ─────────────────────────────────────────────────────
+    val_score = r.get("valuation_score")
+    buy_price = r.get("buy_price_suggested")
+    pe_ttm = r.get("pe_ttm")
+    pb = r.get("pb")
+    valuation_conc = r.get("valuation_conclusion", "")
+
+    val_lines: list[str] = []
+    if pe_ttm is not None:
+        val_lines.append(f"PE_TTM={pe_ttm:.1f}")
+    if pb is not None:
+        val_lines.append(f"PB={pb:.2f}")
+    if val_score is not None:
+        v_emoji = "🟢" if val_score >= 70 else ("🟡" if val_score >= 50 else "🔴")
+        val_lines.append(f"估值分={v_emoji}{val_score:.0f}")
+    if buy_price is not None:
+        buy_tag = "↑" if buy_price > r.get("close", 0) else "↓"
+        val_lines.append(f"建议买入价={buy_price:.2f}{buy_tag}")
+    val_section = "\n".join(f"  {line}" for line in val_lines) if val_lines else ""
+    conc_section = f"\n  {valuation_conc}" if valuation_conc else ""
+
     return (
         f"**📊 {date_str} · {r['ticker']} {r['name']}{exrights_tag}**\n"
         f"{emoji} **综合分：{r['score']}**（{action}）\n"
@@ -716,6 +847,7 @@ def _build_stock_card(r: dict[str, Any], date_str: str) -> str:
         f"20日区间：{r.get('low_20', '?')} ~ {r.get('high_20', '?')}\n"
         f"🟢 买点信号：{buy}\n"
         f"🔴 卖点信号：{sell}"
+        + (f"\n{val_section}{conc_section}" if val_section else "")
     )
 
 
@@ -773,6 +905,11 @@ def run_analysis(date: str, tickers_str: str) -> None:
     hold_signals = [r for r in ok_results if 45 <= r["score"] < 65]
     sell_signals = [r for r in ok_results if r["score"] < 45]
 
+    # 估值统计
+    val_scores = [r["valuation_score"] for r in ok_results if r.get("valuation_score") is not None]
+    buy_price_count = sum(1 for r in ok_results if r.get("buy_price_suggested") is not None)
+    low_val_stocks = [r for r in ok_results if r.get("valuation_score") is not None and r["valuation_score"] >= 70]
+
     top3_sorted = sorted(ok_results, key=lambda x: x["score"], reverse=True)[:3]
     top3_str = (
         "  ".join(
@@ -787,13 +924,26 @@ def run_analysis(date: str, tickers_str: str) -> None:
         f"共 {len(ok_results)} 只有数据 · BUY {len(buy_signals)} 只 · HOLD {len(hold_signals)} 只 · SELL {len(sell_signals)} 只"
         f"{'，' + str(len(no_data_results)) + ' 只无数据' if no_data_results else ''}\n\n",
     ]
+    if val_scores:
+        avg_val = sum(val_scores) / len(val_scores)
+        summary_lines.append(
+            f"**📈 估值概览：** 平均估值分={avg_val:.0f}分，低估值股票（≥70分）{len(low_val_stocks)} 只，"
+            f"有建议买入价 {buy_price_count} 只\n\n"
+        )
     for r in sorted(ok_results, key=lambda x: x["score"], reverse=True):
         emoji = "🔴" if r["score"] >= 65 else ("🟡" if r["score"] >= 45 else "⚪")
         er_tag = " 📌除权日" if r.get("exrights", False) else ""
         change_str = f"{r['change']:+.2f}%" if not r.get("exrights") else "除权日"
+        # 估值附加信息
+        val_extra = ""
+        if r.get("valuation_score") is not None:
+            v_emoji = "🟢" if r["valuation_score"] >= 70 else ("🟡" if r["valuation_score"] >= 50 else "🔴")
+            vp = r.get("buy_price_suggested")
+            vp_str = f"  建议买入价={vp:.2f}" if vp else ""
+            val_extra = f"  估值{v_emoji}{r['valuation_score']:.0f}分{vp_str}"
         summary_lines.append(
             f"• {emoji} {r['ticker']} {r['name']}{er_tag}  分={r['score']}  趋势={r['trend']}  "
-            f"均线={r['ma_signal']}  量能={r['vol_signal']}  今日={change_str}"
+            f"均线={r['ma_signal']}  量能={r['vol_signal']}  今日={change_str}{val_extra}"
         )
     if no_data_results:
         summary_lines.append(f"\n⚠️ 无数据：{', '.join(r['ticker'] for r in no_data_results)}")
