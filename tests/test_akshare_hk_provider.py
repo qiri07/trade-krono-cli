@@ -47,7 +47,9 @@ class TestAkShareHKProvider:
 
     def test_import_error(self) -> None:
         """akshare 未安装时 _ensure_import 抛出 RuntimeError。"""
-        with patch.object(AkShareHKProvider, "_ensure_import", side_effect=RuntimeError("akshare 未安装")):
+        with patch.object(
+            AkShareHKProvider, "_ensure_import", side_effect=RuntimeError("akshare 未安装")
+        ):
             provider = AkShareHKProvider()
             result = provider.fetch_kline("hk.00700")
             assert result is None
@@ -71,7 +73,9 @@ class TestAkShareHKProvider:
 
         with patch.object(AkShareHKProvider, "_ak", mock_ak):
             provider = AkShareHKProvider()
-            result = provider.fetch_kline("hk.00700", start_date="2026-01-01", end_date="2026-10-03")
+            result = provider.fetch_kline(
+                "hk.00700", start_date="2026-01-01", end_date="2026-10-03"
+            )
 
         assert result is not None
         assert isinstance(result, KlineData)
@@ -89,7 +93,9 @@ class TestAkShareHKProvider:
             provider = AkShareHKProvider()
             # _fetch_via_sina_direct 也需要 _req，这里直接 mock
             with patch.object(AkShareHKProvider, "_fetch_via_sina_direct", return_value=None):
-                with patch.object(AkShareHKProvider, "_fetch_via_tencent_minute", return_value=None):
+                with patch.object(
+                    AkShareHKProvider, "_fetch_via_tencent_minute", return_value=None
+                ):
                     result = provider.fetch_kline("hk.00700")
                     assert result is None
 

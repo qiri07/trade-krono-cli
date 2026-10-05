@@ -89,7 +89,9 @@ class TestCalcDdmPrice:
 
     def test_growth_equals_return_returns_none(self) -> None:
         """增长率 ≥ 要求回报时模型不适用。"""
-        assert calc_ddm_price(dividend_per_share=1.0, required_return=0.05, growth_rate=0.05) is None
+        assert (
+            calc_ddm_price(dividend_per_share=1.0, required_return=0.05, growth_rate=0.05) is None
+        )
 
 
 class TestCalcValuationScore:

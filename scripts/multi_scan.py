@@ -236,7 +236,7 @@ def _fetch_pe_percentiles(tickers: list[str], batch_size: int = 10) -> dict[str,
     total = len(tickers)
     for i in range(0, total, batch_size):
         batch = tickers[i : i + batch_size]
-        logger.info(f"  PE分位批次 [{i+1}~{i+len(batch)}/{total}]...")
+        logger.info(f"  PE分位批次 [{i + 1}~{i + len(batch)}/{total}]...")
         for code in batch:
             try:
                 df = _ak.stock_value_em(symbol=code)
@@ -328,7 +328,11 @@ def _build_summary_card(
         for r in buy_stocks[:10]:
             val_extra = ""
             if r.get("valuation_score") is not None:
-                v_emoji = "🟢" if r["valuation_score"] >= 70 else ("🟡" if r["valuation_score"] >= 50 else "🔴")
+                v_emoji = (
+                    "🟢"
+                    if r["valuation_score"] >= 70
+                    else ("🟡" if r["valuation_score"] >= 50 else "🔴")
+                )
                 vp = r.get("buy_price_suggested")
                 vp_str = f" 建议买入价={vp:.2f}" if vp else ""
                 val_extra = f"  估值{v_emoji}{r['valuation_score']:.0f}分{vp_str}"
@@ -363,8 +367,14 @@ def _build_summary_card(
             lines.append(f"   卖点: {'、'.join(sell_points[:3])}")
         # 估值信息
         if r.get("valuation_score") is not None:
-            v_emoji = "🟢" if r["valuation_score"] >= 70 else ("🟡" if r["valuation_score"] >= 50 else "🔴")
-            lines.append(f"   估值{v_emoji} {r['valuation_score']:.0f}分  PE分位={r.get('pe_percentile', 'N/A')}")
+            v_emoji = (
+                "🟢"
+                if r["valuation_score"] >= 70
+                else ("🟡" if r["valuation_score"] >= 50 else "🔴")
+            )
+            lines.append(
+                f"   估值{v_emoji} {r['valuation_score']:.0f}分  PE分位={r.get('pe_percentile', 'N/A')}"
+            )
             if r.get("buy_price_suggested") is not None:
                 lines.append(f"   💡 建议买入价: {r['buy_price_suggested']:.2f}")
             if r.get("valuation_conclusion"):

@@ -365,7 +365,9 @@ def evaluate_valuation(
             result.methods_used.append("ddm")
 
     # 4. 综合建议买入价
-    prices = [p for p in [result.graham_price, result.pe_median_price, result.dcf_price] if p is not None]
+    prices = [
+        p for p in [result.graham_price, result.pe_median_price, result.dcf_price] if p is not None
+    ]
     if prices:
         # 取各方法的保守值（最低）作为建议买入价
         result.combined_price = round(min(prices), 2)

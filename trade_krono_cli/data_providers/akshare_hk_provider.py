@@ -150,7 +150,14 @@ class AkShareHKProvider(DataProvider):
                 # 生成当日日期（分钟线无日期字段，用当天）
                 dt = time.strftime("%Y-%m-%d", time.localtime(float(ts)))
                 rows.append(
-                    {"date": dt, "open": price, "high": price, "low": price, "close": price, "volume": vol}
+                    {
+                        "date": dt,
+                        "open": price,
+                        "high": price,
+                        "low": price,
+                        "close": price,
+                        "volume": vol,
+                    }
                 )
             if not rows:
                 return None

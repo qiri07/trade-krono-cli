@@ -510,7 +510,9 @@ def _fetch_pe_data(ticker: str) -> dict[str, float | None]:
     """
     import subprocess
 
-    api_key = os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
+    api_key = (
+        os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
+    )
     if not api_key:
         return {"pe_ttm": None, "pb": None}
 
@@ -524,15 +526,24 @@ def _fetch_pe_data(ticker: str) -> dict[str, float | None]:
     try:
         url = f"https://fuyao.aicubes.cn/api/a-share/valuations/snapshot?thscodes={thscode}"
         cmd = [
-            "curl", "-s", "--max-time", "8", "-w", "\n%{http_code}",
-            url, "-H", f"X-api-key: {api_key}", "-A", "DailyAnalysis/1.0",
+            "curl",
+            "-s",
+            "--max-time",
+            "8",
+            "-w",
+            "\n%{http_code}",
+            url,
+            "-H",
+            f"X-api-key: {api_key}",
+            "-A",
+            "DailyAnalysis/1.0",
         ]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         stdout = r.stdout.strip()
         nl = stdout.rfind("\n")
         if nl < 0:
             return {"pe_ttm": None, "pb": None}
-        body, http_code = stdout[:nl], int(stdout[nl + 1:])
+        body, http_code = stdout[:nl], int(stdout[nl + 1 :])
         if http_code != 200:
             return {"pe_ttm": None, "pb": None}
         data = json.loads(body)
@@ -756,6 +767,7 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
             pe_percentile: float | None = None
             try:
                 import akshare as _ak
+
                 thscode = ticker.replace("sh.", "").replace("sz.", "")
                 df_pe = _ak.stock_value_em(symbol=thscode)
                 if df_pe is not None and len(df_pe) > 0:
@@ -857,8 +869,7 @@ def _build_stock_card(r: dict[str, Any], date_str: str) -> str:
         f"MA5={r.get('ma5', '?')}　MA10={r.get('ma10', '?')}　MA20={r.get('ma20', '?')}\n"
         f"20日区间：{r.get('low_20', '?')} ~ {r.get('high_20', '?')}\n"
         f"🟢 买点信号：{buy}\n"
-        f"🔴 卖点信号：{sell}"
-        + (f"\n{val_section}{conc_section}" if val_section else "")
+        f"🔴 卖点信号：{sell}" + (f"\n{val_section}{conc_section}" if val_section else "")
     )
 
 
@@ -919,7 +930,9 @@ def run_analysis(date: str, tickers_str: str) -> None:
     # 估值统计
     val_scores = [r["valuation_score"] for r in ok_results if r.get("valuation_score") is not None]
     buy_price_count = sum(1 for r in ok_results if r.get("buy_price_suggested") is not None)
-    low_val_stocks = [r for r in ok_results if r.get("valuation_score") is not None and r["valuation_score"] >= 70]
+    low_val_stocks = [
+        r for r in ok_results if r.get("valuation_score") is not None and r["valuation_score"] >= 70
+    ]
 
     top3_sorted = sorted(ok_results, key=lambda x: x["score"], reverse=True)[:3]
     top3_str = (
@@ -948,7 +961,11 @@ def run_analysis(date: str, tickers_str: str) -> None:
         # 估值附加信息
         val_extra = ""
         if r.get("valuation_score") is not None:
-            v_emoji = "🟢" if r["valuation_score"] >= 70 else ("🟡" if r["valuation_score"] >= 50 else "🔴")
+            v_emoji = (
+                "🟢"
+                if r["valuation_score"] >= 70
+                else ("🟡" if r["valuation_score"] >= 50 else "🔴")
+            )
             vp = r.get("buy_price_suggested")
             vp_str = f"  建议买入价={vp:.2f}" if vp else ""
             val_extra = f"  估值{v_emoji}{r['valuation_score']:.0f}分{vp_str}"
