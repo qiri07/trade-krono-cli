@@ -98,6 +98,7 @@ class DataProviderFactory:
         优先使用自适应 benchmark 缓存结果（TTL 10 分钟）；
         未缓存或过期时回退到固定顺序。
         北交所（bj.）股票 baostock/mootdx 均不支持，强制优先使用 tonghuashun。
+        港股（hk.）股票由 akshare_hk 专属提供，akshare（A股）降级备用。
         """
         s = get_data_factory()
         base_chain = [s.primary] + [f for f in s.fallbacks if f != s.primary]
@@ -107,6 +108,12 @@ class DataProviderFactory:
             if "tonghuashun" in base_chain:
                 base_chain.remove("tonghuashun")
             base_chain.insert(0, "tonghuashun")
+
+        # 港股特殊处理：akshare_hk 置顶
+        if ticker.startswith("hk."):
+            if "akshare_hk" in base_chain:
+                base_chain.remove("akshare_hk")
+            base_chain.insert(0, "akshare_hk")
 
         # 尝试使用 cached benchmark 结果
         ticker_type = ticker.split(".", maxsplit=1)[0] if "." in ticker else ticker
@@ -441,6 +448,10 @@ class DataProviderFactory:
                 from trade_krono_cli.data_providers.tonghuashun_provider import TongHuaShunProvider
 
                 registry[name] = TongHuaShunProvider
+            elif name == "akshare_hk":
+                from trade_krono_cli.data_providers.akshare_hk_provider import AkShareHKProvider
+
+                registry[name] = AkShareHKProvider
             else:
                 logger.warning(f"未知的 Provider 名称: {name}")
                 return None

@@ -49,6 +49,13 @@ _STOCK_NAMES: dict[str, str] = {
     "601668": "中国建筑",
     "000932": "华菱钢铁",
     "601061": "中信金属",
+    # ── 港股（hk. 前缀，6 位代码）──────────────────────────────
+    "00700": "腾讯控股",
+    "09988": "阿里巴巴-W",
+    "00941": "中国移动",
+    "00390": "中国中铁",
+    "01448": "福寿园",
+    "09992": "泡泡玛特",
 }
 
 
@@ -69,7 +76,7 @@ def _get_whitelist() -> str:
         return settings.daily_analysis_whitelist.strip()
     except Exception:
         # 配置加载失败时回退到默认值
-        return "000001,002027,601668,000932,601061"
+        return "000001,002027,601668,000932,601061,hk.00700,hk.09988,hk.00941,hk.00390,hk.01448,hk.09992"
 
 
 _DYNAMIC_WHITELIST_PATH = Path("outputs/results/buffett_dynamic_whitelist.txt")
@@ -99,10 +106,11 @@ def _get_merged_whitelist() -> str:
         code = code.strip()
         if not code or code in seen:
             continue
-        # 剔除北交所股票
+        # 剔除北交所股票（BJ 后缀或 92 开头）
         if code.upper().endswith(".BJ") or code.startswith("92"):
             logger.debug(f"  跳过北交所股票: {code}")
             continue
+        # hk. 前缀的港股正常保留
         seen.add(code)
         merged.append(code)
     return ",".join(merged)
@@ -507,6 +515,9 @@ def _fetch_pe_data(ticker: str) -> dict[str, float | None]:
         return {"pe_ttm": None, "pb": None}
 
     code = ticker.split(".", 1)[1] if "." in ticker else ticker
+    # 港股（hk.）不使用同花顺 A 股估值 API
+    if ticker.startswith("hk."):
+        return {"pe_ttm": None, "pb": None}
     prefix = "sh" if ticker.startswith("sh.") else "sz" if ticker.startswith("sz.") else "bj"
     thscode = f"{code}.{prefix.upper()}"
 
