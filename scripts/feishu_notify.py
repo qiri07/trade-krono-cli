@@ -99,8 +99,7 @@ def main() -> None:
     )
     p_ci.add_argument("--run-url", required=True, help="GitHub Runs URL")
     p_ci.add_argument("--url", required=True, help="飞书 Webhook URL")
-
-    # daily 子命令
+    p_ci.add_argument("--secret", default="", help="加签密钥（留空则不加签）")
     p_daily = sub.add_parser("daily", help="每日投研分析结果通知")
     p_daily.add_argument("--status", required=True, choices=["success", "failure", "cancelled"])
     p_daily.add_argument("--date", required=True, help="分析日期 YYYY-MM-DD")
@@ -109,11 +108,13 @@ def main() -> None:
     p_daily.add_argument("--content", default="", help="分析摘要内容（可选，支持多行）")
     p_daily.add_argument("--run-url", required=True, help="GitHub Runs URL")
     p_daily.add_argument("--url", required=True, help="飞书 Webhook URL")
+    p_daily.add_argument("--secret", default="", help="加签密钥（留空则不加签）")
 
     # buffett 子命令
     p_buffett = sub.add_parser("buffett", help="巴菲特六闸门筛选结果通知")
     p_buffett.add_argument("--result-file", required=True, help="筛选结果文件路径")
     p_buffett.add_argument("--url", required=True, help="飞书 Webhook URL")
+    p_buffett.add_argument("--secret", default="", help="加签密钥（留空则不加签）")
 
     args = parser.parse_args()
 
@@ -134,7 +135,7 @@ def main() -> None:
     else:
         payload = {"msg_type": "text", "text": "未知模式"}
 
-    ok = send_feishu(args.url, payload)
+    ok = send_feishu(args.url, payload, secret=args.secret or None)
     sys.exit(0 if ok else 1)
 
 
