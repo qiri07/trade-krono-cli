@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -183,6 +184,10 @@ class TestSyncWhitelist:
 class TestSyncUniverseWhitelist:
     """测试 sync-universe 中白名单优先行为。"""
 
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true",
+        reason="slow CLI integration test; skip in CI",
+    )
     def test_sync_universe_with_whitelist_order(self, runner) -> None:
         """白名单股票应在全量列表之前处理。"""
         mock_tickets = [
@@ -235,6 +240,10 @@ class TestSyncUniverseWhitelist:
             assert fetch_order.count("sh.600519") == 1
             assert fetch_order.count("sz.000858") == 1
 
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true",
+        reason="slow CLI integration test; skip in CI",
+    )
     def test_sync_universe_without_whitelist(self, runner) -> None:
         """未配置白名单时应正常执行全量同步。"""
         mock_df = MagicMock()

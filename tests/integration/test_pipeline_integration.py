@@ -1,7 +1,10 @@
 """Pipeline 集成测试 — 验证 orchestrator 与 scorer/reporter 协作。"""
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestPipelineOrchestrator:
@@ -291,6 +294,10 @@ class TestReporter:
 class TestDataFetcher:
     """pipeline data_fetcher 测试。"""
 
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true",
+        reason="real network call; skip in CI",
+    )
     def test_fetch_stock_quote_returns_dict(self) -> None:
         from trade_krono_cli.pipeline.data_fetcher import fetch_stock_quote
 

@@ -303,6 +303,7 @@ class TestAiVerify:
             patch("scripts.daily_analysis._ai_available", return_value=True),
             patch("scripts.daily_analysis._get_llm_client", return_value=mock_client),
             patch("scripts.daily_analysis.os.getenv", return_value="10"),
+            patch("scripts.daily_analysis.wait_for_rate_limit"),
         ):  # batch_size=10
             result = ai_verify(results, "2026-09-15")
 
@@ -325,6 +326,7 @@ class TestAiVerify:
         with (
             patch("scripts.daily_analysis._ai_available", return_value=True),
             patch("scripts.daily_analysis._get_llm_client", return_value=mock_client),
+            patch("scripts.daily_analysis.wait_for_rate_limit"),
         ):
             result = ai_verify(results, "2026-09-15")
 
