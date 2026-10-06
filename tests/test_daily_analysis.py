@@ -242,7 +242,8 @@ class TestAiVerify:
                 "vol_signal": "放量🔥",
             }
         ]
-        result = ai_verify(results, "2026-09-15")
+        with patch("scripts.daily_analysis._ai_available", return_value=False):
+            result = ai_verify(results, "2026-09-15")
         assert "analysis_summary" in result
         assert "top_picks" in result
         assert "risk_alerts" in result
@@ -250,7 +251,8 @@ class TestAiVerify:
 
     def test_empty_results(self) -> None:
         """Empty stock list should not crash."""
-        result = ai_verify([], "2026-09-15")
+        with patch("scripts.daily_analysis._ai_available", return_value=False):
+            result = ai_verify([], "2026-09-15")
         assert isinstance(result, dict)
 
     def test_batch_processing_with_mock_client(self) -> None:
@@ -269,7 +271,10 @@ class TestAiVerify:
         mock_client.chat.completions.create.return_value = mock_response
 
         results = [{"ticker": f"sh.600{i:03d}", "score": 60} for i in range(5)]
-        with patch("scripts.daily_analysis._get_llm_client", return_value=mock_client):
+        with (
+            patch("scripts.daily_analysis._ai_available", return_value=True),
+            patch("scripts.daily_analysis._get_llm_client", return_value=mock_client),
+        ):
             result = ai_verify(results, "2026-09-15")
 
         assert result["analysis_summary"] == "OK"
@@ -294,9 +299,12 @@ class TestAiVerify:
         mock_client.chat.completions.create.return_value = mock_response
 
         results = [{"ticker": f"sh.600{i:03d}", "score": 60} for i in range(70)]
-        with patch("scripts.daily_analysis._get_llm_client", return_value=mock_client):
-            with patch("scripts.daily_analysis.os.getenv", return_value="10"):  # batch_size=10
-                result = ai_verify(results, "2026-09-15")
+        with (
+            patch("scripts.daily_analysis._ai_available", return_value=True),
+            patch("scripts.daily_analysis._get_llm_client", return_value=mock_client),
+            patch("scripts.daily_analysis.os.getenv", return_value="10"),
+        ):  # batch_size=10
+            result = ai_verify(results, "2026-09-15")
 
         assert (
             result["analysis_summary"] == "ok；ok；ok"
@@ -314,7 +322,10 @@ class TestAiVerify:
         mock_client.chat.completions.create.return_value = mock_response
 
         results = [{"ticker": "sh.600519", "score": 60}]
-        with patch("scripts.daily_analysis._get_llm_client", return_value=mock_client):
+        with (
+            patch("scripts.daily_analysis._ai_available", return_value=True),
+            patch("scripts.daily_analysis._get_llm_client", return_value=mock_client),
+        ):
             result = ai_verify(results, "2026-09-15")
 
         assert result["analysis_summary"] == "AI 核实失败"
