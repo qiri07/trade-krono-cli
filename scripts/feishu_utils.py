@@ -6,13 +6,18 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import os
 import re
 import ssl
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
+from urllib import parse as _urllib_parse
 from urllib import request as _urllib_request
 
 from loguru import logger
@@ -264,8 +269,39 @@ def build_buffett_card(result_file: str, ai_summary: str = "") -> dict:
     }
 
 
-def send_feishu(url: str, payload: dict) -> bool:
-    """发送飞书 Webhook 请求，返回是否成功。"""
+def send_feishu(url: str, payload: dict, secret: str | None = None) -> bool:
+    """发送飞书 Webhook 请求，返回是否成功。
+
+    Parameters
+    ----------
+    url : str
+        飞书机器人 Webhook URL
+    payload : dict
+        消息卡片字典
+    secret : str | None, optional
+        加签密钥。若提供，则自动计算 sign 参数并追加到 URL 中。
+
+    Returns
+    -------
+    bool
+        是否发送成功
+    """
+    # 加签：timestamp + sign 追加为 URL query 参数
+    if secret:
+        ts = int(time.time())
+        string_to_sign = f"{ts}\n{secret}"
+        sign = base64.b64encode(
+            hmac.new(secret.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha256).digest()
+        ).decode("utf-8")
+        parsed = _urllib_parse.urlparse(url)
+        query = _urllib_parse.parse_qs(parsed.query, keep_blank_values=True)
+        query["timestamp"] = [str(ts)]
+        query["sign"] = [sign]
+        url = _urllib_parse.urlunparse(
+            (parsed.scheme, parsed.netloc, parsed.path, parsed.params,
+             _urllib_parse.urlencode(query, doseq=True), parsed.fragment)
+        )
+
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = _urllib_request.Request(
         url,
