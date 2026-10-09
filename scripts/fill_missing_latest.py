@@ -21,7 +21,7 @@ from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
 FETCH_START = "2026-09-01"
-FETCH_END = "2026-09-14"
+FETCH_END = "2026-10-07"
 WORKERS = 10
 BATCH_SIZE = 50
 FETCH_TIMEOUT = 25

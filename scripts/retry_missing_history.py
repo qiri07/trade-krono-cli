@@ -39,11 +39,7 @@ def get_incomplete_tickers() -> list[str]:
     cur.execute(
         """
         SELECT DISTINCT k.ticker FROM kline_cache k
-        WHERE k.ticker NOT LIKE 'bj.%'
-          AND NOT EXISTS (
-              SELECT 1 FROM kline_cache k2
-              WHERE k2.ticker = k.ticker AND k2.start >= ?
-          )
+        WHERE k.end < ?
         ORDER BY k.ticker
         """,
         (END_DATE,),
@@ -54,12 +50,22 @@ def get_incomplete_tickers() -> list[str]:
 
 
 def get_provider_chain(ticker: str) -> list[str]:
-    """根据股票类型返回 provider 优先级链。"""
+    """根据股票类型返回 provider 优先级链（与 factory 一致）。"""
+    from trade_krono_cli.data_providers.factory import get_data_factory
+
+    s = get_data_factory()
+    base_chain = [s.primary] + [f for f in s.fallbacks if f != s.primary]
+
     if ticker.startswith("bj."):
-        return ["tonghuashun"]
-    elif ticker.startswith("sh.") or ticker.startswith("sz."):
-        return ["tonghuashun", "baostock"]
-    return ["baostock", "tonghuashun"]
+        if "tonghuashun" in base_chain:
+            base_chain.remove("tonghuashun")
+        base_chain.insert(0, "tonghuashun")
+    elif ticker.startswith("hk."):
+        if "akshare_hk" in base_chain:
+            base_chain.remove("akshare_hk")
+        base_chain.insert(0, "akshare_hk")
+
+    return base_chain
 
 
 def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[str, int, str]:

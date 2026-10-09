@@ -24,7 +24,7 @@ from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
 START_DATE = "2020-01-01"
-END_DATE = "2026-09-10"
+END_DATE = "2026-10-07"
 BATCH_SIZE = 100
 WORKERS = 16
 FETCH_TIMEOUT = 20
@@ -69,14 +69,21 @@ def _fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[
                             existing_df = pd.read_pickle(BytesIO(row[0]))
                         except Exception:
                             existing_df = pd.DataFrame()
-                        # 只取早于现有数据的部分（补齐历史）
+                        # 增量合并：保留现有数据 + 补充新数据（比现有最大日期更新的行）
                         cutoff = pd.Timestamp(
-                            existing_df["timestamps"].min() if not existing_df.empty else ts.min()
+                            existing_df["timestamps"].max() if not existing_df.empty else ts.min()
                         )
+                        new_rows = df[ts >= cutoff]
+                        # 去除与新数据重叠的部分（保留新数据优先）
                         old_rows = df[ts < cutoff]
-                        if len(old_rows) > 0:
-                            combined = pd.concat([old_rows, existing_df], ignore_index=True)
+                        if len(new_rows) > 0:
+                            combined = pd.concat([old_rows, new_rows], ignore_index=True)
                             combined = combined.sort_values("timestamps").reset_index(drop=True)
+                            new_start = combined["timestamps"].min().strftime("%Y-%m-%d")
+                            new_end = combined["timestamps"].max().strftime("%Y-%m-%d")
+                            new_len = len(combined)
+                        elif len(old_rows) > 0:
+                            combined = old_rows
                             new_start = combined["timestamps"].min().strftime("%Y-%m-%d")
                             new_end = combined["timestamps"].max().strftime("%Y-%m-%d")
                             new_len = len(combined)
