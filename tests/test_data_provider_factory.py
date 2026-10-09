@@ -84,7 +84,12 @@ class TestDataProviderFactory:
 
         ts_provider = TushareProvider()
 
-        with patch.object(factory, "get_provider", side_effect=[None, ts_provider]):
+        def mock_get_provider(name):
+            if name == "mootdx":
+                return None
+            return ts_provider
+
+        with patch.object(factory, "get_provider", side_effect=mock_get_provider):
             with patch.object(ts_provider, "fetch_metadata", return_value=mock_meta):
                 with patch.object(ts_provider, "health_check", return_value=True):
                     result = factory.fetch_metadata("sh.600519")

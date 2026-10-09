@@ -36,7 +36,7 @@ class TestAkShareHKProvider:
         assert p.name == "akshare_hk"
         assert p.supports_kline is True
         assert p.supports_quote is True
-        assert p.supports_metadata is False
+        assert p.supports_metadata is True
 
     def test_unsupported_frequency(self) -> None:
         """不支持的频率返回 None。"""
@@ -112,9 +112,11 @@ class TestAkShareHKProvider:
         assert result is None
 
     def test_fetch_metadata_returns_none(self) -> None:
-        """fetch_metadata 始终返回 None。"""
+        """fetch_metadata 返回 None 当 API 调用失败时。"""
         p = AkShareHKProvider()
-        assert p.fetch_metadata("hk.00700") is None
+        with patch("trade_krono_cli.data_providers.akshare_hk_provider.requests.get") as mock_get:
+            mock_get.side_effect = Exception("network error")
+            assert p.fetch_metadata("hk.00700") is None
 
     @patch.object(AkShareHKProvider, "_ensure_import")
     def test_health_check_main_source_ok(self, mock_ensure: MagicMock) -> None:

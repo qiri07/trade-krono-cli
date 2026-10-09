@@ -15,6 +15,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import requests
 from loguru import logger
 
 from trade_krono_cli.data_providers.base import (
@@ -23,7 +24,7 @@ from trade_krono_cli.data_providers.base import (
     RealtimeQuote,
     StockMetadata,
 )
-from trade_krono_cli.utils import pd_to_datetime_safe
+from trade_krono_cli.utils import pd_to_datetime_safe, safe_float
 
 if TYPE_CHECKING:
     pass
@@ -35,7 +36,7 @@ class AkShareHKProvider(DataProvider):
     name = "akshare_hk"
     supports_kline = True
     supports_quote = True
-    supports_metadata = False
+    supports_metadata = True
 
     # ── 懒加载 ────────────────────────────────────────────────
 
@@ -271,8 +272,35 @@ class AkShareHKProvider(DataProvider):
             return None
 
     def fetch_metadata(self, ticker: str) -> "StockMetadata | None":
-        """港股 Provider 不提供元数据。"""
-        return None
+        """获取港股元数据（PE/PB via 腾讯行情接口）。
+
+        腾讯港股 API 字段偏移与 A 股不同：
+          - 指数 39 → PE_TTM（与 A 股相同）
+          - 指数 58 → PB（A 股为 46，港股需偏移）
+        """
+        try:
+            code = ticker.replace("hk.", "")
+            url = f"https://qt.gtimg.cn/q=hk{code}"
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            parts = resp.text.strip().split("~")
+            if len(parts) > 58:
+                pe_ttm = safe_float(parts[39])     # 市盈率
+                pb = safe_float(parts[58])          # 市净率（港股偏移不同）
+                return StockMetadata(
+                    ticker=ticker,
+                    industry=None,
+                    pe_ttm=pe_ttm,
+                    pb=pb,
+                    ipo_date=None,
+                    out_date=None,
+                    is_st=False,
+                    source=self.name,
+                )
+            return None
+        except Exception as e:
+            logger.debug(f"{self.name} 港股元数据拉取异常 {ticker}: {str(e)[:100]}")
+            return None
 
     def health_check(self) -> bool:
         """检查港股数据源是否可用（依次尝试各源）。"""

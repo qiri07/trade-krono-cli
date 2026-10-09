@@ -18,6 +18,7 @@ import os
 from datetime import datetime
 from typing import Any
 
+import pandas as pd  # for pd.notna check in akshare fallback
 import requests
 from loguru import logger
 
@@ -232,8 +233,12 @@ class TongHuaShunProvider(DataProvider):
             return None
 
     def fetch_metadata(self, ticker: str) -> StockMetadata | None:
-        """获取股票基础元数据（名称、交易所）。
-        PE/PB/行业 等字段同花顺 API 不在此端点提供，返回 None。
+        """获取股票基础元数据（名称、交易所、IPO 日期、PE/PB/行业）。
+
+        策略：
+          1. 同花顺 search 接口 → IPO 日期
+          2. 同花顺财务指标接口 → 盈利能力指标（ROE/毛利率等）
+          3. akshare 实时行情 → PE_TTM / PB / 行业（降级备用）
 
         Parameters
         ----------
@@ -243,7 +248,6 @@ class TongHuaShunProvider(DataProvider):
         Returns
         -------
         StockMetadata | None
-
         """
         try:
             self._ensure_init()
@@ -251,19 +255,58 @@ class TongHuaShunProvider(DataProvider):
             if not thscode:
                 return None
 
+            # ── Step 1: 同花顺 search → IPO 日期 ──────────────────
+            ipo_date: str | None = None
             params = {"q": ticker.rsplit(".", maxsplit=1)[-1], "limit": 1}
             data = self._get("/api/meta/tickers/search", params)
-            if data is None:
-                return None
+            if data is not None:
+                items = data.get("item", [])
+                if items:
+                    ipo_date = items[0].get("list_date") or None
 
-            items = data.get("item", [])
-            if not items:
-                return None
+            # ── Step 2: 同花顺财务指标 → 仅用于校验，不映射 PE/PB ──────
+            # （财务指标接口返回 ROE/毛利率等，不含 PE_TTM / PB）
+
+            # ── Step 3: 腾讯财经接口 → PE_TTM / PB（A 股实时行情）────────
+            pe_ttm: float | None = None
+            pb: float | None = None
+            industry: str | None = None
+            try:
+                thscode_part = thscode.split(".")[0]  # "600519.SH" → "600519"
+                prefix = "sh" if thscode.endswith(".SH") else "sz"
+                tencent_code = f"{prefix}{thscode_part}"
+                url = f"https://qt.gtimg.cn/q={tencent_code}"
+                resp = requests.get(url, timeout=10)
+                resp.raise_for_status()
+                # 格式: v_sh600519="51~贵州茅台~600519~1258.00~...~39~19.32~46~6.26~29~~"
+                parts = resp.text.strip().split("~")
+                if len(parts) > 46:
+                    pe_ttm = safe_float(parts[39])  # 市盈率-动态
+                    pb = safe_float(parts[46])      # 市净率
+                    industry_raw = parts[29]        # 行业（可能为空）
+                    industry = industry_raw.strip() if industry_raw else None
+            except Exception:
+                pass
+
+            # ── Step 4: akshare 降级 → 行业补充（腾讯不提供行业时）──────
+            if not industry:
+                try:
+                    import akshare as ak  # type: ignore
+
+                    df = ak.stock_zh_a_spot_em()
+                    row = df[df["代码"] == thscode_part]
+                    if not row.empty:
+                        ind = row.iloc[0].get("行业")
+                        industry = str(ind) if pd.notna(ind) else None
+                except (ImportError, Exception):
+                    pass
 
             return StockMetadata(
                 ticker=ticker,
-                industry=None,  # ths search 不提供行业
-                ipo_date=None,
+                industry=industry,
+                pe_ttm=pe_ttm,
+                pb=pb,
+                ipo_date=ipo_date,
                 out_date=None,
                 is_st=False,
                 source=self.name,

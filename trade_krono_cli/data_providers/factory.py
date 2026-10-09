@@ -19,18 +19,18 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from trade_krono_cli.config import get_settings
+from trade_krono_cli.data_providers.base import StockMetadata
 
 if TYPE_CHECKING:
     from trade_krono_cli.data_providers.base import (
         DataProvider,
         KlineData,
         RealtimeQuote,
-        StockMetadata,
     )
 
 # 向后兼容：_BenchResult 供测试直接 import
@@ -246,7 +246,10 @@ class DataProviderFactory:
         return None
 
     def fetch_metadata(self, ticker: str) -> StockMetadata | None:
-        """获取股票元数据，按优先级尝试各 Provider。
+        """获取股票元数据，按优先级尝试各 Provider 并合并结果。
+
+        策略：遍历所有 provider，收集各自非空字段，最终合并为一条完整元数据。
+        同花顺提供 PE/PB/行业，baostock 提供 IPO 日期，互补无冲突。
 
         Returns
         -------
@@ -254,6 +257,8 @@ class DataProviderFactory:
 
         """
         chain = self._provider_chain_for_ticker(ticker)
+        merged: dict[str, Any] = {"ticker": ticker}
+        found_any = False
         for name in chain:
             provider = self.get_provider(name)
             if provider is None:
@@ -264,13 +269,31 @@ class DataProviderFactory:
                 continue
             try:
                 meta = provider.fetch_metadata(ticker)
-                if meta is not None:
-                    logger.debug(f"✅ 元数据获取成功: {ticker} ← {name}")
-                    return meta
+                if meta is None:
+                    continue
+                found_any = True
+                logger.debug(f"✅ 元数据获取成功: {ticker} ← {name}")
+                # 合并非空字段（后面的 provider 覆盖前面的同名字段）
+                if meta.pe_ttm is not None:
+                    merged["pe_ttm"] = meta.pe_ttm
+                if meta.pb is not None:
+                    merged["pb"] = meta.pb
+                if meta.industry is not None:
+                    merged["industry"] = meta.industry
+                if meta.ipo_date is not None and merged.get("ipo_date") is None:
+                    merged["ipo_date"] = meta.ipo_date
+                if meta.out_date is not None and merged.get("out_date") is None:
+                    merged["out_date"] = meta.out_date
+                if meta.is_st and not merged.get("is_st"):
+                    merged["is_st"] = meta.is_st
+                if meta.source is not None and (meta.pe_ttm is not None or meta.pb is not None):
+                    merged["source"] = meta.source
             except Exception as e:
                 logger.warning(f"{name} 元数据拉取异常 {ticker}: {str(e)[:100]}")
                 continue
-        return None
+        if not found_any:
+            return None
+        return StockMetadata(**merged)
 
     def fetch_merged(
         self,
