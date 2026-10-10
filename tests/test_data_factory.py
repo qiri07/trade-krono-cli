@@ -94,7 +94,9 @@ class TestGetProvider:
         bad_cls = MagicMock(side_effect=ImportError("no module"))
         bad_cls.__name__ = "BadProvider"
 
-        with patch.object(factory := DataProviderFactory(), "_get_provider_class", return_value=bad_cls):
+        with patch.object(
+            factory := DataProviderFactory(), "_get_provider_class", return_value=bad_cls
+        ):
             result = factory.get_provider("bad")
         assert result is None
 
@@ -115,7 +117,9 @@ class TestGetProviders:
         """过滤掉返回 None 的 provider。"""
         factory = DataProviderFactory()
         good = MagicMock()
-        with patch.object(factory, "get_provider", side_effect=lambda n: good if n == "baostock" else None):
+        with patch.object(
+            factory, "get_provider", side_effect=lambda n: good if n == "baostock" else None
+        ):
             result = factory.get_providers(["baostock", "fake"])
         assert len(result) == 1
         assert result[0] is good
@@ -137,7 +141,9 @@ class TestFetchKlineFallback:
 
         # patch get_provider 和 chain 解析
         with (
-            patch.object(factory, "get_provider", side_effect=lambda n: mock_p1 if n == "p1" else None),
+            patch.object(
+                factory, "get_provider", side_effect=lambda n: mock_p1 if n == "p1" else None
+            ),
             patch.object(
                 DataProviderFactory,
                 "_provider_chain_for_ticker",

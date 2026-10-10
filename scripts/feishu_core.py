@@ -211,5 +211,7 @@ def send_notification(
         logger.error(f"❌ 未知飞书通知模式: {mode}")
         return False
 
-    secret = config.get("webhook_secret") or config.get("channels", {}).get(channel, {}).get("webhook_secret")
+    secret = config.get("webhook_secret") or config.get("channels", {}).get(channel, {}).get(
+        "webhook_secret"
+    )
     return send_feishu(url, payload, secret=secret)

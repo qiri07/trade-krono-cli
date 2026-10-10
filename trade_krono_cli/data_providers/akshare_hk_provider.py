@@ -285,8 +285,8 @@ class AkShareHKProvider(DataProvider):
             resp.raise_for_status()
             parts = resp.text.strip().split("~")
             if len(parts) > 58:
-                pe_ttm = safe_float(parts[39])     # 市盈率
-                pb = safe_float(parts[58])          # 市净率（港股偏移不同）
+                pe_ttm = safe_float(parts[39])  # 市盈率
+                pb = safe_float(parts[58])  # 市净率（港股偏移不同）
                 return StockMetadata(
                     ticker=ticker,
                     industry=None,

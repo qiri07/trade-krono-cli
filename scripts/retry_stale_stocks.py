@@ -52,8 +52,11 @@ def fetch_and_merge(factory, ticker: str) -> tuple[str, bool, str]:
             continue
         try:
             result = provider.fetch_kline(
-                ticker, TARGET_DATE, TARGET_DATE,
-                frequency="d", adjustflag="1",
+                ticker,
+                TARGET_DATE,
+                TARGET_DATE,
+                frequency="d",
+                adjustflag="1",
             )
             if result is None or result.is_empty:
                 continue

@@ -88,14 +88,14 @@ class TestAnnualized:
         returns = [-2.0] * 100 + [0.1] * 400
         daily = historical_var(returns, confidence=0.95)
         annual = var_annualized(returns, confidence=0.95)
-        expected = daily * (252 ** 0.5)
+        expected = daily * (252**0.5)
         assert abs(annual - expected) < 0.01
 
     def test_cvar_annualized_scaling(self) -> None:
         returns = [-3.0] * 100 + [0.1] * 400
         daily = conditional_var(returns, confidence=0.95)
         annual = cvar_annualized(returns, confidence=0.95)
-        expected = daily * (252 ** 0.5)
+        expected = daily * (252**0.5)
         assert abs(annual - expected) < 0.01
 
 
@@ -179,17 +179,17 @@ class TestExpectedReturnAdjustment:
     def test_high_risk_returns_negative_adjustment(self) -> None:
         """高风险组合 → 负调整（预期收益降低）。"""
         metrics = {
-            "var_95": -5.0,       # 日 VaR 5%
-            "cvar_95": -7.0,      # CVaR 7%
-            "beta": 1.5,          # 高 Beta
+            "var_95": -5.0,  # 日 VaR 5%
+            "cvar_95": -7.0,  # CVaR 7%
+            "beta": 1.5,  # 高 Beta
             "annualized_vol": 40.0,  # 高波动
-            "max_drawdown": -30.0,   # 大回撤
+            "max_drawdown": -30.0,  # 大回撤
             "liquidity_score": 20.0,  # 低流动性
-            "gap_risk": 40.0,       # 高风险缺口
-            "event_risk": 30.0,     # 高风险事件
+            "gap_risk": 40.0,  # 高风险缺口
+            "event_risk": 30.0,  # 高风险事件
             "valuation_risk": 50.0,  # 高估值风险
-            "concentration": 60.0,   # 高集中度
-            "market_regime": 40.0,   # 高风险市场
+            "concentration": 60.0,  # 高集中度
+            "market_regime": 40.0,  # 高风险市场
         }
         result = expected_return_adjustment(metrics)
         assert result < 0

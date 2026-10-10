@@ -223,9 +223,7 @@ def _resample_close(df: pd.DataFrame, freq: str) -> pd.Series:
     return close.reset_index(drop=True)
 
 
-def _compute_macd_for_ticker(
-    ticker: str, db_path: Path
-) -> dict[str, Any] | None:
+def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | None:
     """计算单只股票的日/周/月 MACD，返回共振结果或 None。
 
     Returns
@@ -345,9 +343,7 @@ def _compute_macd_for_ticker(
     }
 
 
-def _build_summary_card(
-    results: list[dict[str, Any]], date: str, ai_result: dict[str, str]
-) -> str:
+def _build_summary_card(results: list[dict[str, Any]], date: str, ai_result: dict[str, str]) -> str:
     """构建飞书推送摘要卡片。"""
     total = len(results)
     lines = [f"📊 **三周期 MACD 共振筛选 {date}**", f"共振股票：**{total} 只**", ""]
@@ -359,7 +355,9 @@ def _build_summary_card(
     if sorted_results:
         lines.append("### 🏆 TOP 10 推荐")
         lines.append("| 排名 | 代码 | 名称 | 收盘 | 涨跌% | 日MACD | 周MACD | 月MACD | PE | 评分 |")
-        lines.append("|:----:|------|------|-----:|------:|-------:|-------:|-------:|-----:|-----:|")
+        lines.append(
+            "|:----:|------|------|-----:|------:|-------:|-------:|-------:|-----:|-----:|"
+        )
         for i, r in enumerate(sorted_results[:10], 1):
             name = r.get("name", "?")
             pe = r.get("pe", None)
@@ -429,9 +427,13 @@ def _run_scan(
                 elapsed = time.time() - start_time
                 rate = completed / elapsed if elapsed > 0 else 0
                 eta = (total - completed) / rate / 60 if rate > 0 else 0
-                logger.info(f"  进度: {completed}/{total} ({completed*100//total}%), 已找到 {len(results)} 只共振, 预计剩余 {eta:.1f} 分钟")
+                logger.info(
+                    f"  进度: {completed}/{total} ({completed * 100 // total}%), 已找到 {len(results)} 只共振, 预计剩余 {eta:.1f} 分钟"
+                )
 
-    logger.info(f"步骤 1/3：扫描完成（{time.time()-start_time:.1f}s），共振股票 {len(results)} 只")
+    logger.info(
+        f"步骤 1/3：扫描完成（{time.time() - start_time:.1f}s），共振股票 {len(results)} 只"
+    )
     return results
 
 
@@ -445,6 +447,7 @@ def main() -> None:
     _load_env = None
     try:
         from scripts.daily_analysis import _load_env as _le
+
         _load_env = _le
     except Exception:
         pass
@@ -532,7 +535,9 @@ def main() -> None:
         try:
             ai_result = ai_verify(results[:30], date_str)
             ai_file = _RESULTS_DIR / f"macd_resonance_{date_str}_ai.json"
-            ai_file.write_text(json.dumps(ai_result, ensure_ascii=False, indent=2), encoding="utf-8")
+            ai_file.write_text(
+                json.dumps(ai_result, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
             summary_text = ai_result.get("analysis_summary", "")
             if not summary_text or summary_text.startswith("LLM"):
                 ai_result = {}

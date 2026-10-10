@@ -66,7 +66,13 @@ class KlineCache:
                     )
             try:
                 dfs.append(pd.read_pickle(BytesIO(data)))
-            except (ModuleNotFoundError, AttributeError, TypeError, OSError, pickle.UnpicklingError):
+            except (
+                ModuleNotFoundError,
+                AttributeError,
+                TypeError,
+                OSError,
+                pickle.UnpicklingError,
+            ):
                 # pickle.loads 作为回退：仅在数据为合法 pickle 字节时执行
                 if isinstance(data, (bytes, bytearray)) and len(data) > 4:
                     # 旧格式无 hash，允许降级读取但记录警告

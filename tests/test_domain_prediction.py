@@ -113,7 +113,9 @@ class TestPredictionDistribution:
 
 class TestTAAnalysis:
     def test_minimal(self) -> None:
-        a = TAAnalysis(ticker="sh.600519", eval_date="2026-10-09", signal=Signal.BUY, confidence=80.0)
+        a = TAAnalysis(
+            ticker="sh.600519", eval_date="2026-10-09", signal=Signal.BUY, confidence=80.0
+        )
         assert a.ticker == "sh.600519"
         assert a.error is None
 
@@ -136,13 +138,23 @@ class TestTAAnalysis:
 
     def test_from_dict_with_signal_string(self) -> None:
         """从 dict 构造时，字符串信号正确解析为 Signal 枚举。"""
-        data = {"ticker": "sh.600519", "eval_date": "2026-10-09", "signal": "BUY", "confidence": 75.0}
+        data = {
+            "ticker": "sh.600519",
+            "eval_date": "2026-10-09",
+            "signal": "BUY",
+            "confidence": 75.0,
+        }
         a = TAAnalysis.from_dict(data)
         assert a.signal == Signal.BUY
 
     def test_from_dict_invalid_signal_fallback_to_hold(self) -> None:
         """无效信号字符串 → 回退 HOLD。"""
-        data = {"ticker": "sh.600519", "eval_date": "2026-10-09", "signal": "STRONG_BUY", "confidence": 75.0}
+        data = {
+            "ticker": "sh.600519",
+            "eval_date": "2026-10-09",
+            "signal": "STRONG_BUY",
+            "confidence": 75.0,
+        }
         a = TAAnalysis.from_dict(data)
         assert a.signal == Signal.HOLD
 
@@ -214,9 +226,13 @@ class TestKronosPrediction:
     def test_to_dict(self) -> None:
         dist = PredictionDistribution(direction=Direction.UP, p50=2.5)
         p = KronosPrediction(
-            ticker="sh.600519", eval_date="2026-10-09", horizon=5,
-            direction=Direction.UP, expected_return=2.5,
-            predicted_close=1850.0, distribution=dist,
+            ticker="sh.600519",
+            eval_date="2026-10-09",
+            horizon=5,
+            direction=Direction.UP,
+            expected_return=2.5,
+            predicted_close=1850.0,
+            distribution=dist,
         )
         d = p.to_dict()
         assert d["ticker"] == "sh.600519"
@@ -251,14 +267,24 @@ class TestKronosPrediction:
 class TestEvalRecord:
     def test_defaults(self) -> None:
         from trade_krono_cli.eval_data import EvalRecord as ER
-        r = ER(ticker="sh.600519", eval_date="2026-10-09", horizon_days=5,
-               pred_direction="UP", pred_return_pct=1.0, actual_return_pct=1.0,
-               actual_direction="UP", is_direction_correct=True, error_pct=0.0)
+
+        r = ER(
+            ticker="sh.600519",
+            eval_date="2026-10-09",
+            horizon_days=5,
+            pred_direction="UP",
+            pred_return_pct=1.0,
+            actual_return_pct=1.0,
+            actual_direction="UP",
+            is_direction_correct=True,
+            error_pct=0.0,
+        )
         assert r.ticker == "sh.600519"
         assert r.horizon_days == 5
 
     def test_full_initialization(self) -> None:
         from trade_krono_cli.eval_data import EvalRecord as ER
+
         r = ER(
             ticker="sz.000858",
             eval_date="2026-09-01",
@@ -275,6 +301,7 @@ class TestEvalRecord:
 
     def test_to_dict_roundtrip(self) -> None:
         from trade_krono_cli.domain.evaluation import EvalRecord as ER
+
         original = ER(
             ticker="sh.601318",
             eval_date="2026-08-15",

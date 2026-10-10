@@ -26,6 +26,7 @@ def get_cache_db_path() -> Path:
     """获取 pipeline_cache.db 路径（兼容测试隔离）。"""
     try:
         from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
         settings = get_settings()
         return Path(settings.cache_dir) / "pipeline_cache.db"
     except Exception:

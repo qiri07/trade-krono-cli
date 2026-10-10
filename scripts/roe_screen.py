@@ -34,8 +34,7 @@ _RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 _FUYAO_BASE = "https://fuyao.aicubes.cn"
 _API_KEY = (
-    os.getenv("HITHINK_FINANCE_API_KEY", "").strip()
-    or os.getenv("FUYAO_API_KEY", "").strip()
+    os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
 )
 
 _ROE_THRESHOLD = 15.0  # ROE > 此值才入选
@@ -188,9 +187,7 @@ def _load_whitelist() -> list[str]:
     return prefixed
 
 
-def _build_summary_card(
-    results: list[dict[str, Any]], date: str, ai_result: dict[str, str]
-) -> str:
+def _build_summary_card(results: list[dict[str, Any]], date: str, ai_result: dict[str, str]) -> str:
     """构建飞书摘要卡片。"""
     lines = [
         f"📊 **ROE 筛选 {date}**",
@@ -200,16 +197,13 @@ def _build_summary_card(
     if results:
         sorted_r = sorted(results, key=lambda x: x["roe"], reverse=True)
         lines.append("### 🏆 筛选结果（按 ROE 排序）")
-        lines.append(
-            "| 排名 | 代码 | 名称 | ROE% | PE | 收盘价 |"
-        )
+        lines.append("| 排名 | 代码 | 名称 | ROE% | PE | 收盘价 |")
         lines.append("|:----:|------|------|-----:|-----:|-------:|")
         for i, r in enumerate(sorted_r, 1):
             pe = r.get("pe")
             pe_str = f"{pe:.1f}" if pe is not None else "-"
             lines.append(
-                f"| {i} | {r['ticker']} | {r.get('name', '?')} "
-                f"| {r['roe']:.1f}% | {pe_str} | - |"
+                f"| {i} | {r['ticker']} | {r.get('name', '?')} | {r['roe']:.1f}% | {pe_str} | - |"
             )
         lines.append("")
 

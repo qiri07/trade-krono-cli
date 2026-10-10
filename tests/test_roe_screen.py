@@ -30,12 +30,14 @@ class TestApiGet:
             import importlib
 
             import scripts.roe_screen as mod
+
             importlib.reload(mod)
             result = mod._api_get("/api/test", {"a": "1"})
             assert result is None
 
     def test_success_response(self) -> None:
         import scripts.roe_screen as mod
+
         mod._API_KEY = "fake_key"
         mock_output = '{"code":0,"data":{"name":"贵州茅台","abilities":[{"indicators":[{"index_id":"index_weighted_avg_roe","value":"28.5"}]}]}}\n200'
         with patch("scripts.roe_screen.subprocess.run") as mock_run:
@@ -46,6 +48,7 @@ class TestApiGet:
 
     def test_http_error_returns_none(self) -> None:
         import scripts.roe_screen as mod
+
         mod._API_KEY = "fake_key"
         with patch("scripts.roe_screen.subprocess.run") as mock_run:
             mock_run.return_value.stdout = '{"code":1}\n500'
@@ -54,6 +57,7 @@ class TestApiGet:
 
     def test_network_error_returns_none(self) -> None:
         import scripts.roe_screen as mod
+
         mod._API_KEY = "fake_key"
         with patch("scripts.roe_screen.subprocess.run", side_effect=RuntimeError("timeout")):
             result = mod._api_get("/api/test", {"a": "1"})
@@ -88,9 +92,7 @@ class TestFetchRoe:
             "code": 0,
             "data": {
                 "name": "某股票",
-                "abilities": [
-                    {"indicators": [{"index_id": "other_index", "value": "10"}]}
-                ],
+                "abilities": [{"indicators": [{"index_id": "other_index", "value": "10"}]}],
             },
         }
         with patch("scripts.roe_screen._api_get", return_value=mock_response):

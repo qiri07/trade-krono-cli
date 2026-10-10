@@ -155,5 +155,6 @@ class TestMain:
             main()
             mock_logger.info.assert_called()
             from scripts import fetch_today_increment as mod
+
             with patch.object(mod, "get_stale_tickers", return_value=[]):
                 main()

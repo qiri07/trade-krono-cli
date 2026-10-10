@@ -202,6 +202,7 @@ class TestProviderChainForTicker:
         # 写入一个包含 baostock/akshare 但不含 tonghuashun 的缓存
         DataProviderFactory._rank_cache.clear()
         from trade_krono_cli.data_providers.factory import get_data_factory
+
         factory = get_data_factory()
         factory._write_ranked_chain("sh", ["baostock", "akshare"])
         chain = DataProviderFactory._provider_chain_for_ticker("sh.600519")

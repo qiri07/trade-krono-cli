@@ -144,14 +144,16 @@ def _make_mock_kline(n: int = 100, trend: str = "up") -> bytes:
         close = [100.0 - i * 0.1 for i in range(n)]
     else:
         close = [100.0] * n
-    df = pd.DataFrame({
-        "timestamps": dates,
-        "open": close,
-        "high": [c + 1.0 for c in close],
-        "low": [c - 1.0 for c in close],
-        "close": close,
-        "volume": [1_000_000] * n,
-    })
+    df = pd.DataFrame(
+        {
+            "timestamps": dates,
+            "open": close,
+            "high": [c + 1.0 for c in close],
+            "low": [c - 1.0 for c in close],
+            "close": close,
+            "volume": [1_000_000] * n,
+        }
+    )
     buf = io.BytesIO()
     df.to_pickle(buf)
     return buf.getvalue()
@@ -238,6 +240,7 @@ class TestFetchPeSnapshot:
             import importlib
 
             import scripts.multi_line_resonance as mod
+
             importlib.reload(mod)
             result = mod._fetch_pe_snapshot(["sh.600519"])
             assert result == {}
@@ -262,7 +265,9 @@ class TestFetchPeSnapshot:
     def test_pe_zero_not_included(self) -> None:
         from scripts.multi_line_resonance import _fetch_pe_snapshot
 
-        mock_output = '{"code":0,"data":{"item":[{"thscode":"600519.SH","pe_ttm":0,"name":"X"}]}}\n200'
+        mock_output = (
+            '{"code":0,"data":{"item":[{"thscode":"600519.SH","pe_ttm":0,"name":"X"}]}}\n200'
+        )
         with (
             patch("scripts.multi_line_resonance.subprocess.run") as mock_run,
             patch("scripts.multi_line_resonance._FUYAO_API_KEY", "fake_key"),
@@ -294,7 +299,7 @@ class TestFetchHkPeSnapshot:
         fields = [""] * 60
         fields[1] = "腾讯控股"
         fields[39] = "15.52"
-        mock_text = f'v_hk00700={"~".join(fields)}'
+        mock_text = f"v_hk00700={'~'.join(fields)}"
         with patch("scripts.multi_line_resonance.requests.get") as mock_get:
             mock_resp = MagicMock()
             mock_resp.text = mock_text
@@ -307,7 +312,7 @@ class TestFetchHkPeSnapshot:
     def test_missing_parts_skipped(self) -> None:
         from scripts.multi_line_resonance import _fetch_hk_pe_snapshot
 
-        mock_text = 'v_hk99999=~short~~'
+        mock_text = "v_hk99999=~short~~"
         with patch("scripts.multi_line_resonance.requests.get") as mock_get:
             mock_resp = MagicMock()
             mock_resp.text = mock_text
@@ -319,7 +324,9 @@ class TestFetchHkPeSnapshot:
     def test_network_error_handled(self) -> None:
         from scripts.multi_line_resonance import _fetch_hk_pe_snapshot
 
-        with patch("scripts.multi_line_resonance.requests.get", side_effect=RuntimeError("timeout")):
+        with patch(
+            "scripts.multi_line_resonance.requests.get", side_effect=RuntimeError("timeout")
+        ):
             result = _fetch_hk_pe_snapshot(["hk.00700"])
         assert result == {}
 
@@ -337,12 +344,24 @@ class TestBuildSummaryCard:
     def test_with_results(self) -> None:
         from scripts.multi_line_resonance import _build_summary_card
 
-        results = [{
-            "ticker": "sh.600519", "name": "贵州茅台", "close": 1800.0,
-            "change_pct": 1.5, "d_macd": 0.05, "w_macd": 0.03, "m_macd": 0.01,
-            "pe": 28.5, "score": 85.0, "ma5": 1790.0, "ma10": 1780.0,
-            "ma20": 1770.0, "ma_signal": "多头排列✅", "trend": "强势上涨",
-        }]
+        results = [
+            {
+                "ticker": "sh.600519",
+                "name": "贵州茅台",
+                "close": 1800.0,
+                "change_pct": 1.5,
+                "d_macd": 0.05,
+                "w_macd": 0.03,
+                "m_macd": 0.01,
+                "pe": 28.5,
+                "score": 85.0,
+                "ma5": 1790.0,
+                "ma10": 1780.0,
+                "ma20": 1770.0,
+                "ma_signal": "多头排列✅",
+                "trend": "强势上涨",
+            }
+        ]
         card = _build_summary_card(results, "2026-10-10", {})
         assert "贵州茅台" in card
         assert "600519" in card

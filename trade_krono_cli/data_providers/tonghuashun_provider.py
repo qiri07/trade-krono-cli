@@ -282,8 +282,8 @@ class TongHuaShunProvider(DataProvider):
                 parts = resp.text.strip().split("~")
                 if len(parts) > 46:
                     pe_ttm = safe_float(parts[39])  # 市盈率-动态
-                    pb = safe_float(parts[46])      # 市净率
-                    industry_raw = parts[29]        # 行业（可能为空）
+                    pb = safe_float(parts[46])  # 市净率
+                    industry_raw = parts[29]  # 行业（可能为空）
                     industry = industry_raw.strip() if industry_raw else None
             except Exception:
                 pass

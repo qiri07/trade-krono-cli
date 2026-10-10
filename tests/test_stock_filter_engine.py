@@ -227,8 +227,12 @@ class TestFromConfig:
         """市值范围过滤。"""
         f = StockFilter.from_config(market_cap_range=(100.0, 5000.0))
         ok = StockMeta(ticker="sh.600519", signal="BUY", confidence=80.0, market_cap_billion=1000.0)
-        small = StockMeta(ticker="sh.600519", signal="BUY", confidence=80.0, market_cap_billion=50.0)
-        large = StockMeta(ticker="sh.600519", signal="BUY", confidence=80.0, market_cap_billion=10000.0)
+        small = StockMeta(
+            ticker="sh.600519", signal="BUY", confidence=80.0, market_cap_billion=50.0
+        )
+        large = StockMeta(
+            ticker="sh.600519", signal="BUY", confidence=80.0, market_cap_billion=10000.0
+        )
         assert f.apply(ok) is True
         assert f.apply(small) is False
         assert f.apply(large) is False
@@ -253,6 +257,7 @@ class TestEdgeCases:
 
     def test_rule_exception_does_not_crash(self) -> None:
         """单条规则异常时不中断整个过滤流程。"""
+
         def bad_rule(meta: StockMeta) -> bool:  # type: ignore[empty-body]
             raise ValueError("boom")
 

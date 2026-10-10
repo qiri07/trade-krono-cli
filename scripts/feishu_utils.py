@@ -291,15 +291,23 @@ def send_feishu(url: str, payload: dict, secret: str | None = None) -> bool:
         ts = int(time.time())
         string_to_sign = f"{ts}\n{secret}"
         sign = base64.b64encode(
-            hmac.new(secret.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha256).digest()
+            hmac.new(
+                secret.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha256
+            ).digest()
         ).decode("utf-8")
         parsed = _urllib_parse.urlparse(url)
         query = _urllib_parse.parse_qs(parsed.query, keep_blank_values=True)
         query["timestamp"] = [str(ts)]
         query["sign"] = [sign]
         url = _urllib_parse.urlunparse(
-            (parsed.scheme, parsed.netloc, parsed.path, parsed.params,
-             _urllib_parse.urlencode(query, doseq=True), parsed.fragment)
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                _urllib_parse.urlencode(query, doseq=True),
+                parsed.fragment,
+            )
         )
 
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")

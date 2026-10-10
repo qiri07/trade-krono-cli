@@ -114,7 +114,14 @@ class TestFillOne:
         mock_result = MagicMock()
         mock_result.is_empty = False
         mock_result.to_dataframe.return_value = pd.DataFrame(
-            {"timestamps": ["2026-10-10"], "open": [110.0], "high": [111.0], "low": [109.0], "close": [110.5], "volume": [1_000_000]}
+            {
+                "timestamps": ["2026-10-10"],
+                "open": [110.0],
+                "high": [111.0],
+                "low": [109.0],
+                "close": [110.5],
+                "volume": [1_000_000],
+            }
         )
         mock_provider.fetch_kline.return_value = mock_result
 

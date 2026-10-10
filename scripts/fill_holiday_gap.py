@@ -49,7 +49,9 @@ def fill_one(factory, ticker: str, target_date: str) -> tuple[str, bool, str]:
         if provider is None:
             return (ticker, False, "no_provider")
 
-        result = provider.fetch_kline(ticker, target_date, target_date, frequency="d", adjustflag="1")
+        result = provider.fetch_kline(
+            ticker, target_date, target_date, frequency="d", adjustflag="1"
+        )
         if result is None or result.is_empty:
             return (ticker, False, "empty")
 
