@@ -262,17 +262,17 @@ def test_kline_data_hash_verification_pass(tmp_path) -> None:
 
 
 def test_kline_data_hash_verification_rejects_tampered(tmp_path) -> None:
-    """新格式数据：hash 校验失败时跳过被篡改的记录，返回 None。"""
+    """新格式数据：hash 校验失败时尝试读取，但被篡改的无效数据仍返回 None。"""
     c = Cache(db_path=tmp_path / "cache.db")
     df = _make_kline_df(3)
     c.set_kline("sh.600519", "2026-01-01", "2026-01-03", "d", df, ttl=3600)
 
-    # 篡改缓存数据
+    # 篡改缓存数据为非法 pickle 字节
     conn = c._conn
     conn.execute("UPDATE kline_cache SET data = X'deadbeef' WHERE ticker=?", ("sh.600519",))
     conn.commit()
 
-    # 读取应返回 None（唯一一条记录被完整性校验拦截）
+    # 读取：hash 不匹配但尝试 unpickle，非法数据引发 UnpicklingError 被捕获后记录警告
     result = c.get_kline("sh.600519", "2026-01-01", "2026-01-03", "d")
     assert result is None
 

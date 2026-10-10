@@ -19,7 +19,9 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import sqlite3
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -27,28 +29,29 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import requests
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import check_data_freshness
+from scripts._utils import check_data_freshness, get_cache_db_path, ticker_to_thscode
+from scripts.daily_analysis import ai_verify
 from scripts.feishu_core import load_config, send_notification
-from trade_krono_cli.config import get_settings
 
 # ── 路径常量 ─────────────────────────────────────────────────────────────────
 
 _RESULTS_DIR = Path("outputs/results")
 _RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── 同花顺 Fuyao API（估值快照）─────────────────────────────────────────────
+_FUYAO_BASE = "https://fuyao.aicubes.cn"
+_FUYAO_API_KEY = (
+    os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
+)
 
-def _get_cache_db_path() -> Path:
-    """获取 pipeline_cache.db 路径（兼容测试隔离）。"""
-    try:
-        settings = get_settings()
-        return Path(settings.cache_dir) / "pipeline_cache.db"
-    except Exception:
-        return Path("outputs/cache/pipeline_cache.db")
+_ST_KEYWORDS = ("ST", "*ST", "退市", "N", "C")
 
 
 def _get_all_tickers(db_path: Path) -> list[str]:
@@ -63,6 +66,128 @@ def _get_all_tickers(db_path: Path) -> list[str]:
     astock_tickers = [t for t in all_tickers if not t.startswith("bj.")]
     logger.info(f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所后 {len(astock_tickers)} 只")
     return astock_tickers
+
+
+def _is_st(name: str) -> bool:
+    """判断股票名称是否含 ST 标识。"""
+    return any(kw in name for kw in _ST_KEYWORDS)
+
+
+def _fetch_hk_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, dict[str, Any]]:
+    """批量获取港股的 PE_TTM 和名称（通过腾讯行情接口）。
+
+    Parameters
+    ----------
+    tickers : list[str]
+        hk. 前缀的股票代码列表，如 ["hk.00700", "hk.09988"]
+    batch_size : int
+        每批数量，默认 50
+
+    Returns
+    -------
+    dict[str, dict]
+        {6位代码: {"pe": pe_ttm, "name": stock_name}}
+    """
+    result: dict[str, dict[str, Any]] = {}
+    for i in range(0, len(tickers), batch_size):
+        batch = tickers[i : i + batch_size]
+        codes = ",".join(t.replace("hk.", "") for t in batch)
+        url = f"https://qt.gtimg.cn/q=hk{codes}"
+        try:
+            r = requests.get(url, timeout=10)
+            r.raise_for_status()
+            for line in r.text.strip().split(";"):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    prefix, data = line.split("=", 1)
+                    raw_code = prefix.replace("v_", "").lower()
+                    parts = data.strip('"').split("~")
+                    if len(parts) < 40:
+                        continue
+                    name = parts[1].strip() if len(parts) > 1 else ""
+                    pe_raw = parts[39]
+                    if not pe_raw or pe_raw == "--":
+                        continue
+                    try:
+                        pe_f = float(pe_raw)
+                    except (TypeError, ValueError):
+                        continue
+                    result[raw_code] = {"pe": pe_f, "name": name}
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"港股 PE 获取失败（批次 {i // batch_size + 1}）: {str(e)[:80]}")
+    return result
+
+
+def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, dict]:
+    """批量获取 A 股的 PE_TTM 和名称（通过同花顺 Fuyao API）。
+
+    Parameters
+    ----------
+    tickers : list[str]
+        sh./sz. 前缀的股票代码列表
+    batch_size : int
+        每批数量，默认 50
+
+    Returns
+    -------
+    dict[str, dict]
+        {6位代码: {"pe": pe_ttm, "name": stock_name}}，
+        获取失败或 PE 缺失的 code 不出现在结果中
+    """
+    if not _FUYAO_API_KEY:
+        logger.warning("HITHINK_FINANCE_API_KEY 未配置，跳过 PE 过滤")
+        return {}
+
+    result: dict[str, dict] = {}
+    for i in range(0, len(tickers), batch_size):
+        batch_tickers = tickers[i : i + batch_size]
+        ths_param = ",".join(ticker_to_thscode(t) for t in batch_tickers)
+        url = f"{_FUYAO_BASE}/api/a-share/valuations/snapshot?thscodes={ths_param}"
+        cmd = [
+            "curl",
+            "-s",
+            "--max-time",
+            "10",
+            "-w",
+            "\n%{http_code}",
+            url,
+            "-H",
+            f"X-api-key: {_FUYAO_API_KEY}",
+            "-A",
+            "MultiLineResonance/1.0",
+        ]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
+            stdout = r.stdout.strip()
+            nl = stdout.rfind("\n")
+            if nl < 0:
+                continue
+            body, http_code = stdout[:nl], int(stdout[nl + 1 :])
+            if http_code != 200:
+                continue
+            data = json.loads(body)
+            if data.get("code") != 0:
+                continue
+            for item in data.get("data", {}).get("item", []):
+                thscode = item.get("thscode", "")
+                code_key = thscode.split(".")[0] if "." in thscode else thscode
+                pe_raw = item.get("pe_ttm")
+                name = item.get("name", "").strip()
+                if pe_raw is None:
+                    continue
+                try:
+                    pe_f = float(pe_raw)
+                    if pe_f > 0:
+                        result[code_key] = {"pe": pe_f, "name": name}
+                except (TypeError, ValueError):
+                    pass
+        except Exception as e:
+            logger.debug(f"PE 获取失败（批次 {i // batch_size + 1}）: {str(e)[:80]}")
+    return result
 
 
 def _macd(values: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> float:
@@ -233,16 +358,18 @@ def _build_summary_card(
     # Top 10
     if sorted_results:
         lines.append("### 🏆 TOP 10 推荐")
-        lines.append("| 排名 | 代码 | 名称 | 收盘 | 涨跌% | 日MACD | 周MACD | 月MACD | 评分 |")
-        lines.append("|:----:|------|------|-----:|------:|-------:|-------:|-------:|-----:|")
+        lines.append("| 排名 | 代码 | 名称 | 收盘 | 涨跌% | 日MACD | 周MACD | 月MACD | PE | 评分 |")
+        lines.append("|:----:|------|------|-----:|------:|-------:|-------:|-------:|-----:|-----:|")
         for i, r in enumerate(sorted_results[:10], 1):
             name = r.get("name", "?")
+            pe = r.get("pe", None)
+            pe_str = f"{pe:.1f}" if pe is not None else "-"
             lines.append(
                 f"| {i} | {r['ticker']} | {name} "
                 f"| {r['close']} | {r['change_pct']:+.2f}% "
                 f"| {r['d_macd']:+.4f} | {r['w_macd'] if r.get('w_macd') is not None else '-'} "
                 f"| {r['m_macd'] if r.get('m_macd') is not None else '-'} "
-                f"| {r['score']} |"
+                f"| {pe_str} | {r['score']} |"
             )
         lines.append("")
 
@@ -266,7 +393,7 @@ def _build_summary_card(
         lines.append("")
 
     lines.append("---")
-    lines.append("筛选条件：日线 MACD>0 且 周线 MACD>0 且 月线 MACD>0")
+    lines.append("筛选条件：日线 MACD>0 且 周线 MACD>0 且 月线 MACD>0 且 PE>0 且非ST 且 评分≥50")
     lines.append(f"数据日期：{date}")
     return "\n".join(lines)
 
@@ -331,7 +458,7 @@ def main() -> None:
     logger.info(f"[数据检查] {check_data_freshness(logger.info)}")
 
     # 获取股票列表
-    db_path = _get_cache_db_path()
+    db_path = get_cache_db_path()
     tickers = _get_all_tickers(db_path)
     if not tickers:
         logger.error("❌ 未找到任何股票，退出")
@@ -340,25 +467,58 @@ def main() -> None:
     # 扫描
     results = _run_scan(tickers, db_path, workers=args.workers)
 
+    # 获取 PE 快照（用于名称填充和筛选）
+    pe_map: dict[str, dict[str, Any]] = {}
+    a_stocks = [r["ticker"] for r in results if not r["ticker"].startswith("hk.")]
+    hk_stocks = [r["ticker"] for r in results if r["ticker"].startswith("hk.")]
+    try:
+        pe_map = _fetch_pe_snapshot(a_stocks)
+    except Exception as e:
+        logger.debug(f"PE 获取失败: {str(e)[:80]}")
+    if hk_stocks:
+        try:
+            hk_pe_map = _fetch_hk_pe_snapshot(hk_stocks)
+            pe_map.update(hk_pe_map)
+            logger.info(f"📊 港股 PE 获取：{len(hk_pe_map)}/{len(hk_stocks)} 只")
+        except Exception as e:
+            logger.debug(f"港股 PE 获取失败: {str(e)[:80]}")
+    for r in results:
+        code = _strip_prefix(r["ticker"])
+        entry = pe_map.get(code)
+        if entry:
+            r["name"] = entry.get("name", "")
+            r["pe"] = entry.get("pe")
+
+    # ── 过滤：ST 股、PE≤0、评分<50 ──
+    removed_st = 0
+    removed_pe = 0
+    removed_score = 0
+    filtered: list[dict[str, Any]] = []
+    for r in results:
+        name = r.get("name", "")
+        if _is_st(name):
+            removed_st += 1
+            continue
+        pe = r.get("pe")
+        if pe is None or pe <= 0:
+            removed_pe += 1
+            continue
+        if r["score"] < 50:
+            removed_score += 1
+            continue
+        filtered.append(r)
+
+    logger.info(
+        f"📊 过滤完成：共振 {len(results)} 只 → "
+        f"剔除 ST {removed_st} 只、PE≤0/缺失 {removed_pe} 只、评分<50 {removed_score} 只 → "
+        f"有效 {len(filtered)} 只"
+    )
+    results = filtered
+
     # 按评分排序
     results.sort(key=lambda x: x["score"], reverse=True)
     if args.top > 0:
         results = results[: args.top]
-
-    # 尝试获取 PE 快照（用于名称填充和筛选）
-    pe_map: dict[str, dict[str, Any]] = {}
-    try:
-        from scripts.multi_scan import _fetch_pe_snapshot
-        codes = [_strip_prefix(r["ticker"]) for r in results]
-        pe_map = _fetch_pe_snapshot(codes)
-        for r in results:
-            code = _strip_prefix(r["ticker"])
-            entry = pe_map.get(code)
-            if entry:
-                r["name"] = entry.get("name", "")
-                r["pe"] = entry.get("pe")
-    except Exception as e:
-        logger.debug(f"PE 获取失败: {str(e)[:80]}")
 
     # 保存原始结果
     result_file = _RESULTS_DIR / f"macd_resonance_{date_str}.json"
@@ -370,7 +530,6 @@ def main() -> None:
     if results:
         logger.info("🤖 启动 AI 核实...")
         try:
-            from scripts.daily_analysis import ai_verify
             ai_result = ai_verify(results[:30], date_str)
             ai_file = _RESULTS_DIR / f"macd_resonance_{date_str}_ai.json"
             ai_file.write_text(json.dumps(ai_result, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -378,6 +537,8 @@ def main() -> None:
             if not summary_text or summary_text.startswith("LLM"):
                 ai_result = {}
                 logger.info("AI 核实跳过：LLM 未配置")
+            else:
+                logger.info(f"AI 核实完成：{summary_text[:80]}")
         except Exception as e:
             logger.warning(f"AI 核实失败: {str(e)[:100]}")
             ai_result = {}

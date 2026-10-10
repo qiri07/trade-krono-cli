@@ -18,6 +18,8 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
+from scripts._utils import get_cache_db_path
+
 try:
     from trade_krono_cli.config import get_settings  # type: ignore[import-not-found]
 except ImportError:
@@ -32,17 +34,6 @@ RD_AGENT_SOURCE = (
     _WORK_DIR / "RD-Agent-Work" / "git_ignore_folder" / "factor_implementation_source_data"
 )
 PARQUET_DEST = RD_AGENT_SOURCE / "daily_pv_full.parquet"
-
-
-def _get_cache_db_path() -> Path:
-    """获取 pipeline_cache.db 路径（兼容测试隔离）"""
-    if get_settings is not None:
-        try:
-            s = get_settings()
-            return Path(s.cache_dir) / "pipeline_cache.db"
-        except Exception:
-            pass
-    return Path("outputs/cache/pipeline_cache.db")
 
 
 def _ticker_to_instrument(ticker: str) -> str:
@@ -115,7 +106,7 @@ def export_to_rdagent(db_path: Path, dest: Path) -> dict:
 
 
 def main() -> None:
-    db_path = _get_cache_db_path()
+    db_path = get_cache_db_path()
     if not db_path.exists():
         logger.error(f"❌ 缓存数据库不存在: {db_path}")
         sys.exit(1)

@@ -326,3 +326,35 @@ uv run python scripts/export_vnpy_data.py
 ## 维护约定
 - 本文件是"活文档"：团队切换工具时必须同 commit 更新
 - 发现 AI 重复犯同一错误时，把对应禁令加入"禁止事项"
+
+## Scripts 共享工具（scripts/_utils.py）
+
+以下函数已从各脚本提取至 `scripts/_utils.py`，新脚本应从此处导入：
+
+| 函数 | 用途 |
+|------|------|
+| `get_cache_db_path()` | 获取 pipeline_cache.db 路径（兼容测试隔离） |
+| `ticker_to_thscode(ticker)` | sh.600519 → 600519.SH |
+| `get_all_tickers()` | 从缓存数据库读取所有不重复 ticker |
+| `get_provider_chain(ticker)` | 根据股票类型返回 Provider 优先级链 |
+| `check_data_freshness(logger_fn)` | 检查 K 线缓存是否已更新至预期日期 |
+
+**禁止**：在新脚本中重新定义上述函数。
+
+## 已知限制与架构备注
+
+### DataProvider 配置
+- 实际配置的 primary provider 是 `tonghuashun`（非 baostock），由 `get_data_factory()` 读取 Settings
+- 北交所股票特殊处理：provider 链为 `["tonghuashun", "baostock"]`
+
+### DecisionAdapter 文本解析
+- `_keyword_fallback` 仅匹配英文关键词（BUY/SELL/HOLD/OVERWEIGHT/UNDERWEIGHT）
+- 中文文本无法通过 keyword fallback 获得正确信号，需依赖 LLM JSON 输出
+
+### EvalRecord 字段（`trade_krono_cli/eval_data.py`）
+- 必要字段：`ticker, eval_date, horizon_days, pred_direction, pred_return_pct, actual_return_pct, actual_direction, is_direction_correct, error_pct`
+- `from_dict` / `to_dict` 在 `trade_krono_cli/domain/evaluation.py` 中定义（非 `eval_data.py`）
+
+### 缓存哈希
+- `trade_krono_cli/cache/kline.py` 使用 SHA-256 with `b"TKC1"` 前缀
+- 旧数据（pandas 序列化方式差异）哈希不匹配时仍尝试读取，仅记录 warning

@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import check_data_freshness
+from scripts._utils import check_data_freshness, get_cache_db_path, ticker_to_thscode
 from scripts.daily_analysis import _load_env, ai_verify, analyze_stock
 from scripts.feishu_core import load_config, send_notification
 from scripts.valuation import _safe_float, evaluate_valuation
@@ -58,15 +58,6 @@ _FUYAO_API_KEY = (
 _ST_KEYWORDS = ("ST", "*ST", "退市", "N", "C")
 
 
-def _get_cache_db_path() -> Path:
-    """获取 pipeline_cache.db 路径（兼容测试隔离）"""
-    try:
-        settings = get_settings()
-        return Path(settings.cache_dir) / "pipeline_cache.db"
-    except Exception:
-        return Path("outputs/cache/pipeline_cache.db")
-
-
 def _get_all_tickers(db_path: Path) -> list[str]:
     """从缓存数据库获取所有股票代码（排除北交所）"""
     conn = sqlite3.connect(db_path)
@@ -89,16 +80,6 @@ def _strip_prefix(ticker: str) -> str:
 def _is_st(name: str) -> bool:
     """判断股票名称是否含 ST 标识。"""
     return any(kw in name for kw in _ST_KEYWORDS)
-
-
-def _ticker_to_thscode(ticker: str) -> str:
-    """将 sh.600887 / sz.000001 转换为同花顺 thscode 格式 (600887.SH / 000001.SZ)。"""
-    code = _strip_prefix(ticker)
-    if ticker.startswith("sh."):
-        return f"{code}.SH"
-    elif ticker.startswith("sz."):
-        return f"{code}.SZ"
-    return code
 
 
 def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, dict]:
@@ -124,7 +105,7 @@ def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, di
     result: dict[str, dict] = {}
     for i in range(0, len(tickers), batch_size):
         batch_tickers = tickers[i : i + batch_size]
-        ths_param = ",".join(_ticker_to_thscode(t) for t in batch_tickers)
+        ths_param = ",".join(ticker_to_thscode(t) for t in batch_tickers)
         url = f"{_FUYAO_BASE}/api/a-share/valuations/snapshot?thscodes={ths_param}"
         cmd = [
             "curl",
@@ -414,7 +395,7 @@ def main() -> None:
     logger.info(f"[数据检查] {check_data_freshness(logger.info)}")
 
     # 获取数据库路径
-    db_path = _get_cache_db_path()
+    db_path = get_cache_db_path()
     if not db_path.exists():
         logger.error(f"❌ 缓存数据库不存在: {db_path}")
         sys.exit(1)

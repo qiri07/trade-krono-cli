@@ -22,6 +22,8 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
+from scripts._utils import get_cache_db_path
+
 try:
     from trade_krono_cli.config import get_settings  # type: ignore[import-not-found]
 except ImportError:
@@ -40,18 +42,6 @@ PARQUET_FILE = SHARED_DATA_ROOT / "astock_daily.parquet"
 H5_FILE = SHARED_DATA_ROOT / "astock_daily.h5"
 QLIB_DIR = SHARED_DATA_ROOT / "qlib_data"
 META_FILE = SHARED_DATA_ROOT / "meta.json"
-
-
-def _get_cache_db_path() -> Path:
-    """获取 pipeline_cache.db 路径（兼容测试隔离）"""
-    if get_settings is not None:
-        try:
-            s = get_settings()
-            return Path(s.cache_dir) / "pipeline_cache.db"
-        except Exception:
-            pass
-    # fallback: 默认路径
-    return Path("outputs/cache/pipeline_cache.db")
 
 
 def _ticker_to_symbol(ticker: str) -> str:
@@ -293,7 +283,7 @@ def main() -> None:
     parser.add_argument("--db", type=Path, default=None)
     args = parser.parse_args()
 
-    db_path = Path(args.db) if args.db else _get_cache_db_path()
+    db_path = Path(args.db) if args.db else get_cache_db_path()
     if not db_path.exists():
         logger.error(f"❌ 缓存数据库不存在: {db_path}")
         sys.exit(1)

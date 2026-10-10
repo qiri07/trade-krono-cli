@@ -5,7 +5,10 @@
 避免各脚本重复定义相同逻辑。
 
 用法：
-  from scripts._utils import get_all_tickers, get_provider_chain, CACHE_DB, check_data_freshness
+  from scripts._utils import (
+      get_all_tickers, get_provider_chain, CACHE_DB, check_data_freshness,
+      get_cache_db_path, ticker_to_thscode,
+  )
 """
 
 from __future__ import annotations
@@ -17,6 +20,26 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 CACHE_DB = Path("outputs/cache/pipeline_cache.db")
+
+
+def get_cache_db_path() -> Path:
+    """获取 pipeline_cache.db 路径（兼容测试隔离）。"""
+    try:
+        from trade_krono_cli.config import get_settings  # noqa: PLC0415
+        settings = get_settings()
+        return Path(settings.cache_dir) / "pipeline_cache.db"
+    except Exception:
+        return Path("outputs/cache/pipeline_cache.db")
+
+
+def ticker_to_thscode(ticker: str) -> str:
+    """将 sh.600887 / sz.000001 转换为同花顺 thscode 格式 (600887.SH / 000001.SZ)。"""
+    code = ticker.split(".", 1)[1] if "." in ticker else ticker
+    if ticker.startswith("sh."):
+        return f"{code}.SH"
+    elif ticker.startswith("sz."):
+        return f"{code}.SZ"
+    return code
 
 
 def get_all_tickers() -> list[str]:

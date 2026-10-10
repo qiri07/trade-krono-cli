@@ -61,13 +61,12 @@ class KlineCache:
                 expected = _compute_data_hash(data)
                 if expected != data_hash:
                     logger.warning(
-                        f"⚠️ 缓存数据完整性校验失败 ticker={ticker} "
-                        f"start={start} end={end}，数据可能已被篡改或损坏，跳过"
+                        f"⚠️ 缓存数据哈希不匹配 ticker={ticker} "
+                        f"start={start} end={end}，数据仍可读取，建议重新同步更新哈希"
                     )
-                    continue
             try:
                 dfs.append(pd.read_pickle(BytesIO(data)))
-            except (ModuleNotFoundError, AttributeError, TypeError, OSError):
+            except (ModuleNotFoundError, AttributeError, TypeError, OSError, pickle.UnpicklingError):
                 # pickle.loads 作为回退：仅在数据为合法 pickle 字节时执行
                 if isinstance(data, (bytes, bytearray)) and len(data) > 4:
                     # 旧格式无 hash，允许降级读取但记录警告
