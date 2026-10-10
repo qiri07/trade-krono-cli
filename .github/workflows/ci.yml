@@ -88,9 +88,10 @@ jobs:
       - name: 判断整体状态
         id: status
         run: |
-          if needs.check.result == 'success'; then
+          result="${{ needs.check.result }}"
+          if [ "$result" = "success" ]; then
             echo "status=success" >> $GITHUB_OUTPUT
-          elif needs.check.result == 'cancelled'; then
+          elif [ "$result" = "cancelled" ]; then
             echo "status=cancelled" >> $GITHUB_OUTPUT
           else
             echo "status=failure" >> $GITHUB_OUTPUT
@@ -99,12 +100,12 @@ jobs:
       - name: 汇总 Job 结果
         id: jobs
         run: |
+          result="${{ needs.check.result }}"
           parts=()
           for task in lint type-check test; do
-            r="${{ needs.check.result }}"
-            if [ "$r" = "success" ]; then
+            if [ "$result" = "success" ]; then
               parts+=("${task}✅")
-            elif [ "$r" = "cancelled" ]; then
+            elif [ "$result" = "cancelled" ]; then
               parts+=("${task}⏹️")
             else
               parts+=("${task}❌")
