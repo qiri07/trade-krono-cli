@@ -17,9 +17,13 @@ class TestGetExpectedDate:
         """工作日：返回昨天日期。"""
         from scripts._utils import _get_expected_date
 
-        today = datetime.now()
-        expected = (today - timedelta(days=1)).strftime("%Y-%m-%d")
-        assert _get_expected_date() == expected
+        # 用周三作基准，避免周末回退逻辑干扰
+        wednesday = datetime(2026, 9, 16)  # 周三 weekday=2
+        with patch("scripts._utils.datetime") as mock_dt:
+            mock_dt.now.return_value = wednesday
+            mock_dt.timedelta = timedelta
+            result = _get_expected_date()
+        assert result == "2026-09-15"
 
     @pytest.mark.parametrize("weekday", [5, 6])
     def test_weekend_returns_last_friday(self, weekday: int) -> None:
