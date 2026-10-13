@@ -6,6 +6,23 @@ The changelog is also available in Chinese: [中文版更新日志](./CHANGELOG_
 
 ---
 
+### v0.1.14 — 2026-10-13
+
+**Double MA golden cross screener + metadata key fix + scripts cleanup:**
+
+- **feat(screener)**: Added `scripts/double_ma_golden_cross.py` — two-stage screener: technical (day+week MA5>MA13, PE∈(0,30), MACD>0, no ST) → fundamental (ROE>15%, net profit>100M)
+- **feat(screener)**: Added `scripts/double_ma_screener.py` — lightweight version (technical stage only, no ROE filter)
+- **feat(screener)**: Added `scripts/double_ma_roe_screener.py` — independent ROE filter read from existing golden cross result file
+- **fix(metadata)**: `metadata.json` key format was inconsistent (mixed `sh.600xxx` and bare `600xxx` keys) — added `normalize_ticker_key()` in `_utils.py` to unify on load and on write
+- **fix(screener)**: Removed ~70 lines of dead fallback code duplicated from `process_ticker()` in both `double_ma_golden_cross.py` and `double_ma_screener.py`
+- **fix(utils)**: `normalize_ticker_key()` now correctly handles leading zeros (`000858 → sz.000858`) and exchange thresholds (600xxx → sh., not sz.)
+- **refactor**: Eliminated duplicated `ticker_to_thscode()` definitions in two screener scripts — now imported from `scripts._utils`
+- **test**: All 3208 tests pass; ruff + mypy clean on all modified files
+
+---
+
+---
+
 ### v0.1.12 — 2026-09-18
 
 **Code review fixes + architecture optimization + test coverage:**

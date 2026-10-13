@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import get_all_tickers
+from scripts._utils import get_all_tickers, normalize_ticker_key
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
@@ -34,13 +34,14 @@ _load_env()
 
 
 def _fetch_metadata_one(factory, ticker: str) -> tuple[str, dict | None, str]:
-    """拉取单只股票的元数据。"""
+    """拉取单只股票的元数据，返回标准化键（始终带交易所前缀）。"""
     try:
         meta = factory.fetch_metadata(ticker)
+        key = normalize_ticker_key(ticker)
         if meta is None:
-            return (ticker, None, "none")
+            return (key, None, "none")
         return (
-            ticker,
+            key,
             {
                 "ticker": meta.ticker,
                 "industry": meta.industry,
@@ -53,7 +54,7 @@ def _fetch_metadata_one(factory, ticker: str) -> tuple[str, dict | None, str]:
             "ok",
         )
     except Exception as e:
-        return (ticker, None, f"error: {str(e)[:50]}")
+        return (normalize_ticker_key(ticker), None, f"error: {str(e)[:50]}")
 
 
 def main(tickers_input: list[str] | None = None) -> None:

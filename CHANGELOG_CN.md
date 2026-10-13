@@ -6,6 +6,23 @@
 
 ---
 
+### v0.1.14 — 2026-10-13
+
+**双均线金叉筛选器 + metadata 键修复 + 脚本清理：**
+
+- **feat(screener)**：新增 `scripts/double_ma_golden_cross.py` — 两阶段筛选：技术分析（日+周 MA5>MA13，PE∈(0,30)，MACD>0，排除ST）→ 基本面（ROE>15%，净利润>1亿）
+- **feat(screener)**：新增 `scripts/double_ma_screener.py` — 轻量版（仅技术分析阶段，无 ROE 过滤）
+- **feat(screener)**：新增 `scripts/double_ma_roe_screener.py` — 独立 ROE 过滤，读取已有金叉结果文件
+- **fix(metadata)**：`metadata.json` 键格式不一致（混用 `sh.600xxx` 和裸数字 `600xxx`）—— 在 `_utils.py` 新增 `normalize_ticker_key()` 统一键格式
+- **fix(screener)**：删除 `double_ma_golden_cross.py` 和 `double_ma_screener.py` 中约 70 行与 `process_ticker()` 重复的死代码
+- **fix(utils)**：`normalize_ticker_key()` 正确处理后导零（`000858 → sz.000858`）和交易所阈值（600xxx → sh.，非 sz.）
+- **refactor**：消除两个筛选脚本中重复定义的 `ticker_to_thscode()`，统一从 `scripts._utils` 导入
+- **test**：全量 3208 测试通过；ruff + mypy 全绿
+
+---
+
+---
+
 ### v0.1.13 — 2026-09-25
 
 **Pipeline 修复 + 脚本增强 + Code Review 修复：**

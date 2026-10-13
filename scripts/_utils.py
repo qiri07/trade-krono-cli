@@ -43,6 +43,40 @@ def ticker_to_thscode(ticker: str) -> str:
     return code
 
 
+def normalize_ticker_key(ticker: str) -> str:
+    """统一 ticker 键格式：纯数字 → 带交易所前缀。
+
+    metadata.json 中可能同时存在 "sh.600519" 和 "600519" 两种键格式，
+    此函数将所有格式归一化为标准前缀格式，避免键不匹配导致数据丢失。
+
+    Args:
+        ticker: 任意格式的 ticker，如 "sh.600519"、"sz.000001"、"600519"、"bj.920001"。
+
+    Returns:
+        标准格式 ticker，如 "sh.600519"、"sz.000001"、"bj.920001"。
+    """
+    if "." in ticker:
+        return ticker
+    code = ticker.strip()
+    if not code.isdigit():
+        return ticker
+    # 纯数字：根据代码范围推断交易所前缀，保持原始字符串以保留前导零
+    # A股代码范围：000xxx~002xxx(深主板) 003xxx~399xxx(深创业板) 600xxx~688xxx(沪主板/科创) 8xxxxx(北交所/新三板) 9xxxxx(北交所)
+    num = int(code)
+    if num >= 920000:
+        return f"bj.{code}"
+    elif num >= 830000:
+        return f"bj.{code.zfill(6)}"
+    elif num >= 600000:
+        return f"sh.{code}"
+    elif num >= 300000:
+        return f"sz.{code}"
+    elif num >= 1:
+        # 000xxx / 001xxx / 002xxx 深市主板，始终带前导零
+        return f"sz.{code.zfill(6)}"
+    return ticker
+
+
 def get_all_tickers() -> list[str]:
     """从 SQLite 缓存数据库读取所有不重复的 ticker 列表。
 

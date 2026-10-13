@@ -28,6 +28,9 @@ uv run python scripts/check_data_integrity.py          # 数据完整性检查
 uv run python scripts/cleanup_duplicates.py            # 清理重复记录
 uv run python scripts/daily_analysis.py                # 每日白名单分析 + AI 验证 + 飞书推送
 uv run python scripts/fetch_reference_data.py          # 批量获取股票参考数据（PE/PB/行业等）
+uv run python scripts/double_ma_golden_cross.py         # 双均线金叉+ROE两阶段筛选（日+周MA5>MA13，PE∈(0,30)，MACD>0，ROE>15%，净利润>1亿）
+uv run python scripts/double_ma_screener.py             # 双均线金叉筛选（轻量版，仅技术分析：MA+PE+MACD）
+uv run python scripts/double_ma_roe_screener.py         # 独立ROE过滤（读取 double_ma_golden_cross_pe_macd 结果）
 uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data  # 导出共享数据
 uv run python scripts/export_vnpy_data.py              # 导出 vnpy 格式
 bash scripts/post_sync_export.sh                       # 同步后一键导出所有格式
@@ -335,6 +338,7 @@ uv run python scripts/export_vnpy_data.py
 |------|------|
 | `get_cache_db_path()` | 获取 pipeline_cache.db 路径（兼容测试隔离） |
 | `ticker_to_thscode(ticker)` | sh.600519 → 600519.SH |
+| `normalize_ticker_key(ticker)` | 统一键格式：`600519` → `sh.600519`，`000858` → `sz.000858`，`920001` → `bj.920001` |
 | `get_all_tickers()` | 从缓存数据库读取所有不重复 ticker |
 | `get_provider_chain(ticker)` | 根据股票类型返回 Provider 优先级链 |
 | `check_data_freshness(logger_fn)` | 检查 K 线缓存是否已更新至预期日期 |
