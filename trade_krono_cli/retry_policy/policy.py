@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import random
 import time
+import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import wraps
 from typing import Any, TypeVar
 
@@ -32,6 +33,8 @@ class RetryPolicy:
     rate_limit_backoff : 限流时是否启用自适应退避（解析 Retry-After 头）
     rate_limit_max_wait: 限流自适应退避上限（秒）
     skip_non_retriable : 是否跳过不可重试错误（默认 True，非 retriable 直接抛）
+    trace_id           : 请求追踪 ID（可选，用于日志关联）
+    retry_budget       : 重试预算（秒），超过后放弃重试
 
     """
 
@@ -41,6 +44,8 @@ class RetryPolicy:
     rate_limit_backoff: bool = True
     rate_limit_max_wait: float = 60.0
     skip_non_retriable: bool = True
+    trace_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    retry_budget: float = 0.0  # 0.0 表示无限制
 
     # 各错误类型的覆盖配置（可选）
     network_attempts: int | None = None
@@ -84,12 +89,23 @@ def _make_smart_retry_decorator(fn: F, policy: RetryPolicy) -> F:
     @wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401 — 通用重试装饰器，被装饰函数类型动态
         last_exc: Exception | None = None
+        start_time = time.time()
+        trace_id = policy.trace_id
 
         for attempt in range(1, policy.max_attempts + 1):
+            # 检查重试预算
+            if policy.retry_budget > 0:
+                elapsed = time.time() - start_time
+                if elapsed > policy.retry_budget:
+                    logger.warning(
+                        f"❌ [{fn.__name__}] 重试预算耗尽 ({policy.retry_budget:.1f}s)，放弃重试 trace={trace_id}"
+                    )
+                    break
+
             try:
                 return fn(*args, **kwargs)
             except TradeKronoNonRetryableError as e:
-                logger.warning(f"❌ [{fn.__name__}] 不可重试错误（放弃）: {e}")
+                logger.warning(f"❌ [{fn.__name__}] 不可重试错误（放弃） trace={trace_id}: {e}")
                 raise
 
             except Exception as e:
@@ -97,20 +113,20 @@ def _make_smart_retry_decorator(fn: F, policy: RetryPolicy) -> F:
                 category, desc = classify_error(e)
 
                 if category == "non_retriable" and policy.skip_non_retriable:
-                    logger.warning(f"❌ [{fn.__name__}] 不可重试错误（放弃）: {desc}")
+                    logger.warning(f"❌ [{fn.__name__}] 不可重试错误（放弃） trace={trace_id}: {desc}")
                     raise
 
                 if attempt >= policy.max_attempts:
                     logger.error(
                         f"❌ [{fn.__name__}] "
-                        f"第 {attempt}/{policy.max_attempts} 次尝试仍失败 [{category}]: {desc}",
+                        f"第 {attempt}/{policy.max_attempts} 次尝试仍失败 [{category}] trace={trace_id}: {desc}",
                     )
                     break
 
                 delay = _compute_delay(e, attempt, policy)
                 logger.warning(
                     f"⚠️  [{fn.__name__}] "
-                    f"第 {attempt}/{policy.max_attempts} 次失败 [{category}]，"
+                    f"第 {attempt}/{policy.max_attempts} 次失败 [{category}] trace={trace_id}，"
                     f"{delay:.1f}s 后重试... ({desc[:80]})",
                 )
                 time.sleep(delay)

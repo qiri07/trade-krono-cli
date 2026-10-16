@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from trade_krono_cli.prediction_distribution import (
+    DistributionStatus,
     PredictionDistribution,
     _compute_percentiles,
     build_distribution,
@@ -92,7 +93,7 @@ class TestComputeSingleSample:
     def test_up_movement(self) -> None:
         closes = np.array([100.0, 102.0, 105.0, 108.0])
         last_close = 100.0
-        change_pct, direction, _vol, path_disp, dir_score, conf_score, _pctiles = (
+        change_pct, direction, _vol, path_disp, dir_score, conf_score, _pctiles, status = (
             compute_single_sample(closes, last_close)
         )
         assert direction == "UP"
@@ -100,30 +101,33 @@ class TestComputeSingleSample:
         assert path_disp is None  # 单样本无路径分散度
         assert 0 <= dir_score <= 1
         assert 0 <= conf_score <= 100
+        assert status == DistributionStatus.DEGENERATE.value
 
     def test_down_movement(self) -> None:
         closes = np.array([100.0, 97.0, 94.0, 90.0])
         last_close = 100.0
-        change_pct, direction, _vol, _path_disp, _dir_score, _conf_score, _ = compute_single_sample(
+        change_pct, direction, _vol, _path_disp, _dir_score, _conf_score, _pctiles, status = compute_single_sample(
             closes,
             last_close,
         )
         assert direction == "DOWN"
         assert change_pct < 0
+        assert status == DistributionStatus.DEGENERATE.value
 
     def test_flat_movement(self) -> None:
         # 完全平坦的路径，change_pct=0 → direction_score≈0.5 → conf_score≈50
         closes = np.array([100.0, 100.0, 100.0, 100.0])
         last_close = 100.0
-        change_pct, direction, _, _, _, conf_score, _ = compute_single_sample(closes, last_close)
+        change_pct, direction, _, _, _, conf_score, _pctiles, status = compute_single_sample(closes, last_close)
         assert direction == "FLAT"
         assert change_pct == 0.0
         assert conf_score == pytest.approx(50.0, abs=1.0)
+        assert status == DistributionStatus.DEGENERATE.value
 
     def test_high_volatility(self) -> None:
         closes = np.array([100.0, 200.0, 0.0, 150.0])
         last_close = 100.0
-        _change_pct, direction, vol, _, dir_score, conf_score, _ = compute_single_sample(
+        _change_pct, direction, vol, _, dir_score, conf_score, _pctiles, status = compute_single_sample(
             closes,
             last_close,
         )
@@ -133,21 +137,24 @@ class TestComputeSingleSample:
         assert direction in ("UP", "DOWN", "FLAT")
         assert 0 <= dir_score <= 1
         assert 0 <= conf_score <= 100
+        assert status == DistributionStatus.DEGENERATE.value
 
     def test_percentiles_degenerate(self) -> None:
         closes = np.array([100.0, 105.0, 110.0])
         last_close = 100.0
-        _, _, _, _, _, _, pctiles = compute_single_sample(closes, last_close)
+        _, _, _, _, _, _, pctiles, status = compute_single_sample(closes, last_close)
         # 单样本时百分位全部退化为 final close
         final = float(closes[-1])
         assert all(p == final for p in pctiles)
+        assert status == DistributionStatus.DEGENERATE.value
 
     def test_very_small_closes(self) -> None:
         closes = np.array([1.0, 1.05, 1.10])
         last_close = 1.0
-        change_pct, direction, _, _, _, _, _ = compute_single_sample(closes, last_close)
+        change_pct, direction, _vol, _path_disp, _dir_score, _conf_score, _pctiles, status = compute_single_sample(closes, last_close)
         assert direction == "UP"
         assert abs(change_pct - 10.0) < 0.1
+        assert status == DistributionStatus.DEGENERATE.value
 
 
 # ═══════════════════════════════════════════════════════
@@ -167,7 +174,7 @@ class TestComputeMultiSample:
             ],
         )
         last_close = 100.0
-        _change_pct, direction, _vol, path_disp, dir_score, conf_score, _pctiles = (
+        _change_pct, direction, _vol, path_disp, dir_score, conf_score, _pctiles, status = (
             compute_multi_sample(avg_close, stacked, last_close)
         )
         assert direction == "UP"
@@ -175,6 +182,7 @@ class TestComputeMultiSample:
         assert path_disp >= 0
         assert 0 <= dir_score <= 1
         assert 0 <= conf_score <= 100
+        assert status == DistributionStatus.VALID.value
 
     def test_multi_sample_high_dispersion(self) -> None:
         # 路径间差异大 → 高 dispersion → 低 confidence
@@ -186,7 +194,7 @@ class TestComputeMultiSample:
             ],
         )
         last_close = 100.0
-        _, _, _, path_disp, dir_score, conf_score, _ = compute_multi_sample(
+        _, _, _, path_disp, dir_score, conf_score, _, status = compute_multi_sample(
             avg_close,
             stacked,
             last_close,
@@ -194,6 +202,7 @@ class TestComputeMultiSample:
         assert path_disp > 0.1  # 高分散
         # 高 dispersion 会降低 confidence_score
         assert conf_score < dir_score * 50 + 50
+        assert status == DistributionStatus.VALID.value
 
     def test_multi_sample_low_dispersion(self) -> None:
         # 路径高度一致 → 低 dispersion → 高 confidence
@@ -206,13 +215,14 @@ class TestComputeMultiSample:
             ],
         )
         last_close = 100.0
-        _, _, _, path_disp, dir_score, conf_score, _ = compute_multi_sample(
+        _, _, _, path_disp, dir_score, conf_score, _, status = compute_multi_sample(
             avg_close,
             stacked,
             last_close,
         )
         assert path_disp < 0.01  # 极低分散
         assert conf_score > dir_score * 50  # 高 confidence
+        assert status == DistributionStatus.VALID.value
 
     def test_multi_sample_percentiles(self) -> None:
         avg_close = np.array([100.0, 105.0, 110.0])
@@ -225,9 +235,10 @@ class TestComputeMultiSample:
             ],
         )
         last_close = 100.0
-        _, _, _, _, _, _, pctiles = compute_multi_sample(avg_close, stacked, last_close)
+        _, _, _, _, _, _, pctiles, status = compute_multi_sample(avg_close, stacked, last_close)
         p10, p25, p50, p75, p90 = pctiles
         assert p10 <= p25 <= p50 <= p75 <= p90  # 百分位单调非递减
+        assert status == DistributionStatus.VALID.value
 
 
 # ═══════════════════════════════════════════════════════
@@ -329,9 +340,10 @@ class TestComputePercentiles:
     def test_single_sample_degenerates(self) -> None:
         stacked = np.array([[100.0, 105.0, 110.0]])
         last_close = 100.0
-        p10, p25, p50, p75, p90 = _compute_percentiles(stacked, 1, last_close)
+        p10, p25, p50, p75, p90, status = _compute_percentiles(stacked, 1, last_close)
         final = 110.0
         assert p10 == p25 == p50 == p75 == p90 == final
+        assert status == DistributionStatus.DEGENERATE.value
 
     def test_multi_sample_sorted(self) -> None:
         stacked = np.array(
@@ -343,5 +355,6 @@ class TestComputePercentiles:
             ],
         )
         last_close = 100.0
-        p10, p25, p50, p75, p90 = _compute_percentiles(stacked, 4, last_close)
+        p10, p25, p50, p75, p90, status = _compute_percentiles(stacked, 4, last_close)
         assert p10 <= p25 <= p50 <= p75 <= p90
+        assert status == DistributionStatus.VALID.value

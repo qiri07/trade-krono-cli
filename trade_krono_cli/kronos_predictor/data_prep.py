@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 class DataPreparator:
     """Kronos 数据准备器。"""
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
     def prepare(

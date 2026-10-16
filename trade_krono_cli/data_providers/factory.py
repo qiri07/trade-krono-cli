@@ -33,8 +33,8 @@ if TYPE_CHECKING:
         RealtimeQuote,
     )
 
-# 向后兼容：_BenchResult 供测试直接 import
-from trade_krono_cli.data_providers.benchmark import _BenchResult  # noqa: F401
+# 向后兼容：_BenchResult 供测试直接 import（运行时可用）
+from trade_krono_cli.data_providers.benchmark import _BenchResult  # noqa: TC001
 
 # ═══════════════════════════════════════════════════════
 #  工厂实现
@@ -345,7 +345,7 @@ class DataProviderFactory:
 
     # ── 自适应优先级：Benchmark ───────────────────────────────────────
 
-    def _benchmark_provider(self, name: str, ticker: str) -> "_BenchResult":
+    def _benchmark_provider(self, name: str, ticker: str) -> _BenchResult:
         """Benchmark 单个 Provider（委托 benchmark 模块）。"""
         from trade_krono_cli.data_providers.benchmark import benchmark_provider as _bench
 
@@ -369,7 +369,7 @@ class DataProviderFactory:
         self,
         ticker: str = "sh.600519",
         workers: int | None = None,
-    ) -> list["_BenchResult"]:
+    ) -> list[_BenchResult]:
         """对所有可用 Provider 进行延迟 benchmark，按速度排序。
 
         Parameters
@@ -396,7 +396,7 @@ class DataProviderFactory:
             return []
 
         logger.info(f"🔬 开始 Benchmark：{len(names)} 个 Provider，ticker={ticker}")
-        results: list["_BenchResult"] = []
+        results: list[_BenchResult] = []
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(self._benchmark_provider, n, ticker): n for n in names}

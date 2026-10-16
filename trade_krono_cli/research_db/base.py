@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import threading
 from typing import TYPE_CHECKING
@@ -69,10 +70,8 @@ class ResearchDatabase:
         """关闭所有线程的 SQLite 连接（测试清理用）。"""
         conn = getattr(self._local, "conn", None)
         if conn is not None:
-            try:
+            with contextlib.suppress(sqlite3.Error):
                 conn.close()
-            except sqlite3.Error:
-                pass
             self._local.conn = None
         with ResearchDatabase._conn_lock:
             for c in list(ResearchDatabase._all_conns):
@@ -81,10 +80,8 @@ class ResearchDatabase:
                 except sqlite3.Error:
                     # 连接已失效，跳过
                     continue
-                try:
+                with contextlib.suppress(sqlite3.Error):
                     c.close()
-                except sqlite3.Error:
-                    pass
             ResearchDatabase._all_conns.clear()
 
     def _init_db(self) -> None:

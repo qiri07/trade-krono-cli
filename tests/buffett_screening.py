@@ -39,10 +39,10 @@ _API_KEY = (
 )
 _BASE = "https://fuyao.aicubes.cn"
 _CONCURRENCY = 8
-_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "agnes-2.5-flash")
+_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "agnes-3.0-flash")
 
 # ── LLM 配置 ───────────────────────────────────────────────────────────────
-# 优先使用 AGNES_API_KEY（agnes-2.5-flash 模型），兼容 DEEPSEEK_API_KEY / OPENAI_API_KEY
+# 优先使用 AGNES_API_KEY（agnes-3.0-flash 模型），兼容 DEEPSEEK_API_KEY / OPENAI_API_KEY
 _LLM_BASE_URL = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.cn/v1")
 _LLM_API_KEYS = ("AGNES_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY")
 
@@ -1119,7 +1119,7 @@ def write_result_file(
 class AiVerificationResult:
     """AI 核实结果数据模型。
 
-    存储 agnes-2.5-flash 对 Buffett 筛选结果的完整分析，
+    存储 agnes-3.0-flash 对 Buffett 筛选结果的完整分析，
     包含行业分布、风险提示、Top 推荐等结构化字段，
     以及用于飞书卡片渲染的 Markdown 摘要文本。
 
@@ -1173,7 +1173,7 @@ class AiVerificationResult:
     @classmethod
     def empty(
         cls, date_str: str, total: int, pass_count: int, fail_count: int
-    ) -> "AiVerificationResult":
+    ) -> AiVerificationResult:
         return cls(
             date=date_str,
             total=total,
@@ -1211,7 +1211,7 @@ def run_ai_verification(
     total_stocks: int,
     date_str: str,
 ) -> AiVerificationResult:
-    """调用 agnes-2.5-flash 对筛选结果进行整体核实与分析。
+    """调用 agnes-3.0-flash 对筛选结果进行整体核实与分析。
 
     Parameters
     ----------

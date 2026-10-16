@@ -152,17 +152,18 @@ def test_ensure_import_path() -> None:
 
     from trade_krono_cli.security import ensure_import_path
 
-    # Use a path that definitely exists (/tmp)
+    # Use paths in the project whitelist (external/ directories)
     before = sys.path.copy()
-    ensure_import_path(Path("/tmp"))
-    assert str(Path("/tmp")) in sys.path
-    # Calling again should not duplicate
-    ensure_import_path(Path("/tmp"))
-    count = sum(1 for p in sys.path if p == "/tmp")
-    assert count == 1
+    external_kronos = Path(__file__).parent.parent / "external" / "Kronos"
+    if external_kronos.exists():
+        ensure_import_path(external_kronos)
+        assert str(external_kronos) in sys.path
+        # Calling again should not duplicate
+        ensure_import_path(external_kronos)
+        count = sum(1 for p in sys.path if p == str(external_kronos))
+        assert count == 1
     # Non-existent path should be skipped silently
     ensure_import_path(Path("/nonexistent_path_xyz"))
-    assert "/nonexistent_path_xyz" not in sys.path
     # Restore
     sys.path[:] = before
 

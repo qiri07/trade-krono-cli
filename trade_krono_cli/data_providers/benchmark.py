@@ -10,9 +10,14 @@ factory.py 保留核心的实例管理、降级路由、fetch_* 接口。
 
 from __future__ import annotations
 
-import threading
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import threading
+
+    from trade_krono_cli.data_providers.factory import DataProviderFactory
 
 # ═══════════════════════════════════════════════════════
 #  Benchmark 数据类
@@ -55,19 +60,19 @@ def _rank_cache_ttl_sec() -> int:
 
 
 def benchmark_provider(
-    factory: object,
+    factory: DataProviderFactory,
     name: str,
     ticker: str,
 ) -> _BenchResult:
     """Benchmark 单个 Provider：用一个小查询测量延迟。"""
-    provider = getattr(factory, "get_provider")(name)
-    if provider is None or not getattr(provider, "supports_kline", False):
+    provider = factory.get_provider(name)
+    if provider is None or not provider.supports_kline:
         return _BenchResult(name=name, latency_ms=float("inf"), success=False)
     try:
         t0 = time.perf_counter()
-        data = getattr(provider, "fetch_kline")(ticker, _bench_date(), _bench_date(), "d", "1")
+        data = provider.fetch_kline(ticker, _bench_date(), _bench_date(), "d", "1")
         latency_ms = (time.perf_counter() - t0) * 1000
-        success = data is not None and not bool(getattr(data, "is_empty", False))
+        success = data is not None and not data.is_empty
         return _BenchResult(name=name, latency_ms=latency_ms, success=success)
     except Exception as e:
         from loguru import logger

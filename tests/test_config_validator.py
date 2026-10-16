@@ -17,9 +17,9 @@ def _make_settings(**overrides) -> SimpleNamespace:
         results_dir=Path("/tmp/test-project/outputs/results"),
         tradingagents_root=Path("/tmp/test-project/external/TradingAgents-astock"),
         kronos_root=Path("/tmp/test-project/external/Kronos"),
-        llm_provider="deepseek",
-        deep_think_llm="deepseek-chat",
-        quick_think_llm="deepseek-chat",
+        llm_provider="agnes",
+        deep_think_llm="agnes-3.0-flash",
+        quick_think_llm="agnes-3.0-flash",
         backend_url=None,
         max_debate_rounds=1,
         max_risk_discuss_rounds=1,
@@ -148,10 +148,10 @@ def test_warning_for_missing_external_dir(tmp_path) -> None:
 
 def test_warning_for_missing_api_key(monkeypatch) -> None:
     """未设置 API Key 时产生警告（非错误）。"""
-    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-    s = _make_settings(llm_provider="deepseek")
+    monkeypatch.delenv("AGNES_API_KEY", raising=False)
+    s = _make_settings(llm_provider="agnes")
     errors, warnings = validate_settings(s)
-    assert any("DEEPSEEK_API_KEY" in w for w in warnings)
+    assert any("AGNES_API_KEY" in w for w in warnings)
     assert errors == []
 
 

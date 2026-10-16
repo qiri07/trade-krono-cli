@@ -90,8 +90,8 @@ class TestTASessionPrivateAttrs:
     def test_llm_provider_private_attr(self) -> None:
         with patch("trade_krono_cli.models.ta_session.TradingAgentsRunner") as MockRunner:
             MockRunner.return_value = MagicMock()
-            session = TASession(no_cache=True, llm_provider="deepseek-chat")
-        assert session._llm_provider == "deepseek-chat"
+            session = TASession(no_cache=True, llm_provider="agnes")
+        assert session._llm_provider == "agnes"
 
     def test_runner_property(self) -> None:
         mock_runner = MagicMock()

@@ -25,7 +25,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import check_data_freshness, get_cache_db_path, ticker_to_thscode
+from scripts._utils import (
+    ST_NAME_KEYWORDS,
+    check_data_freshness,
+    get_cache_db_path,
+    is_bse_or_hk,
+    ticker_to_thscode,
+)
 from scripts.daily_analysis import _load_env, ai_verify, analyze_stock
 from scripts.feishu_core import load_config, send_notification
 from scripts.valuation import _safe_float, evaluate_valuation
@@ -55,20 +61,20 @@ _FUYAO_API_KEY = (
     os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
 )
 
-_ST_KEYWORDS = ("ST", "*ST", "退市", "N", "C")
+_ST_KEYWORDS = ST_NAME_KEYWORDS
 
 
 def _get_all_tickers(db_path: Path) -> list[str]:
-    """从缓存数据库获取所有股票代码（排除北交所）"""
+    """从缓存数据库获取所有股票代码（排除北交所和港股）。"""
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
     all_tickers = [r[0] for r in cur.fetchall()]
     conn.close()
 
-    # 排除北交所（bj.开头）
-    astock_tickers = [t for t in all_tickers if not t.startswith("bj.")]
-    logger.info(f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所后 {len(astock_tickers)} 只")
+    # 排除北交所（bj.开头）和港股（hk.开头）
+    astock_tickers = [t for t in all_tickers if not is_bse_or_hk(t)]
+    logger.info(f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所/港股后 {len(astock_tickers)} 只")
     return astock_tickers
 
 
@@ -466,29 +472,11 @@ def main() -> None:
     result_file.write_text(_build_summary_card(results, args.date, ai_result), encoding="utf-8")
     logger.info(f"💾 结果已保存: {result_file}")
 
-    # 飞书推送
+    # 飞书推送（仅汇总推送，不逐只推送）
     if results:
         config = load_config()
         summary = _build_summary_card(results, args.date, ai_result)
 
-        # 逐只推送详情
-        for r in results[:20]:  # 最多推送20只
-            card = (
-                f"📊 **{args.date} · {r['ticker']} {r['name']}**\n"
-                f"🟢 **综合分：{r['score']}**\n"
-                f"收盘价：{r.get('close', '?')}  今日涨跌：{r.get('change', 0):+.2f}%\n"
-                f"趋势：{r['trend']}　均线信号：{r['ma_signal']}　量能信号：{r['vol_signal']}\n"
-                f"MA5={r.get('ma5', '?')}　MA10={r.get('ma10', '?')}　MA20={r.get('ma20', '?')}\n"
-            )
-            buy_points = r.get("buy_points", [])
-            if buy_points:
-                card += f"🟢 买点信号：{'、'.join(buy_points[:3])}\n"
-            ok = send_notification(
-                mode="text", config=config, content=card, title=f"{r['ticker']} {r['name']}"
-            )
-            logger.info(f"  {'✅' if ok else '❌'} 已推送飞书: {r['ticker']} {r['name']}")
-
-        # 汇总推送
         ok = send_notification(
             mode="text",
             config=config,

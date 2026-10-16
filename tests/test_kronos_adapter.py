@@ -79,18 +79,16 @@ class TestKronosAdapterImpl:
         fake_module = MagicMock()
         fake_module.load_model.side_effect = ImportError("no module")
 
-        with patch("trade_krono_cli.adapters.kronos.ensure_import_path"):
-            with patch.dict(
-                "sys.modules",
-                {
-                    "cli_anything": MagicMock(),
-                    "cli_anything.kronos": MagicMock(),
-                    "cli_anything.kronos.utils": MagicMock(),
-                    "cli_anything.kronos.utils.kronos_backend": fake_module,
-                },
-            ):
-                with pytest.raises(ModelLoadError, match="cli_anything.kronos"):
-                    adapter.load_model(mock_settings)
+        with patch("trade_krono_cli.adapters.kronos.ensure_import_path"), patch.dict(
+            "sys.modules",
+            {
+                "cli_anything": MagicMock(),
+                "cli_anything.kronos": MagicMock(),
+                "cli_anything.kronos.utils": MagicMock(),
+                "cli_anything.kronos.utils.kronos_backend": fake_module,
+            },
+        ), pytest.raises(ModelLoadError, match="cli_anything.kronos"):
+            adapter.load_model(mock_settings)
 
 
 class TestKronosAdapterPredict:

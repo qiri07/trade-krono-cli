@@ -64,7 +64,7 @@ class LLMRequest:
     字段说明：
       source             — "ta" | "kronos" | "external"
       provider           — "deepseek" | "openai" | "anthropic" 等
-      model              — 具体模型名称（如 deepseek-chat）
+      model              — 具体模型名称（如 agnes-3.0-flash）
       temperature        — 采样温度，None 表示未设置
       top_p              — nucleus sampling 参数，None 表示未设置
       system_prompt_hash — 系统提示词 SHA-256（不存原文）

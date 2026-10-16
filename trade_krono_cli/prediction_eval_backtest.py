@@ -11,17 +11,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from trade_krono_cli.backtest_engine import BacktestResult  # noqa: PLC0415
-
 if TYPE_CHECKING:
+    from trade_krono_cli.backtest_engine import BacktestResult
     from trade_krono_cli.prediction_eval import EvalRecord
 
 
 def run_backtest(
-    records: list["EvalRecord"],
+    records: list[EvalRecord],
     rebal_mode: str = "fixed_horizon",
     fixed_horizon: int = 5,
-) -> "BacktestResult":
+) -> BacktestResult:
     """运行回测引擎，基于 EvalRecord 重建交易日序列。
 
     简化版：使用 EvalRecord 中的 entry/exit 价格直接模拟，

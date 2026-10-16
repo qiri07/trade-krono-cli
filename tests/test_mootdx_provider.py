@@ -172,9 +172,8 @@ class TestMootDxProvider:
         with patch.dict(
             "sys.modules",
             {"mootdx": fake_module, "mootdx.quotes": fake_module},
-        ):
-            with pytest.raises(RuntimeError, match="uv add mootdx"):
-                provider._ensure_client()
+        ), pytest.raises(RuntimeError, match="uv add mootdx"):
+            provider._ensure_client()
         # 恢复
         provider.__class__._client = None
         provider.__class__._connected = False

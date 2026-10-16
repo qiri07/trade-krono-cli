@@ -6,9 +6,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from loguru import logger
 
-from trade_krono_cli.eval_data import EvaluationSummary
+if TYPE_CHECKING:
+    from trade_krono_cli.eval_data import EvaluationSummary
 
 
 def print_latest_kronos(summary: dict) -> None:

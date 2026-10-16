@@ -116,25 +116,7 @@ def main() -> None:
 
     # 构建 kwargs
     kwargs: dict = {"channel": args.channel}
-    if args.mode == "ci":
-        kwargs.update(vars(args))
-        del kwargs["mode"]
-        del kwargs["config"]
-        del kwargs["channel"]
-        del kwargs["verbose"]
-    elif args.mode == "daily":
-        kwargs.update(vars(args))
-        del kwargs["mode"]
-        del kwargs["config"]
-        del kwargs["channel"]
-        del kwargs["verbose"]
-    elif args.mode == "buffett":
-        kwargs.update(vars(args))
-        del kwargs["mode"]
-        del kwargs["config"]
-        del kwargs["channel"]
-        del kwargs["verbose"]
-    elif args.mode == "text":
+    if args.mode == "ci" or args.mode == "daily" or args.mode == "buffett" or args.mode == "text":
         kwargs.update(vars(args))
         del kwargs["mode"]
         del kwargs["config"]

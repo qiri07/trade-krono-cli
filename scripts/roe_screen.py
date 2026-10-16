@@ -138,13 +138,13 @@ def _fetch_stock_names(tickers: list[str]) -> dict[str, str]:
         import baostock as bs  # type: ignore
     except ImportError:
         logger.warning("baostock 未安装，跳过股票名称获取")
-        return {t: "" for t in tickers}
+        return dict.fromkeys(tickers, "")
 
     names: dict[str, str] = {}
     lg = bs.login()
     if lg.error_code != "0":
         logger.warning(f"baostock 登录失败: {lg.error_msg}，跳过股票名称获取")
-        return {t: "" for t in tickers}
+        return dict.fromkeys(tickers, "")
 
     try:
         for ticker in tickers:
@@ -172,9 +172,7 @@ def _load_whitelist() -> list[str]:
     # 补全交易所前缀
     prefixed: list[str] = []
     for code in codes:
-        if code.startswith("sh.") or code.startswith("sz.") or code.startswith("hk."):
-            prefixed.append(code)
-        elif code.startswith("bj."):
+        if code.startswith("sh.") or code.startswith("sz.") or code.startswith("hk.") or code.startswith("bj."):
             prefixed.append(code)
         else:
             # 默认按代码前缀判断

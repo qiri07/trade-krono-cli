@@ -190,3 +190,68 @@ class TestUpdateUsableProviders:
                 failure_counts={"tonghuashun": 5},
             )
             assert result == ["tonghuashun"]
+
+
+class TestResolveTickers:
+    """_resolve_tickers 测试 — 覆盖 A 股 / 港股 / ETF / 期货代码解析。"""
+
+    def test_6_digit_a_share(self) -> None:
+        """6 位纯数字 A 股按首字符加交易所前缀。"""
+        from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers
+
+        assert _resolve_tickers("600519,000858,300750,920001") == [
+            "sh.600519",
+            "sz.000858",
+            "sz.300750",
+            "bj.920001",
+        ]
+
+    def test_prefixed_codes_pass_through(self) -> None:
+        """已带前缀的港股代码原样保留。"""
+        from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers
+
+        assert _resolve_tickers("hk.00700,hk.00992,hk.09988") == [
+            "hk.00700",
+            "hk.00992",
+            "hk.09988",
+        ]
+
+    def test_etf_codes_normalized(self) -> None:
+        """51/58/159 开头的 6 位数字归一化为 etf.*。"""
+        from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers
+
+        assert _resolve_tickers("510310,588000,159915,159948,513650") == [
+            "etf.510310",
+            "etf.588000",
+            "etf.159915",
+            "etf.159948",
+            "etf.513650",
+        ]
+
+    def test_futures_pass_through(self) -> None:
+        """期货合约代码（非 6 位数字）原样保留。"""
+        from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers
+
+        assert _resolve_tickers("IC2610,IH2610") == ["IC2610", "IH2610"]
+
+    def test_mixed_dedup_preserves_order(self) -> None:
+        """混合代码去重且保持首次出现顺序。"""
+        from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers
+
+        result = _resolve_tickers("600519,hk.00700,510310,600519,hk.00700,IC2610")
+        assert result == ["sh.600519", "hk.00700", "etf.510310", "IC2610"]
+
+    def test_empty_input(self) -> None:
+        """空字符串返回空列表。"""
+        from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers
+
+        assert _resolve_tickers("") == []
+        assert _resolve_tickers(",,") == []
+
+    def test_invalid_code_skipped_with_warning(self) -> None:
+        """长度错误的纯数字代码被跳过并告警。"""
+        from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers
+
+        # 5 位数字既不是 A 股（6 位）也不是期货字母数字混合 → 跳过
+        result = _resolve_tickers("60051,600519")
+        assert result == ["sh.600519"]

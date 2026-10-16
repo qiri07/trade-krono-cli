@@ -40,9 +40,7 @@ def _get_need_sync() -> list[str]:
 
 
 def _get_provider_chain(ticker: str) -> list[str]:
-    if ticker.startswith("bj."):
-        return ["tonghuashun", "baostock"]
-    elif ticker.startswith("sh.") or ticker.startswith("sz."):
+    if ticker.startswith("bj.") or ticker.startswith("sh.") or ticker.startswith("sz."):
         return ["tonghuashun", "baostock"]
     return ["baostock", "tonghuashun"]
 

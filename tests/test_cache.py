@@ -128,7 +128,12 @@ def test_ta_cache_set_and_get(tmp_path) -> None:
     data = {"signal": "BUY", "confidence": 85.0, "thesis": "基本面良好"}
     c.set_ta("sh.600519", "2026-08-11", data, config_hash="abc123")
     result = c.get_ta("sh.600519", "2026-08-11", config_hash="abc123")
-    assert result == data
+    # 核心数据应匹配，缓存元数据字段单独验证
+    assert result["signal"] == data["signal"]
+    assert result["confidence"] == data["confidence"]
+    assert result["thesis"] == data["thesis"]
+    assert "_cache_version" in result
+    assert "_cache_created" in result
 
 
 def test_ta_cache_miss(tmp_path) -> None:

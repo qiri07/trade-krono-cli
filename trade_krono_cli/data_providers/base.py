@@ -53,7 +53,7 @@ class KlineData:
     def is_empty(self) -> bool:
         return self.length == 0
 
-    def to_dataframe(self) -> "pd.DataFrame":
+    def to_dataframe(self) -> pd.DataFrame:
         """转换为 DataFrame（供缓存和上层使用）。"""
         import pandas as pd
 

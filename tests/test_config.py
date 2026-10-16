@@ -19,9 +19,9 @@ class TestSettingsDefaults:
         monkeypatch.delenv("KRONOS_MODEL", raising=False)
         clear_settings()
         s = Settings()
-        assert s.llm_provider == "deepseek"
-        assert s.deep_think_llm == "deepseek-chat"
-        assert s.quick_think_llm == "deepseek-chat"
+        assert s.llm_provider == "agnes"
+        assert s.deep_think_llm == "agnes-3.0-flash"
+        assert s.quick_think_llm == "agnes-3.0-flash"
         assert s.kronos_model == "kronos-base"
 
     def test_max_debate_rounds_default(self, monkeypatch: pytest.MonkeyPatch) -> None:

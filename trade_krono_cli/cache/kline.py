@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import pickle
-import sqlite3
 import time
 from datetime import datetime, timedelta
 from io import BytesIO
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from loguru import logger
@@ -16,6 +16,9 @@ from trade_krono_cli.cache.base import (
     KLINE_HISTORICAL_TTL,
     Cache,
 )
+
+if TYPE_CHECKING:
+    import sqlite3
 
 # 数据完整性协议版本前缀（写入时拼接到数据头部，读取时验证）
 _CACHE_FMT_VERSION = b"TKC1"

@@ -10,12 +10,17 @@
   clear-cache   清除缓存
   eval-prediction 预测评估
 
-命令实现详见 cli_commands.py。
+信号处理：
+  - SIGTERM / SIGINT：优雅退出，清理资源
 """
 
 from __future__ import annotations
 
+import signal
+import sys
+
 import typer
+from loguru import logger
 from rich.console import Console
 
 app = typer.Typer(
@@ -80,6 +85,30 @@ app.command()(eval_prediction)
 app.command()(retry_failed)
 app.command()(rank_providers)
 app.command()(export_daily_pv)
+
+
+# ═══════════════════════════════════════════════════════
+# 信号处理 — 优雅退出
+# ═══════════════════════════════════════════════════════
+
+
+def _graceful_shutdown(signum: int, frame: object) -> None:
+    """收到终止信号时优雅退出。"""
+    sig_name = signal.Signals(signum).name
+    logger.info(f"收到信号 {sig_name}，正在优雅退出...")
+    # 清理资源：关闭日志、数据库连接等
+    try:
+        from trade_krono_cli.data_providers.factory import reset_data_factory
+
+        reset_data_factory()
+    except Exception:
+        pass
+    sys.exit(0)
+
+
+# 注册信号处理器
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
 
 
 # ═══════════════════════════════════════════════════════

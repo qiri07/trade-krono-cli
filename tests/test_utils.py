@@ -115,7 +115,7 @@ class TestMergeWithNested:
         class Inner:
             vol: float = 0.5
 
-            def merge(self, **kwargs: Any) -> "Inner":
+            def merge(self, **kwargs: Any) -> Inner:
                 if isinstance(kwargs.get("vol"), dict):
                     return Inner(**kwargs["vol"])
                 return Inner(**{**{"vol": self.vol}, **kwargs})
@@ -125,7 +125,7 @@ class TestMergeWithNested:
             risk: Inner = field(default_factory=Inner)
             label: str = "test"
 
-            def merge(self, **kwargs: Any) -> "Outer":
+            def merge(self, **kwargs: Any) -> Outer:
                 if isinstance(kwargs.get("risk"), dict):
                     return Outer(
                         risk=Inner(**kwargs.pop("risk")), label=kwargs.get("label", self.label)
@@ -145,7 +145,7 @@ class TestMergeWithNested:
             vol: float = 0.5
             drawdown: float = 0.3
 
-            def merge(self, **kwargs: Any) -> "Inner":
+            def merge(self, **kwargs: Any) -> Inner:
                 if isinstance(kwargs.get("vol"), dict):
                     return Inner(**kwargs["vol"])
                 return Inner(**{**{"vol": self.vol, "drawdown": self.drawdown}, **kwargs})
@@ -155,7 +155,7 @@ class TestMergeWithNested:
             risk: Inner = field(default_factory=Inner)
             label: str = "test"
 
-            def merge(self, **kwargs: Any) -> "Outer":
+            def merge(self, **kwargs: Any) -> Outer:
                 if isinstance(kwargs.get("risk"), dict):
                     return Outer(
                         risk=Inner(**kwargs.pop("risk")), label=kwargs.get("label", self.label)

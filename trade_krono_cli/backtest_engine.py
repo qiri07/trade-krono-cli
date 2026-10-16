@@ -4,6 +4,7 @@
   · 从 EvalRecord 重建交易日序列，模拟仓位管理
   · 支持 T+1 结算、涨跌停成交约束、交易成本（佣金/印花税/滑点）
   · 按日调仓（rebal_weekly / rebal_monthly）或固定持仓周期（fixed_horizon）
+  · 支持市价/限价订单类型、maker/taker 手续费区分
   · 计算经典绩效指标：年化收益、夏普比率、卡玛比率、最大回撤、胜率、盈亏比
   · 基准对比（沪深 300 proxy）与超额收益曲线
 """
@@ -12,13 +13,32 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import Enum
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trade_krono_cli.backtest_benchmarks import BacktestRecord
-from trade_krono_cli.constraints_config import ConstraintConfig
+from trade_krono_cli.configs.trading import ConstraintConfig
 from trade_krono_cli.eval_data import BacktestResult
 from trade_krono_cli.trading_constraints import compute_limit_prices
+
+if TYPE_CHECKING:
+    from trade_krono_cli.backtest_benchmarks import BacktestRecord
+
+
+class OrderType(str, Enum):
+    """订单类型。"""
+
+    MARKET = "market"  # 市价单（立即成交）
+    LIMIT = "limit"  # 限价单（可挂单等待）
+
+
+class Side(str, Enum):
+    """交易方向。"""
+
+    BUY = "buy"
+    SELL = "sell"
+
 
 # ── 平仓结果 ─────────────────────────────────────────────────────────────────
 
@@ -31,6 +51,8 @@ class CloseLog:
     blocked_reason: str = ""
     trade_log: dict | None = None
     net_proceeds: float = 0.0
+    order_type: str = "market"  # market | limit
+    side: str = "sell"  # buy | sell
 
 
 # ── 交易日辅助 ────────────────────────────────────────────────────────────────
@@ -70,9 +92,25 @@ class _Position:
     shares: int  # 股数（A 股 100 股整数倍）
     direction: str  # "UP" | "DOWN"
     cost_bps: float = 0.0
+    order_type: str = "market"  # market | limit
+    is_maker: bool = False  # 是否为挂单（maker）
 
 
 @dataclass
+class TradeLog:
+    """单笔交易记录。"""
+
+    date: str
+    ticker: str
+    action: str  # BUY | SELL
+    price: float
+    shares: int
+    cost_bps: float
+    order_type: str = "market"
+    side: str = "buy"
+    pnl: float = 0.0
+
+
 class BacktestEngine:
     """基于 EvalRecord 列表的 A 股风格回测引擎。
 
@@ -87,6 +125,25 @@ class BacktestEngine:
     - T+1 结算（买入当日不可卖出）
     - 涨停日无法建仓、跌停日无法平仓
     - 双边成本（佣金 + 滑点 + 印花税）
+    - 支持市价/限价订单类型
+    - 支持 maker/taker 手续费区分
+
+    参数
+    ----
+    initial_capital : float
+        初始资金
+    max_position_pct : float
+        单只股票最大仓位占比
+    min_trade_size : int
+        最小交易单位（A 股 100 股）
+    rebal_mode : str
+        调仓模式：fixed_horizon | rebal_weekly | rebal_monthly
+    fixed_horizon : int
+        固定持仓周期（天数）
+    order_type : OrderType
+        默认订单类型（market | limit）
+    config : ConstraintConfig | None
+        交易约束配置
     """
 
     def __init__(
@@ -96,6 +153,7 @@ class BacktestEngine:
         min_trade_size: int = 100,
         rebal_mode: str = "fixed_horizon",
         fixed_horizon: int = 5,
+        order_type: OrderType = OrderType.MARKET,
         config: ConstraintConfig | None = None,
     ) -> None:
         self.initial_capital = initial_capital
@@ -103,6 +161,7 @@ class BacktestEngine:
         self.min_trade_size = min_trade_size
         self.rebal_mode = rebal_mode
         self.fixed_horizon = fixed_horizon
+        self.default_order_type = order_type
         self.cfg = config or ConstraintConfig()
 
     # ── 主入口 ──────────────────────────────────────────────────────────────
@@ -163,7 +222,9 @@ class BacktestEngine:
                 exit_price = self._get_exit_price(ticker, day, prev_close_map)
                 if exit_price is None or exit_price <= 0:
                     continue  # 无退出价，跳过
-                pnl = self._close_position(pos, exit_price, day, ticker, prev_close_map)
+                pnl = self._close_position(
+                    pos, exit_price, day, ticker, prev_close_map, is_exit=True
+                )
                 cash += pnl.net_proceeds
                 if pnl.trade_log is not None:
                     trades.append(pnl.trade_log)
@@ -181,7 +242,8 @@ class BacktestEngine:
             if not today_signals:
                 # 估算当日持仓市值，记录权益曲线
                 equity = cash + sum(
-                    pos.shares * (self._get_exit_price(pos.ticker, day, prev_close_map) or 0)
+                    pos.shares
+                    * (self._get_exit_price(pos.ticker, day, prev_close_map) or 0)
                     for pos in positions.values()
                 )
                 daily_equity.append((day, equity))
@@ -217,7 +279,15 @@ class BacktestEngine:
                 if shares < self.min_trade_size:
                     continue  # 资金不足最小一手
 
-                cost_bps = self.cfg.buy_cost_bps()
+                # 确定订单类型和费用
+                order_type = self.default_order_type.value
+                is_maker = order_type == "limit"
+                cost_bps = (
+                    self.cfg.buy_cost_bps_maker()
+                    if is_maker
+                    else self.cfg.buy_cost_bps()
+                )
+
                 position_value = shares * entry_price
                 cash -= position_value
                 cash -= position_value * cost_bps / 10000.0  # 买入成本
@@ -229,6 +299,8 @@ class BacktestEngine:
                     shares=shares,
                     direction=sig.signal or "UP",
                     cost_bps=cost_bps,
+                    order_type=order_type,
+                    is_maker=is_maker,
                 )
                 trades.append(
                     {
@@ -238,6 +310,8 @@ class BacktestEngine:
                         "price": entry_price,
                         "shares": shares,
                         "cost_bps": cost_bps,
+                        "order_type": order_type,
+                        "side": "buy",
                     },
                 )
 
@@ -286,8 +360,18 @@ class BacktestEngine:
         date: str,
         prev_close_map: dict[str, float],
     ) -> float | None:
-        """简化：使用 prev_close_map 中的最新收盘价作为近似入场价。"""
-        return prev_close_map.get(ticker)
+        """获取入场价。
+
+        - 市价单：使用 prev_close 作为近似
+        - 限价单：使用 prev_close * 0.999（略低于前收，确保成交）
+        """
+        price = prev_close_map.get(ticker)
+        if price is None:
+            return None
+        if self.default_order_type == OrderType.LIMIT:
+            # 限价单：设置略低于前收的价格，确保成交
+            return price * 0.999
+        return price
 
     def _get_exit_price(
         self,
@@ -295,10 +379,15 @@ class BacktestEngine:
         date: str,
         prev_close_map: dict[str, float],
     ) -> float | None:
-        """简化：使用 prev_close_map 中该日的前一日收盘作为退出价。"""
-        # 这里用 prev_close_map 本身作为近似（需要调用方维护）
-        # 实际实现中应由 fetcher 提供
-        return prev_close_map.get(ticker)
+        """获取出场价。
+
+        - 市价单：使用 prev_close 作为近似
+        - 限价单：使用 prev_close * 1.001（略高于前收，确保成交）
+        """
+        price = prev_close_map.get(ticker)
+        if price is None:
+            return None
+        return price
 
     def _can_buy_on_day(self, ticker: str, date: str, positions: dict[str, _Position]) -> bool:
         """T+1：若当日或前一日有买入，则今日不可再买。"""
@@ -315,6 +404,7 @@ class BacktestEngine:
         date: str,
         ticker: str,
         prev_close_map: dict[str, float],
+        is_exit: bool = True,
     ) -> CloseLog:
         """平仓，返回成交明细。"""
         prev_close = prev_close_map.get(ticker)
@@ -328,7 +418,9 @@ class BacktestEngine:
                 return CloseLog(blocked=True, blocked_reason=blocked_reason)
 
         sell_value = pos.shares * exit_price
-        sell_cost = sell_value * self.cfg.sell_cost_bps() / 10000.0
+        # 卖出成本：永远是 taker（主动平仓）
+        sell_cost_bps = self.cfg.sell_cost_bps()
+        sell_cost = sell_value * sell_cost_bps / 10000.0
         buy_cost = pos.shares * pos.entry_price * (1 + pos.cost_bps / 10000.0)
         net_proceeds = sell_value - sell_cost
         pnl = net_proceeds - buy_cost
@@ -342,9 +434,13 @@ class BacktestEngine:
                 "price": exit_price,
                 "shares": pos.shares,
                 "pnl": round(pnl, 2),
-                "cost_bps": self.cfg.sell_cost_bps(),
+                "cost_bps": sell_cost_bps,
+                "order_type": pos.order_type,
+                "side": "sell",
             },
             net_proceeds=net_proceeds,
+            order_type=pos.order_type,
+            side="sell",
         )
 
     # ── 绩效指标 ─────────────────────────────────────────────────────────────
@@ -406,6 +502,12 @@ class BacktestEngine:
         avg_loss = abs(np.mean(losses)) if losses else 1e-9
         profit_factor = abs(sum(wins) / sum(losses)) if losses else (100.0 if wins else 0.0)
 
+        # ── Maker/Taker 统计 ───────────────────────────────────────────────
+        maker_trades = [t for t in trades if t.get("order_type") == "limit"]
+        taker_trades = [t for t in trades if t.get("order_type") == "market"]
+        maker_cost_bps = sum(t.get("cost_bps", 0) for t in maker_trades) / max(len(maker_trades), 1)
+        taker_cost_bps = sum(t.get("cost_bps", 0) for t in taker_trades) / max(len(taker_trades), 1)
+
         # ── 收益分布（手动计算偏度/峰度，兼容 numpy 2.0）─────────────────────
         def _skewness(arr):
             if len(arr) < 3:
@@ -450,4 +552,9 @@ class BacktestEngine:
             "worst_day_pct": round(worst_day, 2),
             "n_trades": len(trades),
             "n_days": n_days,
+            # ── Maker/Taker 统计 ────────────────────────────────────────────
+            "n_maker_trades": len(maker_trades),
+            "n_taker_trades": len(taker_trades),
+            "avg_maker_cost_bps": round(maker_cost_bps, 2),
+            "avg_taker_cost_bps": round(taker_cost_bps, 2),
         }

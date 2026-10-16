@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import sqlite3
 import subprocess
 from io import BytesIO
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from loguru import logger
 
 from trade_krono_cli.cache.base import CACHE_TABLES, Cache, _validate_table_name
+
+if TYPE_CHECKING:
+    import sqlite3
 
 
 class CacheQueries:

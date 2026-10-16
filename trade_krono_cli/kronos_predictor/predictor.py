@@ -34,7 +34,7 @@ class KronosPredictor:
 
     def __init__(
         self,
-        settings: "Settings",
+        settings: Settings,
         runner: Any,
         use_cache: bool = True,
         sample_count: int | None = None,
@@ -64,7 +64,7 @@ class KronosPredictor:
         return getattr(self._runner, "model_name", "kronos")
 
     @smart_retry
-    def predict_one(self, ticker: str, eval_date: str) -> "KronosForecastResult":
+    def predict_one(self, ticker: str, eval_date: str) -> KronosForecastResult:
         """预测单只股票，带缓存和重试。"""
         ticker = validate_ticker(ticker)
         eval_date = validate_date(eval_date)
@@ -102,7 +102,7 @@ class KronosPredictor:
             logger.error(f"❌ {ticker} Kronos 预测失败 [{category}]: {safe_msg}")
             return res
 
-    def _predict_impl(self, ticker: str, eval_date: str) -> "KronosForecastResult":
+    def _predict_impl(self, ticker: str, eval_date: str) -> KronosForecastResult:
         """实际预测逻辑（无重试）。"""
         ticker = validate_ticker(ticker)
         eval_date = validate_date(eval_date)
@@ -142,7 +142,7 @@ class KronosPredictor:
         tickers: list[str],
         eval_date: str,
         stop_on_error: bool = False,
-    ) -> list["KronosForecastResult"]:
+    ) -> list[KronosForecastResult]:
         """批量预测：按 batch_size 分批推理。"""
         eval_date = validate_date(eval_date)
         tickers = [validate_ticker(t) for t in tickers]
@@ -150,7 +150,7 @@ class KronosPredictor:
             f"🚀 Kronos 批量预测: {len(tickers)} 只, date={eval_date}, batch_size={self.batch_size}"
         )
 
-        results: list["KronosForecastResult"] = []
+        results: list[KronosForecastResult] = []
         prepared: list[tuple[str, Any, Any, Any, float] | None] = []
 
         for tk in tickers:
@@ -221,7 +221,7 @@ class KronosPredictor:
                     top_p=self._settings.kronos_top_p,
                     sample_count=self.sample_count,
                 )
-                for pred_df, idx in zip(pred_dfs, idx_list):
+                for pred_df, idx in zip(pred_dfs, idx_list, strict=False):
                     tk, _, _, _, last_close = prepared[idx]
                     results[idx] = self._result_parser.parse_batch_result(
                         results[idx], pred_df, last_close, self.sample_count

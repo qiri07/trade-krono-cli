@@ -43,3 +43,4 @@ RD-Agent-Work/git_ignore_folder/**/*.parquet
 *.parquet
 *.pkl
 *.pkl.gz
+coverage.json

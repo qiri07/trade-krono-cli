@@ -74,7 +74,11 @@ def test_cache_get_set_ta() -> None:
     cache.set_ta(ticker, date, data, ttl=3600)
 
     result = cache.get_ta(ticker, date)
-    assert result == data
+    # 核心数据应匹配，缓存元数据字段单独验证
+    assert result["signal"] == data["signal"]
+    assert result["confidence"] == data["confidence"]
+    assert "_cache_version" in result
+    assert "_cache_created" in result
 
 
 def test_cache_get_set_kronos() -> None:
@@ -114,7 +118,9 @@ def test_cache_ttl_expiration() -> None:
     data = {"test": True}
     cache.set_ta(ticker, date, data, ttl=0)  # ttl=0 表示永久（不 expire）→ 应该能读出来
     result = cache.get_ta(ticker, date)
-    assert result == data  # 永久缓存应始终可用
+    # 永久缓存应始终可用，核心数据匹配
+    assert result["test"] == data["test"]
+    assert "_cache_version" in result
 
 
 # ── cache key with config_hash / model_ver / prompt_ver ─────────────────────
@@ -132,9 +138,11 @@ class TestCacheConfigHashInvalidation:
         ticker, date = "sh.600519", "2026-08-12"
         data = {"signal": "BUY"}
         cache.set_ta(ticker, date, data, config_hash="abc123", prompt_ver="p1", model_ver="m1")
+        result = cache.get_ta(ticker, date, config_hash="abc123", prompt_ver="p1", model_ver="m1")
+        assert result["signal"] == data["signal"]
         assert (
             cache.get_ta(ticker, date, config_hash="abc123", prompt_ver="p1", model_ver="m1")
-            == data
+            == result  # 相同 key 应返回相同结果（含元数据）
         )
         assert (
             cache.get_ta(ticker, date, config_hash="different", prompt_ver="p1", model_ver="m1")
@@ -150,7 +158,9 @@ class TestCacheConfigHashInvalidation:
         ticker, date = "sh.600519", "2026-08-12"
         data = {"signal": "BUY"}
         cache.set_ta(ticker, date, data, config_hash="h", prompt_ver="v1", model_ver="m")
-        assert cache.get_ta(ticker, date, config_hash="h", prompt_ver="v1", model_ver="m") == data
+        result = cache.get_ta(ticker, date, config_hash="h", prompt_ver="v1", model_ver="m")
+        assert result is not None
+        assert result["signal"] == data["signal"]
         assert cache.get_ta(ticker, date, config_hash="h", prompt_ver="v2", model_ver="m") is None
 
     def test_kronos_different_model_ver_miss(self) -> None:

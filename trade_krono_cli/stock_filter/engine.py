@@ -171,7 +171,7 @@ class StockFilter:
         min_volume_ratio: float | None = None,
         min_turnover_rate: float | None = None,
         exclude_st: bool = True,
-    ) -> "StockFilter":
+    ) -> StockFilter:
         """从配置参数构建 StockFilter。
 
         所有参数均为可选；None 表示不添加对应规则。

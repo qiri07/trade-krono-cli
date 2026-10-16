@@ -29,8 +29,7 @@ PipelineConfig 是顶层容器，通过属性代理保持向后兼容：
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.configs.abnormality import AbnormalityConfig
@@ -77,6 +76,9 @@ from trade_krono_cli.utils.parser_helpers import (
     _parse_float,
     _parse_range,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ── 公开导出（供测试和外部代码导入）────────────────────────────────────────────
 __all__ = [
@@ -323,7 +325,7 @@ class PipelineConfig:
         return default
 
     @classmethod
-    def default(cls, settings: Settings | None = None) -> "PipelineConfig":
+    def default(cls, settings: Settings | None = None) -> PipelineConfig:
         s = settings or get_settings()
         return cls(
             kronos=KronosConfig(
@@ -387,7 +389,7 @@ class PipelineConfig:
             output=OutputConfig(output_dir=s.results_dir.parent),
         )
 
-    def override(self, **kwargs) -> "PipelineConfig":
+    def override(self, **kwargs) -> PipelineConfig:
         """返回新 PipelineConfig，支持扁平和嵌套覆盖。
 
         扁平覆盖（向后兼容）：
@@ -523,12 +525,12 @@ class PipelineConfig:
         return to_dict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "PipelineConfig":
+    def from_dict(cls, data: dict) -> PipelineConfig:
         """从扁平 dict 反序列化。"""
         return _from_dict_internal(data)
 
     @classmethod
-    def load(cls, path: str | Path) -> "PipelineConfig":
+    def load(cls, path: str | Path) -> PipelineConfig:
         """从 JSON 或 YAML 文件加载。"""
         return load(path)
 

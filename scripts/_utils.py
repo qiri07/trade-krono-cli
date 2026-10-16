@@ -21,6 +21,76 @@ from pathlib import Path
 
 CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 
+# ── 共享常量 ────────────────────────────────────────────────────────────────
+# ST / 异常股名称关键词（各脚本统一使用，避免多处重复定义）
+# 全市场扫描脚本用完整列表（含 N/C 新股标识），白名单分析用精简版（仅 ST 类）
+ST_NAME_KEYWORDS: tuple[str, ...] = ("ST", "*ST", "退市", "N", "C")
+ST_NAME_KEYWORDS_MINIMAL: tuple[str, ...] = ("ST", "*ST", "退市")
+
+# 北交所股票代码前缀（6 位裸代码以 920 开头，或带交易所前缀 bj.）
+# 注意：用 "920" 而非 "92"，避免误杀 92 开头的其他代码段（如 920xxx 北交所新股）
+BSE_CODE_PREFIXES: tuple[str, ...] = ("920",)
+BSE_TICKER_PREFIXES: tuple[str, ...] = ("bj.",)
+
+
+def is_bse_code(code: str) -> bool:
+    """判断 6 位裸代码是否为北交所股票（920 开头）。"""
+    return code.startswith(BSE_CODE_PREFIXES)
+
+
+def is_bse_or_hk(ticker: str) -> bool:
+    """判断带前缀 ticker 或 6 位裸代码是否为需排除的北交所/港股。
+
+    兼容 ``bj.``/``hk.`` 前缀与 6 位裸代码（920 开头北交所）两种形式。
+    """
+    if ticker.upper().startswith(("BJ.", "HK.")):
+        return True
+    bare = ticker.split(".")[-1]
+    return is_bse_code(bare)
+
+# ── 共享股票名称映射 ────────────────────────────────────────────────────────
+# 白名单常用股票的 6 位代码 → 名称静态映射（A 股 + 港股）。
+# daily_analysis._get_stock_name 会动态补充未命中的名称（baostock 查询缓存）。
+# daily_ta_push.py 等只读场景直接引用此常量，避免各自维护副本。
+STOCK_NAMES: dict[str, str] = {
+    "000001": "平安银行",
+    "000050": "中国联通",
+    "000538": "云南白药",
+    "000651": "格力电器",
+    "000858": "五粮液",
+    "002027": "分众传媒",
+    "002120": "韵达股份",
+    "002461": "珠江啤酒",
+    "003369": "秦港股份",
+    "00386": "中国石油化工股份",
+    "00390": "中国中铁",
+    "01448": "福寿园",
+    "01658": "邮储银行",
+    "01919": "中远海控",
+    "00700": "腾讯控股",
+    "00941": "中国移动",
+    "09988": "阿里巴巴-W",
+    "09992": "泡泡玛特",
+    "600007": "中国国贸",
+    "600011": "华能国际",
+    "600028": "中国石化",
+    "600036": "招商银行",
+    "600210": "紫江企业",
+    "600519": "贵州茅台",
+    "600887": "伊利股份",
+    "600900": "长江电力",
+    "600938": "中国海油",
+    "600941": "中国移动",
+    "601088": "中国神华",
+    "601166": "兴业银行",
+    "601225": "陕西煤业",
+    "601326": "秦港股份",
+    "601668": "中国建筑",
+    "601899": "紫金矿业",
+    "601919": "中远海控",
+    "603993": "洛阳钼业",
+}
+
 
 def get_cache_db_path() -> Path:
     """获取 pipeline_cache.db 路径（兼容测试隔离）。"""
@@ -60,6 +130,9 @@ def normalize_ticker_key(ticker: str) -> str:
     code = ticker.strip()
     if not code.isdigit():
         return ticker
+    if code[:2] in ("51", "58") or code[:3] in ("159", "156", "158"):
+        # ETF 代码：51xxxx/588xxx(沪)、159xxx/156xxx(深) → "etf.<code>"
+        return f"etf.{code}"
     # 纯数字：根据代码范围推断交易所前缀，保持原始字符串以保留前导零
     # A股代码范围：000xxx~002xxx(深主板) 003xxx~399xxx(深创业板) 600xxx~688xxx(沪主板/科创) 8xxxxx(北交所/新三板) 9xxxxx(北交所)
     num = int(code)
@@ -93,13 +166,15 @@ def get_provider_chain(ticker: str) -> list[str]:
     """根据股票类型返回 Provider 优先级链。
 
     Args:
-        ticker: 股票代码，支持 sh.600519 / sz.000001 / bj.920001 格式。
+        ticker: 股票代码，支持 sh.600519 / sz.000001 / bj.920001 / hk.00700 格式。
 
     Returns:
         Provider 名称列表，按优先级降序排列。
     """
     if ticker.startswith("bj."):
         return ["tonghuashun", "baostock"]
+    elif ticker.startswith("hk."):
+        return ["akshare_hk", "tonghuashun", "mootdx", "akshare"]
     elif ticker.startswith("sh.") or ticker.startswith("sz."):
         return ["tonghuashun", "baostock", "mootdx"]
     return ["baostock", "tonghuashun"]

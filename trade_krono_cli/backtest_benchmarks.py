@@ -16,8 +16,8 @@ import numpy as np
 
 
 def compute_benchmark_returns(
-    records: list["BacktestRecord"],
-    records_map: dict[str, list["BacktestRecord"]],
+    records: list[BacktestRecord],
+    records_map: dict[str, list[BacktestRecord]],
 ) -> dict[str, list[float]]:
     """计算基准（等权买入并持有）的累积收益率序列。
 

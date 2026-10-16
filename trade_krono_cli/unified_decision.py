@@ -118,6 +118,7 @@ class UnifiedInvestmentDecision:
     expected_value: float | None = None  # 百分比，如 1.5 = 1.5%
     risk_adjusted_ev: float | None = None  # EV / vol，类 Sharpe
     cost_bps: float = 17.0  # 双边交易成本（bps）
+    direction_bias_weight: float = 0.0  # 方向先验权重（0.0=关闭，0.2=原行为）
 
     # 交易执行
     position_size: float | None = None
@@ -144,6 +145,9 @@ class UnifiedInvestmentDecision:
           · avg_win_return：线性插值 p50~p90 区间中点
           · avg_loss_return：线性插值 p10~p50 区间中点（绝对值）
           · EV = prob_win×avg_win − prob_loss×avg_loss − cost_pct
+
+        注意：direction_bias_weight 默认 0.0（关闭先验），
+              设为 0.2 可复现旧行为。
         """
         if self.kronos_expected_return is None or self.last_close is None:
             return self
@@ -161,9 +165,10 @@ class UnifiedInvestmentDecision:
         else:
             ret_p10, ret_p90 = ret * 0.5, ret * 1.5
 
-        # 对称假设：prob_win ≈ 0.5 + sign(ret) * 0.1~0.3
-        direction_bias = 0.2 if ret > 0 else (-0.2 if ret < 0 else 0.0)
-        self.prob_win = round(max(0.05, min(0.95, 0.5 + direction_bias)), 3)
+        # 对称假设：prob_win ≈ 0.5 + sign(ret) * bias
+        # bias 由 direction_bias_weight 控制，默认 0.0（无先验）
+        bias = self.direction_bias_weight if ret > 0 else (-self.direction_bias_weight if ret < 0 else 0.0)
+        self.prob_win = round(max(0.05, min(0.95, 0.5 + bias)), 3)
         self.prob_loss = round(1.0 - self.prob_win, 3)
 
         # 收益区间中点

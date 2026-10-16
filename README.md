@@ -161,9 +161,9 @@ DEEPSEEK_API_KEY=sk-xxx
 # AGNES_API_KEY=xxx
 
 # ── LLM Behavior Config ────────────────────────────────────────
-LLM_PROVIDER=deepseek          # Default LLM provider
-DEEP_THINK_LLM=deepseek-chat   # Deep thinking model
-QUICK_THINK_LLM=deepseek-chat  # Quick thinking model
+LLM_PROVIDER=agnes             # Default LLM provider
+DEEP_THINK_LLM=agnes-3.0-flash   # Deep thinking model
+QUICK_THINK_LLM=agnes-3.0-flash  # Quick thinking model
 BACKEND_URL=https://api.example.com/v1  # Backend API URL (optional)
 MAX_DEBATE_ROUNDS=1            # Max debate rounds
 MAX_RISK_DISCUSS_ROUNDS=1      # Max risk discussion rounds
@@ -199,9 +199,9 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock request interval (seconds)
 
 | Variable | Default | Description |
 |------|--------|------|
-| `LLM_PROVIDER` | `deepseek` | Default provider: deepseek / openai / anthropic / minimax / agnes |
-| `DEEP_THINK_LLM` | `deepseek-chat` | Model used by deep analysis Agent |
-| `QUICK_THINK_LLM` | `deepseek-chat` | Model used by quick analysis Agent |
+| `LLM_PROVIDER` | `agnes` | Default provider: deepseek / openai / anthropic / minimax / agnes |
+| `DEEP_THINK_LLM` | `agnes-3.0-flash` | Model used by deep analysis Agent |
+| `QUICK_THINK_LLM` | `agnes-3.0-flash` | Model used by quick analysis Agent |
 | `BACKEND_URL` | — | LLM backend API URL, required by some providers |
 | `MAX_DEBATE_ROUNDS` | `1` | Max long-short debate rounds, 0 = no debate |
 | `MAX_RISK_DISCUSS_ROUNDS` | `1` | Max risk discussion rounds |
@@ -588,7 +588,7 @@ Each analysis job automatically records a complete version snapshot:
   "data_version": "baostock-2026-08-11",
   "model_versions": {
     "kronos": "kronos-kronos-base-kronos-Tokenizer-base-cpu",
-    "llm": "deepseek/deepseek-chat+deepseek-chat"
+    "llm": "agnes/agnes-3.0-flash+agnes-3.0-flash"
   },
   "prompt_version": "ta-v1r1-chinese",
   "strategy_version": "0.1.0",
@@ -1458,6 +1458,24 @@ See [CHANGELOG.md](./CHANGELOG.md) for full release history. | [中文版更新�
 ## GitHub Actions 自动化部署
 
 本项目提供两套 GitHub Actions workflow，支持每日定时自动投研分析和持续集成。
+
+### 每日分析流程
+
+```
+1. 数据同步     → trade-krono-cli sync-whitelist / scripts/full_history_sync.py
+2. 巴菲特筛选   → tests/buffett_screen_parallel.py（已过滤 ST / 北交所）
+3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股，仅汇总推送）
+4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股，仅汇总推送）
+5. 白名单分析   → scripts/daily_analysis.py（已过滤 ST / 北交所，仅汇总推送）
+6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；已过滤 ST / 北交所）
+7. AI 核实      → AGNES LLM（agnes-3.0-flash，10 RPM 限流）
+8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
+9. 综合交集汇总 → scripts/combined_stock_analysis.py（白名单/巴菲特合并为单一来源，
+                  技术面+基本面评估 + AI 核实 + 飞书汇总卡片 + 逐只卡片）
+```
+
+> **注意**：各筛选脚本均已内置 ST / 北交所（BSE）/ 港股过滤；逐只飞书推送逻辑已移除，
+> 仅保留汇总推送 + AI 核实。ST / BSE 关键词与代码前缀统一维护在 `scripts/_utils.py`。
 
 ### 工作流文件
 

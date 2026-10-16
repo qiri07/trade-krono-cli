@@ -356,9 +356,9 @@ class _MockSettings:
     kronos_top_p = 0.9
     kronos_use_sample_confidence = False
     default_min_confidence = 30.0
-    llm_provider = "deepseek"
-    deep_think_llm = "deepseek-chat"
-    quick_think_llm = "deepseek-chat"
+    llm_provider = "agnes"
+    deep_think_llm = "agnes-3.0-flash"
+    quick_think_llm = "agnes-3.0-flash"
     output_language = "Chinese"
     checkpoint_enabled = True
 

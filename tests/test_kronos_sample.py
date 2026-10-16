@@ -38,38 +38,37 @@ class TestKronosSampleCount:
 
     def test_predict_one_calls_cache_with_sample_count(self) -> None:
         """predict_one 的缓存查询包含 sample_count。"""
-        with patch("trade_krono_cli.kronos_runner.KronosRunner._load"):
-            with patch(
-                "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
-            ) as mock_prepare:
-                mock_prepare.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
-                runner = KronosRunner(no_cache=False, sample_count=5)
-                runner._cache = MagicMock()
-                runner._cache.get.return_value = None
+        with patch("trade_krono_cli.kronos_runner.KronosRunner._load"), patch(
+            "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
+        ) as mock_prepare:
+            mock_prepare.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
+            runner = KronosRunner(no_cache=False, sample_count=5)
+            runner._cache = MagicMock()
+            runner._cache.get.return_value = None
 
-                mock_adapter = MagicMock()
-                import numpy as np
+            mock_adapter = MagicMock()
+            import numpy as np
 
-                pred_df = MagicMock()
-                pred_df.__getitem__ = lambda self, key: (
-                    np.array([101.0, 102.0, 103.0]) if key == "close" else MagicMock()
-                )
-                mock_adapter.predict.return_value = pred_df
+            pred_df = MagicMock()
+            pred_df.__getitem__ = lambda self, key: (
+                np.array([101.0, 102.0, 103.0]) if key == "close" else MagicMock()
+            )
+            mock_adapter.predict.return_value = pred_df
 
-                mock_session = MagicMock()
-                mock_session._predictor = mock_adapter
-                runner._session = mock_session
+            mock_session = MagicMock()
+            mock_session._predictor = mock_adapter
+            runner._session = mock_session
 
-                with patch.object(runner, "_pred_df_to_dict") as mock_dict:
-                    mock_dict.return_value = {"close": [101.0, 102.0]}
-                    _result = runner.predict_one("sh.600519", "2026-08-12")
+            with patch.object(runner, "_pred_df_to_dict") as mock_dict:
+                mock_dict.return_value = {"close": [101.0, 102.0]}
+                _result = runner.predict_one("sh.600519", "2026-08-12")
 
-                # 验证缓存查询传入了 sample_count=5（可能因 fallback 被调用多次）
-                assert runner._cache.get.call_count >= 1
-                call_args = runner._cache.get.call_args_list
-                # 所有调用都应包含 sample_count=5
-                for call in call_args:
-                    assert call[0][3] == 5  # sample_count 参数
+            # 验证缓存查询传入了 sample_count=5（可能因 fallback 被调用多次）
+            assert runner._cache.get.call_count >= 1
+            call_args = runner._cache.get.call_args_list
+            # 所有调用都应包含 sample_count=5
+            for call in call_args:
+                assert call[0][3] == 5  # sample_count 参数
 
     def test_cache_key_differs_by_sample_count(self) -> None:
         """不同 sample_count 产生不同的缓存 key。"""
@@ -92,40 +91,39 @@ class TestKronosSampleCount:
 
             with patch(
                 "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
-            ) as mock_p1:
-                with patch(
-                    "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
-                ) as mock_p2:
-                    mock_p1.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
-                    mock_p2.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
+            ) as mock_p1, patch(
+                "trade_krono_cli.kronos_predictor.data_prep.DataPreparator.prepare"
+            ) as mock_p2:
+                mock_p1.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
+                mock_p2.return_value = (MagicMock(), MagicMock(), MagicMock(), 100.0)
 
-                    mock_ad1 = MagicMock()
-                    mock_ad1.predict.return_value = pred_df_1
-                    mock_session_1 = MagicMock()
-                    mock_session_1._predictor = mock_ad1
-                    runner_1._session = mock_session_1
+                mock_ad1 = MagicMock()
+                mock_ad1.predict.return_value = pred_df_1
+                mock_session_1 = MagicMock()
+                mock_session_1._predictor = mock_ad1
+                runner_1._session = mock_session_1
 
-                    with patch.object(runner_1, "_pred_df_to_dict") as mock_dict1:
-                        mock_dict1.return_value = {"close": [101.0, 102.0]}
-                        _r1 = runner_1.predict_one("sh.600519", "2026-08-12")
+                with patch.object(runner_1, "_pred_df_to_dict") as mock_dict1:
+                    mock_dict1.return_value = {"close": [101.0, 102.0]}
+                    _r1 = runner_1.predict_one("sh.600519", "2026-08-12")
 
-                    mock_ad5 = MagicMock()
-                    mock_ad5.predict.return_value = pred_df_5
-                    mock_session_5 = MagicMock()
-                    mock_session_5._predictor = mock_ad5
-                    runner_5._session = mock_session_5
+                mock_ad5 = MagicMock()
+                mock_ad5.predict.return_value = pred_df_5
+                mock_session_5 = MagicMock()
+                mock_session_5._predictor = mock_ad5
+                runner_5._session = mock_session_5
 
-                    with patch.object(runner_5, "_pred_df_to_dict") as mock_dict5:
-                        mock_dict5.return_value = {"close": [101.0, 102.0]}
-                        _r5 = runner_5.predict_one("sh.600519", "2026-08-12")
+                with patch.object(runner_5, "_pred_df_to_dict") as mock_dict5:
+                    mock_dict5.return_value = {"close": [101.0, 102.0]}
+                    _r5 = runner_5.predict_one("sh.600519", "2026-08-12")
 
-                    # 两次缓存查询应使用不同的 sample_count（各至少1次）
-                    read_calls_1 = runner_1._cache.get.call_args_list
-                    read_calls_5 = runner_5._cache.get.call_args_list
-                    assert len(read_calls_1) >= 1
-                    assert len(read_calls_5) >= 1
-                    # 检查所有调用中的 sample_count 参数
-                    args_1 = [c[0][3] for c in read_calls_1]
-                    args_5 = [c[0][3] for c in read_calls_5]
-                    assert 1 in args_1
-                    assert 5 in args_5
+                # 两次缓存查询应使用不同的 sample_count（各至少1次）
+                read_calls_1 = runner_1._cache.get.call_args_list
+                read_calls_5 = runner_5._cache.get.call_args_list
+                assert len(read_calls_1) >= 1
+                assert len(read_calls_5) >= 1
+                # 检查所有调用中的 sample_count 参数
+                args_1 = [c[0][3] for c in read_calls_1]
+                args_5 = [c[0][3] for c in read_calls_5]
+                assert 1 in args_1
+                assert 5 in args_5

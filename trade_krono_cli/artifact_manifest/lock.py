@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from .types import ArtifactManifest
+if TYPE_CHECKING:
+    from .types import ArtifactManifest
 
 _ARTIFACT_LOCK_FILENAME = "artifact.lock"
 

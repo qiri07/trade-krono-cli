@@ -51,9 +51,9 @@ class ModelArtifact:
 class LlmArtifact:
     """LLM 版本。"""
 
-    provider: str = "deepseek"
-    deep_think_model: str = "deepseek-chat"
-    quick_think_model: str = "deepseek-chat"
+    provider: str = "agnes"
+    deep_think_model: str = "agnes-3.0-flash"
+    quick_think_model: str = "agnes-3.0-flash"
     backend_url: str | None = None
 
     @property

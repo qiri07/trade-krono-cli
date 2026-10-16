@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import threading
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from trade_krono_cli.config import Settings, get_settings
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 # Whitelist of allowed cache table names
@@ -69,10 +71,8 @@ class Cache:
         # 先关当前线程的连接
         conn = getattr(self._local, "conn", None)
         if conn is not None:
-            try:
+            with contextlib.suppress(sqlite3.Error):
                 conn.close()
-            except sqlite3.Error:
-                pass
             self._local.conn = None
         # 再关其他线程遗留的连接
         with Cache._conn_lock:
@@ -82,10 +82,8 @@ class Cache:
                 except sqlite3.Error:
                     # 连接已失效，跳过
                     continue
-                try:
+                with contextlib.suppress(sqlite3.Error):
                     c.close()
-                except sqlite3.Error:
-                    pass
             Cache._all_conns.clear()
 
     def _transaction(self, fn: Callable[..., None]) -> None:
@@ -156,10 +154,15 @@ class Cache:
             "ALTER TABLE ta_cache ADD COLUMN config_hash  TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE ta_cache ADD COLUMN prompt_ver   TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE ta_cache ADD COLUMN model_ver    TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE ta_cache ADD COLUMN version      INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE ta_cache ADD COLUMN trace_id     TEXT",
+            "ALTER TABLE ta_cache ADD COLUMN input_hash   TEXT",
             "ALTER TABLE kronos_cache ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE kronos_cache ADD COLUMN model_ver   TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE kline_cache ADD COLUMN adjustflag  TEXT NOT NULL DEFAULT '1'",
             "ALTER TABLE kline_cache ADD COLUMN data_hash   TEXT",
+            "ALTER TABLE kline_cache ADD COLUMN source_provider TEXT",
+            "ALTER TABLE kline_cache ADD COLUMN source_version TEXT",
             # 新增索引（IF NOT EXISTS 避免重复创建错误）
             "CREATE INDEX IF NOT EXISTS idx_kline_cache_ticker ON kline_cache(ticker)",
             "CREATE INDEX IF NOT EXISTS idx_ta_cache_ticker ON ta_cache(ticker)",

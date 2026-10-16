@@ -35,7 +35,7 @@ _SECTOR_CONCENTRATION_RISK: dict[str, float] = {
 _DEFAULT_CONCENTRATION_SCORE = 15.0
 
 
-def calc_concentration_risk(ta_result: "StockAnalysisResult | None" = None) -> float:
+def calc_concentration_risk(ta_result: StockAnalysisResult | None = None) -> float:
     """计算集中度风险分（0-100）。
 
     采用启发式规则：

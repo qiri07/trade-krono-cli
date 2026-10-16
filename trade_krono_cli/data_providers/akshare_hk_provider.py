@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import pandas as pd
 import requests
@@ -25,9 +25,6 @@ from trade_krono_cli.data_providers.base import (
     StockMetadata,
 )
 from trade_krono_cli.utils import pd_to_datetime_safe, safe_float
-
-if TYPE_CHECKING:
-    pass
 
 
 class AkShareHKProvider(DataProvider):
@@ -251,7 +248,7 @@ class AkShareHKProvider(DataProvider):
             amount=df[amount_col].astype(float).tolist() if amount_col else [0.0] * len(timestamps),
         )
 
-    def fetch_quote(self, ticker: str) -> "RealtimeQuote | None":
+    def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
         """通过 akshare.stock_hk_spot 获取实时行情。"""
         try:
             self._ensure_import()
@@ -271,7 +268,7 @@ class AkShareHKProvider(DataProvider):
             logger.debug(f"{self.name} 实时行情获取失败 {ticker}: {e}")
             return None
 
-    def fetch_metadata(self, ticker: str) -> "StockMetadata | None":
+    def fetch_metadata(self, ticker: str) -> StockMetadata | None:
         """获取港股元数据（PE/PB via 腾讯行情接口）。
 
         腾讯港股 API 字段偏移与 A 股不同：

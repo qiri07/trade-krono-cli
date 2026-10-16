@@ -26,7 +26,7 @@ def _to_plain(obj: Any) -> Any:  # noqa: ANN401 — 递归序列化，输入类�
     return obj
 
 
-def to_dict(cfg: "PipelineConfig") -> dict:
+def to_dict(cfg: PipelineConfig) -> dict:
     """将 PipelineConfig 序列化为扁平 dict（含嵌套子配置）。"""
     result: dict[str, Any] = {}
     for name in (
@@ -97,7 +97,7 @@ def to_dict(cfg: "PipelineConfig") -> dict:
     return result
 
 
-def from_dict(data: dict) -> "PipelineConfig":
+def from_dict(data: dict) -> PipelineConfig:
     """从扁平 dict 反序列化为 PipelineConfig。"""
     from trade_krono_cli.pipeline_config import PipelineConfig
 
@@ -128,7 +128,7 @@ def from_dict(data: dict) -> "PipelineConfig":
     return PipelineConfig(**dict(flat_data), **dict(sub_data))  # type: ignore[arg-type]
 
 
-def load(path: str | Path) -> "PipelineConfig":
+def load(path: str | Path) -> PipelineConfig:
     """从 JSON 或 YAML 文件加载 PipelineConfig。"""
     p = Path(path)
     suffix = p.suffix.lower()
@@ -143,14 +143,14 @@ def load(path: str | Path) -> "PipelineConfig":
         return _load_yaml(p)
 
 
-def _load_json(path: Path) -> "PipelineConfig":
+def _load_json(path: Path) -> PipelineConfig:
     """从 JSON 文件加载 PipelineConfig。"""
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     return from_dict(data)
 
 
-def _load_yaml(path: Path) -> "PipelineConfig":
+def _load_yaml(path: Path) -> PipelineConfig:
     """从 YAML 文件加载 PipelineConfig。"""
     try:
         import yaml
@@ -165,7 +165,7 @@ def _load_yaml(path: Path) -> "PipelineConfig":
     return from_dict(data)
 
 
-def save(cfg: "PipelineConfig", path: str | Path) -> None:
+def save(cfg: PipelineConfig, path: str | Path) -> None:
     """将 PipelineConfig 保存为 JSON 或 YAML 文件。"""
     p = Path(path)
     data = to_dict(cfg)

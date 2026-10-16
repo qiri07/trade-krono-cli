@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """全市场三周期 MACD 共振筛选 + 分析 + 飞书推送。
 
-筛选逻辑：
-  - 日线 MACD > 0（短期动能向上）
-  - 周线 MACD > 0（中期趋势向上）
-  - 月线 MACD > 0（长期趋势向上）
-  三线共振 = 股性强、趋势明确的标的
+筛选逻辑（三线共振"向上"）：
+  - 日线 MACD DIF > 0 且 DIF 较前一交易日上升
+  - 周线 MACD DIF > 0 且 DIF 较前一周上升
+  - 月线 MACD DIF > 0 且 DIF 较前一月上升
+  即三周期动能均处于零轴上方且仍在抬升，排除 DIF 已拐头向下的假共振。
 
 用法：
   uv run python scripts/multi_line_resonance.py
@@ -36,7 +36,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import check_data_freshness, get_cache_db_path, ticker_to_thscode
+from scripts._utils import (
+    ST_NAME_KEYWORDS,
+    check_data_freshness,
+    get_cache_db_path,
+    is_bse_or_hk,
+    ticker_to_thscode,
+)
 from scripts.daily_analysis import ai_verify
 from scripts.feishu_core import load_config, send_notification
 
@@ -51,20 +57,20 @@ _FUYAO_API_KEY = (
     os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
 )
 
-_ST_KEYWORDS = ("ST", "*ST", "退市", "N", "C")
+_ST_KEYWORDS = ST_NAME_KEYWORDS
 
 
 def _get_all_tickers(db_path: Path) -> list[str]:
-    """从缓存数据库获取所有股票代码（排除北交所）。"""
+    """从缓存数据库获取所有股票代码（排除北交所和港股）。"""
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
     all_tickers = [r[0] for r in cur.fetchall()]
     conn.close()
 
-    # 排除北交所（bj.开头）
-    astock_tickers = [t for t in all_tickers if not t.startswith("bj.")]
-    logger.info(f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所后 {len(astock_tickers)} 只")
+    # 排除北交所（bj.开头）和港股（hk.开头）
+    astock_tickers = [t for t in all_tickers if not is_bse_or_hk(t)]
+    logger.info(f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所/港股后 {len(astock_tickers)} 只")
     return astock_tickers
 
 
@@ -116,6 +122,7 @@ def _fetch_hk_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str,
                         continue
                     result[raw_code] = {"pe": pe_f, "name": name}
                 except Exception:
+                    logger.debug(f"港股 PE 解析失败: {raw_code}")
                     continue
         except Exception as e:
             logger.debug(f"港股 PE 获取失败（批次 {i // batch_size + 1}）: {str(e)[:80]}")
@@ -190,27 +197,29 @@ def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, di
     return result
 
 
-def _macd(values: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> float:
-    """计算给定价格序列的最新 MACD 值（柱状图 = DIF - DEA，返回 DIF 值）。
+def _macd(values: pd.Series, fast: int = 12, slow: int = 26) -> tuple[float, float]:
+    """计算给定价格序列的最新及前一期 MACD DIF 值。
+
+    DIF = EMA(fast) - EMA(slow)。"向上"判定需比较 DIF 序列连续两期。
 
     Parameters
     ----------
     values : pd.Series
-        价格序列（收盘/重采样后收盘价）
-    fast, slow, signal : int
-        MACD 参数，默认 (12, 26, 9)
+        价格序列（收盘/重采样后收盘价），需带 DatetimeIndex 或至少 28 个数据点
+    fast, slow : int
+        MACD 参数，默认 (12, 26)
 
     Returns
     -------
-    float
-        最新 DIF 值（DIF = EMA(fast) - EMA(slow)，MACD 柱 = 2*(DIF - EMA(DIF, signal))）
+    tuple[float, float]
+        (最新 DIF, 前一期 DIF)。数据不足时返回 (nan, nan)。
     """
-    if len(values) < slow + 1:
-        return float("nan")
+    if len(values) < slow + 2:
+        return float("nan"), float("nan")
     ema_fast = values.ewm(span=fast, adjust=False).mean()
     ema_slow = values.ewm(span=slow, adjust=False).mean()
     dif = ema_fast - ema_slow
-    return float(dif.iloc[-1])
+    return float(dif.iloc[-1]), float(dif.iloc[-2])
 
 
 def _resample_close(df: pd.DataFrame, freq: str) -> pd.Series:
@@ -263,28 +272,31 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
     if len(close_clean) < 50:
         return None
 
-    # ── 日线 MACD ──
-    d_macd = _macd(close_clean)
+    # ── 日线 MACD（最新 DIF + 前一期 DIF）──
+    d_macd, d_macd_prev = _macd(close_clean)
     if pd.isna(d_macd):
         return None
 
     # ── 周线 MACD ──
+    w_macd, w_macd_prev = float("nan"), float("nan")
     try:
-        w_close = close.resample("W").last().dropna()
-        w_macd = _macd(w_close)
+        w_series = close.resample("W").last().dropna()
+        w_macd, w_macd_prev = _macd(w_series)
     except Exception:
-        w_macd = float("nan")
+        pass
 
     # ── 月线 MACD ──
+    m_macd, m_macd_prev = float("nan"), float("nan")
     try:
-        m_close = close.resample("ME").last().dropna()
-        m_macd = _macd(m_close)
+        m_series = close.resample("ME").last().dropna()
+        m_macd, m_macd_prev = _macd(m_series)
     except Exception:
-        m_macd = float("nan")
+        pass
 
-    d_ok = not pd.isna(d_macd) and d_macd > 0
-    w_ok = not pd.isna(w_macd) and w_macd > 0
-    m_ok = not pd.isna(m_macd) and m_macd > 0
+    # 三线共振"向上"：各周期 DIF > 0 且 DIF 较上期上升
+    d_ok = not pd.isna(d_macd) and d_macd > 0 and d_macd > d_macd_prev
+    w_ok = not pd.isna(w_macd) and w_macd > 0 and w_macd > w_macd_prev
+    m_ok = not pd.isna(m_macd) and m_macd > 0 and m_macd > m_macd_prev
 
     if not (d_ok and w_ok and m_ok):
         return None
@@ -310,10 +322,18 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
     else:
         ma_signal = "震荡"
 
-    # 综合评分（MACD 强度 + 均线 + 涨跌幅）
+    # 综合评分（MACD DIF 相对上升强度 + 均线 + 涨跌幅）
     score = 0.0
-    # MACD 归一化评分（假设 MACD 在 -5 到 +10 之间，取对数缩放）
-    macd_score = min(max(d_macd * 10, 0), 100)
+    # MACD 评分：日/周/月 DIF 相对上升幅度（DIF 绝对值因股价量级不同不可比，统一用上升百分比）
+    def _rise(dif_now: float, dif_prev: float) -> float:
+        """DIF 相对上升幅度（%）：正值表示较上期上升。"""
+        return (dif_now - dif_prev) / abs(dif_prev) * 100 if dif_prev != 0 else 100.0
+
+    d_rise = _rise(d_macd, d_macd_prev)
+    w_rise = _rise(w_macd, w_macd_prev) if not pd.isna(w_macd) else 0.0
+    m_rise = _rise(m_macd, m_macd_prev) if not pd.isna(m_macd) else 0.0
+
+    macd_score = min(max(d_rise * 5, 0), 100)  # DIF 日环比 +20% 即满分
     score += macd_score * 0.4
     if ma_signal == "多头排列✅":
         score += 25
@@ -322,9 +342,9 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
     # 涨跌幅评分
     change_score = min(max(change_pct * 5 + 50, 0), 100)
     score += change_score * 0.2
-    # 周线/月线 MACD 强度
-    w_score = min(max(w_macd * 10, 0), 100) if not pd.isna(w_macd) else 50
-    m_score = min(max(m_macd * 10, 0), 100) if not pd.isna(m_macd) else 50
+    # 周线/月线 DIF 上升强度
+    w_score = min(max(w_rise * 5, 0), 100)
+    m_score = min(max(m_rise * 5, 0), 100)
     score += (w_score + m_score) * 0.1
 
     return {
@@ -391,7 +411,7 @@ def _build_summary_card(results: list[dict[str, Any]], date: str, ai_result: dic
         lines.append("")
 
     lines.append("---")
-    lines.append("筛选条件：日线 MACD>0 且 周线 MACD>0 且 月线 MACD>0 且 PE>0 且非ST 且 评分≥50")
+    lines.append("筛选条件：日/周/月 MACD DIF>0 且 DIF 较上期上升（三线共振向上），PE>0，非ST，评分≥50")
     lines.append(f"数据日期：{date}")
     return "\n".join(lines)
 
@@ -548,24 +568,11 @@ def main() -> None:
             logger.warning(f"AI 核实失败: {str(e)[:100]}")
             ai_result = {}
 
-    # 飞书推送
+    # 飞书推送（仅汇总推送，不逐只推送）
     if results:
         summary = _build_summary_card(results, date_str, ai_result)
         config = load_config()
 
-        # 逐只推送详情（最多 20 只）
-        for r in results[:20]:
-            card = (
-                f"📊 **{date_str} · {r['ticker']}**\n"
-                f"🟢 **综合分：{r['score']}**\n"
-                f"收盘价：{r['close']}  今日涨跌：{r['change_pct']:+.2f}%\n"
-                f"日MACD：{r['d_macd']:+.4f}　周MACD：{r.get('w_macd', 'N/A')}　月MACD：{r.get('m_macd', 'N/A')}\n"
-                f"MA5={r['ma5']}　MA10={r['ma10']}　MA20={r['ma20']}　{r['ma_signal']}\n"
-            )
-            ok = send_notification(mode="text", config=config, content=card, title=r["ticker"])
-            logger.info(f"  {'✅' if ok else '❌'} 已推送飞书: {r['ticker']}")
-
-        # 汇总推送
         ok = send_notification(
             mode="text",
             config=config,

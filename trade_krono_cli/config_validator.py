@@ -228,6 +228,7 @@ _PROVIDER_ENV_KEY = {
     "anthropic": "ANTHROPIC_API_KEY",
     "minimax": "MINIMAX_API_KEY",
     "agnes": "AGNES_API_KEY",
+    "openai_compatible": "OPENAI_COMPATIBLE_API_KEY",
 }
 
 

@@ -7,6 +7,7 @@
   · 新版存完整分位数（p10/p25/p50/p75/p90），支持从多样本路径矩阵直接计算
   · 单样本时百分位退化为 {p10:close, p25:close, p50:final, p75:close, p90:close}
   · 保留原有摘要字段向后兼容
+  · 新增 distribution_status 字段标识有效/退化/无样本状态
 
 数据结构：
   PredictionDistribution
@@ -17,6 +18,7 @@
     volatility            预测路径的标准差
     path_dispersion       归一化路径分散度（多样本才有意义）
     sample_count_used     实际使用的样本数
+    distribution_status   "valid" | "degenerate" | "no_samples"
     # 分位数（多样本时填充，单样本时退化为 close）
     p10                   10% 分位收盘价
     p25                   25% 分位收盘价
@@ -28,8 +30,29 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from enum import Enum
 
 import numpy as np
+
+# ═══════════════════════════════════════════════════════
+#  DistributionStatus — 分布状态枚举
+# ═══════════════════════════════════════════════════════
+
+
+class DistributionStatus(str, Enum):
+    """预测分布的状态标识。
+
+    Values
+    ------
+    no_samples     无样本数据
+    degenerate     单样本或无效数据，分位数退化为同一值
+    valid          有效多样本分布
+    """
+
+    NO_SAMPLES = "no_samples"
+    DEGENERATE = "degenerate"
+    VALID = "valid"
+
 
 # ═══════════════════════════════════════════════════════
 #  PredictionDistribution — 核心数据类
@@ -52,6 +75,7 @@ class PredictionDistribution:
                          多样本：direction_score*50 + max(0, 50-dispersion*200)
                          单样本：direction_score * 100
       sample_count_used  实际使用的样本数
+      distribution_status 分布状态："valid" | "degenerate" | "no_samples"
       # 分位数字段（多样本时填充，单样本时退化为最终价）
       p10 / p25 / p50 / p75 / p90 : 各分位收盘价
     """
@@ -64,6 +88,7 @@ class PredictionDistribution:
     path_dispersion: float | None = None
     confidence_score: float | None = None
     sample_count_used: int = 1
+    distribution_status: str = DistributionStatus.VALID.value
 
     # ── 分位数字段（多样本时填充）─────────────────────────────────────────
     p10: float | None = None
@@ -90,20 +115,26 @@ def _compute_percentiles(
     stacked: np.ndarray,
     n_samples: int,
     last_close: float,
-) -> tuple[float, float, float, float, float]:
+) -> tuple[float, float, float, float, float, str]:
     """从路径矩阵计算最终价的百分位。
 
     多样本：从各样本的最终价计算 p10/p25/p50/p75/p90。
-    单样本：退化为 [last_close, last_close, final, last_close, last_close]。
+    单样本：退化为 [last_close, last_close, final, last_close, last_close]
+            并返回 status="degenerate"。
+    无样本：返回全 0 并返回 status="no_samples"。
 
     Returns
     -------
-    (p10, p25, p50, p75, p90)
+    (p10, p25, p50, p75, p90, status)
+      status 为 "valid" | "degenerate" | "no_samples"
 
     """
+    if n_samples <= 0 or len(stacked) <= 0:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, DistributionStatus.NO_SAMPLES.value
+
     if n_samples <= 1 or len(stacked) <= 1:
         final = float(stacked[-1, -1])
-        return final, final, final, final, final
+        return final, final, final, final, final, DistributionStatus.DEGENERATE.value
 
     # 各样本最终价
     final_prices = stacked[:, -1].astype(float)
@@ -112,13 +143,13 @@ def _compute_percentiles(
     p50 = float(np.percentile(final_prices, 50))
     p75 = float(np.percentile(final_prices, 75))
     p90 = float(np.percentile(final_prices, 90))
-    return p10, p25, p50, p75, p90
+    return p10, p25, p50, p75, p90, DistributionStatus.VALID.value
 
 
 def compute_single_sample(
     closes: np.ndarray,
     last_close: float,
-) -> tuple[float, str, float, float | None, float, float, tuple]:
+) -> tuple[float, str, float, float | None, float, float, tuple, str]:
     """对单条预测路径计算分布指标。
 
     Parameters
@@ -130,8 +161,9 @@ def compute_single_sample(
 
     Returns
     -------
-    (change_pct, direction, vol, path_dispersion, direction_score, confidence_score, percentiles)
+    (change_pct, direction, vol, path_dispersion, direction_score, confidence_score, percentiles, status)
       percentiles = (p10, p25, p50, p75, p90) 单样本时退化为 (final, final, final, final, final)
+      status = "degenerate"
 
     """
     closes_f = closes.astype(float)
@@ -151,7 +183,7 @@ def compute_single_sample(
     # confidence_score = direction_score * 100（单样本规则）
     confidence_score = round(min(100.0, max(0.0, direction_score * 100.0)), 2)
 
-    # 单样本百分位退化为最终价
+    # 单样本百分位退化为最终价，标记为退化状态
     percentiles = (final_close, final_close, final_close, final_close, final_close)
 
     return (
@@ -162,6 +194,7 @@ def compute_single_sample(
         round(direction_score, 4),
         confidence_score,
         percentiles,
+        DistributionStatus.DEGENERATE.value,
     )
 
 
@@ -169,7 +202,7 @@ def compute_multi_sample(
     avg_close: np.ndarray,
     stacked: np.ndarray,
     last_close: float,
-) -> tuple[float, str, float, float, float, float, tuple]:
+) -> tuple[float, str, float, float, float, float, tuple, str]:
     """对多样本预测（N 条路径取均值）计算分布指标。
 
     Parameters
@@ -183,7 +216,8 @@ def compute_multi_sample(
 
     Returns
     -------
-    (change_pct, direction, vol, path_dispersion, direction_score, confidence_score, percentiles)
+    (change_pct, direction, vol, path_dispersion, direction_score, confidence_score, percentiles, status)
+      status = "valid" for multi-sample
 
     """
     final_close = float(avg_close[-1])
@@ -205,7 +239,7 @@ def compute_multi_sample(
     path_dispersion = round(sample_cv, 6)
 
     # 计算百分位
-    percentiles = _compute_percentiles(stacked, n_samples, last_close)
+    percentiles = _compute_percentiles(stacked, n_samples, last_close)[:5]
 
     return (
         round(change_pct, 3),
@@ -215,6 +249,7 @@ def compute_multi_sample(
         round(direction_score, 4),
         conf_score,
         percentiles,
+        DistributionStatus.VALID.value,
     )
 
 
@@ -227,6 +262,7 @@ def build_distribution(
     confidence_score: float,
     sample_count: int,
     percentiles: tuple[float, float, float, float, float],
+    distribution_status: str = DistributionStatus.VALID.value,
 ) -> PredictionDistribution:
     """根据已计算的分布指标构建 PredictionDistribution 对象。
 
@@ -240,6 +276,7 @@ def build_distribution(
     confidence_score : 综合不确定性评分 0-100
     sample_count     : 实际使用的样本数
     percentiles      : (p10, p25, p50, p75, p90) 最终价分位数
+    distribution_status : "valid" | "degenerate" | "no_samples"
 
     """
     p10, p25, p50, p75, p90 = percentiles
@@ -251,6 +288,7 @@ def build_distribution(
         path_dispersion=path_dispersion,
         confidence_score=confidence_score,
         sample_count_used=sample_count,
+        distribution_status=distribution_status,
         p10=p10,
         p25=p25,
         p50=p50,
@@ -282,6 +320,12 @@ def build_result_dict(
     q_low = float(np.percentile(closes_f, 25)) if len(closes_f) > 1 else mean_close
     q_high = float(np.percentile(closes_f, 75)) if len(closes_f) > 1 else mean_close
 
+    path_disp: float | None = None
+    direction_score: float = 0.0
+    confidence_score: float = 0.0
+    percentiles: tuple[float, float, float, float, float] = (0.0, 0.0, 0.0, 0.0, 0.0)
+    dist_status: str = DistributionStatus.VALID.value
+
     # 计算分布指标
     if stacked is not None and len(stacked) > 1:
         (
@@ -292,6 +336,7 @@ def build_result_dict(
             direction_score,
             confidence_score,
             percentiles,
+            dist_status,
         ) = compute_multi_sample(closes_f, stacked, last_close)
     else:
         (
@@ -302,21 +347,19 @@ def build_result_dict(
             direction_score,
             confidence_score,
             percentiles,
-        ) = compute_single_sample(closes_f, last_close)  # type: ignore[assignment]
+            dist_status,
+        ) = compute_single_sample(closes_f, last_close)
 
-    distribution = PredictionDistribution(
-        expected_return=change_pct,
+    distribution = build_distribution(
+        change_pct=change_pct,
         direction=direction,
-        direction_score=direction_score,
-        volatility=vol,
+        vol=vol,
         path_dispersion=path_disp,
+        direction_score=direction_score,
         confidence_score=confidence_score,
-        sample_count_used=sample_count,
-        p10=percentiles[0],
-        p25=percentiles[1],
-        p50=percentiles[2],
-        p75=percentiles[3],
-        p90=percentiles[4],
+        sample_count=sample_count,
+        percentiles=percentiles,
+        distribution_status=dist_status,
     )
 
     return {

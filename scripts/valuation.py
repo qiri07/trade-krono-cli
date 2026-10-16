@@ -11,11 +11,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
 
 # ── 行业类型判断 ───────────────────────────────────────────────────────────────
 

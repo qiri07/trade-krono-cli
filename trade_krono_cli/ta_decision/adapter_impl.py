@@ -151,7 +151,7 @@ class DecisionAdapter:
     # ── JSON 结构化解析 ─────────────────────────────────────────────────────
 
     @staticmethod
-    def _try_parse_json(text: str) -> "InvestmentDecision | None":
+    def _try_parse_json(text: str) -> InvestmentDecision | None:
         """尝试将输入解析为 JSON 结构化决策（委托给 parsers 模块）。"""
         from trade_krono_cli.ta_decision.parsers import parse_json  # noqa: PLC0415
 

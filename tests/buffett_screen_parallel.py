@@ -23,7 +23,7 @@ from pathlib import Path
 # 确保项目根目录在 sys.path 中，使 `from tests.xxx` 能正常工作
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts._utils import check_data_freshness
+from scripts._utils import check_data_freshness, is_bse_or_hk
 from tests.buffett_cache import (
     cache_clean,
     init_cache,
@@ -43,35 +43,37 @@ from tests.buffett_screening import (
 from trade_krono_cli.cli_commands._core_helpers import _load_env
 
 
-def _notify_feishu(
-    result_file: str, pass_count: int, fail_count: int, ai_summary: str = ""
-) -> None:
+def _push_feishu_buffett(result_file: str, ai_summary: str = "") -> None:
+    """统一调用 feishu_cli.py 推送巴菲特筛选结果。
+
+    Parameters
+    ----------
+    result_file : str
+        筛选结果文件路径
+    ai_summary : str
+        AI 核实摘要文本
+    """
+
+    args: list[str] = [
+        sys.executable,
+        "scripts/feishu_cli.py",
+        "buffett",
+        "--result-file",
+        result_file,
+    ]
+    if ai_summary.strip():
+        args += ["--ai-summary", ai_summary]
     try:
-        # 构建完整提示：原始结果 + AI 分析
-        prompt_args: list[str] = [
-            sys.executable,
-            "scripts/feishu_cli.py",
-            "buffett",
-            "--result-file",
-            result_file,
-        ]
-        if ai_summary:
-            prompt_args += ["--ai-summary", ai_summary]
-        result = subprocess.run(
-            prompt_args,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+        result = subprocess.run(args, capture_output=True, text=True, timeout=20)  # noqa: S603
         if result.returncode == 0:
-            print(f"飞书推送成功：{result.stdout.strip()}", flush=True)
+            print("飞书推送成功", flush=True)
         else:
             print(f"飞书推送失败：{result.stderr.strip()}", flush=True)
     except Exception as e:
         print(f"飞书通知异常（不影响结果）：{e}", flush=True)
 
 
-def _write_dynamic_whitelist(results_pass: list["StockMetrics"]) -> None:
+def _write_dynamic_whitelist(results_pass: list[StockMetrics]) -> None:
     """将本次通过筛选的股票代码写入动态白名单文件（覆盖旧内容）。
 
     Parameters
@@ -81,7 +83,8 @@ def _write_dynamic_whitelist(results_pass: list["StockMetrics"]) -> None:
     """
     whitelist_path = Path("outputs/results/buffett_dynamic_whitelist.txt")
     whitelist_path.parent.mkdir(parents=True, exist_ok=True)
-    codes = [r.ticker for r in results_pass if r.ticker]
+    # 排除北交所股票（920 开头的裸代码或 bj. 前缀）
+    codes = [r.ticker for r in results_pass if r.ticker and not is_bse_or_hk(r.ticker)]
     whitelist_path.write_text(",".join(codes), encoding="utf-8")
     print(f"动态白名单已更新：{len(codes)} 只 → {whitelist_path}", flush=True)
 
@@ -110,7 +113,7 @@ def _save_ai_result(ai_result: AiVerificationResult, result_txt_path: str) -> No
     if summary:
         with open(result_txt_path, "a", encoding="utf-8") as f:
             f.write(f"\n{'=' * 60}\n")
-            f.write(f"🤖 AI 核实分析（agnes-2.5-flash）— {ai_result.date}\n")
+            f.write(f"🤖 AI 核实分析（agnes-3.0-flash）— {ai_result.date}\n")
             f.write(f"{'=' * 60}\n\n")
             f.write(summary)
             f.write("\n")
@@ -164,6 +167,9 @@ def main() -> None:
                 continue
             if code.startswith(("000", "399")):
                 continue
+            # 排除北交所股票（920 开头的裸代码，如 920001）
+            if is_bse_or_hk(code):
+                continue
             filtered.append(s)
         print(f"  过滤后 {len(filtered)} 只（排除ST/次新）", flush=True)
 
@@ -209,7 +215,7 @@ def main() -> None:
         print(f"缓存已保存：{saved} 条新记录", flush=True)
 
         # 7. 推送飞书通知（含 AI 分析摘要）
-        _notify_feishu(out_path, len(results_pass), len(results_fail), ai_summary=ai_summary)
+        _push_feishu_buffett(out_path, ai_summary=ai_summary)
 
     finally:
         conn.close()

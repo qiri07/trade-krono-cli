@@ -135,6 +135,7 @@ _KEY_ENV_MAP = {
     "anthropic": "ANTHROPIC_API_KEY",
     "minimax": "MINIMAX_API_KEY",
     "agnes": "AGNES_API_KEY",
+    "openai_compatible": "OPENAI_COMPATIBLE_API_KEY",
 }
 
 
@@ -220,17 +221,62 @@ def sanitize_for_log(message: str) -> str:
 
 
 def ensure_import_path(*paths: Path) -> None:
-    """Insert paths into sys.path (harness-first, then root), skipping
-    duplicates and non-existent directories.
+    """安全地插入路径到 sys.path。
+
+    安全检查：
+      · 只允许绝对路径
+      · 只允许在已知白名单目录下的路径（external/ 和项目根）
+      · 记录日志以便审计
 
     Parameters
     ----------
     *paths : Path
-        Directories to insert; inserted in order at the front of sys.path.
-        Non-existent paths are silently skipped.
+        要插入的目录路径。非existent路径静默跳过。
+
+    Raises
+    ------
+    ValueError
+        如果路径不是绝对路径或不在白名单内。
 
     """
+    # 白名单：只允许这些根目录下的路径
+    import pathlib
+    _ALLOWED_ROOTS = [
+        pathlib.Path(__file__).parent.parent.parent,  # 项目根
+        pathlib.Path(__file__).parent.parent / "external",  # external/
+    ]
+
     for p in paths:
         sp = str(p)
-        if p.exists() and sp not in sys.path:
-            sys.path.insert(0, sp)
+        if not p.exists():
+            continue
+        if sp in sys.path:
+            continue
+
+        # 安全检查：必须是绝对路径且在白名单内
+        if not p.is_absolute():
+            logger.warning(f"⚠️  拒绝相对路径加入 sys.path: {p}")
+            continue
+
+        # 检查是否在白名单目录下
+        try:
+            p.resolve().relative_to(_ALLOWED_ROOTS[0].resolve())
+            is_allowed = True
+        except ValueError:
+            is_allowed = False
+
+        if not is_allowed:
+            try:
+                for root in _ALLOWED_ROOTS:
+                    p.resolve().relative_to(root.resolve())
+                    is_allowed = True
+                    break
+            except ValueError:
+                is_allowed = False
+
+        if not is_allowed:
+            logger.warning(f"⚠️  拒绝路径加入 sys.path（不在白名单）: {p}")
+            continue
+
+        sys.path.insert(0, sp)
+        logger.debug(f"📦 路径已加入 sys.path: {p}")

@@ -23,20 +23,20 @@ from trade_krono_cli.data import fetch_realtime_quote
 from trade_krono_cli.pipeline.merge import filter_pool, merge_results
 from trade_krono_cli.pipeline.orchestrator import CommitteeOrchestrator
 from trade_krono_cli.pipeline.reporter import save_html_report, save_json_report
-from trade_krono_cli.research_db import ResearchDatabase
 from trade_krono_cli.stock_filter import StockFilter, StockMeta
 from trade_krono_cli.t1_tracker import T1Tracker
-from trade_krono_cli.ta_runner import StockAnalysisResult
 
 if TYPE_CHECKING:
     from trade_krono_cli.constraints_config import ConstraintConfig
     from trade_krono_cli.pipeline_config import PipelineConfig
+    from trade_krono_cli.research_db import ResearchDatabase
+    from trade_krono_cli.ta_runner import StockAnalysisResult
 
 
 def apply_metadata_filter(
     ta_results: list[StockAnalysisResult],
     abnormal_flags_map: dict[str, Any],
-    config: "PipelineConfig",
+    config: PipelineConfig,
     min_confidence: float,
     allowed_signals: tuple[str, ...],
 ) -> tuple[list[StockAnalysisResult], dict[str, dict]]:
@@ -112,7 +112,7 @@ def apply_metadata_filter(
         for r in filtered_ta_list
     ]
     passed_metas, rejected_ta_extra = filter_engine.apply_batch(meta_list)
-    rejected_ta.extend(cast(list["StockAnalysisResult"], rejected_ta_extra))
+    rejected_ta.extend(cast("list[StockAnalysisResult]", rejected_ta_extra))
     passed_tickers = {m.ticker for m in passed_metas}
     filtered_ta_final = [r for r in filtered_ta_list if r.ticker in passed_tickers]
 
@@ -128,8 +128,8 @@ def merge_and_boost(
     kronos_results: list,
     kline_data: dict,
     quote_data: dict[str, dict],
-    constraints_config: "ConstraintConfig",
-    config: "PipelineConfig",
+    constraints_config: ConstraintConfig,
+    config: PipelineConfig,
     abnormal_flags_map: dict[str, Any],
 ) -> list[dict]:
     """合并 TA + Kronos 结果，应用交易约束，并上调异常风险分。

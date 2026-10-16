@@ -20,9 +20,8 @@ from trade_krono_cli.abnormal_stock import (
 )
 from trade_krono_cli.config import Settings, get_settings
 from trade_krono_cli.data import fetch_realtime_quote
-from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
-from trade_krono_cli.pipeline.factory import PipelineFactory, _collect_futures
+from trade_krono_cli.pipeline.factory import PipelineFactory
 from trade_krono_cli.pipeline.merge import filter_pool
 from trade_krono_cli.pipeline.orchestrator import CommitteeOrchestrator, ReportIndexer
 from trade_krono_cli.pipeline.post_processing import (
@@ -33,12 +32,13 @@ from trade_krono_cli.pipeline.post_processing import (
 from trade_krono_cli.pipeline_config import PipelineConfig
 from trade_krono_cli.research_db import get_research
 from trade_krono_cli.stock_filter import StockFilter, StockMeta
-from trade_krono_cli.ta_runner import StockAnalysisResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from trade_krono_cli.constraints_config import ConstraintConfig
+    from trade_krono_cli.kronos_runner import KronosForecastResult
+    from trade_krono_cli.ta_runner import StockAnalysisResult
     from trade_krono_cli.universe.engine import UniverseEngine
 
 
@@ -47,6 +47,11 @@ class QuantPipeline:
     1. TradingAgents 批量分析（线程1）
     2. Kronos 批量预测   （线程2）
     3. 两者并行完成后融合打分.
+
+    支持配置化并发：
+      · max_workers: 最大并发线程数（默认 2）
+      · task_timeout: 单任务超时（秒）
+      · deadline: 整体截止时间（秒）
     """
 
     def __init__(
@@ -67,6 +72,10 @@ class QuantPipeline:
         kronos_runner: Any | None = None,
         # Universe Engine（可选：无 tickers 时自动从全市场生成）
         universe_engine: UniverseEngine | None = None,
+        # 并发配置
+        max_workers: int = 2,
+        task_timeout: float | None = None,
+        deadline: float | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._config = config or PipelineConfig.default()
@@ -96,6 +105,23 @@ class QuantPipeline:
             skip_kronos=skip_kronos,
             ta_session=ta_session,
             kronos_session=kronos_session,
+        )
+
+        # 并发配置
+        self.max_workers = max_workers
+        self.task_timeout = task_timeout
+        self.deadline = deadline
+
+        logger.info(
+            f"🏭 QuantPipeline 就绪 | "
+            f"max_workers={max_workers} "
+            f"task_timeout={task_timeout} "
+            f"deadline={deadline} "
+            f"min_confidence={self.min_confidence} "
+            f"allowed_signals={self.allowed_signals} "
+            f"skip_kronos={skip_kronos} "
+            f"constraints={'enabled' if self.constraints_config.enable_limit_check else 'disabled'} "
+            f"sample_count={'(default)' if sample_count is None else sample_count}",
         )
 
         # 构造 runner 实例，委托 session 管理资源
@@ -290,7 +316,7 @@ class QuantPipeline:
                     logger.warning(f"⚠️  {reason}")
 
             # ── 并行执行 TA + Kronos（错误隔离）──────────────────
-            with ThreadPoolExecutor(max_workers=2) as executor:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 ta_future = executor.submit(self.ta.analyze_batch, tickers, date)
                 kronos_future = (
                     executor.submit(self.kronos.predict_batch, tickers, date)
@@ -298,7 +324,22 @@ class QuantPipeline:
                     else None
                 )
 
-                ta_results, kronos_results = _collect_futures(ta_future, kronos_future)
+                # 等待 TA 结果（允许失败）
+                try:
+                    ta_results = ta_future.result(timeout=self.task_timeout)
+                except Exception as e:
+                    logger.error(f"❌ TA 批处理失败: {e}")
+                    ta_results = []
+
+                # 等待 Kronos 结果（允许失败）
+                if kronos_future:
+                    try:
+                        kronos_results = kronos_future.result(timeout=self.task_timeout)
+                    except Exception as e:
+                        logger.error(f"❌ Kronos 批处理失败: {e}")
+                        kronos_results = []
+                else:
+                    kronos_results = []
 
         # ── 降级模式：TA 缓存回退 ────────────────────────────────
         if (

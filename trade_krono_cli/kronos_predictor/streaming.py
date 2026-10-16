@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class StreamingPredictor:
     """流式预测器（用于 StreamPipeline）。"""
 
-    def __init__(self, settings: "Settings", runner: Any) -> None:
+    def __init__(self, settings: Settings, runner: Any) -> None:
         self._settings = settings
         self._runner = runner
         self._result_parser = ResultParser(settings)
@@ -33,7 +33,7 @@ class StreamingPredictor:
         ticker: str,
         eval_date: str,
         df: pd.DataFrame,
-    ) -> "KronosForecastResult":
+    ) -> KronosForecastResult:
         """流式预测：直接使用预取的 K 线 DataFrame。"""
         ticker = validate_ticker(ticker)
         eval_date = validate_date(eval_date)

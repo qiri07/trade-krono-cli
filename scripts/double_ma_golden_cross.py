@@ -1,4 +1,17 @@
-"""双均线金叉筛选器：日+周 MA5>MA13，排除ST，PE(0,30)，MACD日线>0，ROE>15%"""
+"""双均线金叉筛选器（统一版）：日+周 MA5>MA13，排除ST，PE(0,30)，MACD日线>0
+
+两档模式：
+  - 轻量模式（--lite）：仅技术分析 MA+PE+MACD（原 double_ma_screener.py 功能）
+  - 完整模式（默认）：两阶段筛选，技术分析后追加 ROE>10% + 净利润>1亿
+    （ROE 优先读取 buffett_cache.db，缺失部分从同花顺 Fuyao API 补充）
+
+用法：
+  # 完整模式（默认）：双均线金叉 + ROE + 净利润
+  uv run python scripts/double_ma_golden_cross.py
+
+  # 轻量模式：仅 MA+PE+MACD
+  uv run python scripts/double_ma_golden_cross.py --lite
+"""
 from __future__ import annotations
 
 import json
@@ -34,7 +47,7 @@ BASE = "https://fuyao.aicubes.cn"
 # 筛选阈值
 MA_FAST, MA_SLOW = 5, 13
 PE_MIN, PE_MAX = 0, 30
-ROE_THRESHOLD = 15.0
+ROE_THRESHOLD = 10.0
 
 
 # ── 工具函数 ──────────────────────────────────────────────────────────────────
@@ -48,7 +61,7 @@ def load_metadata(cache_dir: Path) -> dict:
     """
     meta_path = cache_dir / "metadata.json"
     if meta_path.exists():
-        with open(meta_path, "r", encoding="utf-8") as f:
+        with open(meta_path, encoding="utf-8") as f:
             raw = json.load(f)
         return {normalize_ticker_key(k): v for k, v in raw.items()}
     return {}
@@ -172,13 +185,273 @@ PROFIT_THRESHOLD = 1e8  # 1亿元 = 100,000,000 元
 
 
 # ── 核心筛选逻辑 ───────────────────────────────────────────────────────────────
+def run_lite(
+    output_file: Path,
+    skip_pe: bool = False,
+) -> list[dict]:
+    """轻量模式：仅 MA+PE+MACD 技术分析筛选，保存结果并打印 TOP 30。
+
+    Parameters
+    ----------
+    output_file : Path
+        结果 JSON 输出路径
+    skip_pe : bool
+        为 True 时本地 metadata 缺 PE 的股票不丢弃（pe_ttm 保留 None），
+        技术面扫描完成后从 Fuyao API 批量补充 PE/名称/行业，
+        再把 PE 仍缺失或超界的股票剔除。用于本地 metadata 过期的场景。
+
+    Returns
+    -------
+    list[dict]
+        通过筛选的股票列表（已按 PE 升序排列）
+    """
+    db_path = get_cache_db_path()
+    conn = sqlite3.connect(db_path, check_same_thread=False, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    cache_dir = Path("outputs/cache")
+    metadata = load_metadata(cache_dir)
+    st_set = get_st_tickers(metadata)
+    logger.info(f"元数据: {len(metadata)} 条, ST股票: {len(st_set)} 只")
+
+    all_tickers = get_all_tickers()
+    logger.info(f"总股票数: {len(all_tickers)}")
+
+    results: list[dict] = []
+    skipped_no_data = 0
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = {
+            executor.submit(process_ticker, t, conn, metadata, st_set, skip_pe): t
+            for t in all_tickers
+        }
+        for i, future in enumerate(as_completed(futures), 1):
+            ticker = futures[future]
+            try:
+                result = future.result()
+                if result is not None:
+                    results.append(result)
+                else:
+                    skipped_no_data += 1
+            except Exception as e:
+                logger.debug(f"{ticker} 处理异常: {e}")
+            if i % 500 == 0:
+                logger.info(f"已处理 {i}/{len(all_tickers)} 只...")
+
+    conn.close()
+
+    # skip_pe 模式：本地 metadata 过期（条目极少/PE 全空）时，
+    # 技术面达标的股票 pe_ttm 为 None，需从 Fuyao API 补充后再做 PE 界内过滤
+    if skip_pe:
+        missing_pe = sum(1 for s in results if s.get("pe_ttm") is None)
+        if missing_pe:
+            logger.info(f"\n技术面通过 {len(results)} 只，其中 {missing_pe} 只本地缺 PE，开始 API 补充...")
+            _fill_pe_and_industry(results)
+        before = len(results)
+        results = [
+            s for s in results
+            if s.get("pe_ttm") is not None and PE_MIN < s["pe_ttm"] < PE_MAX
+        ]
+        if len(results) < before:
+            logger.info(
+                f"  PE 界内过滤(0,{PE_MAX}): 剔除 {before - len(results)} 只"
+                f"（PE缺失或越界），剩余 {len(results)} 只"
+            )
+
+    results.sort(key=lambda x: (x.get("pe_ttm") is None, x["pe_ttm"]))
+
+    logger.info("=" * 60)
+    logger.info("筛选完成！")
+    logger.info(f"  总扫描: {len(all_tickers)} 只")
+    logger.info(f"  通过双均线金叉+PE+MACD过滤: {len(results)} 只")
+    logger.info(f"  - 筛选失败（无数据/不达标）: {skipped_no_data}")
+    logger.info("=" * 60)
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    logger.info(f"结果已保存: {output_file}")
+
+    _print_top30(results, with_roe=False)
+    return results
+
+
+def _print_top30(results: list[dict], *, with_roe: bool) -> None:
+    """打印 TOP 30 股票表格。
+
+    Parameters
+    ----------
+    results : list[dict]
+        筛选结果列表
+    with_roe : bool
+        是否包含 ROE / 净利润列（完整模式）
+    """
+    top_n = min(30, len(results))
+    logger.info(f"\nTOP {top_n} 股票:")
+    if with_roe:
+        logger.info(
+            f"{'序号':<4} {'代码':<10} {'名称':<10} {'行业':<10} "
+            f"{'收盘':<8} {'PE':<6} {'ROE%':<6} {'利润亿':<6} {'日Ratio':<8} {'周Ratio':<8} {'MACD':<10}"
+        )
+        logger.info("-" * 110)
+        for i, s in enumerate(results[:top_n], 1):
+            logger.info(
+                f"{i:<4} {s['ticker']:<10} {s['name'] or 'N/A':<10} {s['industry'] or 'N/A':<10} "
+                f"{s['latest_close']:<8.2f} {s['pe_ttm']:<6.2f} "
+                f"{s.get('roe') or 0:<6.2f} {s.get('net_profit_yi') or 0:<6.2f} "
+                f"{s['daily_ratio']:<8.4f} {s['weekly_ratio']:<8.4f} {s['macd']:<10.6f}"
+            )
+    else:
+        logger.info(
+            f"{'序号':<4} {'代码':<10} {'名称':<10} {'行业':<10} "
+            f"{'收盘':<8} {'PE':<6} {'日Ratio':<8} {'周Ratio':<8} {'MACD':<10}"
+        )
+        logger.info("-" * 90)
+        for i, s in enumerate(results[:top_n], 1):
+            logger.info(
+                f"{i:<4} {s['ticker']:<10} {s['name'] or 'N/A':<10} {s['industry'] or 'N/A':<10} "
+                f"{s['latest_close']:<8.2f} {s['pe_ttm']:<6.2f} "
+                f"{s['daily_ratio']:<8.4f} {s['weekly_ratio']:<8.4f} {s['macd']:<10.6f}"
+            )
+
+
+def _fetch_pe_batch_api(thscodes: list[str]) -> dict[str, dict]:
+    """从同花顺 Fuyao API 批量获取 PE/名称/行业（单批最多约 100 只）。
+
+    请求使用 X-api-key 头（快照接口不使用 Bearer 认证）。返回
+    {六位代码: {"pe_ttm", "name", "industry"}} 映射；无 API_KEY 或
+    请求失败时返回空字典（调用方自行降级处理）。
+
+    Parameters
+    ----------
+    thscodes : list[str]
+        同花顺标准代码列表（形如 600519.SH / 000858.SZ）
+    """
+    if not API_KEY or not thscodes:
+        return {}
+    pe_map: dict[str, dict] = {}
+    for i in range(0, len(thscodes), 100):
+        batch = ",".join(thscodes[i : i + 100])
+        try:
+            resp = requests.get(
+                f"{BASE}/api/a-share/valuations/snapshot",
+                params={"thscodes": batch},
+                headers={"X-api-key": API_KEY},
+                timeout=30,
+            )
+            data = resp.json()
+            if data.get("code") != 0:
+                continue
+            for item in data.get("data", {}).get("item", []):
+                ths = item.get("thscode", "")
+                code6 = ths.split(".")[0] if "." in ths else ths
+                try:
+                    pe_val = float(item.get("pe_ttm"))
+                except (ValueError, TypeError):
+                    pe_val = None
+                if pe_val is not None:
+                    pe_map[code6] = {
+                        "pe_ttm": pe_val,
+                        "name": (item.get("name") or "").strip(),
+                        "industry": item.get("industry", ""),
+                    }
+        except Exception as e:
+            logger.warning(f"  Fuyao API 批次 {i // 100 + 1} 失败: {str(e)[:80]}")
+    return pe_map
+
+
+def _backfill_pe_from_api(results: list[dict]) -> int:
+    """就地补充列表中 pe_ttm 缺失股票的 PE/名称/行业（Fuyao API）。
+
+    仅处理 pe_ttm 为 None 的条目；已有本地 PE 的条目不动。
+
+    Parameters
+    ----------
+    results : list[dict]
+        股票字典列表（需含 ticker / name / industry / pe_ttm 键）
+
+    Returns
+    -------
+    int
+        成功补充 PE 的股票数量
+    """
+    missing = [s for s in results if s.get("pe_ttm") is None]
+    if not missing:
+        return 0
+    if not API_KEY:
+        logger.warning(f"  PE 回退: Fuyao API_KEY 未配置，{len(missing)} 只股票 PE 保持缺失")
+        return 0
+
+    logger.info(f"  PE 回退: 从 Fuyao API 补充 {len(missing)} 只股票的 PE/行业...")
+    thscodes = [ticker_to_thscode(s["ticker"]) for s in missing]
+    pe_map = _fetch_pe_batch_api(thscodes)
+
+    filled = 0
+    for s in missing:
+        code6 = s["ticker"].split(".")[1]
+        info = pe_map.get(code6)
+        if info and info.get("pe_ttm") is not None:
+            s["pe_ttm"] = info["pe_ttm"]
+            if not s.get("name"):
+                s["name"] = info.get("name", "")
+            if s.get("industry") in (None, "", "N/A"):
+                s["industry"] = info.get("industry") or "N/A"
+            filled += 1
+    logger.info(f"  PE 回退完成: 补充 {filled}/{len(missing)} 只，剩余缺失 {len(missing) - filled} 只")
+    return filled
+
+
+def _fill_pe_and_industry(results: list[dict]) -> None:
+    """两阶段：先补名称/行业（全量批次），再对 PE 仍缺失的补 PE。
+
+    本地 metadata 过期（条目极少）时，名称/行业全空，PE 也无值。
+    先用快照接口全量补充名称/行业，再对 PE 仍缺失的补充 PE，
+    避免把 700+ 只全部塞进单个 API 请求。
+
+    Parameters
+    ----------
+    results : list[dict]
+        技术面通过的股票列表（就地修改 name / industry / pe_ttm）
+    """
+    need_name = [s for s in results if not s.get("name") or s.get("industry") in (None, "")]
+    if need_name:
+        logger.info(f"  名称/行业缺失 {len(need_name)} 只，先从 Fuyao API 补充...")
+        thscodes = [ticker_to_thscode(s["ticker"]) for s in need_name]
+        info_map = _fetch_pe_batch_api(thscodes)
+        for s in need_name:
+            info = info_map.get(s["ticker"].split(".")[1])
+            if not info:
+                continue
+            if not s.get("name"):
+                s["name"] = info.get("name", "")
+            if s.get("industry") in (None, "", "N/A"):
+                s["industry"] = info.get("industry") or "N/A"
+    _backfill_pe_from_api(results)
+
+
 def process_ticker(
     ticker: str,
     conn: sqlite3.Connection,
     metadata: dict,
     st_set: set[str],
+    skip_pe: bool = False,
 ) -> dict | None:
-    """处理单只股票：读取K线，计算双均线金叉+MACD"""
+    """处理单只股票：读取K线，计算双均线金叉+MACD。
+
+    Parameters
+    ----------
+    ticker : str
+        标准化股票键（sh.600519 / sz.000858）
+    conn : sqlite3.Connection
+        K线缓存数据库连接
+    metadata : dict
+        本地元数据（PE/名称/行业/ST 标记）
+    st_set : set[str]
+        ST 股票集合
+    skip_pe : bool
+        为 True 时跳过本地 PE 过滤（PE 缺失保留为 None，
+        由调用方后续通过 Fuyao API 补充，避免本地 metadata 过期导致
+        技术面达标股票被整体丢弃）
+    """
     # 排除北交所和港股
     if ".BJ" in ticker or ticker.startswith("hk."):
         return None
@@ -237,7 +510,7 @@ def process_ticker(
     if macd_val is None or macd_val <= 0:
         return None
 
-    # PE过滤
+    # PE过滤（skip_pe 时本地缺 PE 不丢弃，保留 None 由调用方后续 API 补充）
     pe = None
     meta = metadata.get(ticker, {})
     if isinstance(meta, dict):
@@ -248,8 +521,9 @@ def process_ticker(
                 except (ValueError, TypeError):
                     pe = None
                 break
-
-    if pe is None or pe <= PE_MIN or pe >= PE_MAX:
+    if pe is not None and (pe <= PE_MIN or pe >= PE_MAX):
+        return None
+    if pe is None and not skip_pe:
         return None
 
     # 收集结果（ROE稍后补充）
@@ -264,7 +538,7 @@ def process_ticker(
         "industry": industry,
         "latest_date": latest_date,
         "latest_close": round(latest_close, 2),
-        "pe_ttm": round(pe, 2),
+        "pe_ttm": round(pe, 2) if pe is not None else None,
         "daily_ma5": round(float(df["close"].rolling(MA_FAST).mean().iloc[-1]), 2),
         "daily_ma13": round(float(df["close"].rolling(MA_SLOW).mean().iloc[-1]), 2),
         "daily_ratio": round(daily_ratio, 4),
@@ -276,58 +550,53 @@ def process_ticker(
     }
 
 
-def main() -> None:
-    date_tag = datetime.now().strftime("%Y-%m-%d")
-    output_dir = Path("outputs/results")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f"double_ma_golden_cross_{date_tag}.json"
+def run_full(
+    output_file: Path,
+    phase1_file: Path,
+) -> list[dict]:
+    """完整模式：两阶段筛选（MA+MACD → PE → ROE+净利润过滤）。
 
+    Phase 1 技术面筛选时本地 metadata（PE/名称/行业）缺失不再丢弃股票，
+    而是保留 pe_ttm=None，随后从同花顺 Fuyao API 批量补充 PE/名称/行业，
+    避免本地 metadata 过期（条目极少）导致筛选结果为 0。
+
+    Parameters
+    ----------
+    output_file : Path
+        最终结果 JSON 输出路径
+    phase1_file : Path
+        第一阶段结果 JSON 路径（供独立 ROE 过滤脚本复用）
+
+    Returns
+    -------
+    list[dict]
+        最终通过全部条件的股票列表
+    """
     logger.info("=" * 60)
-    logger.info("双均线金叉筛选器启动")
-    logger.info(f"  筛选条件：日+周MA{MA_FAST}>MA{MA_SLOW}，排除ST，PE∈({PE_MIN},{PE_MAX})，MACD>0，ROE>{ROE_THRESHOLD}%，净利润>{PROFIT_THRESHOLD/1e8:.0f}亿")
+    logger.info("双均线金叉筛选器启动（完整模式）")
+    logger.info(
+        f"  筛选条件：日+周MA{MA_FAST}>MA{MA_SLOW}，排除ST，"
+        f"PE∈({PE_MIN},{PE_MAX})，MACD>0，ROE>{ROE_THRESHOLD}%，"
+        f"净利润>{PROFIT_THRESHOLD / 1e8:.0f}亿"
+    )
     logger.info("=" * 60)
 
-    # ── Phase 1: 技术分析筛选 ──────────────────────────────────────────────
-    db_path = get_cache_db_path()
-    conn = sqlite3.connect(db_path, check_same_thread=False, timeout=30.0)
-    conn.execute("PRAGMA journal_mode=WAL")
+    # ── Phase 1: 技术面筛选（本地缺 PE 不丢弃，后续 API 补充） ───────────
+    results = run_lite(phase1_file, skip_pe=True)
+    logger.info(f"\nPhase 1 完成: {len(results)} 只通过技术面筛选（MA+MACD）")
 
-    cache_dir = Path("outputs/cache")
-    metadata = load_metadata(cache_dir)
-    st_set = get_st_tickers(metadata)
-    logger.info(f"元数据: {len(metadata)} 条, ST股票: {len(st_set)} 只")
+    # ── PE/名称/行业 回退：本地 metadata 过期时从 Fuyao API 批量补充 ─────
+    if results:
+        _fill_pe_and_industry(results)
+        before_pe = len(results)
+        results = [s for s in results if s.get("pe_ttm") is not None]
+        if len(results) < before_pe:
+            logger.info(
+                f"  PE 仍缺失剔除: {before_pe - len(results)} 只"
+                f"（API 补充后剩余 {len(results)} 只）"
+            )
 
-    all_tickers = get_all_tickers()
-    logger.info(f"总股票数: {len(all_tickers)}")
-
-    results: list[dict] = []
-    stats = {"no_data": 0}
-
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        futures = {
-            executor.submit(process_ticker, t, conn, metadata, st_set): t
-            for t in all_tickers
-        }
-        for i, future in enumerate(as_completed(futures), 1):
-            ticker = futures[future]
-            try:
-                result = future.result()
-                if result is not None:
-                    results.append(result)
-                else:
-                    stats["no_data"] += 1
-            except Exception as e:
-                logger.debug(f"{ticker} 处理异常: {e}")
-
-            if i % 500 == 0:
-                logger.info(f"Phase 1 进度: {i}/{len(all_tickers)}")
-
-    conn.close()
-
-    logger.info(f"\nPhase 1 完成: {len(results)} 只通过技术分析筛选")
-    logger.info(f"  筛选失败（无数据/不达标）: {stats['no_data']}")
-
-    # ── Phase 2: ROE + 净利润 过滤 ───────────────────────────────────────
+    # ── Phase 2: ROE + 净利润 过滤 ──────────────────────────────────────
     logger.info("\nPhase 2: ROE + 净利润 过滤...")
 
     # 先尝试从缓存加载
@@ -337,14 +606,14 @@ def main() -> None:
     logger.info(f"  缓存ROE数据: {len(roe_cache)} 条, 净利润数据: {len(profit_cache)} 条")
 
     # 补充API获取（仅缓存中没有的）
-    missing_thscodes = [ticker_to_thscode(s["ticker"]) for s in results if s["ticker"].split(".")[1] not in roe_cache]
+    missing_thscodes = [
+        ticker_to_thscode(s["ticker"]) for s in results if s["ticker"].split(".")[1] not in roe_cache
+    ]
 
+    api_roe: dict[str, float] = {}
     if missing_thscodes and API_KEY:
         logger.info(f"  需要从API获取ROE: {len(missing_thscodes)} 只")
-        api_roe: dict[str, float] = {}
         with ThreadPoolExecutor(max_workers=20) as exe:
-            # mypy 在裸 except 函数内对 future.result() 的返回类型推断为 dict[Any, Any] | None，
-            # 但 fetch_roe_from_api 显式声明返回 float | None。类型标注已正确，此处忽略 mypy 误报。
             futures = {
                 exe.submit(fetch_roe_from_api, tc): tc  # type: ignore[arg-type]
                 for tc in missing_thscodes
@@ -353,14 +622,13 @@ def main() -> None:
                 thscode = futures[future]
                 try:
                     roe_val = future.result()
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"{thscode} ROE获取异常: {e}")
                     continue
                 if roe_val is not None:
-                    api_roe[thscode] = roe_val  # type: ignore[assignment]  # mypy 误判 future.result() 返回 dict，实际为 float | None
+                    api_roe[thscode] = roe_val  # type: ignore[assignment]
                 if i % 50 == 0:
                     logger.info(f"  API ROE进度: {i}/{len(missing_thscodes)}")
-    else:
-        api_roe = {}
 
     # 合并ROE数据并过滤
     final_results: list[dict] = []
@@ -400,35 +668,54 @@ def main() -> None:
     # ── 输出结果 ───────────────────────────────────────────────────────────
     logger.info("=" * 60)
     logger.info("筛选完成！")
-    logger.info(f"  总扫描: {len(all_tickers)} 只")
     logger.info(f"  技术分析通过: {len(results)} 只")
-    logger.info(f"  **最终通过（含ROE> {ROE_THRESHOLD}%, 净利润>{PROFIT_THRESHOLD/1e8:.0f}亿）: {len(final_results)} 只**")
+    logger.info(
+        f"  **最终通过（含ROE>{ROE_THRESHOLD}%, 净利润>{PROFIT_THRESHOLD / 1e8:.0f}亿）"
+        f": {len(final_results)} 只**"
+    )
     logger.info(f"  - ROE缺失: {skipped_roe_missing}")
     logger.info(f"  - ROE≤{ROE_THRESHOLD}%: {skipped_roe_low}")
     logger.info(f"  - 净利润缺失: {skipped_profit_missing}")
-    logger.info(f"  - 净利润≤{PROFIT_THRESHOLD/1e8:.0f}亿: {skipped_profit_low}")
+    logger.info(f"  - 净利润≤{PROFIT_THRESHOLD / 1e8:.0f}亿: {skipped_profit_low}")
     logger.info("=" * 60)
 
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(final_results, f, ensure_ascii=False, indent=2)
     logger.info(f"结果已保存: {output_file}")
 
-    # 打印TOP 30
-    logger.info(f"\nTOP {min(30, len(final_results))} 股票:")
-    logger.info(
-        f"{'序号':<4} {'代码':<10} {'名称':<10} {'行业':<10} "
-        f"{'收盘':<8} {'PE':<6} {'ROE%':<6} {'利润亿':<6} {'日Ratio':<8} {'周Ratio':<8} {'MACD':<10}"
-    )
-    logger.info("-" * 90)
-    for i, s in enumerate(final_results[:30], 1):
-        logger.info(
-            f"{i:<4} {s['ticker']:<10} {s['name'] or 'N/A':<10} {s['industry'] or 'N/A':<10} "
-            f"{s['latest_close']:<8.2f} {s['pe_ttm']:<6.2f} {s['roe']:<6.2f} {s['net_profit_yi']:<6.2f} "
-            f"{s['daily_ratio']:<8.4f} {s['weekly_ratio']:<8.4f} {s['macd']:<10.6f}"
-        )
+    _print_top30(final_results, with_roe=True)
+    return final_results
 
+
+def main() -> None:
+    """命令行入口：--lite 轻量模式（MA+PE+MACD），默认完整模式（+ROE+净利润）。"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="双均线金叉筛选器（统一版）")
+    parser.add_argument(
+        "--lite",
+        action="store_true",
+        help="轻量模式：仅 MA+PE+MACD 技术分析（默认完整模式含 ROE+净利润）",
+    )
+    args = parser.parse_args()
+
+    date_tag = datetime.now().strftime("%Y-%m-%d")
+    output_dir = Path("outputs/results")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.lite:
+        output_file = output_dir / f"double_ma_golden_cross_pe_macd_{date_tag}.json"
+        logger.info("轻量模式：仅 MA+PE+MACD 技术分析筛选")
+        results = run_lite(output_file)
+        print(f"RESULT_FILE={output_file}")
+        print(f"COUNT={len(results)}")
+        return
+
+    phase1_file = output_dir / f"double_ma_golden_cross_pe_macd_{date_tag}.json"
+    output_file = output_dir / f"double_ma_golden_cross_{date_tag}.json"
+    results = run_full(output_file, phase1_file)
     print(f"RESULT_FILE={output_file}")
-    print(f"COUNT={len(final_results)}")
+    print(f"COUNT={len(results)}")
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ def test_check_llm_api_no_keys(monkeypatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_COMPATIBLE_API_KEY", raising=False)
     result = check_llm_api()
     assert result.ok is False
     assert "未配置" in result.detail

@@ -87,30 +87,45 @@ class TestMacd:
         from scripts.multi_line_resonance import _macd
 
         s = self._make_prices(50)
-        result = _macd(s)
-        assert isinstance(result, float)
-        assert result > 0
+        dif, prev = _macd(s)
+        assert isinstance(dif, float)
+        assert dif > 0
+        assert dif > prev  # DIF 向上
 
     def test_downward_trend_negative_macd(self) -> None:
         from scripts.multi_line_resonance import _macd
 
         s = pd.Series([100.0 - i * 0.1 for i in range(50)])
-        result = _macd(s)
-        assert result < 0
+        dif, prev = _macd(s)
+        assert dif < 0
+        assert dif < prev  # DIF 向下
 
     def test_flat_series_near_zero(self) -> None:
         from scripts.multi_line_resonance import _macd
 
         s = pd.Series([100.0] * 50)
-        result = _macd(s)
-        assert abs(result) < 1e-10
+        dif, prev = _macd(s)
+        assert abs(dif) < 1e-10
+        assert abs(prev) < 1e-10
 
     def test_too_short_returns_nan(self) -> None:
         from scripts.multi_line_resonance import _macd
 
         s = pd.Series([100.0, 101.0])
-        result = _macd(s)
-        assert pd.isna(result)
+        dif, prev = _macd(s)
+        assert pd.isna(dif)
+        assert pd.isna(prev)
+
+    def test_resonance_upward_requires_rising(self) -> None:
+        """DIF 为正但拐头向下（如佰维存储场景）不应满足"向上"。"""
+        from scripts.multi_line_resonance import _macd
+
+        # 先涨后跌：最后一段 DIF 已下降
+        prices = [100.0 + i * 0.5 for i in range(40)] + [120.0 - i * 0.5 for i in range(10)]
+        s = pd.Series(prices)
+        dif, prev = _macd(s)
+        assert dif > 0            # DIF 仍在零轴上方
+        assert dif < prev         # 但已拐头向下
 
 
 class TestResampleClose:
@@ -139,7 +154,8 @@ def _make_mock_kline(n: int = 100, trend: str = "up") -> bytes:
     """生成测试用 K 线 pickle 数据。"""
     dates = pd.date_range(start="2025-01-01", periods=n, freq="B")
     if trend == "up":
-        close = [100.0 + i * 0.2 for i in range(n)]
+        # 三次曲线：日/周/月 DIF 均持续加速上行（保证三线共振"向上"）
+        close = [100.0 + i * 0.2 + i**3 * 1e-5 for i in range(n)]
     elif trend == "down":
         close = [100.0 - i * 0.1 for i in range(n)]
     else:

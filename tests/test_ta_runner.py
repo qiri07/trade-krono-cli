@@ -12,9 +12,9 @@ def _make_ta_runner(settings=None):
 
     if settings is None:
         settings = make_mock_settings(
-            llm_provider="deepseek",
-            deep_think_llm="deepseek-chat",
-            quick_think_llm="deepseek-chat",
+            llm_provider="agnes",
+            deep_think_llm="agnes-3.0-flash",
+            quick_think_llm="agnes-3.0-flash",
             max_debate_rounds=1,
             max_risk_discuss_rounds=1,
         )
@@ -318,8 +318,8 @@ class TestTradingAgentsRunnerBuildConfig:
     def test_build_config_default(self) -> None:
         runner = _make_ta_runner()
         cfg = runner._build_config()
-        assert cfg["llm_provider"] == "deepseek"
-        assert cfg["deep_think_llm"] == "deepseek-chat"
+        assert cfg["llm_provider"] == "agnes"
+        assert cfg["deep_think_llm"] == "agnes-3.0-flash"
         assert cfg["output_language"] == "Chinese"
         assert cfg["max_debate_rounds"] == 1
 
@@ -345,7 +345,7 @@ class TestTradingAgentsRunnerValidateProvider:
         from tests.conftest import make_mock_settings
         from trade_krono_cli.ta_runner import TradingAgentsRunner
 
-        settings = make_mock_settings(llm_provider="deepseek")
+        settings = make_mock_settings(llm_provider="agnes")
         # patch 必须在 runner 构造前生效，否则 safe_mode=True 触发 __init__ 时
         # _validate_provider() 会读取真实 KeyVault 并因无密钥而抛出
         with patch("trade_krono_cli.security.KeyVault") as mock_vault:

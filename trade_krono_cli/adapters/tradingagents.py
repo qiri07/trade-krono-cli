@@ -72,9 +72,11 @@ class TradingAgentsAdapterImpl(TradingAgentsAdapter):
             raise RuntimeError(
                 msg,
             )
+        # 剥离交易所前缀：sh.600519 → 600519，sz.000858 → 000858
+        code = ticker.split(".", 1)[-1] if "." in ticker else ticker
         # run_analysis(ticker, trade_date, config, analysts=[...], ...)
         return self._run_analysis(
-            ticker,
+            code,
             config["trade_date"],
             config,
             **config.get("extra_kwargs", {}),

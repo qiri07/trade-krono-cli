@@ -5,12 +5,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from loguru import logger
 
-from trade_krono_cli.analytics_db.paths import ParquetPaths
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from trade_krono_cli.analytics_db.paths import ParquetPaths
 
 
 class ParquetWriter:

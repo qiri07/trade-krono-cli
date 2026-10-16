@@ -148,7 +148,7 @@ class TestComputeExpectedValue:
         assert d.expected_value is not None
 
     def test_near_zero_vol_gives_zero_raev(self) -> None:
-        """当 p10==p90==last_close 时，ret_p10=ret_p90=0，vol_proxy=|ret|*0.5=1.0，raev=ev/vol_proxy≈0.53。"""
+        """当 p10==p90==last_close 时，ret_p10=ret_p90=0，vol_proxy=|ret|*0.5=1.0，raev=ev/vol_proxy≈0.33。"""
         d = UnifiedInvestmentDecision(
             ticker="sh.600519",
             eval_date="2026-08-11",
@@ -158,11 +158,12 @@ class TestComputeExpectedValue:
             last_close=100.0,
             p10=100.0,
             p90=100.0,
+            direction_bias_weight=0.0,  # 关闭先验
         )
         d.compute_expected_value()
         # vol_proxy = abs(ret_p90 - ret_p10)/2 = 0 → falls to abs(ret)*0.5 = 1.0
-        # ev ≈ 0.53, raev ≈ 0.53
-        assert d.risk_adjusted_ev == pytest.approx(0.53, abs=0.01)
+        # ev ≈ 0.33 (with bias=0, prob_win=0.5), raev ≈ 0.33
+        assert d.risk_adjusted_ev == pytest.approx(0.33, abs=0.01)
 
 
 # ═══════════════════════════════════════════════════════

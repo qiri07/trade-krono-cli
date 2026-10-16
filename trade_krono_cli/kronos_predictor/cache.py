@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class KronosCacheManager:
     """Kronos 预测结果缓存管理器。"""
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._cache = get_cache()
 

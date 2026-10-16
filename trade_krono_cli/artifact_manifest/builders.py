@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -20,6 +20,9 @@ from .types import (
     PromptArtifact,
     StrategyArtifact,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _build_code_artifact(project_root: Path) -> CodeArtifact:

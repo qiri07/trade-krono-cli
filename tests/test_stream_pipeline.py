@@ -260,14 +260,13 @@ class TestKronosRunnerStreamPredictOne:
 
         df = _make_df(400)
 
-        with patch("trade_krono_cli.kronos_runner.fetch_lookback") as mock_fetch:
-            with patch(
-                "trade_krono_cli.kronos_predictor.streaming.StreamingPredictor.predict"
-            ) as mock_predict:
-                mock_predict.return_value = MagicMock()
-                _result = runner.stream_predict_one("sh.600519", "2026-08-12", df)
-                mock_fetch.assert_not_called()
-                mock_predict.assert_called_once()
+        with patch("trade_krono_cli.kronos_runner.fetch_lookback") as mock_fetch, patch(
+            "trade_krono_cli.kronos_predictor.streaming.StreamingPredictor.predict"
+        ) as mock_predict:
+            mock_predict.return_value = MagicMock()
+            _result = runner.stream_predict_one("sh.600519", "2026-08-12", df)
+            mock_fetch.assert_not_called()
+            mock_predict.assert_called_once()
 
     def test_stream_predict_one_returns_result(self) -> None:
         """stream_predict_one 应返回 KronosForecastResult。"""
@@ -456,14 +455,13 @@ class TestStreamingPredictor:
             predictor,
             "_prepare_stream",
             return_value=(df, df["timestamps"], pd.Series(["2026-08-13"] * 30), 100.5),
-        ) as mock_prepare:
-            with patch.object(predictor._result_parser, "run_predict"):
-                result = predictor.predict("sh.600519", "2026-08-12", df)
-                mock_prepare.assert_called_once()
-                assert result.ticker == "sh.600519"
-                assert result.eval_date == "2026-08-12"
-                assert result.error is None
-                assert result.elapsed_sec is not None
+        ) as mock_prepare, patch.object(predictor._result_parser, "run_predict"):
+            result = predictor.predict("sh.600519", "2026-08-12", df)
+            mock_prepare.assert_called_once()
+            assert result.ticker == "sh.600519"
+            assert result.eval_date == "2026-08-12"
+            assert result.error is None
+            assert result.elapsed_sec is not None
 
     def test_predict_exception_path(self) -> None:
         """predict 内部异常时应返回带 error 的 KronosForecastResult。"""

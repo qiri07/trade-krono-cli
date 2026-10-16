@@ -54,9 +54,7 @@ def _get_cached_data() -> list[tuple[str, str, str]]:
 
 def _get_provider_chain(ticker: str) -> list[str]:
     """根据股票类型返回 provider 优先级链。"""
-    if ticker.startswith("bj."):
-        return ["tonghuashun", "baostock"]
-    elif ticker.startswith("sh.") or ticker.startswith("sz."):
+    if ticker.startswith("bj.") or ticker.startswith("sh.") or ticker.startswith("sz."):
         return ["tonghuashun", "baostock"]
     return ["baostock", "tonghuashun"]
 

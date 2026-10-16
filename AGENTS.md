@@ -19,7 +19,8 @@ uv run trade-krono-cli run --tickers "600519,000858" --date 2026-08-11  # 一键
 uv run trade-krono-cli ta --tickers "600519"                           # 仅 TA 分析
 uv run trade-krono-cli kronos --tickers "600519"                       # 仅 Kronos 预测
 uv run trade-krono-cli sync-whitelist                  # 仅同步白名单股票
-uv run python tests/buffett_screen_parallel.py         # 巴菲特六闸门全量筛选（并行版）
+uv run python tests/buffett_screen_parallel.py         # 巴菲特六闸门全量筛选（并行版，仅筛选+AI核实）
+uv run python scripts/buffett_daily.py                 # 巴菲特筛选+技术分析+逐只飞书推送（统一版，推荐）
 uv run python scripts/full_history_from_2015.py        # 全量历史同步（2015起，~30分钟）
 uv run python scripts/full_history_sync.py             # 全量历史同步（2020起，~22分钟）
 uv run python scripts/retry_missing_history.py         # 重试缺失历史的股票
@@ -28,9 +29,9 @@ uv run python scripts/check_data_integrity.py          # 数据完整性检查
 uv run python scripts/cleanup_duplicates.py            # 清理重复记录
 uv run python scripts/daily_analysis.py                # 每日白名单分析 + AI 验证 + 飞书推送
 uv run python scripts/fetch_reference_data.py          # 批量获取股票参考数据（PE/PB/行业等）
-uv run python scripts/double_ma_golden_cross.py         # 双均线金叉+ROE两阶段筛选（日+周MA5>MA13，PE∈(0,30)，MACD>0，ROE>15%，净利润>1亿）
-uv run python scripts/double_ma_screener.py             # 双均线金叉筛选（轻量版，仅技术分析：MA+PE+MACD）
-uv run python scripts/double_ma_roe_screener.py         # 独立ROE过滤（读取 double_ma_golden_cross_pe_macd 结果）
+uv run python scripts/double_ma_golden_cross.py         # 双均线金叉统一筛选（默认完整模式：日+周MA5>MA13，PE∈(0,30)，MACD>0，ROE>15%，净利润>1亿）
+uv run python scripts/double_ma_golden_cross.py --lite   # 轻量模式（仅技术分析：MA+PE+MACD，原 double_ma_screener 功能）
+uv run python scripts/combined_stock_analysis.py          # 第9步：多线共振交集汇总 + 技术分析 + AI + 飞书（--min-sources 2 --push 1）
 uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data  # 导出共享数据
 uv run python scripts/export_vnpy_data.py              # 导出 vnpy 格式
 bash scripts/post_sync_export.sh                       # 同步后一键导出所有格式
@@ -106,7 +107,8 @@ trade_krono_cli/
 
 external/TradingAgents-astock | external/Kronos  # 符号链接，gitignore
 tests/buffett_screen.py            # 巴菲特六闸门筛选器（串行版，原始脚本）
-tests/buffett_screen_parallel.py   # 巴菲特六闸门筛选器（并行版，20 并发 — 主编排入口）
+tests/buffett_screen_parallel.py   # 巴菲特六闸门筛选器（并行版，20 并发 — 仅筛选+AI核实，不含技术分析）
+scripts/buffett_daily.py           # 巴菲特筛选+技术分析+飞书推送（合并版，推荐使用）
 tests/buffett_cache.py             # 缓存层：SQLite 初始化 / 读写 / TTL / 清理
 tests/buffett_screening.py         # 筛选域：API 客户端、五闸门逻辑、三项深度验证、StockMetrics
 tests/check_cache_integrity.py     # 缓存完整性检查工具
@@ -155,6 +157,53 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 11. **测试隔离**：`conftest.py` 的 `pytest_configure` hook 自动设置 `TRADING_KRONO_CACHE_DIR` / `TRADING_KRONO_RESULTS_DIR` 指向临时目录；`pytest_sessionstart` hook 启动时校验隔离状态；`Cache` / `ResearchDatabase` 初始化时调用 `_validate_test_isolation()` 守卫函数，拒绝写入生产路径；`pytest_runtest_setup/call` hook 自动调用 `clear_all_globals()` 清除全局单例；禁止直接引用 `config._settings`
 12. **公共函数/类必须有 Google 风格 docstring**
 13. 外部网络调用（LLM API、数据源 API）必须 mock；集成测试用 `unittest.mock`
+
+## 每日分析流程（Daily Analysis Flow）
+
+```
+1. 数据同步     → trade-krono-cli sync-whitelist / scripts/full_history_sync.py
+2. 巴菲特筛选   → tests/buffett_screen_parallel.py（已过滤 ST / 北交所）
+3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股）
+4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股）
+5. 白名单分析   → scripts/daily_analysis.py（已过滤 ST / 北交所）
+6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；已过滤 ST / 北交所）
+7. AI 核实      → AGNES LLM（agnes-3.0-flash，10 RPM 限流）
+8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
+9. 综合交集汇总 → scripts/combined_stock_analysis.py（多线共振交集 + 技术面 + 基本面 + AI + 飞书汇总 + 逐只）
+```
+
+> **注意**：各筛选脚本均已内置 ST / 北交所（BSE）/ 港股过滤，逐只飞书推送逻辑已移除，
+> 仅保留汇总推送 + AI 核实。ST / BSE 关键词与代码前缀统一维护在 `scripts/_utils.py`。
+
+### 第 9 步：综合选股交集汇总（`scripts/combined_stock_analysis.py`）
+
+将上述选股线当日结果中**共有的股票**（命中 ≥2 条线，可用 `--min-sources` 调整）做交集。
+**巴菲特六闸门 + 白名单分析合并为「白名单/巴菲特」单一来源**（命中两路只计 1 条交集，避免计数虚高），
+其余选股线各自独立计数。对每只交集候选：
+  - 标注命中的选股线来源
+  - 技术面评估（MA 排列 / 趋势 / 量能 / 综合分）
+  - 基本面评估（PE_TTM / PB / 估值分 / 估值结论）
+  - 按命中条数加权排序（共振越多越靠前）
+
+随后 AI 核实 + 飞书推送：
+  - **汇总卡片**（`--push 1` 默认开启）
+  - **逐只卡片**（`--per-stock-push 1` 默认开启，每只间隔 1s 防 webhook 限流）
+
+数据来源为 `outputs/results/` 下当日各脚本产物：
+
+| 选股线 | 来源键 | 结果文件 |
+|------|------|------|
+| 白名单/巴菲特 | `whitelist` | `buffett_dynamic_whitelist.txt` + `buffett_screen_YYYYMMDD.txt` + `outputs/results/<ticker>/` 目录（三路并集） |
+| 三线共振 | `resonance` | `macd_resonance_YYYY-MM-DD.json` |
+| 多头排列 | `multi_head` | `multi_head_YYYYMMDD.txt` |
+| 双均线金叉 | `double_ma` | `double_ma_golden_cross_YYYY-MM-DD.json` |
+
+```bash
+uv run python scripts/combined_stock_analysis.py --date 2026-10-16       # 交集+分析+汇总推送+逐只推送
+uv run python scripts/combined_stock_analysis.py --min-sources 3         # 仅 3 条线以上共振
+uv run python scripts/combined_stock_analysis.py --push 0                # 跳过飞书推送
+uv run python scripts/combined_stock_analysis.py --per-stock-push 0      # 跳过逐只推送
+```
 
 ## 巴菲特六闸门筛选（Buffett Six-Gate Screening）
 位置：`tests/buffett_screen_parallel.py`（并行版）或 `tests/buffett_screen.py`（串行版）
@@ -342,8 +391,18 @@ uv run python scripts/export_vnpy_data.py
 | `get_all_tickers()` | 从缓存数据库读取所有不重复 ticker |
 | `get_provider_chain(ticker)` | 根据股票类型返回 Provider 优先级链 |
 | `check_data_freshness(logger_fn)` | 检查 K 线缓存是否已更新至预期日期 |
+| `is_bse_code(code)` | 判断 6 位裸代码是否为北交所（920 开头） |
+| `is_bse_or_hk(ticker)` | 判断带前缀 ticker 或裸代码是否为需排除的北交所/港股 |
 
-**禁止**：在新脚本中重新定义上述函数。
+共享常量（亦定义于此，各脚本统一引用，禁止在脚本内重复定义）：
+
+| 常量 | 用途 |
+|------|------|
+| `ST_NAME_KEYWORDS` / `ST_NAME_KEYWORDS_MINIMAL` | ST 名称关键词（全市场扫描用完整版，白名单分析用精简版） |
+| `BSE_CODE_PREFIXES` / `BSE_TICKER_PREFIXES` | 北交所代码/前缀 |
+| `STOCK_NAMES` | 白名单常用股票的 6 位代码 → 名称映射（`daily_analysis` 会动态补充） |
+
+**禁止**：在新脚本中重新定义上述函数与常量。
 
 ## 已知限制与架构备注
 

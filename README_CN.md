@@ -160,9 +160,9 @@ DEEPSEEK_API_KEY=sk-xxx
 # AGNES_API_KEY=xxx              # Sapiens AI Agnes LLM（可选）
 
 # ── LLM 行为配置 ────────────────────────────────────────
-LLM_PROVIDER=deepseek          # 默认 LLM 供应商
-DEEP_THINK_LLM=deepseek-chat   # 深度思考模型
-QUICK_THINK_LLM=deepseek-chat  # 快速思考模型
+LLM_PROVIDER=agnes             # 默认 LLM 供应商
+DEEP_THINK_LLM=agnes-3.0-flash   # 深度思考模型
+QUICK_THINK_LLM=agnes-3.0-flash  # 快速思考模型
 BACKEND_URL=https://api.example.com/v1  # 后端 API 地址（可选）
 MAX_DEBATE_ROUNDS=1            # 辩论最大轮次
 MAX_RISK_DISCUSS_ROUNDS=1      # 风险分析最大轮次
@@ -198,9 +198,9 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock 请求间隔（秒）
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `LLM_PROVIDER` | `deepseek` | 默认供应商：deepseek / openai / anthropic / minimax / agnes |
-| `DEEP_THINK_LLM` | `deepseek-chat` | 深度分析 Agent 使用的模型 |
-| `QUICK_THINK_LLM` | `deepseek-chat` | 快速分析 Agent 使用的模型 |
+| `LLM_PROVIDER` | `agnes` | 默认供应商：deepseek / openai / anthropic / minimax / agnes |
+| `DEEP_THINK_LLM` | `agnes-3.0-flash` | 深度分析 Agent 使用的模型 |
+| `QUICK_THINK_LLM` | `agnes-3.0-flash` | 快速分析 Agent 使用的模型 |
 | `BACKEND_URL` | — | LLM 后端 API 地址，部分供应商需要配置 |
 | `MAX_DEBATE_ROUNDS` | `1` | 多空辩论最大轮次，0 表示不辩论 |
 | `MAX_RISK_DISCUSS_ROUNDS` | `1` | 风险分析最大轮次 |
@@ -640,7 +640,7 @@ trade-krono-cli sync-universe --no-progress
   "data_version": "baostock-2026-08-11",
   "model_versions": {
     "kronos": "kronos-kronos-base-kronos-Tokenizer-base-cpu",
-    "llm": "deepseek/deepseek-chat+deepseek-chat"
+    "llm": "agnes/agnes-3.0-flash+agnes-3.0-flash"
   },
   "prompt_version": "ta-v1r1-chinese",
   "strategy_version": "0.1.0",
@@ -1460,6 +1460,24 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 ## GitHub Actions 自动化部署
 
 本项目提供两套 GitHub Actions workflow，支持每日定时自动投研分析和持续集成。
+
+### 每日分析流程
+
+```
+1. 数据同步     → trade-krono-cli sync-whitelist / scripts/full_history_sync.py
+2. 巴菲特筛选   → tests/buffett_screen_parallel.py（已过滤 ST / 北交所）
+3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股，仅汇总推送）
+4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股，仅汇总推送）
+5. 白名单分析   → scripts/daily_analysis.py（已过滤 ST / 北交所，仅汇总推送）
+6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；已过滤 ST / 北交所）
+7. AI 核实      → AGNES LLM（agnes-3.0-flash，10 RPM 限流）
+8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
+9. 综合交集汇总 → scripts/combined_stock_analysis.py（白名单/巴菲特合并为单一来源，
+                  技术面+基本面评估 + AI 核实 + 飞书汇总卡片 + 逐只卡片）
+```
+
+> **注意**：各筛选脚本均已内置 ST / 北交所（BSE）/ 港股过滤；逐只飞书推送逻辑已移除，
+> 仅保留汇总推送 + AI 核实。ST / BSE 关键词与代码前缀统一维护在 `scripts/_utils.py`。
 
 ### 工作流文件
 

@@ -52,12 +52,12 @@ class Settings:
     )
 
     # ── LLM 配置 ──────────────────────────────────────────
-    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "deepseek"))
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "agnes"))
     deep_think_llm: str = field(
-        default_factory=lambda: os.getenv("DEEP_THINK_LLM", "deepseek-chat"),
+        default_factory=lambda: os.getenv("DEEP_THINK_LLM", "agnes-3.0-flash"),
     )
     quick_think_llm: str = field(
-        default_factory=lambda: os.getenv("QUICK_THINK_LLM", "deepseek-chat"),
+        default_factory=lambda: os.getenv("QUICK_THINK_LLM", "agnes-3.0-flash"),
     )
     backend_url: str | None = field(default_factory=lambda: os.getenv("BACKEND_URL", None))
     max_debate_rounds: int = field(default_factory=lambda: int(os.getenv("MAX_DEBATE_ROUNDS", "1")))

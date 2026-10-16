@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from trade_krono_cli.external.models import RepoStatus
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _git(repo_path: Path, *args: str) -> tuple[int, str, str]:

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import time
+from typing import TYPE_CHECKING
 
-from trade_krono_cli.cache.base import Cache
+if TYPE_CHECKING:
+    from trade_krono_cli.cache.base import Cache
 
 
 class KronosCache:

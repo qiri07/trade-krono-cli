@@ -9,9 +9,9 @@ from dataclasses import dataclass
 class TAConfig:
     """TradingAgents 多 Agent 分析参数。"""
 
-    llm_provider: str = "deepseek"
-    deep_think_llm: str = "deepseek-chat"
-    quick_think_llm: str = "deepseek-chat"
+    llm_provider: str = "agnes"
+    deep_think_llm: str = "agnes-3.0-flash"
+    quick_think_llm: str = "agnes-3.0-flash"
     max_debate_rounds: int = 1
     output_language: str = "Chinese"
 

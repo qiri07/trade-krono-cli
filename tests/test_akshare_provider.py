@@ -155,24 +155,22 @@ class TestAkShareProvider:
         """fetch_quote API 异常时应返回 None。"""
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"):
-            with patch.object(
-                AkShareProvider, "_get_full_market_cache", side_effect=Exception("fail")
-            ):
-                result = provider.fetch_quote("sh.600519")
-                assert result is None
+        with patch.object(AkShareProvider, "_ensure_import"), patch.object(
+            AkShareProvider, "_get_full_market_cache", side_effect=Exception("fail")
+        ):
+            result = provider.fetch_quote("sh.600519")
+            assert result is None
 
     def test_get_full_market_cache_hit(self, provider) -> None:
         """缓存命中时直接返回缓存数据。"""
         import trade_krono_cli.data_providers.akshare_provider as akmod
 
         mock_df = pd.DataFrame({"code": ["600519"]})
-        with patch.object(provider.__class__, "_ak", create=True):
-            with patch.object(
-                akmod, "_full_market_cache", {"data": mock_df, "timestamp": 9999999999.0}
-            ):
-                result = provider._get_full_market_cache()
-                assert result is mock_df
+        with patch.object(provider.__class__, "_ak", create=True), patch.object(
+            akmod, "_full_market_cache", {"data": mock_df, "timestamp": 9999999999.0}
+        ):
+            result = provider._get_full_market_cache()
+            assert result is mock_df
 
     def test_get_full_market_cache_miss(self, provider) -> None:
         """缓存过期时重新拉取并更新缓存。"""

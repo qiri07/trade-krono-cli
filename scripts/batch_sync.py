@@ -271,7 +271,7 @@ def process_batch(
     # 收集所有结果
     success_count = 0
     fail_count = 0
-    provider_stats: dict[str, int] = {name: 0 for name in available_providers}
+    provider_stats: dict[str, int] = dict.fromkeys(available_providers, 0)
     t_start = time.time()
 
     for name in available_providers:

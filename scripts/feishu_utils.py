@@ -23,6 +23,46 @@ from urllib import request as _urllib_request
 from loguru import logger
 
 _CST = timezone(timedelta(hours=8))
+_FEISHU_CLI = Path(__file__).resolve().parent / "feishu_cli.py"
+
+
+def push_feishu(mode: str, **kwargs: object) -> bool:
+    """统一调用 feishu_cli.py 子进程推送飞书消息。
+
+    所有脚本的飞书推送均应通过此函数，保证通知格式与调用方式一致。
+
+    Parameters
+    ----------
+    mode : str
+        feishu_cli 子命令：ci / daily / buffett / text
+    **kwargs
+        对应子命令的参数（键名用下划线，自动转为连字符，见 feishu_cli.py）
+
+    Returns
+    -------
+    bool
+        是否推送成功
+    """
+    import subprocess
+    import sys
+
+    try:
+        args: list[str] = [sys.executable, str(_FEISHU_CLI), mode]
+        for key, value in kwargs.items():
+            if value is not None and str(value).strip():
+                args += [f"--{key.replace('_', '-')}", str(value)]
+        result = subprocess.run(args, capture_output=True, text=True, timeout=20)
+        if result.returncode == 0:
+            logger.info(f"✅ 飞书推送成功 [{mode}]")
+            return True
+        logger.warning(f"⚠️ 飞书推送失败 [{mode}]：{result.stderr.strip()}")
+        return False
+    except subprocess.TimeoutExpired:
+        logger.error(f"❌ 飞书推送超时 [{mode}]")
+        return False
+    except Exception as e:
+        logger.opt(exception=True).error(f"❌ 飞书推送异常 [{mode}]：{e}")
+        return False
 
 
 def _now_cn() -> str:
@@ -243,7 +283,7 @@ def build_buffett_card(result_file: str, ai_summary: str = "") -> dict:
 
     # 追加 AI 核实摘要
     if ai_summary and ai_summary.strip():
-        model_name = os.getenv("AI_VERIFICATION_MODEL", "agnes-2.5-flash")
+        model_name = os.getenv("AI_VERIFICATION_MODEL", "agnes-3.0-flash")
         main_content += f"\n\n{'─' * 30}\n**🤖 AI 核实分析（{model_name}）**\n{ai_summary}"
 
     return {
@@ -311,7 +351,7 @@ def send_feishu(url: str, payload: dict, secret: str | None = None) -> bool:
         )
 
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = _urllib_request.Request(
+    req = _urllib_request.Request(  # noqa: S310
         url,
         data=data,
         headers={"Content-Type": "application/json; charset=utf-8"},
@@ -319,7 +359,7 @@ def send_feishu(url: str, payload: dict, secret: str | None = None) -> bool:
     )
     ctx = ssl.create_default_context()
     try:
-        with _urllib_request.urlopen(req, timeout=10, context=ctx) as resp:
+        with _urllib_request.urlopen(req, timeout=10, context=ctx) as resp:  # noqa: S310
             body = resp.read().decode("utf-8")
             result = json.loads(body)
             ok = result.get("code") == 0 or result.get("StatusCode") == 0

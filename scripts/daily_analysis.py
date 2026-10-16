@@ -28,8 +28,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import check_data_freshness
-from scripts.feishu_core import load_config, send_notification
+from scripts._utils import (
+    ST_NAME_KEYWORDS_MINIMAL,
+    STOCK_NAMES,
+    check_data_freshness,
+    is_bse_or_hk,
+)
+from scripts.feishu_utils import push_feishu
 from scripts.valuation import _safe_float, evaluate_valuation
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands._core_helpers import _load_env
@@ -43,20 +48,6 @@ from trade_krono_cli.llm_rate_limiter import wait_for_rate_limit
 # 常量
 # ─────────────────────────────────────────────────────────────────────────────
 
-_STOCK_NAMES: dict[str, str] = {
-    "000001": "平安银行",
-    "002027": "分众传媒",
-    "601668": "中国建筑",
-    "000932": "华菱钢铁",
-    "601061": "中信金属",
-    # ── 港股（hk. 前缀，6 位代码）──────────────────────────────
-    "00700": "腾讯控股",
-    "09988": "阿里巴巴-W",
-    "00941": "中国移动",
-    "00390": "中国中铁",
-    "01448": "福寿园",
-    "09992": "泡泡玛特",
-}
 
 
 def _get_cache_db() -> Path:
@@ -90,7 +81,11 @@ def _get_dynamic_whitelist() -> list[str]:
         content = _DYNAMIC_WHITELIST_PATH.read_text(encoding="utf-8").strip()
         if not content:
             return []
-        return [c.strip() for c in content.split(",") if c.strip()]
+        # 排除北交所股票（920 开头的裸代码或 bj. 前缀）
+        return [
+            c.strip() for c in content.split(",")
+            if c.strip() and not is_bse_or_hk(c.strip())
+        ]
     except Exception:
         return []
 
@@ -106,8 +101,8 @@ def _get_merged_whitelist() -> str:
         code = code.strip()
         if not code or code in seen:
             continue
-        # 剔除北交所股票（BJ 后缀或 92 开头）
-        if code.upper().endswith(".BJ") or code.startswith("92"):
+        # 剔除北交所股票（bj./hk. 前缀或 920 开头裸代码）
+        if is_bse_or_hk(code):
             logger.debug(f"  跳过北交所股票: {code}")
             continue
         # hk. 前缀的港股正常保留
@@ -120,7 +115,7 @@ def _get_merged_whitelist() -> str:
 # AI 核实
 # ─────────────────────────────────────────────────────────────────────────────
 
-_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "agnes-2.5-flash")
+_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "agnes-3.0-flash")
 
 try:
     from openai import OpenAI
@@ -434,7 +429,7 @@ def _get_stock_name(ticker: str) -> str:
         股票名称，无法获取时返回空字符串
     """
     code = ticker.split(".", 1)[1] if "." in ticker else ticker
-    name = _STOCK_NAMES.get(code, "")
+    name = STOCK_NAMES.get(code, "")
     if name:
         return name
     try:
@@ -449,7 +444,7 @@ def _get_stock_name(ticker: str) -> str:
         if rows and len(rows[0]) > 1:
             fetched_name = rows[0][1].strip()
             if fetched_name:
-                _STOCK_NAMES[code] = fetched_name
+                STOCK_NAMES[code] = fetched_name
                 return fetched_name
     except Exception as e:
         logger.debug(f"{ticker} 名称查询失败: {e}")
@@ -873,16 +868,43 @@ def _build_stock_card(r: dict[str, Any], date_str: str) -> str:
     )
 
 
+def _filter_bse_st(tickers: list[str]) -> list[str]:
+    """过滤北交所和 ST 股票，返回保留的 ticker 列表。
+
+    北交所：代码以 920 开头或 .BJ 后缀。
+    ST：名称含 ST/*ST/退市 关键词（通过 _get_stock_name 查询）。
+    """
+    kept: list[str] = []
+    bse_skipped: list[str] = []
+    st_skipped: list[str] = []
+    for t in tickers:
+        if is_bse_or_hk(t):
+            bse_skipped.append(t)
+            logger.debug(f"  跳过北交所股票: {t}")
+            continue
+        name = _get_stock_name(t)
+        if any(kw in name for kw in ST_NAME_KEYWORDS_MINIMAL):
+            st_skipped.append(t)
+            logger.info(f"  剔除 ST 股: {t} {name}")
+            continue
+        kept.append(t)
+    if bse_skipped:
+        logger.info(f"  共跳过 {len(bse_skipped)} 只北交所股票: {bse_skipped}")
+    if st_skipped:
+        logger.info(f"  共剔除 {len(st_skipped)} 只 ST 股: {st_skipped}")
+    return kept
+
+
 def run_analysis(date: str, tickers_str: str) -> None:
-    """执行白名单技术分析 + 逐只飞书推送 + AI核实 + 汇总推送。"""
+    """执行白名单技术分析 + AI核实 + 汇总飞书推送。"""
     _load_env()
 
     # 前置：检查缓存数据新鲜度
     logger.info(f"[数据检查] {check_data_freshness(logger.info)}")
 
-    # ── Step 1: 解析股票代码 ─────────────────────────────────────────────
+    # ── Step 1: 解析股票代码（过滤 ST / 北交所）─────────────────────────────
     raw_codes = [c.strip() for c in tickers_str.split(",") if c.strip()]
-    tickers_with_prefix = []
+    tickers_with_prefix: list[str] = []
     for code in raw_codes:
         if "." in code:
             tickers_with_prefix.append(code)
@@ -891,11 +913,12 @@ def run_analysis(date: str, tickers_str: str) -> None:
         else:
             tickers_with_prefix.append(f"sz.{code}")
 
+    tickers_with_prefix = _filter_bse_st(tickers_with_prefix)
+
     logger.info(f"📊 白名单分析：{tickers_with_prefix}  日期={date}")
 
-    # ── Step 2: 逐一技术分析 + 实时推送 ────────────────────────────────
+    # ── Step 2: 逐一技术分析（不逐只推送，汇总后统一推送）────────────────
     results: list[dict[str, Any]] = []
-    config = load_config()
     for ticker in tickers_with_prefix:
         result = analyze_stock(ticker, end_date=date)
         results.append(result)
@@ -904,17 +927,6 @@ def run_analysis(date: str, tickers_str: str) -> None:
             f"  {status_emoji} {ticker} {result['name']}: "
             f"分数={result['score']} 趋势={result['trend']} 均线={result['ma_signal']}"
         )
-        # 立即推送单只股票结果
-        if result["status"] == "ok":
-            ok = send_notification(
-                mode="text",
-                config=config,
-                content=_build_stock_card(result, date),
-                title=f"{result['ticker']} {result['name']}",
-            )
-            logger.info(f"  {'✅' if ok else '❌'} 已推送飞书: {result['ticker']} {result['name']}")
-        else:
-            logger.warning(f"  ⚠️ {ticker} 无数据，跳过推送")
 
     # ── Step 3: AI 核实 ──────────────────────────────────────────────────
     logger.info("🤖 启动 AI 核实...")
@@ -986,14 +998,13 @@ def run_analysis(date: str, tickers_str: str) -> None:
 
     summary_content = "\n".join(summary_lines)
 
-    ok = send_notification(
-        mode="daily",
-        config=config,
+    ok = push_feishu(
+        "daily",
         status="success",
         date=date,
         tickers=tickers_str,
         top3=top3_str,
-        run_url="",
+        run_url="local",
         content=summary_content,
     )
     if ok:

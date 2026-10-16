@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from scripts._utils import STOCK_NAMES
 from scripts.daily_analysis import (
-    _STOCK_NAMES,
     _extract_json,
     _get_whitelist,
     ai_verify,
@@ -346,8 +346,8 @@ class TestConstants:
         assert "000001" in result
 
     def test_stock_names(self) -> None:
-        assert _STOCK_NAMES["000001"] == "平安银行"
-        assert _STOCK_NAMES["601668"] == "中国建筑"
+        assert STOCK_NAMES["000001"] == "平安银行"
+        assert STOCK_NAMES["601668"] == "中国建筑"
 
 
 class TestRunAnalysisExRights:

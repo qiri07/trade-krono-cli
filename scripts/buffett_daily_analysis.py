@@ -44,7 +44,7 @@ def _parse_total_screened(result_file: Path) -> int:
     """从筛选结果文件中解析总样本数量。"""
     if not result_file.exists():
         return 0
-    with open(result_file, "r", encoding="utf-8") as f:
+    with open(result_file, encoding="utf-8") as f:
         for line in f:
             stripped = line.strip()
             if "通过五闸门" in stripped:
@@ -79,7 +79,7 @@ def _parse_passing_stocks(result_file: Path) -> list[tuple[str, str]]:
     in_table = False
     separator_seen = False
 
-    with open(result_file, "r", encoding="utf-8") as f:
+    with open(result_file, encoding="utf-8") as f:
         for line in f:
             stripped = line.strip()
             if "通过五闸门" in stripped:

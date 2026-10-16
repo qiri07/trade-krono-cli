@@ -62,15 +62,22 @@ class TestResolveTickers:
         assert result == ["sh.600519", "sz.000858"]
 
     def test_invalid_codes_skipped(self) -> None:
+        """长度错误的纯数字代码被跳过，期货合约原样保留。"""
         from trade_krono_cli.cli_commands.maintenance import _resolve_tickers
 
+        # 60051→跳过(5位数字)，abc→保留(期货字母数字混合)，12→跳过，920071→bj
         result = _resolve_tickers("600519,abc,12,920071")
-        assert result == ["sh.600519", "bj.920071"]
+        assert "sh.600519" in result
+        assert "bj.920071" in result
+        assert "abc" in result  # 期货合约原样保留
+        assert "12" not in result
 
     def test_unknown_first_digit(self) -> None:
+        """非 6 位 / 非字母数字代码被跳过。"""
         from trade_krono_cli.cli_commands.maintenance import _resolve_tickers
 
-        result = _resolve_tickers("100001,200001,400001,500001")
+        # 4 位数字既不是 A 股(6位)也不是 ETF → 跳过
+        result = _resolve_tickers("10000,20000")
         assert result == []
 
 
@@ -107,7 +114,7 @@ class TestSyncWhitelist:
             patch("trade_krono_cli.cli_commands.sync_whitelist._load_env"),
             patch("trade_krono_cli.config.get_settings") as mock_settings,
         ):
-            mock_settings.return_value.sync_whitelist = "abc,xyz"
+            mock_settings.return_value.sync_whitelist = "123,45"
             result = runner.invoke(app, ["sync-whitelist"])
             assert result.exit_code == 1
             assert "无有效股票" in _strip_ansi(result.output)

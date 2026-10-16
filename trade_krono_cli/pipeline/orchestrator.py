@@ -9,16 +9,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from loguru import logger
 
 from trade_krono_cli.committee import InvestmentCommittee, build_committee_input
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.security import sanitize_for_log
-
-if TYPE_CHECKING:
-    pass
 
 
 class CommitteeOrchestrator:

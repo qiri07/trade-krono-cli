@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 class ResultParser:
     """Kronos 预测结果解析器。"""
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
     def create_empty_result(
@@ -38,7 +38,7 @@ class ResultParser:
         eval_date: str,
         horizon: int,
         model_name: str,
-    ) -> "KronosForecastResult":
+    ) -> KronosForecastResult:
         """创建空预测结果对象。"""
         from trade_krono_cli.domain.kronos_result import KronosForecastResult
 
@@ -79,7 +79,7 @@ class ResultParser:
 
     def apply_parsed_to_result(
         self,
-        res: "KronosForecastResult",
+        res: KronosForecastResult,
         parsed: dict,
     ) -> None:
         """将解析结果写入 result 对象。"""
@@ -97,7 +97,7 @@ class ResultParser:
         x_ts: pd.Series,
         y_ts: pd.Series,
         last_close: float,
-        res: "KronosForecastResult",
+        res: KronosForecastResult,
     ) -> None:
         """执行单次预测。"""
         n_samples = max(1, runner.sample_count)  # type: ignore
@@ -142,6 +142,7 @@ class ResultParser:
                 direction_score,
                 conf_score,
                 percentiles,
+                _status,
             ) = compute_multi_sample(avg_close, stacked, last_close)
             res.predicted_close_mean = round(float(np.mean(avg_close)), 4)
             res.predicted_close_final = round(float(avg_close[-1]), 4)
@@ -183,9 +184,9 @@ class ResultParser:
 
     def apply_cached(
         self,
-        res: "KronosForecastResult",
+        res: KronosForecastResult,
         cached: dict,
-    ) -> "KronosForecastResult":
+    ) -> KronosForecastResult:
         """应用缓存结果。"""
         for k, v in cached.items():
             setattr(res, k, v)
@@ -198,11 +199,11 @@ class ResultParser:
 
     def parse_batch_result(
         self,
-        res: "KronosForecastResult",
+        res: KronosForecastResult,
         pred_df: pd.DataFrame,
         last_close: float,
         sample_count: int,
-    ) -> "KronosForecastResult":
+    ) -> KronosForecastResult:
         """解析批量预测中的一条结果。"""
 
         closes = pred_df["close"].astype(float).values

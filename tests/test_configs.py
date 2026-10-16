@@ -161,8 +161,8 @@ class TestTAConfig:
     def test_default_config(self) -> None:
         """默认配置。"""
         config = TAConfig()
-        assert config.llm_provider == "deepseek"
-        assert config.deep_think_llm == "deepseek-chat"
+        assert config.llm_provider == "agnes"
+        assert config.deep_think_llm == "agnes-3.0-flash"
         assert config.max_debate_rounds == 1
         assert config.output_language == "Chinese"
 

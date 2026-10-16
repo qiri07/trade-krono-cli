@@ -12,7 +12,6 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
-from typing import Deque
 
 # 限流参数
 MIN_REQUEST_DELAY: float = 1.5  # 相邻请求最小间隔（秒）
@@ -21,7 +20,7 @@ MAX_REQUESTS_PER_WINDOW: int = 10  # 每窗口最大请求数
 
 # 模块级状态（线程安全）
 _lock = threading.Lock()
-_request_log: Deque[float] = deque()
+_request_log: deque[float] = deque()
 
 
 def wait_for_rate_limit() -> None:

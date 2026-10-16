@@ -22,6 +22,7 @@ from trade_krono_cli.utils.helpers import (
     validate_data_freshness,  # noqa: F401
 )
 from trade_krono_cli.utils.helpers import safe_float as _safe_float  # noqa: F401
+from trade_krono_cli.utils.kline_validator import validate_kline_complete
 
 # ═══════════════════════════════════════════════════════
 # 核心：拉取 K 线
@@ -79,6 +80,17 @@ def fetch_kline(
             logger.debug(
                 f"✅ K 线就绪（via {kline_data.source if hasattr(kline_data, 'source') else 'factory'}）: {ticker} 共 {len(out)} 行",
             )
+            # ── 数据校验 ────────────────────────────────────────────────
+            try:
+                validation = validate_kline_complete(out, ticker)
+                for w in validation.warnings:
+                    logger.warning(w)
+                for err_msg in validation.errors:
+                    logger.error(err_msg)
+                if not validation.is_valid:
+                    logger.warning(f"⚠️  {ticker} K 线校验未通过，但继续处理")
+            except Exception as validation_err:
+                logger.debug(f"K 线校验异常 {ticker}: {validation_err}")
             return out
     except Exception as e:
         logger.warning(f"Factory K 线拉取失败 {ticker}: {str(e)[:150]}，回退 baostock 直调")
@@ -113,6 +125,17 @@ def fetch_kline(
         adjustflag=adjustflag,
     )
     logger.debug(f"✅ K 线就绪（baostock provider）: {ticker} 共 {len(out)} 行")
+    # ── 数据校验 ─────────────────────────────────────────────────
+    try:
+        validation = validate_kline_complete(out, ticker)
+        for w in validation.warnings:
+            logger.warning(w)
+        for err_msg in validation.errors:
+            logger.error(err_msg)
+        if not validation.is_valid:
+            logger.warning(f"⚠️  {ticker} K 线校验未通过，但继续处理")
+    except Exception as validation_err:
+        logger.debug(f"K 线校验异常 {ticker}: {validation_err}")
     return out
 
 

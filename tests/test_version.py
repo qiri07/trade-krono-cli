@@ -91,8 +91,8 @@ def test_kronos_model_version() -> None:
 
 
 def test_llm_version() -> None:
-    v = get_llm_version("deepseek", "deepseek-chat", "deepseek-chat")
-    assert v == "deepseek/deepseek-chat+deepseek-chat"
+    v = get_llm_version("agnes", "agnes-3.0-flash", "agnes-3.0-flash")
+    assert v == "agnes/agnes-3.0-flash+agnes-3.0-flash"
 
 
 def test_ta_prompt_version() -> None:
@@ -110,13 +110,13 @@ def test_collect_model_versions() -> None:
         kronos_model="kronos-base",
         kronos_tokenizer="kronos-Tokenizer-base",
         kronos_device="cpu",
-        llm_provider="deepseek",
-        deep_think_llm="deepseek-chat",
-        quick_think_llm="deepseek-chat",
+        llm_provider="agnes",
+        deep_think_llm="agnes-3.0-flash",
+        quick_think_llm="agnes-3.0-flash",
     )
     assert "kronos" in versions
     assert "llm" in versions
-    assert versions["llm"] == "deepseek/deepseek-chat+deepseek-chat"
+    assert versions["llm"] == "agnes/agnes-3.0-flash+agnes-3.0-flash"
 
 
 def test_build_run_snapshot() -> None:
@@ -139,9 +139,9 @@ def test_build_run_snapshot() -> None:
         kronos_top_p = 0.9
         kronos_use_sample_confidence = False
         default_min_confidence = 30.0
-        llm_provider = "deepseek"
-        deep_think_llm = "deepseek-chat"
-        quick_think_llm = "deepseek-chat"
+        llm_provider = "agnes"
+        deep_think_llm = "agnes-3.0-flash"
+        quick_think_llm = "agnes-3.0-flash"
         output_language = "Chinese"
         checkpoint_enabled = True
 
@@ -173,9 +173,9 @@ def test_compute_config_hash_excludes_keys() -> None:
         kronos_top_p = 0.9
         kronos_use_sample_confidence = False
         default_min_confidence = 30.0
-        llm_provider = "deepseek"
-        deep_think_llm = "deepseek-chat"
-        quick_think_llm = "deepseek-chat"
+        llm_provider = "agnes"
+        deep_think_llm = "agnes-3.0-flash"
+        quick_think_llm = "agnes-3.0-flash"
         output_language = "Chinese"
         checkpoint_enabled = True
 

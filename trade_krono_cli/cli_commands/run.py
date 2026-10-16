@@ -183,6 +183,63 @@ def run(
 
     from trade_krono_cli.pipeline import QuantPipeline
 
+    # ── 运行时参数校验（补充启动时未覆盖的 CLI 参数）────────────────
+    runtime_errors: list[str] = []
+
+    if not (0 <= min_confidence <= 100):
+        runtime_errors.append(f"--min-confidence={min_confidence} 必须在 [0, 100] 范围内")
+    if not (1 <= pred_len <= 365):
+        runtime_errors.append(f"--pred-len={pred_len} 必须在 [1, 365] 范围内")
+    if not (10 <= lookback <= 2000):
+        runtime_errors.append(f"--lookback={lookback} 必须在 [10, 2000] 范围内")
+    if sample_count is not None and not (1 <= sample_count <= 50):
+        runtime_errors.append(f"--sample-count={sample_count} 必须在 [1, 50] 范围内")
+    if max_tickers is not None and max_tickers < 1:
+        runtime_errors.append(f"--max-tickers={max_tickers} 必须 >= 1")
+
+    # 评分策略校验
+    valid_strategies = {"linear", "multiplicative", "rank_based"}
+    if scoring_strategy not in valid_strategies:
+        runtime_errors.append(
+            f"--scoring-strategy={scoring_strategy} 必须是以下之一: {', '.join(sorted(valid_strategies))}"
+        )
+
+    # 风险加分策略校验
+    valid_boosters = {"fixed_boost", "scaled_boost", "diminishing_boost"}
+    if risk_boost_strategy not in valid_boosters:
+        runtime_errors.append(
+            f"--risk-boost-strategy={risk_boost_strategy} 必须是以下之一: "
+            f"{', '.join(sorted(valid_boosters))}"
+        )
+    if not (0 < risk_boost_multiplier <= 5.0):
+        runtime_errors.append(f"--risk-boost-multiplier={risk_boost_multiplier} 必须在 (0, 5.0] 范围内")
+    if not (0 < risk_boost_diminishing_power <= 1.0):
+        runtime_errors.append(
+            f"--risk-boost-power={risk_boost_diminishing_power} 必须在 (0, 1.0] 范围内"
+        )
+
+    # 市场范围校验
+    valid_universe_sources = {"akshare", "mootdx", "baostock"}
+    if universe_source not in valid_universe_sources:
+        runtime_errors.append(
+            f"--universe-source={universe_source} 必须是以下之一: "
+            f"{', '.join(sorted(valid_universe_sources))}"
+        )
+
+    # 降级模式校验
+    valid_degrade_modes = {"strict", "ta_only_on_kronos_fail", "ta_cache_fallback"}
+    if degrade_mode not in valid_degrade_modes:
+        runtime_errors.append(
+            f"--degrade-mode={degrade_mode} 必须是以下之一: "
+            f"{', '.join(sorted(valid_degrade_modes))}"
+        )
+
+    if runtime_errors:
+        console.print("[bold red]❌ 参数校验失败：[/bold red]")
+        for err in runtime_errors:
+            console.print(f"  [red]⚠️  {err}[/red]")
+        raise typer.Exit(1)
+
     # 解析过滤配置（CLI 参数优先，其次 fallback 到 Settings 默认）
     from trade_krono_cli.pipeline.config_loader import _parse_comma_list, _parse_range
 
