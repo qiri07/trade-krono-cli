@@ -186,6 +186,8 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
   - 按命中条数加权排序（共振越多越靠前）
 
 随后 AI 核实 + 飞书推送：
+  - **Kronos 预测**（可选，`--kronos 1`，推送前批量跑 Kronos K 线预测，写入每只卡片 + LLM 视图）
+  - **历史回测**（可选，`--backtest 1`，逐只读取 research DB 近 `--backtest-days` 天信号做单股回测）
   - **汇总卡片**（`--push 1` 默认开启）
   - **逐只卡片**（`--per-stock-push 1` 默认开启，每只间隔 1s 防 webhook 限流）
 
@@ -203,6 +205,7 @@ uv run python scripts/combined_stock_analysis.py --date 2026-10-16       # 交�
 uv run python scripts/combined_stock_analysis.py --min-sources 3         # 仅 3 条线以上共振
 uv run python scripts/combined_stock_analysis.py --push 0                # 跳过飞书推送
 uv run python scripts/combined_stock_analysis.py --per-stock-push 0      # 跳过逐只推送
+uv run python scripts/combined_stock_analysis.py --kronos 1 --backtest 1  # 卡片含 Kronos 预测 + 历史回测
 ```
 
 ## 巴菲特六闸门筛选（Buffett Six-Gate Screening）

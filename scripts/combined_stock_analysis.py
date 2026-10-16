@@ -10,6 +10,10 @@
   - 做基本面评估（PE/PB/估值分/估值结论）
   - 按命中条数加权排序（共振越多越靠前）
 
+可选增强（推送前填充，写入每只卡片）：
+  - --kronos 1：批量跑 Kronos K 线预测（首次加载模型约 1-3 分钟）
+  - --backtest 1：逐只读取 research DB 历史信号做单股信号回测
+
 随后 AI 核实 + 飞书推送（汇总卡片 + 逐只卡片）。
 
 用法：
@@ -17,6 +21,7 @@
   uv run python scripts/combined_stock_analysis.py --date 2026-10-15 --min-sources 2
   uv run python scripts/combined_stock_analysis.py --push 0   # 跳过飞书推送
   uv run python scripts/combined_stock_analysis.py --per-stock-push 0  # 跳过逐只推送
+  uv run python scripts/combined_stock_analysis.py --kronos 1 --backtest 1  # 卡片含预测+回测
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ import sys
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -39,6 +44,8 @@ from scripts._utils import normalize_ticker_key
 from scripts.daily_analysis import ai_verify, analyze_stock
 from scripts.feishu_utils import push_feishu
 from trade_krono_cli.cli_commands._core_helpers import _load_env
+from trade_krono_cli.domain.kronos_result import KronosForecastResult
+from trade_krono_cli.eval_data import EvalRecord
 
 # ── 结果文件路径（按日期）────────────────────────────────────────────────
 _RESULTS = Path("outputs/results")
@@ -168,6 +175,155 @@ class FundView:
 
 
 @dataclass
+class KronosView:
+    """Kronos 预测边界视图（来自 KronosForecastResult）。
+
+    将 Kronos 预测结果收敛为带类型字段的 dataclass，
+    供卡片构建 / LLM 核实 / 结果落盘统一消费。
+    """
+
+    direction: str = ""  # UP / DOWN / FLAT
+    expected_change_pct: float | None = None
+    last_close: float | None = None
+    predicted_close: float | None = None
+    confidence_low: float | None = None
+    confidence_high: float | None = None
+    volatility_proxy: float | None = None
+    horizon: int = 0
+
+    @classmethod
+    def from_result(cls, res: KronosForecastResult | None) -> KronosView:
+        """从 KronosForecastResult 构建 KronosView，缺失字段取默认值。"""
+        if res is None:
+            return cls()
+        band = res.confidence_band or {}
+        low = band.get("low")
+        high = band.get("high")
+        return cls(
+            direction=res.direction or "",
+            expected_change_pct=(
+                float(res.expected_change_pct)
+                if isinstance(res.expected_change_pct, (int, float))
+                else None
+            ),
+            last_close=(
+                float(res.last_close) if isinstance(res.last_close, (int, float)) else None
+            ),
+            predicted_close=(
+                float(res.predicted_close_final)
+                if isinstance(res.predicted_close_final, (int, float))
+                else None
+            ),
+            confidence_low=(
+                float(low) if isinstance(low, (int, float)) and not isinstance(low, bool) else None
+            ),
+            confidence_high=(
+                float(high)
+                if isinstance(high, (int, float)) and not isinstance(high, bool)
+                else None
+            ),
+            volatility_proxy=(
+                float(res.volatility_proxy)
+                if isinstance(res.volatility_proxy, (int, float))
+                else None
+            ),
+            horizon=int(res.horizon) if isinstance(res.horizon, int) else 0,
+        )
+
+    def to_payload(self) -> dict[str, object]:
+        """导出为落盘 / LLM 视图用的 dict。"""
+        return {
+            "direction": self.direction,
+            "expected_change_pct": self.expected_change_pct,
+            "last_close": self.last_close,
+            "predicted_close": self.predicted_close,
+            "confidence_low": self.confidence_low,
+            "confidence_high": self.confidence_high,
+            "volatility_proxy": self.volatility_proxy,
+            "horizon": self.horizon,
+        }
+
+    @property
+    def available(self) -> bool:
+        """是否有有效预测数据。"""
+        return bool(self.direction) or self.expected_change_pct is not None
+
+    def summary_line(self) -> str:
+        """单行 Kronos 预测摘要（用于飞书卡片）。"""
+        if not self.available:
+            return "无 Kronos 预测数据"
+        parts: list[str] = []
+        if self.direction:
+            parts.append(f"方向={self.direction}")
+        if self.expected_change_pct is not None:
+            seg = f"预期 {self.expected_change_pct:+.1f}%"
+            if self.last_close is not None and self.predicted_close is not None:
+                seg += f" ({self.last_close:.2f}→{self.predicted_close:.2f})"
+            parts.append(seg)
+        if self.confidence_low is not None and self.confidence_high is not None:
+            parts.append(f"置信[{self.confidence_low:+.1f}%,{self.confidence_high:+.1f}%]")
+        if self.horizon:
+            parts.append(f"预测{self.horizon}日")
+        return "  ".join(parts)
+
+
+@dataclass
+class BacktestView:
+    """该股信号的历史回测边界视图。
+
+    由 attach_backtest 从 research DB 的信号 + 实际价格构建，
+    展示该股历史 TA/Kronos 信号的累计回测表现。
+    """
+
+    total_return_pct: float | None = None
+    sharpe_ratio: float | None = None
+    max_drawdown_pct: float | None = None
+    win_rate_pct: float | None = None
+    n_trades: int = 0
+    n_signals: int = 0
+    horizon_days: int = 0
+    window_days: int = 0
+    available: bool = False
+
+    def to_payload(self) -> dict[str, object]:
+        """导出为落盘 / LLM 视图用的 dict。"""
+        return {
+            "total_return_pct": self.total_return_pct,
+            "sharpe_ratio": self.sharpe_ratio,
+            "max_drawdown_pct": self.max_drawdown_pct,
+            "win_rate_pct": self.win_rate_pct,
+            "n_trades": self.n_trades,
+            "n_signals": self.n_signals,
+            "horizon_days": self.horizon_days,
+            "window_days": self.window_days,
+            "available": self.available,
+        }
+
+    def summary_line(self) -> str:
+        """单行回测摘要（用于飞书卡片）。"""
+        if not self.available:
+            return "无历史回测数据"
+        m = {
+            "sharpe_ratio": self.sharpe_ratio,
+            "max_drawdown_pct": self.max_drawdown_pct,
+            "win_rate_pct": self.win_rate_pct,
+        }
+        parts: list[str] = [
+            f"近{self.window_days}天 {self.n_signals} 笔信号 "
+            f"(horizon {self.horizon_days}日, {self.n_trades} 笔成交)"
+        ]
+        if self.total_return_pct is not None:
+            parts.append(f"组合总收益 {self.total_return_pct:+.1f}%")
+        if m["sharpe_ratio"] is not None:
+            parts.append(f"夏普 {m['sharpe_ratio']:.2f}")
+        if m["max_drawdown_pct"] is not None:
+            parts.append(f"最大回撤 {m['max_drawdown_pct']:.1f}%")
+        if m["win_rate_pct"] is not None:
+            parts.append(f"胜率 {m['win_rate_pct']:.0f}%")
+        return "  ".join(parts)
+
+
+@dataclass
 class StockCandidate:
     """交集候选股票，命中多条选股线后做技术分析。"""
 
@@ -175,6 +331,8 @@ class StockCandidate:
     sources: list[str] = field(default_factory=list)
     hit_count: int = 0
     analysis: dict[str, object] | None = None
+    kronos: KronosForecastResult | None = None
+    backtest: BacktestView | None = None
 
     @property
     def tech(self) -> TechView:
@@ -185,6 +343,11 @@ class StockCandidate:
     def fund(self) -> FundView:
         """分析结果的基本面边界视图（无数据时为默认 FundView）。"""
         return FundView.from_analysis(self.analysis)
+
+    @property
+    def kronos_view(self) -> KronosView:
+        """Kronos 预测边界视图（未开启时为默认 KronosView）。"""
+        return KronosView.from_result(self.kronos)
 
     @property
     def rank_score(self) -> int:
@@ -371,12 +534,175 @@ def analyze_candidates(
     return analyzed
 
 
+def attach_kronos(cands: list[StockCandidate], date_str: str) -> int:
+    """对候选批量跑 Kronos 预测，写回 cand.kronos，返回成功填充数量。
+
+    懒加载 KronosSession（此时才导入/加载模型），批量预测走缓存+分批+降级；
+    任何异常均不阻断主流程（log warning 后返回已填充数量）。
+    """
+    if not cands:
+        return 0
+    try:
+        from trade_krono_cli.models.kronos_session import KronosSession  # noqa: PLC0415
+
+        tickers = [normalize_ticker_key(c.code) for c in cands]
+        session = KronosSession()
+        results = session.runner.predict_batch(tickers, date_str)
+        by_ticker = {r.ticker: r for r in results}
+        n_ok = 0
+        for cand in cands:
+            res = by_ticker.get(normalize_ticker_key(cand.code))
+            if res is not None and not res.error:
+                cand.kronos = res
+                n_ok += 1
+        logger.info(f"🧠 Kronos 预测完成：{n_ok}/{len(cands)} 只成功")
+        return n_ok
+    except Exception as e:
+        logger.warning(f"Kronos 预测整体失败（不影响推送）: {type(e).__name__}: {e}")
+        return 0
+
+
+def _build_eval_records(
+    ticker: str, date_str: str, days: int, horizon: int
+) -> list[EvalRecord]:
+    """从 research DB 读取该 ticker 近 days 天的历史信号，构造 EvalRecord 列表。
+
+    复用 eval_data 的价格获取（±5 日回退）与成本扣减；无信号 / 无价格时返回空列表。
+    按 (job, ticker) 粒度取每个 job 的信号，同一天多 job 仅取首个。
+    """
+    from trade_krono_cli.eval_data import (
+        apply_roundtrip_cost,
+        calc_return,
+        get_close_price,
+    )
+    from trade_krono_cli.research_db import get_research
+
+    research = get_research()
+    jobs = research.list_jobs(limit=2000)
+    window_start = (
+        datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=days)
+    ).strftime("%Y-%m-%d")
+    norm_ticker = normalize_ticker_key(ticker)
+
+    records: list[EvalRecord] = []
+    seen_dates: set[str] = set()
+    for job in jobs:
+        job_date = str(job.get("date") or "")
+        if not job_date or job_date < window_start or job_date > date_str:
+            continue
+        if job_date in seen_dates:
+            continue
+        job_id = str(job.get("job_id") or "")
+        if not job_id:
+            continue
+
+        signals = research.get_signals_by_job(job_id)
+        sig = next(
+            (s for s in signals if normalize_ticker_key(str(s.get("ticker") or "")) == norm_ticker),
+            None,
+        )
+        if sig is None:
+            continue
+        if sig.get("ta_error") and sig.get("kronos_error"):
+            continue
+        seen_dates.add(job_date)
+
+        entry_price = get_close_price(norm_ticker, job_date)
+        if entry_price is None or entry_price <= 0:
+            continue
+        exit_date = (
+            datetime.strptime(job_date, "%Y-%m-%d") + timedelta(days=horizon)
+        ).strftime("%Y-%m-%d")
+        exit_price = get_close_price(norm_ticker, exit_date)
+        if exit_price is None or exit_price <= 0:
+            continue
+
+        gross = calc_return(entry_price, exit_price)
+        net = apply_roundtrip_cost(gross, 17.0)
+        pred_dir = sig.get("kronos_direction") or None
+        pred_ret = sig.get("kronos_change")
+        actual_dir = "UP" if net > 1.0 else ("DOWN" if net < -1.0 else "FLAT")
+        is_correct = bool(pred_dir) and pred_dir != "FLAT" and pred_dir == actual_dir
+        error = (float(pred_ret) - gross) if isinstance(pred_ret, (int, float)) else 0.0
+
+        records.append(
+            EvalRecord(
+                ticker=norm_ticker,
+                eval_date=job_date,
+                horizon_days=horizon,
+                pred_direction=pred_dir,
+                pred_return_pct=(
+                    float(pred_ret) if isinstance(pred_ret, (int, float)) else None
+                ),
+                actual_return_pct=round(net, 4),
+                actual_direction=actual_dir,
+                is_direction_correct=is_correct,
+                error_pct=round(error, 4),
+                ta_signal=sig.get("ta_signal"),
+                composite_score=(
+                    float(sig["composite_score"])
+                    if isinstance(sig.get("composite_score"), (int, float))
+                    else None
+                ),
+            ),
+        )
+    return records
+
+
+def attach_backtest(
+    cands: list[StockCandidate], date_str: str, days: int = 90, horizon: int = 5
+) -> int:
+    """逐只读取该 ticker 的历史信号并跑单股回测，写回 cand.backtest。
+
+    返回成功填充数量（含「无信号」降级为 available=False 的也计入尝试，
+    实际填充 available=True 的数量）。任何异常不阻断主流程。
+    """
+    if not cands:
+        return 0
+    n_ok = 0
+    for cand in cands:
+        try:
+            from trade_krono_cli.prediction_eval_backtest import run_backtest  # noqa: PLC0415
+
+            eval_records = _build_eval_records(cand.code, date_str, days, horizon)
+            if not eval_records:
+                cand.backtest = BacktestView(
+                    horizon_days=horizon, window_days=days, available=False
+                )
+                continue
+            bt = run_backtest(eval_records, rebal_mode="fixed_horizon", fixed_horizon=horizon)
+            metrics = bt.metrics or {}
+            has_signal_history = bool(eval_records)
+            cand.backtest = BacktestView(
+                total_return_pct=bt.total_return_pct if has_signal_history else None,
+                sharpe_ratio=metrics.get("sharpe_ratio") or None,
+                max_drawdown_pct=metrics.get("max_drawdown_pct") or None,
+                win_rate_pct=metrics.get("win_rate_pct") or None,
+                n_trades=bt.n_trades,
+                n_signals=len(eval_records),
+                horizon_days=horizon,
+                window_days=days,
+                available=has_signal_history,
+            )
+            if has_signal_history:
+                n_ok += 1
+        except Exception as e:
+            logger.warning(f"  {cand.code} 历史回测失败: {type(e).__name__}: {e}")
+            cand.backtest = BacktestView(
+                horizon_days=horizon, window_days=days, available=False
+            )
+    logger.info(f"📈 历史回测完成：{n_ok}/{len(cands)} 只成功")
+    return n_ok
+
+
 def _build_stock_card(
     cand: StockCandidate, date_str: str, ai_note: str = ""
 ) -> str:
-    """构建单只股票的飞书卡片文本（技术面 + 基本面 + AI 核实）。"""
+    """构建单只股票的飞书卡片文本（技术面 + 基本面 + Kronos 预测 + 历史回测 + AI 核实）。"""
     tv = cand.tech
     fv = cand.fund
+    kv = cand.kronos_view
+    bv = cand.backtest
     code = cand.code
     name = tv.name or code
     label = "+".join(_SOURCE_LABELS.get(s, s) for s in cand.sources)
@@ -392,6 +718,14 @@ def _build_stock_card(
     lines.append("")
     lines.append("── 基本面 ──")
     lines.append(f"  {fv.summary_line()}")
+    if kv.available:
+        lines.append("")
+        lines.append("── Kronos 预测 ──")
+        lines.append(f"  {kv.summary_line()}")
+    if bv is not None:
+        lines.append("")
+        lines.append("── 历史回测 ──")
+        lines.append(f"  {bv.summary_line()}")
     if ai_note:
         lines.append("")
         lines.append("── AI 核实 ──")
@@ -444,16 +778,26 @@ def _build_combined_card(
                 f"均线={tv.ma_signal}  量能={tv.vol_signal}"
             )
             lines.append(f"     基本面: {fv.summary_line()}")
+            kv = cand.kronos_view
+            if kv.available:
+                lines.append(f"     预测: {kv.summary_line()}")
+            bv = cand.backtest
+            if bv is not None:
+                lines.append(f"     回测: {bv.summary_line()}")
         else:
             lines.append(f"  🔗 **{code} {name}**（{label}，无技术数据）")
     return "\n".join(lines)
 
 
 def _llm_view(c: StockCandidate) -> dict[str, object]:
-    """将候选转为 LLM 核实输入（ticker + 技术 + 基本面指标）。"""
+    """将候选转为 LLM 核实输入（ticker + 技术 + 基本面 + Kronos 预测指标）。"""
     view = c.tech.to_payload()
     fund = c.fund.to_payload()
-    return {"ticker": normalize_ticker_key(c.code), **view, **fund}
+    payload: dict[str, object] = {"ticker": normalize_ticker_key(c.code), **view, **fund}
+    kv = c.kronos_view
+    if kv.available:
+        payload["kronos"] = kv.to_payload()
+    return payload
 
 
 def main() -> None:
@@ -487,6 +831,30 @@ def main() -> None:
         type=int,
         default=1,
         help="是否逐只推送飞书（1=是，0=否，默认 1；需 --push=1 同时开启）",
+    )
+    parser.add_argument(
+        "--kronos",
+        type=int,
+        default=0,
+        help="逐只推送前对候选跑 Kronos 预测（1=是，0=否，默认 0；首次加载模型约 1-3 分钟）",
+    )
+    parser.add_argument(
+        "--backtest",
+        type=int,
+        default=0,
+        help="逐只推送前对候选做该股历史信号回测（1=是，0=否，默认 0）",
+    )
+    parser.add_argument(
+        "--backtest-days",
+        type=int,
+        default=90,
+        help="回测信号回溯窗口（天，默认 90）",
+    )
+    parser.add_argument(
+        "--backtest-horizon",
+        type=int,
+        default=5,
+        help="回测持仓周期（交易日，默认 5）",
     )
     args = parser.parse_args()
 
@@ -539,6 +907,12 @@ def main() -> None:
                 "sources": c.sources,
                 **c.tech.to_payload(),
                 **c.fund.to_payload(),
+                "kronos": (
+                    c.kronos_view.to_payload()
+                    if (args.kronos and c.kronos is not None)
+                    else None
+                ),
+                "backtest": c.backtest.to_payload() if c.backtest is not None else None,
             }
             for c in analyzed
         ],
@@ -565,6 +939,19 @@ def main() -> None:
     except Exception as e:
         logger.warning(f"AI 核实失败（不影响推送）: {e}")
         ai_summary = ""
+
+    # ── Step 5.5: Kronos 预测（可选，推送前填充，写入卡片与 LLM 视图）──
+    if args.kronos:
+        logger.info("🧠 启动 Kronos 预测...")
+        attach_kronos(analyzed, args.date)
+
+    # ── Step 5.6: 历史回测（可选，逐只信号回测，写入卡片）────────
+    if args.backtest:
+        logger.info(
+            f"📈 启动历史回测（窗口 {args.backtest_days} 天，"
+            f"horizon {args.backtest_horizon} 日）..."
+        )
+        attach_backtest(analyzed, args.date, args.backtest_days, args.backtest_horizon)
 
     # ── Step 6: 飞书推送（汇总 + 逐只）───────────────────────────
     if args.push:
