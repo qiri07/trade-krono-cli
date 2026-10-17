@@ -392,6 +392,7 @@ class TestMainFunction:
 
         with (
             patch("scripts.multi_line_resonance._get_all_tickers", return_value=[]),
+            patch("scripts.multi_line_resonance.check_data_freshness", return_value="mocked"),
             patch("sys.argv", ["multi_line_resonance.py"]),
             pytest.raises(SystemExit),
         ):
