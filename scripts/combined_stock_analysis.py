@@ -46,6 +46,7 @@ from scripts.feishu_utils import push_feishu
 from trade_krono_cli.cli_commands._core_helpers import _load_env
 from trade_krono_cli.domain.kronos_result import KronosForecastResult
 from trade_krono_cli.eval_data import EvalRecord
+from trade_krono_cli.research_db import ResearchDatabase
 
 # ── 结果文件路径（按日期）────────────────────────────────────────────────
 _RESULTS = Path("outputs/results")
@@ -567,7 +568,9 @@ def _build_eval_records(
 ) -> list[EvalRecord]:
     """从 research DB 读取该 ticker 近 days 天的历史信号，构造 EvalRecord 列表。
 
-    复用 eval_data 的价格获取（±5 日回退）与成本扣减；无信号 / 无价格时返回空列表。
+    优先读 `ta_analysis` 表（独立分析脚本实际写入的表），`signals` 表（pipeline
+    post_processing 写入）作为 fallback —— 二者取到即视为该日有信号。复用
+    eval_data 的价格获取（±5 日回退）与成本扣减；无信号 / 无价格时返回空列表。
     按 (job, ticker) 粒度取每个 job 的信号，同一天多 job 仅取首个。
     """
     from trade_krono_cli.eval_data import (
@@ -596,14 +599,10 @@ def _build_eval_records(
         if not job_id:
             continue
 
-        signals = research.get_signals_by_job(job_id)
-        sig = next(
-            (s for s in signals if normalize_ticker_key(str(s.get("ticker") or "")) == norm_ticker),
-            None,
-        )
+        sig = _lookup_signal(research, job_id, norm_ticker)
         if sig is None:
             continue
-        if sig.get("ta_error") and sig.get("kronos_error"):
+        if sig["has_error"]:
             continue
         seen_dates.add(job_date)
 
@@ -619,8 +618,8 @@ def _build_eval_records(
 
         gross = calc_return(entry_price, exit_price)
         net = apply_roundtrip_cost(gross, 17.0)
-        pred_dir = sig.get("kronos_direction") or None
-        pred_ret = sig.get("kronos_change")
+        pred_dir = sig["kronos_direction"]
+        pred_ret = sig["kronos_change"]
         actual_dir = "UP" if net > 1.0 else ("DOWN" if net < -1.0 else "FLAT")
         is_correct = bool(pred_dir) and pred_dir != "FLAT" and pred_dir == actual_dir
         error = (float(pred_ret) - gross) if isinstance(pred_ret, (int, float)) else 0.0
@@ -638,15 +637,61 @@ def _build_eval_records(
                 actual_direction=actual_dir,
                 is_direction_correct=is_correct,
                 error_pct=round(error, 4),
-                ta_signal=sig.get("ta_signal"),
+                ta_signal=sig["ta_signal"],
                 composite_score=(
                     float(sig["composite_score"])
-                    if isinstance(sig.get("composite_score"), (int, float))
+                    if isinstance(sig["composite_score"], (int, float))
                     else None
                 ),
             ),
         )
     return records
+
+
+def _lookup_signal(
+    research: ResearchDatabase, job_id: str, norm_ticker: str
+) -> dict | None:
+    """取某 job 中某 ticker 的历史信号，统一为内部字段。
+
+    优先 `ta_analysis`（独立分析脚本写入），fallback `signals`（pipeline 写入）。
+    统一字段：ta_signal / kronos_direction / kronos_change / composite_score / has_error。
+    """
+    norm_sig = next(
+        (
+            s
+            for s in research.get_ta_by_job(job_id)
+            if normalize_ticker_key(str(s.get("ticker") or "")) == norm_ticker
+        ),
+        None,
+    )
+    if norm_sig is not None:
+        has_error = bool(norm_sig.get("error"))
+        return {
+            "ta_signal": norm_sig.get("signal"),
+            "kronos_direction": None,
+            "kronos_change": None,
+            "composite_score": None,
+            "has_error": has_error,
+        }
+
+    sig = next(
+        (
+            s
+            for s in research.get_signals_by_job(job_id)
+            if normalize_ticker_key(str(s.get("ticker") or "")) == norm_ticker
+        ),
+        None,
+    )
+    if sig is not None:
+        both_errors = bool(sig.get("ta_error")) and bool(sig.get("kronos_error"))
+        return {
+            "ta_signal": sig.get("ta_signal"),
+            "kronos_direction": sig.get("kronos_direction") or None,
+            "kronos_change": sig.get("kronos_change"),
+            "composite_score": sig.get("composite_score"),
+            "has_error": both_errors,
+        }
+    return None
 
 
 def attach_backtest(
@@ -891,34 +936,40 @@ def main() -> None:
     analyzed = analyze_candidates(cands, args.date, args.max_analyze)
     logger.info(f"  有效技术分析结果：{len(analyzed)} 只")
 
-    # ── Step 4: 保存汇总文件 ────────────────────────────────────
+    # ── Step 4: 汇总文件路径（在 Step 5.6 回测 attach 之后写出，确保 kronos/backtest 完整）──
     dc = args.date.replace("-", "")
     out_file = _RESULTS / f"combined_intersection_{dc}.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    out_payload = {
-        "date": args.date,
-        "min_sources": args.min_sources,
-        "source_counts": {k: len(v) for k, v in source_sets.items()},
-        "intersection_total": len(cands),
-        "analyzed": [
-            {
-                "code": c.code,
-                "hit_count": c.hit_count,
-                "sources": c.sources,
-                **c.tech.to_payload(),
-                **c.fund.to_payload(),
-                "kronos": (
-                    c.kronos_view.to_payload()
-                    if (args.kronos and c.kronos is not None)
-                    else None
-                ),
-                "backtest": c.backtest.to_payload() if c.backtest is not None else None,
-            }
-            for c in analyzed
-        ],
-    }
-    out_file.write_text(json.dumps(out_payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    logger.info(f"💾 结果已保存: {out_file}")
+
+    def _write_intersection_json() -> None:
+        """构造并写出交集汇总 JSON（kronos / backtest 字段在此时已填充）。"""
+        out_payload = {
+            "date": args.date,
+            "min_sources": args.min_sources,
+            "source_counts": {k: len(v) for k, v in source_sets.items()},
+            "intersection_total": len(cands),
+            "analyzed": [
+                {
+                    "code": c.code,
+                    "hit_count": c.hit_count,
+                    "sources": c.sources,
+                    **c.tech.to_payload(),
+                    **c.fund.to_payload(),
+                    "kronos": (
+                        c.kronos_view.to_payload() if c.kronos is not None else None
+                    ),
+                    "backtest": (
+                        c.backtest.to_payload() if c.backtest is not None else None
+                    ),
+                }
+                for c in analyzed
+            ],
+        }
+        out_file.write_text(
+            json.dumps(out_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        logger.info(f"💾 结果已保存: {out_file}")
 
     # ── Step 5: AI 核实（聚合交集 + 多线共振视角）────────────────
     logger.info("🤖 启动 AI 核实...")
@@ -952,6 +1003,9 @@ def main() -> None:
             f"horizon {args.backtest_horizon} 日）..."
         )
         attach_backtest(analyzed, args.date, args.backtest_days, args.backtest_horizon)
+
+    # ── Step 5.7: 写出汇总 JSON（含 kronos / backtest 字段）────
+    _write_intersection_json()
 
     # ── Step 6: 飞书推送（汇总 + 逐只）───────────────────────────
     if args.push:
