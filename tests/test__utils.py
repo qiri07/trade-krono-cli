@@ -138,7 +138,9 @@ class TestCheckDataFreshness:
         with (
             patch("scripts._utils._get_expected_date", return_value="2026-09-24"),
             patch("scripts._utils._get_cache_latest_date", return_value="2026-09-23"),
+            patch("scripts._utils._trigger_sync", return_value=False),
         ):
             check_data_freshness(logger_fn=log)
-        assert len(messages) == 1
+        assert len(messages) == 2
         assert "缓存较旧" in messages[0]
+        assert "同步失败" in messages[1]
