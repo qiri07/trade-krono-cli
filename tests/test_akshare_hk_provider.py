@@ -92,12 +92,12 @@ class TestAkShareHKProvider:
         with patch.object(AkShareHKProvider, "_ak", mock_ak):
             provider = AkShareHKProvider()
             # _fetch_via_sina_direct 也需要 _req，这里直接 mock
-            with patch.object(AkShareHKProvider, "_fetch_via_sina_direct", return_value=None):
-                with patch.object(
-                    AkShareHKProvider, "_fetch_via_tencent_minute", return_value=None
-                ):
-                    result = provider.fetch_kline("hk.00700")
-                    assert result is None
+            with (
+                patch.object(AkShareHKProvider, "_fetch_via_sina_direct", return_value=None),
+                patch.object(AkShareHKProvider, "_fetch_via_tencent_minute", return_value=None),
+            ):
+                result = provider.fetch_kline("hk.00700")
+                assert result is None
 
     @patch.object(AkShareHKProvider, "_ensure_import")
     def test_fetch_kline_empty_df(self, mock_ensure: MagicMock) -> None:

@@ -49,7 +49,6 @@ from trade_krono_cli.llm_rate_limiter import wait_for_rate_limit
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-
 def _get_cache_db() -> Path:
     """获取缓存数据库路径，优先从 settings 读取以支持测试隔离。"""
     # 注意：使用局部变量而非模块级全局，避免测试间污染
@@ -82,10 +81,7 @@ def _get_dynamic_whitelist() -> list[str]:
         if not content:
             return []
         # 排除北交所股票（920 开头的裸代码或 bj. 前缀）
-        return [
-            c.strip() for c in content.split(",")
-            if c.strip() and not is_bse_or_hk(c.strip())
-        ]
+        return [c.strip() for c in content.split(",") if c.strip() and not is_bse_or_hk(c.strip())]
     except Exception:
         return []
 

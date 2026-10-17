@@ -23,9 +23,7 @@ class TestValidateKlineOrder:
         """正常升序数据应通过校验。"""
         df = pd.DataFrame(
             {
-                "timestamps": [
-                    datetime(2024, 1, i) for i in range(1, 11)
-                ],
+                "timestamps": [datetime(2024, 1, i) for i in range(1, 11)],
                 "close": list(range(10, 0, -1)),
             }
         )
@@ -80,9 +78,7 @@ class TestValidateKlineDedup:
         """无重复数据应通过校验。"""
         df = pd.DataFrame(
             {
-                "timestamps": [
-                    datetime(2024, 1, i) for i in range(1, 11)
-                ],
+                "timestamps": [datetime(2024, 1, i) for i in range(1, 11)],
             }
         )
         result = validate_kline_dedup(df, "sh.600519")
@@ -108,11 +104,7 @@ class TestDetectMissingDates:
 
     def test_no_missing_weekdays(self) -> None:
         """连续工作日无缺失。"""
-        dates = [
-            datetime(2024, 1, i)
-            for i in range(1, 32)
-            if datetime(2024, 1, i).weekday() < 5
-        ]
+        dates = [datetime(2024, 1, i) for i in range(1, 32) if datetime(2024, 1, i).weekday() < 5]
         df = pd.DataFrame({"timestamps": dates})
         result = detect_missing_dates(df, "sh.600519")
         assert result.is_valid
@@ -181,9 +173,7 @@ class TestValidateKlineComplete:
         """综合校验应包含所有子项结果。"""
         df = pd.DataFrame(
             {
-                "timestamps": [
-                    datetime(2024, 1, i) for i in range(1, 11)
-                ],
+                "timestamps": [datetime(2024, 1, i) for i in range(1, 11)],
                 "open": [10.0] * 10,
                 "high": [11.0] * 10,
                 "low": [9.0] * 10,
@@ -199,9 +189,7 @@ class TestValidateKlineComplete:
         """summary() 方法应返回格式正确的字符串。"""
         df = pd.DataFrame(
             {
-                "timestamps": [
-                    datetime(2024, 1, i) for i in range(1, 11)
-                ],
+                "timestamps": [datetime(2024, 1, i) for i in range(1, 11)],
                 "close": list(range(10, 0, -1)),
             }
         )

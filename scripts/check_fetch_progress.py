@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """定时检查 fetch_reference_data.py 进度。"""
+
 from __future__ import annotations
 
 import re
@@ -14,9 +15,7 @@ MONITOR_LOG = Path("/tmp/fetch_monitor.log")
 
 def check_process() -> int:
     """返回运行中的 fetch_reference 进程数。"""
-    result = subprocess.run(
-        ["ps", "aux"], capture_output=True, text=True
-    )
+    result = subprocess.run(["ps", "aux"], capture_output=True, text=True)
     return len(
         [
             line
@@ -65,7 +64,7 @@ def estimate_completion(batches: list[tuple[int, str]]) -> str:
     remaining = 59 - batches[-1][0]
     eta_minutes = remaining * avg_per_batch
     eta = datetime.now() + timedelta(minutes=eta_minutes)
-    return f"{eta.strftime('%Y-%m-%d %H:%M')} (约 {eta_minutes/60:.1f} 小时后)"
+    return f"{eta.strftime('%Y-%m-%d %H:%M')} (约 {eta_minutes / 60:.1f} 小时后)"
 
 
 def main() -> None:

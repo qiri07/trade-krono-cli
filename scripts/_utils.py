@@ -48,6 +48,7 @@ def is_bse_or_hk(ticker: str) -> bool:
     bare = ticker.split(".")[-1]
     return is_bse_code(bare)
 
+
 # ── 共享股票名称映射 ────────────────────────────────────────────────────────
 # 白名单常用股票的 6 位代码 → 名称静态映射（A 股 + 港股）。
 # daily_analysis._get_stock_name 会动态补充未命中的名称（baostock 查询缓存）。

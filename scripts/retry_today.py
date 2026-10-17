@@ -50,10 +50,7 @@ def get_missing_tickers() -> list[str]:
 def fetch_today(factory, ticker: str) -> tuple[str, bool, str]:
     """拉取今日增量数据并追加，避免重复记录。"""
     try:
-        if ticker.startswith("bj."):
-            providers = ["tonghuashun"]
-        else:
-            providers = ["tonghuashun", "baostock"]
+        providers = ["tonghuashun"] if ticker.startswith("bj.") else ["tonghuashun", "baostock"]
 
         import sqlite3
 

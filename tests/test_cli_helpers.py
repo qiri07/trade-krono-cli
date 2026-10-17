@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import typer
@@ -12,6 +12,9 @@ from trade_krono_cli.cli_commands._core_helpers import (
     _build_retry_overrides,
     _sanitize_path,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestBuildDegradeOverrides:

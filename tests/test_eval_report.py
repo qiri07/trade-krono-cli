@@ -6,13 +6,16 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
 from trade_krono_cli.eval_data import EvalRecord, EvaluationSummary, HorizonMetrics
 from trade_krono_cli.eval_report import get_latest_evaluation, store_summary
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ── fixtures ────────────────────────────────────────────────────────────────────
 

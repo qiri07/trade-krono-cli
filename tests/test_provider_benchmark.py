@@ -108,8 +108,9 @@ class TestBenchAll:
         """结果按延迟升序排列。"""
         factory = DataProviderFactory()
         # 完全 mock available_providers 和 _benchmark_provider
-        with patch.object(factory, "available_providers", return_value=["p1", "p2", "p3"]):
-            with patch.object(
+        with (
+            patch.object(factory, "available_providers", return_value=["p1", "p2", "p3"]),
+            patch.object(
                 factory,
                 "_benchmark_provider",
                 side_effect=[
@@ -117,16 +118,18 @@ class TestBenchAll:
                     _BenchResult(name="p1", latency_ms=50.0, success=True),
                     _BenchResult(name="p3", latency_ms=200.0, success=True),
                 ],
-            ):
-                results = factory.bench_all()
+            ),
+        ):
+            results = factory.bench_all()
         assert len(results) == 3
         assert [r.name for r in results] == ["p1", "p2", "p3"]
 
     def test_failed_providers_sorted_last(self) -> None:
         """失败的 provider 排在末尾。"""
         factory = DataProviderFactory()
-        with patch.object(factory, "available_providers", return_value=["fast", "broken", "slow"]):
-            with patch.object(
+        with (
+            patch.object(factory, "available_providers", return_value=["fast", "broken", "slow"]),
+            patch.object(
                 factory,
                 "_benchmark_provider",
                 side_effect=[
@@ -134,8 +137,9 @@ class TestBenchAll:
                     _BenchResult(name="broken", latency_ms=float("inf"), success=False),
                     _BenchResult(name="fast", latency_ms=50.0, success=True),
                 ],
-            ):
-                results = factory.bench_all()
+            ),
+        ):
+            results = factory.bench_all()
         names = [r.name for r in results]
         # broken 排最后，其他按延迟排序
         assert names.index("broken") > names.index("fast")

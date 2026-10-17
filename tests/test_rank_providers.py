@@ -74,9 +74,9 @@ class TestRankProviders:
                 return_value=factory,
             ),
             patch("trade_krono_cli.cli_commands.maintenance_sync._load_env"),
+            pytest.raises(typer.Exit),
         ):
-            with pytest.raises(typer.Exit):
-                rank_providers(ticker="sh.600519")
+            rank_providers(ticker="sh.600519")
 
     def test_bj_ticker_type(self, capsys) -> None:
         """北交所 ticker 使用正确的 ticker_type。"""

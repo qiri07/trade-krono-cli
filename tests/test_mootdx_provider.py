@@ -51,11 +51,13 @@ class TestMootDxProvider:
 
         from trade_krono_cli.data_providers.mootdx_provider import MootDxProvider
 
-        with patch.object(MootDxProvider, "_ensure_client"):
-            with patch.object(provider, "_client", mock_client):
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is not None
-                assert result.length == 2
+        with (
+            patch.object(MootDxProvider, "_ensure_client"),
+            patch.object(provider, "_client", mock_client),
+        ):
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is not None
+            assert result.length == 2
 
     def test_fetch_kline_empty(self, provider) -> None:
         mock_client = MagicMock()
@@ -63,10 +65,12 @@ class TestMootDxProvider:
 
         from trade_krono_cli.data_providers.mootdx_provider import MootDxProvider
 
-        with patch.object(MootDxProvider, "_ensure_client"):
-            with patch.object(provider, "_client", mock_client):
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is None
+        with (
+            patch.object(MootDxProvider, "_ensure_client"),
+            patch.object(provider, "_client", mock_client),
+        ):
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is None
 
     def test_fetch_metadata_returns_none(self, provider) -> None:
         assert provider.fetch_metadata("sh.600519") is None
@@ -89,9 +93,11 @@ class TestMootDxProvider:
 
         from trade_krono_cli.data_providers.mootdx_provider import MootDxProvider
 
-        with patch.object(MootDxProvider, "_ensure_client"):
-            with patch.object(provider, "_client", mock_client):
-                assert provider.health_check() is True
+        with (
+            patch.object(MootDxProvider, "_ensure_client"),
+            patch.object(provider, "_client", mock_client),
+        ):
+            assert provider.health_check() is True
 
     def test_ensure_client_connection_failure(self, provider) -> None:
         """_ensure_client 连接失败时应重置状态并重抛异常。"""
@@ -118,13 +124,15 @@ class TestMootDxProvider:
 
         from trade_krono_cli.data_providers.mootdx_provider import MootDxProvider
 
-        with patch.object(MootDxProvider, "_ensure_client"):
-            with patch.object(provider, "_client", mock_client):
-                result = provider.fetch_quote("sh.600519")
-                assert result is not None
-                assert result.ticker == "sh.600519"
-                assert result.price == 1800.5
-                assert result.source == "mootdx"
+        with (
+            patch.object(MootDxProvider, "_ensure_client"),
+            patch.object(provider, "_client", mock_client),
+        ):
+            result = provider.fetch_quote("sh.600519")
+            assert result is not None
+            assert result.ticker == "sh.600519"
+            assert result.price == 1800.5
+            assert result.source == "mootdx"
 
     def test_fetch_quote_empty(self, provider) -> None:
         """fetch_quote 返回空列表时应返回 None。"""
@@ -133,10 +141,12 @@ class TestMootDxProvider:
 
         from trade_krono_cli.data_providers.mootdx_provider import MootDxProvider
 
-        with patch.object(MootDxProvider, "_ensure_client"):
-            with patch.object(provider, "_client", mock_client):
-                result = provider.fetch_quote("sh.600519")
-                assert result is None
+        with (
+            patch.object(MootDxProvider, "_ensure_client"),
+            patch.object(provider, "_client", mock_client),
+        ):
+            result = provider.fetch_quote("sh.600519")
+            assert result is None
 
     def test_fetch_quote_exception(self, provider) -> None:
         """fetch_quote API 异常时应返回 None 而非抛出。"""
@@ -145,10 +155,12 @@ class TestMootDxProvider:
 
         from trade_krono_cli.data_providers.mootdx_provider import MootDxProvider
 
-        with patch.object(MootDxProvider, "_ensure_client"):
-            with patch.object(provider, "_client", mock_client):
-                result = provider.fetch_quote("sh.600519")
-                assert result is None
+        with (
+            patch.object(MootDxProvider, "_ensure_client"),
+            patch.object(provider, "_client", mock_client),
+        ):
+            result = provider.fetch_quote("sh.600519")
+            assert result is None
 
     def test_fetch_kline_api_exception(self, provider) -> None:
         """fetch_kline API 异常时应返回 None 而非抛出。"""
@@ -157,10 +169,12 @@ class TestMootDxProvider:
 
         from trade_krono_cli.data_providers.mootdx_provider import MootDxProvider
 
-        with patch.object(MootDxProvider, "_ensure_client"):
-            with patch.object(provider, "_client", mock_client):
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is None
+        with (
+            patch.object(MootDxProvider, "_ensure_client"),
+            patch.object(provider, "_client", mock_client),
+        ):
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is None
 
     def test_error_message_uses_uv(self, provider) -> None:
         """未安装 mootdx 时错误信息应提示 uv add。"""
@@ -169,10 +183,13 @@ class TestMootDxProvider:
         provider.__class__._connected = False
         # 用 fake module 替代 sys.modules 中的条目，使 from-import 失败
         fake_module = types.ModuleType("mootdx")
-        with patch.dict(
-            "sys.modules",
-            {"mootdx": fake_module, "mootdx.quotes": fake_module},
-        ), pytest.raises(RuntimeError, match="uv add mootdx"):
+        with (
+            patch.dict(
+                "sys.modules",
+                {"mootdx": fake_module, "mootdx.quotes": fake_module},
+            ),
+            pytest.raises(RuntimeError, match="uv add mootdx"),
+        ):
             provider._ensure_client()
         # 恢复
         provider.__class__._client = None

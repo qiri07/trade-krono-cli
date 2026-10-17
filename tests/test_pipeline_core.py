@@ -493,16 +493,18 @@ def test_run_parallel_degrade_mode_triggers_fallback() -> None:
 
     cached_result = {"date": "2026-08-10", "signal": "BUY", "confidence": 75.0, "thesis": "cached"}
 
-    with patch("trade_krono_cli.pipeline.pipeline_core.precheck_stock_status") as mock_precheck:
-        with patch("trade_krono_cli.pipeline.pipeline_core.get_research") as mock_get_research:
-            mock_precheck.return_value = {
-                "sh.600519": _make_abnormality_flag("sh.600519"),
-                "sz.000858": _make_abnormality_flag("sz.000858"),
-            }
-            mock_research = MagicMock()
-            mock_research.get_latest_ta_for_ticker.return_value = cached_result
-            mock_get_research.return_value = mock_research
-            result = pipeline.run_parallel(tickers=["600519", "000858"], date="2026-08-11")
+    with (
+        patch("trade_krono_cli.pipeline.pipeline_core.precheck_stock_status") as mock_precheck,
+        patch("trade_krono_cli.pipeline.pipeline_core.get_research") as mock_get_research,
+    ):
+        mock_precheck.return_value = {
+            "sh.600519": _make_abnormality_flag("sh.600519"),
+            "sz.000858": _make_abnormality_flag("sz.000858"),
+        }
+        mock_research = MagicMock()
+        mock_research.get_latest_ta_for_ticker.return_value = cached_result
+        mock_get_research.return_value = mock_research
+        result = pipeline.run_parallel(tickers=["600519", "000858"], date="2026-08-11")
 
     # Pipeline should complete without error
     assert isinstance(result, list)

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """补齐北交所和港股的历史数据。"""
+
 from __future__ import annotations
 
 import sqlite3
@@ -37,16 +38,16 @@ def _get_tickers(prefix: str) -> list[str]:
     return tickers
 
 
-def _fetch_one(
-    factory: DataProviderFactory, ticker: str, chain: list[str]
-) -> tuple[str, int, str]:
+def _fetch_one(factory: DataProviderFactory, ticker: str, chain: list[str]) -> tuple[str, int, str]:
     try:
         for pname in chain:
             try:
                 p = factory.get_provider(pname)
                 if p is None:
                     continue
-                result = p.fetch_kline(ticker, _START_DATE, _END_DATE, frequency="d", adjustflag="1")
+                result = p.fetch_kline(
+                    ticker, _START_DATE, _END_DATE, frequency="d", adjustflag="1"
+                )
                 if result is None or result.is_empty:
                     continue
                 df = result.to_dataframe()
@@ -77,9 +78,7 @@ def _fill_group(
     """并发补齐一组股票（HK/BJ），返回成功条数。"""
     ok = 0
     with ThreadPoolExecutor(max_workers=_WORKERS) as exe:
-        futures = {
-            exe.submit(_fetch_one, factory, t, get_provider_chain(t)): t for t in tickers
-        }
+        futures = {exe.submit(_fetch_one, factory, t, get_provider_chain(t)): t for t in tickers}
         for i, future in enumerate(as_completed(futures), 1):
             ticker = futures[future]
             try:

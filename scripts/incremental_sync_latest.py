@@ -48,10 +48,7 @@ def fetch_one(factory, ticker: str) -> tuple[str, bool, str]:
     try:
         # 非北交所：tonghuashun 主，baostock 备
         # 北交所：只用 tonghuashun
-        if ticker.startswith("bj."):
-            providers = ["tonghuashun"]
-        else:
-            providers = ["tonghuashun", "baostock"]
+        providers = ["tonghuashun"] if ticker.startswith("bj.") else ["tonghuashun", "baostock"]
 
         result = None
         used_provider = ""

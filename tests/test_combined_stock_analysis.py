@@ -174,9 +174,7 @@ class TestAttachKronos:
         ]
         ok = _mk_result("sh.600519")
         fail = _mk_result("sz.000858", error="no data")
-        with patch(
-            "trade_krono_cli.models.kronos_session.KronosSession"
-        ) as mock_cls:
+        with patch("trade_krono_cli.models.kronos_session.KronosSession") as mock_cls:
             session = MagicMock()
             session.runner.predict_batch.return_value = [ok, fail]
             mock_cls.return_value = session
@@ -192,9 +190,7 @@ class TestAttachKronos:
     def test_batch_failure_returns_zero(self) -> None:
         """predict_batch 抛异常不阻断，返回 0 且候选未填充。"""
         cands = [StockCandidate(code="600519", hit_count=2)]
-        with patch(
-            "trade_krono_cli.models.kronos_session.KronosSession"
-        ) as mock_cls:
+        with patch("trade_krono_cli.models.kronos_session.KronosSession") as mock_cls:
             session = MagicMock()
             session.runner.predict_batch.side_effect = RuntimeError("model oom")
             mock_cls.return_value = session
@@ -228,9 +224,12 @@ class TestAttachBacktest:
         """有历史信号时写回 available=True 的 BacktestView。"""
         cand = self._cand()
         fake_records = [object(), object()]
-        with patch.object(csa, "_build_eval_records", return_value=fake_records), patch(
-            "trade_krono_cli.prediction_eval_backtest.run_backtest",
-            return_value=self._fake_bt(),
+        with (
+            patch.object(csa, "_build_eval_records", return_value=fake_records),
+            patch(
+                "trade_krono_cli.prediction_eval_backtest.run_backtest",
+                return_value=self._fake_bt(),
+            ),
         ):
             n = attach_backtest([cand], "2026-10-15", days=90, horizon=5)
         assert n == 1
@@ -252,11 +251,12 @@ class TestAttachBacktest:
     def test_exception_marks_unavailable(self) -> None:
         """回测抛异常时降级为 available=False，不阻断。"""
         cand = self._cand()
-        with patch.object(
-            csa, "_build_eval_records", return_value=[object()]
-        ), patch(
-            "trade_krono_cli.prediction_eval_backtest.run_backtest",
-            side_effect=RuntimeError("boom"),
+        with (
+            patch.object(csa, "_build_eval_records", return_value=[object()]),
+            patch(
+                "trade_krono_cli.prediction_eval_backtest.run_backtest",
+                side_effect=RuntimeError("boom"),
+            ),
         ):
             n = attach_backtest([cand], "2026-10-15")
         assert n == 0
@@ -345,24 +345,24 @@ class TestMainFlagWiring:
         def fake_collect(_date: str) -> dict[str, set[str]]:
             return {"whitelist": {"600519"}, "resonance": {"600519"}}
 
-        with patch.object(csa, "collect_source_sets", side_effect=fake_collect), patch.object(
-            csa, "build_intersection", return_value=cands
-        ), patch.object(
-            csa, "analyze_candidates", return_value=cands
-        ), patch.object(
-            csa, "ai_verify", return_value={
-                "analysis_summary": "ok",
-                "top_picks": "",
-                "risk_alerts": "",
-                "conclusion": "",
-            }
-        ), patch.object(
-            csa, "push_feishu", return_value=True
-        ), patch.object(
-            csa, "attach_kronos"
-        ) as mk, patch.object(
-            csa, "attach_backtest"
-        ) as mb:
+        with (
+            patch.object(csa, "collect_source_sets", side_effect=fake_collect),
+            patch.object(csa, "build_intersection", return_value=cands),
+            patch.object(csa, "analyze_candidates", return_value=cands),
+            patch.object(
+                csa,
+                "ai_verify",
+                return_value={
+                    "analysis_summary": "ok",
+                    "top_picks": "",
+                    "risk_alerts": "",
+                    "conclusion": "",
+                },
+            ),
+            patch.object(csa, "push_feishu", return_value=True),
+            patch.object(csa, "attach_kronos") as mk,
+            patch.object(csa, "attach_backtest") as mb,
+        ):
             argv = [
                 "--date",
                 "2026-10-15",
@@ -372,17 +372,24 @@ class TestMainFlagWiring:
                 "0",
             ]
             # main() 内部调用 parser.parse_args()，注入 argv
-            with patch("argparse.ArgumentParser.parse_args", return_value=argparse.Namespace(
-                date="2026-10-15",
-                min_sources=2,
-                max_analyze=60,
-                push=1,
-                per_stock_push=0,
-                kronos=0,
-                backtest=0,
-                backtest_days=90,
-                backtest_horizon=5,
-            ), autospec=False), patch("sys.argv", argv):
+            with (
+                patch(
+                    "argparse.ArgumentParser.parse_args",
+                    return_value=argparse.Namespace(
+                        date="2026-10-15",
+                        min_sources=2,
+                        max_analyze=60,
+                        push=1,
+                        per_stock_push=0,
+                        kronos=0,
+                        backtest=0,
+                        backtest_days=90,
+                        backtest_horizon=5,
+                    ),
+                    autospec=False,
+                ),
+                patch("sys.argv", argv),
+            ):
                 csa.main()
                 captured["kronos_called"] = mk.called
                 captured["backtest_called"] = mb.called
@@ -394,23 +401,23 @@ class TestMainFlagWiring:
         import argparse
 
         cands = [StockCandidate(code="600519", hit_count=2)]
-        with patch.object(csa, "collect_source_sets", return_value={"whitelist": {"600519"}}), patch.object(
-            csa, "build_intersection", return_value=cands
-        ), patch.object(
-            csa, "analyze_candidates", return_value=cands
-        ), patch.object(
-            csa, "ai_verify", return_value={
-                "analysis_summary": "ok",
-                "top_picks": "",
-                "risk_alerts": "",
-                "conclusion": "",
-            }
-        ), patch.object(
-            csa, "push_feishu", return_value=True
-        ), patch.object(
-            csa, "attach_kronos", return_value=1
-        ), patch.object(
-            csa, "attach_backtest", return_value=1
+        with (
+            patch.object(csa, "collect_source_sets", return_value={"whitelist": {"600519"}}),
+            patch.object(csa, "build_intersection", return_value=cands),
+            patch.object(csa, "analyze_candidates", return_value=cands),
+            patch.object(
+                csa,
+                "ai_verify",
+                return_value={
+                    "analysis_summary": "ok",
+                    "top_picks": "",
+                    "risk_alerts": "",
+                    "conclusion": "",
+                },
+            ),
+            patch.object(csa, "push_feishu", return_value=True),
+            patch.object(csa, "attach_kronos", return_value=1),
+            patch.object(csa, "attach_backtest", return_value=1),
         ):
             ns = argparse.Namespace(
                 date="2026-10-15",
@@ -423,11 +430,12 @@ class TestMainFlagWiring:
                 backtest_days=90,
                 backtest_horizon=5,
             )
-            with patch("argparse.ArgumentParser.parse_args", return_value=ns), patch(
-                "sys.argv", ["--date", "2026-10-15"]
-            ), patch.object(csa, "attach_kronos") as mk, patch.object(
-                csa, "attach_backtest"
-            ) as mb:
+            with (
+                patch("argparse.ArgumentParser.parse_args", return_value=ns),
+                patch("sys.argv", ["--date", "2026-10-15"]),
+                patch.object(csa, "attach_kronos") as mk,
+                patch.object(csa, "attach_backtest") as mb,
+            ):
                 csa.main()
                 assert mk.called is True
                 assert mb.called is True

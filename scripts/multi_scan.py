@@ -74,7 +74,9 @@ def _get_all_tickers(db_path: Path) -> list[str]:
 
     # 排除北交所（bj.开头）和港股（hk.开头）
     astock_tickers = [t for t in all_tickers if not is_bse_or_hk(t)]
-    logger.info(f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所/港股后 {len(astock_tickers)} 只")
+    logger.info(
+        f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所/港股后 {len(astock_tickers)} 只"
+    )
     return astock_tickers
 
 

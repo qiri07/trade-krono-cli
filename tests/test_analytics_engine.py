@@ -13,12 +13,11 @@ DuckDB 为可选依赖，未安装时相关用例自动跳过。
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from unittest.mock import patch
 
 from trade_krono_cli.analytics_db._helpers import _HAS_DUCKDB
 from trade_krono_cli.analytics_db.engine import (
@@ -28,6 +27,8 @@ from trade_krono_cli.analytics_db.engine import (
 from trade_krono_cli.analytics_db.paths import ParquetPaths
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from trade_krono_cli.analytics_db.engine import ResearchAnalytics
 
 pytestmark = pytest.mark.skipif(
@@ -38,11 +39,9 @@ pytestmark = pytest.mark.skipif(
 
 def _make_research_db(tmp_path: Path) -> Path:
     """创建含 jobs/signals/ta_analysis 行的真实研究库（直接 SQL 插入，绕过领域对象）。"""
-    import sqlite3
     from uuid import uuid4
 
     from trade_krono_cli.research_db import ResearchDatabase
-    from trade_krono_cli.research_db.schema import CREATE_SCRIPT
 
     db_path = tmp_path / "research.db"
     db = ResearchDatabase(db_path=db_path, settings=None)
@@ -105,8 +104,7 @@ def _make_research_db(tmp_path: Path) -> Path:
         (job_id, "sh.600519", "BUY", 0.8, "mock", None, None, 1.2),
     )
     conn.execute(
-        "INSERT INTO decisions (job_id, ticker, decision_json, thesis, risks) "
-        "VALUES (?,?,?,?,?)",
+        "INSERT INTO decisions (job_id, ticker, decision_json, thesis, risks) VALUES (?,?,?,?,?)",
         (job_id, "sh.600519", "{}", "mock", "[]"),
     )
     conn.commit()

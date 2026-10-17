@@ -172,7 +172,12 @@ def _load_whitelist() -> list[str]:
     # 补全交易所前缀
     prefixed: list[str] = []
     for code in codes:
-        if code.startswith("sh.") or code.startswith("sz.") or code.startswith("hk.") or code.startswith("bj."):
+        if (
+            code.startswith("sh.")
+            or code.startswith("sz.")
+            or code.startswith("hk.")
+            or code.startswith("bj.")
+        ):
             prefixed.append(code)
         else:
             # 默认按代码前缀判断

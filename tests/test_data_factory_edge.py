@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from trade_krono_cli.data_providers.base import KlineData, RealtimeQuote, StockMetadata
+from trade_krono_cli.data_providers.base import KlineData
 from trade_krono_cli.data_providers.factory import (
     DataProviderFactory,
     reset_data_factory,

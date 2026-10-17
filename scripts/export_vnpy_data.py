@@ -61,7 +61,7 @@ def export_vnpy_parquet(
     csv_files = sorted(csv_dir.glob("*.csv"))
     csv_files = [f for f in csv_files if not f.name.startswith("__")]
 
-    for idx, csv_file in enumerate(csv_files, 1):
+    for _idx, csv_file in enumerate(csv_files, 1):
         try:
             # Parse filename: bj_920000.csv → BJ920000
             stem = csv_file.stem  # e.g., "bj_920000"

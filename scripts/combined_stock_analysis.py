@@ -486,9 +486,7 @@ def collect_source_sets(date_str: str) -> dict[str, set[str]]:
     return result
 
 
-def build_intersection(
-    source_sets: dict[str, set[str]], min_sources: int
-) -> list[StockCandidate]:
+def build_intersection(source_sets: dict[str, set[str]], min_sources: int) -> list[StockCandidate]:
     """按命中条数过滤并排序，返回交集候选池。
 
     排序规则：命中条数降序。
@@ -498,11 +496,7 @@ def build_intersection(
         for c in codes:
             counter[c] += 1
 
-    cands = [
-        StockCandidate(code=c, hit_count=n)
-        for c, n in counter.items()
-        if n >= min_sources
-    ]
+    cands = [StockCandidate(code=c, hit_count=n) for c, n in counter.items() if n >= min_sources]
 
     # 标注每条命中来源（保留展示顺序）
     src_by_code: dict[str, list[str]] = {}
@@ -563,9 +557,7 @@ def attach_kronos(cands: list[StockCandidate], date_str: str) -> int:
         return 0
 
 
-def _build_eval_records(
-    ticker: str, date_str: str, days: int, horizon: int
-) -> list[EvalRecord]:
+def _build_eval_records(ticker: str, date_str: str, days: int, horizon: int) -> list[EvalRecord]:
     """从 research DB 读取该 ticker 近 days 天的历史信号，构造 EvalRecord 列表。
 
     优先读 `ta_analysis` 表（独立分析脚本实际写入的表），`signals` 表（pipeline
@@ -582,9 +574,9 @@ def _build_eval_records(
 
     research = get_research()
     jobs = research.list_jobs(limit=2000)
-    window_start = (
-        datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=days)
-    ).strftime("%Y-%m-%d")
+    window_start = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=days)).strftime(
+        "%Y-%m-%d"
+    )
     norm_ticker = normalize_ticker_key(ticker)
 
     records: list[EvalRecord] = []
@@ -609,9 +601,9 @@ def _build_eval_records(
         entry_price = get_close_price(norm_ticker, job_date)
         if entry_price is None or entry_price <= 0:
             continue
-        exit_date = (
-            datetime.strptime(job_date, "%Y-%m-%d") + timedelta(days=horizon)
-        ).strftime("%Y-%m-%d")
+        exit_date = (datetime.strptime(job_date, "%Y-%m-%d") + timedelta(days=horizon)).strftime(
+            "%Y-%m-%d"
+        )
         exit_price = get_close_price(norm_ticker, exit_date)
         if exit_price is None or exit_price <= 0:
             continue
@@ -630,9 +622,7 @@ def _build_eval_records(
                 eval_date=job_date,
                 horizon_days=horizon,
                 pred_direction=pred_dir,
-                pred_return_pct=(
-                    float(pred_ret) if isinstance(pred_ret, (int, float)) else None
-                ),
+                pred_return_pct=(float(pred_ret) if isinstance(pred_ret, (int, float)) else None),
                 actual_return_pct=round(net, 4),
                 actual_direction=actual_dir,
                 is_direction_correct=is_correct,
@@ -648,9 +638,7 @@ def _build_eval_records(
     return records
 
 
-def _lookup_signal(
-    research: ResearchDatabase, job_id: str, norm_ticker: str
-) -> dict | None:
+def _lookup_signal(research: ResearchDatabase, job_id: str, norm_ticker: str) -> dict | None:
     """取某 job 中某 ticker 的历史信号，统一为内部字段。
 
     优先 `ta_analysis`（独立分析脚本写入），fallback `signals`（pipeline 写入）。
@@ -733,16 +721,12 @@ def attach_backtest(
                 n_ok += 1
         except Exception as e:
             logger.warning(f"  {cand.code} 历史回测失败: {type(e).__name__}: {e}")
-            cand.backtest = BacktestView(
-                horizon_days=horizon, window_days=days, available=False
-            )
+            cand.backtest = BacktestView(horizon_days=horizon, window_days=days, available=False)
     logger.info(f"📈 历史回测完成：{n_ok}/{len(cands)} 只成功")
     return n_ok
 
 
-def _build_stock_card(
-    cand: StockCandidate, date_str: str, ai_note: str = ""
-) -> str:
+def _build_stock_card(cand: StockCandidate, date_str: str, ai_note: str = "") -> str:
     """构建单只股票的飞书卡片文本（技术面 + 基本面 + Kronos 预测 + 历史回测 + AI 核实）。"""
     tv = cand.tech
     fv = cand.fund
@@ -906,18 +890,12 @@ def main() -> None:
     _load_env()
 
     logger.info("=" * 60)
-    logger.info(
-        f"🔗 综合选股交集分析启动  日期={args.date}  "
-        f"min_sources={args.min_sources}"
-    )
+    logger.info(f"🔗 综合选股交集分析启动  日期={args.date}  min_sources={args.min_sources}")
     logger.info("=" * 60)
 
     # ── Step 1: 汇总各选股线代码集合 ─────────────────────────────
     source_sets = collect_source_sets(args.date)
-    logger.info(
-        "各选股线命中数量："
-        + " ".join(f"{k}={len(v)}" for k, v in source_sets.items())
-    )
+    logger.info("各选股线命中数量：" + " ".join(f"{k}={len(v)}" for k, v in source_sets.items()))
 
     # ── Step 2: 交集候选池（≥N 条线）────────────────────────────
     cands = build_intersection(source_sets, args.min_sources)
@@ -926,10 +904,7 @@ def main() -> None:
         f"（按共振度排序，前 {min(len(cands), 20)} 只如下）"
     )
     for c in cands[:20]:
-        logger.info(
-            f"  🔗 {c.code}  命中 {c.hit_count} 条: "
-            f"{'+'.join(c.sources)}"
-        )
+        logger.info(f"  🔗 {c.code}  命中 {c.hit_count} 条: {'+'.join(c.sources)}")
 
     # ── Step 3: 对候选做技术分析 ────────────────────────────────
     logger.info(f"\n📈 对前 {args.max_analyze} 只候选做技术分析...")
@@ -955,12 +930,8 @@ def main() -> None:
                     "sources": c.sources,
                     **c.tech.to_payload(),
                     **c.fund.to_payload(),
-                    "kronos": (
-                        c.kronos_view.to_payload() if c.kronos is not None else None
-                    ),
-                    "backtest": (
-                        c.backtest.to_payload() if c.backtest is not None else None
-                    ),
+                    "kronos": (c.kronos_view.to_payload() if c.kronos is not None else None),
+                    "backtest": (c.backtest.to_payload() if c.backtest is not None else None),
                 }
                 for c in analyzed
             ],
@@ -1023,10 +994,11 @@ def main() -> None:
         logger.info("已跳过飞书推送（--push 0）")
 
     logger.info("=" * 60)
-    per_push_info = f"，逐只推送 {len(analyzed)} 只" if (args.push and args.per_stock_push and analyzed) else ""
+    per_push_info = (
+        f"，逐只推送 {len(analyzed)} 只" if (args.push and args.per_stock_push and analyzed) else ""
+    )
     logger.info(
-        f"综合选股交集分析完成：交集 {len(cands)} 只，"
-        f"技术分析 {len(analyzed)} 只{per_push_info}"
+        f"综合选股交集分析完成：交集 {len(cands)} 只，技术分析 {len(analyzed)} 只{per_push_info}"
     )
     logger.info("=" * 60)
 

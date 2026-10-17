@@ -91,9 +91,11 @@ class TestEnsureBsImport:
         monkeypatch.setattr(bs_session, "_bs", None)
         monkeypatch.setattr(bs_session, "_HAS_BS", False)
 
-        with patch("builtins.__import__", side_effect=ImportError("no baostock")):
-            with pytest.raises(RuntimeError, match="baostock 未安装"):
-                bs_session._ensure_bs_import()
+        with (
+            patch("builtins.__import__", side_effect=ImportError("no baostock")),
+            pytest.raises(RuntimeError, match="baostock 未安装"),
+        ):
+            bs_session._ensure_bs_import()
 
 
 class TestEnsureBsLogin:

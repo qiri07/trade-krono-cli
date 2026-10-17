@@ -77,10 +77,7 @@ def fill_one(factory, ticker: str, target_date: str) -> tuple[str, bool, str]:
             return (ticker, False, "no_record")
 
         old_data = pickle.loads(io.BytesIO(row[0]).read())
-        if hasattr(old_data, "to_dataframe"):
-            old_df = old_data.to_dataframe()
-        else:
-            old_df = old_data
+        old_df = old_data.to_dataframe() if hasattr(old_data, "to_dataframe") else old_data
 
         merged = pd.concat([old_df, new_df], ignore_index=True)
         merged = merged.drop_duplicates(subset=["timestamps"], keep="last")

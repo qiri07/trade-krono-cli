@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from trade_krono_cli.config import Settings, clear_settings, get_settings
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestSettingsDefaults:

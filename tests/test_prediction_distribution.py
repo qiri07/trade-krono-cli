@@ -106,9 +106,11 @@ class TestComputeSingleSample:
     def test_down_movement(self) -> None:
         closes = np.array([100.0, 97.0, 94.0, 90.0])
         last_close = 100.0
-        change_pct, direction, _vol, _path_disp, _dir_score, _conf_score, _pctiles, status = compute_single_sample(
-            closes,
-            last_close,
+        change_pct, direction, _vol, _path_disp, _dir_score, _conf_score, _pctiles, status = (
+            compute_single_sample(
+                closes,
+                last_close,
+            )
         )
         assert direction == "DOWN"
         assert change_pct < 0
@@ -118,7 +120,9 @@ class TestComputeSingleSample:
         # 完全平坦的路径，change_pct=0 → direction_score≈0.5 → conf_score≈50
         closes = np.array([100.0, 100.0, 100.0, 100.0])
         last_close = 100.0
-        change_pct, direction, _, _, _, conf_score, _pctiles, status = compute_single_sample(closes, last_close)
+        change_pct, direction, _, _, _, conf_score, _pctiles, status = compute_single_sample(
+            closes, last_close
+        )
         assert direction == "FLAT"
         assert change_pct == 0.0
         assert conf_score == pytest.approx(50.0, abs=1.0)
@@ -127,9 +131,11 @@ class TestComputeSingleSample:
     def test_high_volatility(self) -> None:
         closes = np.array([100.0, 200.0, 0.0, 150.0])
         last_close = 100.0
-        _change_pct, direction, vol, _, dir_score, conf_score, _pctiles, status = compute_single_sample(
-            closes,
-            last_close,
+        _change_pct, direction, vol, _, dir_score, conf_score, _pctiles, status = (
+            compute_single_sample(
+                closes,
+                last_close,
+            )
         )
         assert vol > 50.0  # 极高波动
         # 高波动稀释 direction_score（分母大），但 change_pct=50% 较大
@@ -151,7 +157,9 @@ class TestComputeSingleSample:
     def test_very_small_closes(self) -> None:
         closes = np.array([1.0, 1.05, 1.10])
         last_close = 1.0
-        change_pct, direction, _vol, _path_disp, _dir_score, _conf_score, _pctiles, status = compute_single_sample(closes, last_close)
+        change_pct, direction, _vol, _path_disp, _dir_score, _conf_score, _pctiles, status = (
+            compute_single_sample(closes, last_close)
+        )
         assert direction == "UP"
         assert abs(change_pct - 10.0) < 0.1
         assert status == DistributionStatus.DEGENERATE.value

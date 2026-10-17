@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -27,6 +27,9 @@ from tests.buffett_cache import (
     load_all_cache,
     save_cache_to_db,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 

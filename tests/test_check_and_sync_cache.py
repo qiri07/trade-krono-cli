@@ -10,10 +10,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # 确保脚本路径可导入
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+
+from typing import TYPE_CHECKING
 
 from check_and_sync_cache import (  # noqa: E402
     get_cache_latest_date,
@@ -23,6 +23,9 @@ from check_and_sync_cache import (  # noqa: E402
     run_sync,
     run_sync_with_fallback,
 )
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class TestGetExpectedDate:

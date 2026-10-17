@@ -118,15 +118,18 @@ class TestThreadSafety:
 
         _fresh()
         n_threads = 8
-        with patch.object(rlm, "MIN_REQUEST_DELAY", 0.0):
-            with patch.object(rlm, "MAX_REQUESTS_PER_WINDOW", 1000):
-                with patch.object(rlm, "WINDOW_SECONDS", 3600.0):
-                    def worker() -> None:
-                        rlm.wait_for_rate_limit()
+        with (
+            patch.object(rlm, "MIN_REQUEST_DELAY", 0.0),
+            patch.object(rlm, "MAX_REQUESTS_PER_WINDOW", 1000),
+            patch.object(rlm, "WINDOW_SECONDS", 3600.0),
+        ):
 
-                    threads = [threading.Thread(target=worker) for _ in range(n_threads)]
-                    for t in threads:
-                        t.start()
-                    for t in threads:
-                        t.join()
+            def worker() -> None:
+                rlm.wait_for_rate_limit()
+
+            threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
         assert len(rlm._request_log) == n_threads

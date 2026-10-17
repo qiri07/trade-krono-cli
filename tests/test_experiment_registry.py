@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -16,6 +16,9 @@ from trade_krono_cli.experiment_registry import (
     ExperimentRegistry,
     register_alpha_experiment,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ═══════════════════════════════════════════════════════
 #  ExperimentRecord

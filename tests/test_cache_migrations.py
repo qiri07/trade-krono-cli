@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from trade_krono_cli.cache import Cache
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_df(n: int = 5) -> pd.DataFrame:

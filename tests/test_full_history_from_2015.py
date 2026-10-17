@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from io import BytesIO
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -15,6 +15,9 @@ from scripts.full_history_from_2015 import (
     START_DATE,
     _fetch_and_append,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_df(n_rows: int, start: str = "2020-01-01") -> pd.DataFrame:

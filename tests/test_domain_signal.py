@@ -148,7 +148,7 @@ class TestSignalAssessmentFromDict:
         data = {"final_signal": "BUY"}
         try:
             SignalAssessment.from_dict(data)
-            assert False, "Expected KeyError"
+            raise AssertionError("Expected KeyError")
         except KeyError:
             pass
 

@@ -99,10 +99,12 @@ class TestFindConfig:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text("{}")
 
-        with patch.dict(os.environ, {}, clear=True):
-            with patch("trade_krono_cli.notify.feishu._DEFAULT_CONFIG_PATH", config_path):
-                result = _find_config()
-                assert result == config_path
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("trade_krono_cli.notify.feishu._DEFAULT_CONFIG_PATH", config_path),
+        ):
+            result = _find_config()
+            assert result == config_path
 
     def test_find_env_config(self, tmp_path) -> None:
         """环境变量 FEISHU_CONFIG_PATH 应优先于默认路径。"""
@@ -123,10 +125,12 @@ class TestFindConfig:
 
         from trade_krono_cli.notify.feishu import _find_config
 
-        with patch.dict(os.environ, {}, clear=True):
-            with patch("trade_krono_cli.notify.feishu._DEFAULT_CONFIG_PATH", tmp_path / "missing"):
-                result = _find_config()
-                assert result is None
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("trade_krono_cli.notify.feishu._DEFAULT_CONFIG_PATH", tmp_path / "missing"),
+        ):
+            result = _find_config()
+            assert result is None
 
 
 class TestSendNotificationModes:

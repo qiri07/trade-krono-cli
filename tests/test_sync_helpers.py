@@ -119,9 +119,8 @@ class TestUpdateUsableProviders:
         failure_counts = {"tonghuashun": _HEALTH_REMOVE_THRESHOLD}
         new_providers: set[str] = set(locked)
         for p in ["tonghuashun", "baostock"]:
-            if p in locked:
-                if failure_counts.get(p, 0) >= _HEALTH_REMOVE_THRESHOLD:
-                    new_providers.discard(p)
+            if p in locked and failure_counts.get(p, 0) >= _HEALTH_REMOVE_THRESHOLD:
+                new_providers.discard(p)
             # baostock 不在 locked 中，不会被处理（测试只验证剔除逻辑）
         assert "tonghuashun" not in new_providers
         assert new_providers == set()

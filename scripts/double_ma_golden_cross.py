@@ -12,6 +12,7 @@
   # 轻量模式：仅 MA+PE+MACD
   uv run python scripts/double_ma_golden_cross.py --lite
 """
+
 from __future__ import annotations
 
 import json
@@ -37,10 +38,7 @@ from scripts._utils import (
 )
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-API_KEY = (
-    os.getenv("HITHINK_FINANCE_API_KEY", "")
-    or os.getenv("FUYAO_API_KEY", "")
-).strip()
+API_KEY = (os.getenv("HITHINK_FINANCE_API_KEY", "") or os.getenv("FUYAO_API_KEY", "")).strip()
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 BASE = "https://fuyao.aicubes.cn"
 
@@ -245,12 +243,13 @@ def run_lite(
     if skip_pe:
         missing_pe = sum(1 for s in results if s.get("pe_ttm") is None)
         if missing_pe:
-            logger.info(f"\n技术面通过 {len(results)} 只，其中 {missing_pe} 只本地缺 PE，开始 API 补充...")
+            logger.info(
+                f"\n技术面通过 {len(results)} 只，其中 {missing_pe} 只本地缺 PE，开始 API 补充..."
+            )
             _fill_pe_and_industry(results)
         before = len(results)
         results = [
-            s for s in results
-            if s.get("pe_ttm") is not None and PE_MIN < s["pe_ttm"] < PE_MAX
+            s for s in results if s.get("pe_ttm") is not None and PE_MIN < s["pe_ttm"] < PE_MAX
         ]
         if len(results) < before:
             logger.info(
@@ -396,7 +395,9 @@ def _backfill_pe_from_api(results: list[dict]) -> int:
             if s.get("industry") in (None, "", "N/A"):
                 s["industry"] = info.get("industry") or "N/A"
             filled += 1
-    logger.info(f"  PE 回退完成: 补充 {filled}/{len(missing)} 只，剩余缺失 {len(missing) - filled} 只")
+    logger.info(
+        f"  PE 回退完成: 补充 {filled}/{len(missing)} 只，剩余缺失 {len(missing) - filled} 只"
+    )
     return filled
 
 
@@ -607,7 +608,9 @@ def run_full(
 
     # 补充API获取（仅缓存中没有的）
     missing_thscodes = [
-        ticker_to_thscode(s["ticker"]) for s in results if s["ticker"].split(".")[1] not in roe_cache
+        ticker_to_thscode(s["ticker"])
+        for s in results
+        if s["ticker"].split(".")[1] not in roe_cache
     ]
 
     api_roe: dict[str, float] = {}

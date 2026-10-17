@@ -75,7 +75,11 @@ def _write_dynamic_whitelist(results_pass: list[StockMetrics]) -> None:
         通过五闸门的筛选结果列表
     """
     # 排除北交所股票（920 开头的 BJ 代码）
-    codes = [r.ticker for r in results_pass if r.ticker and not r.ticker.upper().startswith(("920", "BJ."))]
+    codes = [
+        r.ticker
+        for r in results_pass
+        if r.ticker and not r.ticker.upper().startswith(("920", "BJ."))
+    ]
     _DYNAMIC_WHITELIST_PATH.write_text(",".join(codes), encoding="utf-8")
     logger.info(f"动态白名单已更新：{len(codes)} 只 → {_DYNAMIC_WHITELIST_PATH}")
 
@@ -238,7 +242,9 @@ def run(
     else:
         # 运行完整筛选流程（含 AI 核实），复用结果供后续步骤
         logger.info("📋 步骤 1/4：运行巴菲特六闸门并行筛选...")
-        results_pass, results_fail, skipped_no_val, total_filtered, elapsed = _run_full_screen(result_file, today)
+        results_pass, results_fail, skipped_no_val, total_filtered, elapsed = _run_full_screen(
+            result_file, today
+        )
         logger.info(f"✅ 巴菲特筛选完成（{elapsed:.1f}s），结果文件: {result_file}")
 
     # ── Step 2: 解析通过股票 + AI 核实 ──────────────────────────────────────
@@ -314,7 +320,9 @@ def _write_dynamic_whitelist_from_codes(codes: list[str]) -> None:
     logger.info(f"动态白名单已更新：{len(codes)} 只 → {_DYNAMIC_WHITELIST_PATH}")
 
 
-def _run_full_screen(result_file: str, date_str: str) -> tuple[list[StockMetrics], list[StockMetrics], list[str], int, float]:
+def _run_full_screen(
+    result_file: str, date_str: str
+) -> tuple[list[StockMetrics], list[StockMetrics], list[str], int, float]:
     """运行完整的巴菲特并行筛选流程（含 AI 核实）。
 
     Parameters
@@ -367,9 +375,7 @@ def _run_full_screen(result_file: str, date_str: str) -> tuple[list[StockMetrics
         elapsed_val = time.time() - t0
         hit = sum(1 for k in thscodes if f"val_{k}" in cache.get("valuations", {}))
         miss = len(thscodes) - hit
-        logger.info(
-            f"  获取 {len(vals)} 只估值（{elapsed_val:.1f}s，缓存命中 {hit}，请求 {miss}）"
-        )
+        logger.info(f"  获取 {len(vals)} 只估值（{elapsed_val:.1f}s，缓存命中 {hit}，请求 {miss}）")
 
         # 3. 并行筛选
         logger.info("  并行筛选...")
@@ -377,7 +383,9 @@ def _run_full_screen(result_file: str, date_str: str) -> tuple[list[StockMetrics
         results_pass, results_fail, skipped_no_val, elapsed_screen = run_screening(
             filtered, vals, conn, cache, concurrency=_CONCURRENCY
         )
-        logger.info(f"  筛选完成：通过 {len(results_pass)} 只，失败 {len(results_fail)} 只，跳过 {skipped_no_val} 只")
+        logger.info(
+            f"  筛选完成：通过 {len(results_pass)} 只，失败 {len(results_fail)} 只，跳过 {skipped_no_val} 只"
+        )
 
         # 4. 写入结果文件
         write_result_file(result_file, results_pass, results_fail)

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestParquetPaths:
@@ -127,7 +130,7 @@ class TestDuckDBAvailability:
         with patch("trade_krono_cli.analytics_db._helpers._HAS_DUCKDB", False):
             try:
                 _ensure_duckdb()
-                assert False, "应抛出异常"
+                raise AssertionError("应抛出异常")
             except RuntimeError as e:
                 assert "DuckDB 未安装" in str(e)
 

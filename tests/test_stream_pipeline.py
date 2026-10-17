@@ -260,9 +260,12 @@ class TestKronosRunnerStreamPredictOne:
 
         df = _make_df(400)
 
-        with patch("trade_krono_cli.kronos_runner.fetch_lookback") as mock_fetch, patch(
-            "trade_krono_cli.kronos_predictor.streaming.StreamingPredictor.predict"
-        ) as mock_predict:
+        with (
+            patch("trade_krono_cli.kronos_runner.fetch_lookback") as mock_fetch,
+            patch(
+                "trade_krono_cli.kronos_predictor.streaming.StreamingPredictor.predict"
+            ) as mock_predict,
+        ):
             mock_predict.return_value = MagicMock()
             _result = runner.stream_predict_one("sh.600519", "2026-08-12", df)
             mock_fetch.assert_not_called()
@@ -451,11 +454,14 @@ class TestStreamingPredictor:
             },
         )
 
-        with patch.object(
-            predictor,
-            "_prepare_stream",
-            return_value=(df, df["timestamps"], pd.Series(["2026-08-13"] * 30), 100.5),
-        ) as mock_prepare, patch.object(predictor._result_parser, "run_predict"):
+        with (
+            patch.object(
+                predictor,
+                "_prepare_stream",
+                return_value=(df, df["timestamps"], pd.Series(["2026-08-13"] * 30), 100.5),
+            ) as mock_prepare,
+            patch.object(predictor._result_parser, "run_predict"),
+        ):
             result = predictor.predict("sh.600519", "2026-08-12", df)
             mock_prepare.assert_called_once()
             assert result.ticker == "sh.600519"

@@ -54,12 +54,14 @@ class TestDataProviderFactory:
 
         bs_provider = BaostockProvider()
 
-        with patch.object(factory, "get_provider", side_effect=[None, bs_provider]):
-            with patch.object(bs_provider, "fetch_kline", return_value=mock_kline):
-                with patch.object(bs_provider, "health_check", return_value=True):
-                    result = factory.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                    assert result is not None
-                    assert result.length == 1
+        with (
+            patch.object(factory, "get_provider", side_effect=[None, bs_provider]),
+            patch.object(bs_provider, "fetch_kline", return_value=mock_kline),
+            patch.object(bs_provider, "health_check", return_value=True),
+        ):
+            result = factory.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is not None
+            assert result.length == 1
 
     def test_fetch_quote_fallback(self) -> None:
         factory = DataProviderFactory(primary="mootdx", fallbacks=["akshare"])
@@ -69,12 +71,14 @@ class TestDataProviderFactory:
 
         ak_provider = AkShareProvider()
 
-        with patch.object(factory, "get_provider", side_effect=[None, ak_provider]):
-            with patch.object(ak_provider, "fetch_quote", return_value=mock_quote):
-                with patch.object(ak_provider, "health_check", return_value=True):
-                    result = factory.fetch_quote("sh.600519")
-                    assert result is not None
-                    assert result.price == 1800.0
+        with (
+            patch.object(factory, "get_provider", side_effect=[None, ak_provider]),
+            patch.object(ak_provider, "fetch_quote", return_value=mock_quote),
+            patch.object(ak_provider, "health_check", return_value=True),
+        ):
+            result = factory.fetch_quote("sh.600519")
+            assert result is not None
+            assert result.price == 1800.0
 
     def test_fetch_metadata_fallback(self) -> None:
         factory = DataProviderFactory(primary="mootdx", fallbacks=["tushare"])
@@ -89,12 +93,14 @@ class TestDataProviderFactory:
                 return None
             return ts_provider
 
-        with patch.object(factory, "get_provider", side_effect=mock_get_provider):
-            with patch.object(ts_provider, "fetch_metadata", return_value=mock_meta):
-                with patch.object(ts_provider, "health_check", return_value=True):
-                    result = factory.fetch_metadata("sh.600519")
-                    assert result is not None
-                    assert result.industry == "白酒"
+        with (
+            patch.object(factory, "get_provider", side_effect=mock_get_provider),
+            patch.object(ts_provider, "fetch_metadata", return_value=mock_meta),
+            patch.object(ts_provider, "health_check", return_value=True),
+        ):
+            result = factory.fetch_metadata("sh.600519")
+            assert result is not None
+            assert result.industry == "白酒"
 
     def test_fetch_merged(self) -> None:
         factory = DataProviderFactory(primary="akshare", fallbacks=["baostock"])
@@ -121,14 +127,16 @@ class TestDataProviderFactory:
                 return None
             return bs_provider
 
-        with patch.object(factory, "get_provider", side_effect=mock_get_provider):
-            with patch.object(bs_provider, "fetch_kline", return_value=mock_kline):
-                with patch.object(bs_provider, "fetch_metadata", return_value=mock_meta):
-                    with patch.object(bs_provider, "fetch_quote", return_value=None):
-                        with patch.object(bs_provider, "health_check", return_value=True):
-                            result = factory.fetch_merged("sh.600519", "2026-01-01", "2026-08-13")
-                            assert result["kline"] is not None
-                            assert result["metadata"] is not None
+        with (
+            patch.object(factory, "get_provider", side_effect=mock_get_provider),
+            patch.object(bs_provider, "fetch_kline", return_value=mock_kline),
+            patch.object(bs_provider, "fetch_metadata", return_value=mock_meta),
+            patch.object(bs_provider, "fetch_quote", return_value=None),
+            patch.object(bs_provider, "health_check", return_value=True),
+        ):
+            result = factory.fetch_merged("sh.600519", "2026-01-01", "2026-08-13")
+            assert result["kline"] is not None
+            assert result["metadata"] is not None
 
     def test_available_providers(self) -> None:
         factory = DataProviderFactory()
@@ -325,8 +333,10 @@ class TestEdgeCases:
         bs = BaostockProvider()
         empty_kline = KlineData()  # 空
 
-        with patch.object(factory, "get_provider", return_value=bs):
-            with patch.object(bs, "fetch_kline", return_value=empty_kline):
-                with patch.object(bs, "health_check", return_value=True):
-                    result = factory.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                    assert result is None  # 空结果视为失败
+        with (
+            patch.object(factory, "get_provider", return_value=bs),
+            patch.object(bs, "fetch_kline", return_value=empty_kline),
+            patch.object(bs, "health_check", return_value=True),
+        ):
+            result = factory.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is None  # 空结果视为失败

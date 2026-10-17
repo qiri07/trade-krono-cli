@@ -125,7 +125,7 @@ class TestInvestmentDecisionFromDict:
         data = {"signal": "BUY", "confidence": 50.0}
         try:
             InvestmentDecision.from_dict(data)
-            assert False, "Expected KeyError"
+            raise AssertionError("Expected KeyError")
         except KeyError:
             pass
 

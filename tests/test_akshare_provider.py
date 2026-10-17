@@ -65,14 +65,16 @@ class TestAkShareProvider:
         )
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"):
-            with patch.object(provider, "_ak", create=True) as mock_ak:
-                mock_ak.stock_zh_a_hist.return_value = mock_df
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is not None
-                assert result.length == 2
-                assert result.open[0] == 100.0
-                assert result.close[-1] == 103.0
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(provider, "_ak", create=True) as mock_ak,
+        ):
+            mock_ak.stock_zh_a_hist.return_value = mock_df
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is not None
+            assert result.length == 2
+            assert result.open[0] == 100.0
+            assert result.close[-1] == 103.0
 
     def test_fetch_kline_unsupported_frequency(self, provider) -> None:
         """fetch_kline 不支持非日频时应返回 None。"""
@@ -83,31 +85,37 @@ class TestAkShareProvider:
         """fetch_kline 返回空 DataFrame 时应返回 None。"""
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"):
-            with patch.object(provider, "_ak", create=True) as mock_ak:
-                mock_ak.stock_zh_a_hist.return_value = pd.DataFrame()
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is None
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(provider, "_ak", create=True) as mock_ak,
+        ):
+            mock_ak.stock_zh_a_hist.return_value = pd.DataFrame()
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is None
 
     def test_fetch_kline_api_exception(self, provider) -> None:
         """fetch_kline API 异常时应返回 None 而非抛出。"""
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"):
-            with patch.object(provider, "_ak", create=True) as mock_ak:
-                mock_ak.stock_zh_a_hist.side_effect = Exception("API error")
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is None
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(provider, "_ak", create=True) as mock_ak,
+        ):
+            mock_ak.stock_zh_a_hist.side_effect = Exception("API error")
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is None
 
     def test_fetch_kline_none_df(self, provider) -> None:
         """fetch_kline API 返回 None 时应返回 None。"""
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"):
-            with patch.object(provider, "_ak", create=True) as mock_ak:
-                mock_ak.stock_zh_a_hist.return_value = None
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is None
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(provider, "_ak", create=True) as mock_ak,
+        ):
+            mock_ak.stock_zh_a_hist.return_value = None
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is None
 
     def test_fetch_quote_success(self, provider) -> None:
         """fetch_quote 成功时应返回 RealtimeQuote。"""
@@ -123,40 +131,47 @@ class TestAkShareProvider:
         )
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"):
-            with patch.object(AkShareProvider, "_get_full_market_cache", return_value=mock_df):
-                result = provider.fetch_quote("sh.600519")
-                assert result is not None
-                assert result.price == 1800.0
-                assert result.pe == 35.5
-                assert result.pb == 9.2
-                assert result.source == "akshare"
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(AkShareProvider, "_get_full_market_cache", return_value=mock_df),
+        ):
+            result = provider.fetch_quote("sh.600519")
+            assert result is not None
+            assert result.price == 1800.0
+            assert result.pe == 35.5
+            assert result.pb == 9.2
+            assert result.source == "akshare"
 
     def test_fetch_quote_ticker_not_found(self, provider) -> None:
         """fetch_quote 股票不在全市场行情中时应返回 None。"""
         mock_df = pd.DataFrame({"代码": ["000001"], "最新价": [10.0]})
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"):
-            with patch.object(AkShareProvider, "_get_full_market_cache", return_value=mock_df):
-                result = provider.fetch_quote("sh.600519")
-                assert result is None
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(AkShareProvider, "_get_full_market_cache", return_value=mock_df),
+        ):
+            result = provider.fetch_quote("sh.600519")
+            assert result is None
 
     def test_fetch_quote_cache_return_none(self, provider) -> None:
         """缓存返回 None 时 fetch_quote 应返回 None。"""
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"):
-            with patch.object(AkShareProvider, "_get_full_market_cache", return_value=None):
-                result = provider.fetch_quote("sh.600519")
-                assert result is None
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(AkShareProvider, "_get_full_market_cache", return_value=None),
+        ):
+            result = provider.fetch_quote("sh.600519")
+            assert result is None
 
     def test_fetch_quote_api_exception(self, provider) -> None:
         """fetch_quote API 异常时应返回 None。"""
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"), patch.object(
-            AkShareProvider, "_get_full_market_cache", side_effect=Exception("fail")
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(AkShareProvider, "_get_full_market_cache", side_effect=Exception("fail")),
         ):
             result = provider.fetch_quote("sh.600519")
             assert result is None
@@ -166,8 +181,9 @@ class TestAkShareProvider:
         import trade_krono_cli.data_providers.akshare_provider as akmod
 
         mock_df = pd.DataFrame({"code": ["600519"]})
-        with patch.object(provider.__class__, "_ak", create=True), patch.object(
-            akmod, "_full_market_cache", {"data": mock_df, "timestamp": 9999999999.0}
+        with (
+            patch.object(provider.__class__, "_ak", create=True),
+            patch.object(akmod, "_full_market_cache", {"data": mock_df, "timestamp": 9999999999.0}),
         ):
             result = provider._get_full_market_cache()
             assert result is mock_df
@@ -226,10 +242,12 @@ class TestAkShareProvider:
         )
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"):
-            with patch.object(provider, "_ak", create=True) as mock_ak:
-                mock_ak.stock_zh_a_hist.return_value = mock_df
-                assert provider.health_check() is True
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(provider, "_ak", create=True) as mock_ak,
+        ):
+            mock_ak.stock_zh_a_hist.return_value = mock_df
+            assert provider.health_check() is True
 
     def test_health_check_failure(self, provider) -> None:
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
@@ -241,10 +259,12 @@ class TestAkShareProvider:
         """health_check 返回空 DataFrame 时应返回 False。"""
         from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
 
-        with patch.object(AkShareProvider, "_ensure_import"):
-            with patch.object(provider, "_ak", create=True) as mock_ak:
-                mock_ak.stock_zh_a_hist.return_value = pd.DataFrame()
-                assert provider.health_check() is False
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(provider, "_ak", create=True) as mock_ak,
+        ):
+            mock_ak.stock_zh_a_hist.return_value = pd.DataFrame()
+            assert provider.health_check() is False
 
 
 # ═══════════════════════════════════════════════════════

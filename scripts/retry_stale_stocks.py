@@ -73,10 +73,7 @@ def fetch_and_merge(factory, ticker: str) -> tuple[str, bool, str]:
                 continue
 
             old_data = pickle.loads(io.BytesIO(row[0]).read())
-            if hasattr(old_data, "to_dataframe"):
-                old_df = old_data.to_dataframe()
-            else:
-                old_df = old_data
+            old_df = old_data.to_dataframe() if hasattr(old_data, "to_dataframe") else old_data
 
             merged = pd.concat([old_df, df], ignore_index=True)
             merged = merged.drop_duplicates(subset=["timestamps"], keep="last")

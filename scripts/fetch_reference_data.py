@@ -65,10 +65,7 @@ def main(tickers_input: list[str] | None = None) -> None:
     """
     logger.info("📊 启动参考数据（元数据）拉取")
 
-    if tickers_input:
-        tickers = tickers_input
-    else:
-        tickers = get_all_tickers()
+    tickers = tickers_input or get_all_tickers()
 
     logger.info(f"📋 共 {len(tickers)} 只股票待获取元数据")
 

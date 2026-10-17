@@ -150,12 +150,14 @@ class TestEvaluateConstraintAware:
                 return 108.0  # 退出日正常
             return None
 
-        with patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline):
-            with patch(
+        with (
+            patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline),
+            patch(
                 "trade_krono_cli.prediction_eval._get_close_price",
                 side_effect=fake_get_close,
-            ):
-                summary = evaluator.evaluate(store=False)
+            ),
+        ):
+            summary = evaluator.evaluate(store=False)
 
         # 涨停买入被跳过，eval_records 为空
         assert len(summary.records) == 0
@@ -215,12 +217,14 @@ class TestEvaluateConstraintAware:
                 },
             )
 
-        with patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline):
-            with patch(
+        with (
+            patch("trade_krono_cli.eval_data.fetch_kline", side_effect=fake_fetch_kline),
+            patch(
                 "trade_krono_cli.prediction_eval._get_close_price",
                 side_effect=fake_get_close,
-            ):
-                summary = evaluator.evaluate(store=False)
+            ),
+        ):
+            summary = evaluator.evaluate(store=False)
 
         assert len(summary.records) == 1
         r = summary.records[0]

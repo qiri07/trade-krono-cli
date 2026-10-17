@@ -389,9 +389,9 @@ class TestSkewnessKurtosis:
     def test_skewness_insufficient_data(self) -> None:
         engine = BacktestEngine()
         equity_curve = [("2026-08-11", 1_000_000.0)]
-        result = engine._compute_metrics(equity_curve, [], [])
+        engine._compute_metrics(equity_curve, [], [])
         # 单日无收益率 → skew/kurt 不应崩溃
-        assert "skewness" in result or "kurtosis" in result or True
+        assert True
 
     def test_kurtosis_insufficient_data(self) -> None:
         engine = BacktestEngine()

@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -137,7 +138,6 @@ _SOE_TICKERS: set[str] = {
     # 央企 - 电信
     "600487",
     "600840",
-    "601788",
     # 央企 - 交通
     "600029",
     "600026",
@@ -166,7 +166,6 @@ _SOE_TICKERS: set[str] = {
     "600076",
     "600080",
     "600170",
-    "601390",
     # 央企 - 钢铁
     "600005",
     "600007",
@@ -178,7 +177,6 @@ _SOE_TICKERS: set[str] = {
     "601003",
     "601005",
     "601611",
-    "601668",
     # 央企 - 化工
     "600023",
     "600058",
@@ -237,7 +235,6 @@ _SOE_TICKERS: set[str] = {
     "600863",
     "600872",
     "600889",
-    "600985",
     # 央企 - 汽车
     "600104",
     "600166",
@@ -265,7 +262,6 @@ _SOE_TICKERS: set[str] = {
     "600604",
     "600606",
     "600613",
-    "600619",
     "600619",
     # 央企 - 纺织
     "600143",
@@ -440,15 +436,13 @@ def get_all_stocks() -> list[dict]:
         time.sleep(0.05)
 
     # 缓存
-    try:
+    with contextlib.suppress(Exception):
         cached_path.write_text(
             json.dumps(
                 {"ts": datetime.now().timestamp(), "stocks": all_stocks}, ensure_ascii=False
             ),
             encoding="utf-8",
         )
-    except Exception:
-        pass
     return all_stocks
 
 

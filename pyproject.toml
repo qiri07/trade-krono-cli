@@ -145,7 +145,12 @@ ignore = ["E501", "RUF001", "RUF002", "RUF003", "G004", "S101", "S607", "S301", 
 "trade_krono_cli/data_providers/**/*.py" = ["B904", "S110"]
 "trade_krono_cli/security.py" = ["B904"]
 "trade_krono_cli/utils/st_cache.py" = ["SIM105"]
-"scripts/**/*.py" = ["S607", "S301", "S108", "S110", "UP015", "TC001", "TC003", "S603", "SIM113", "SIM102", "SIM115", "C420", "SIM105"]
+"scripts/**/*.py" = ["S607", "S301", "S108", "S110", "UP015", "TC001", "TC003", "S603", "S608", "S112", "SIM113", "SIM102", "SIM115", "C420", "SIM105"]
+# 测试中的 /tmp 路径是 fixture，不用于生产，豁免 S108；S105 测试用假凭证；B017 断言异常类型
+"tests/**/*.py" = ["S108", "S105", "B017", "S608", "S603", "S110", "S112", "S103", "B007", "B018"]
+# 本地 subprocess 调用（git / feishu CLI）非攻击面
+"trade_krono_cli/external/**/*.py" = ["S603"]
+"trade_krono_cli/notify/**/*.py" = ["S603"]
 
 [tool.mypy]
 python_version = "3.12"

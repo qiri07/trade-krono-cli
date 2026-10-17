@@ -31,7 +31,14 @@ def _sina_encoded(rows: list[dict]) -> str:
 def _sina_rows() -> list[dict]:
     return [
         {"date": "2026-09-01", "open": 100, "high": 101, "low": 99, "close": 100.5, "volume": 1000},
-        {"date": "2026-09-02", "open": 100.5, "high": 102, "low": 100, "close": 101.5, "volume": 1200},
+        {
+            "date": "2026-09-02",
+            "open": 100.5,
+            "high": 102,
+            "low": 100,
+            "close": 101.5,
+            "volume": 1200,
+        },
     ]
 
 
@@ -44,7 +51,13 @@ class TestSinaDirect:
             patch.object(
                 AkShareHKProvider,
                 "_req",
-                SimpleNamespace(get=MagicMock(return_value=SimpleNamespace(status_code=200, text=_sina_encoded(_sina_rows())))),
+                SimpleNamespace(
+                    get=MagicMock(
+                        return_value=SimpleNamespace(
+                            status_code=200, text=_sina_encoded(_sina_rows())
+                        )
+                    )
+                ),
             ),
         ):
             df = provider._fetch_via_sina_direct("00700")
@@ -61,7 +74,11 @@ class TestSinaDirect:
             patch.object(
                 AkShareHKProvider,
                 "_req",
-                SimpleNamespace(get=MagicMock(return_value=SimpleNamespace(status_code=200, text=_sina_encoded(rows)))),
+                SimpleNamespace(
+                    get=MagicMock(
+                        return_value=SimpleNamespace(status_code=200, text=_sina_encoded(rows))
+                    )
+                ),
             ),
         ):
             df = provider._fetch_via_sina_direct("00700")
@@ -75,7 +92,9 @@ class TestSinaDirect:
             patch.object(
                 AkShareHKProvider,
                 "_req",
-                SimpleNamespace(get=MagicMock(return_value=SimpleNamespace(status_code=500, text=""))),
+                SimpleNamespace(
+                    get=MagicMock(return_value=SimpleNamespace(status_code=500, text=""))
+                ),
             ),
         ):
             df = provider._fetch_via_sina_direct("00700")
@@ -89,7 +108,9 @@ class TestSinaDirect:
             patch.object(
                 AkShareHKProvider,
                 "_req",
-                SimpleNamespace(get=MagicMock(return_value=SimpleNamespace(status_code=200, text="nothing"))),
+                SimpleNamespace(
+                    get=MagicMock(return_value=SimpleNamespace(status_code=200, text="nothing"))
+                ),
             ),
         ):
             df = provider._fetch_via_sina_direct("00700")
@@ -178,7 +199,9 @@ class TestTencentMinute:
             patch.object(
                 AkShareHKProvider,
                 "_req",
-                SimpleNamespace(get=MagicMock(return_value=SimpleNamespace(status_code=404, text=""))),
+                SimpleNamespace(
+                    get=MagicMock(return_value=SimpleNamespace(status_code=404, text=""))
+                ),
             ),
         ):
             df = provider._fetch_via_tencent_minute("00700")
@@ -189,7 +212,9 @@ class TestFetchKlineEdge:
     def test_fetch_kline_missing_date_column(self) -> None:
         """数据无 date 列 → 返回 None。"""
         provider = AkShareHKProvider()
-        df = pd.DataFrame({"open": [1.0], "high": [2.0], "low": [0.5], "close": [1.5], "volume": [10]})
+        df = pd.DataFrame(
+            {"open": [1.0], "high": [2.0], "low": [0.5], "close": [1.5], "volume": [10]}
+        )
         with (
             patch.object(AkShareHKProvider, "_fetch_via_akshare_daily", return_value=df),
             patch.object(AkShareHKProvider, "_fetch_via_sina_direct", return_value=None),
@@ -212,7 +237,9 @@ class TestFetchKlineEdge:
             }
         )
         with patch.object(AkShareHKProvider, "_fetch_via_akshare_daily", return_value=df):
-            result = provider.fetch_kline("hk.00700", start_date="2026-01-01", end_date="2026-12-31")
+            result = provider.fetch_kline(
+                "hk.00700", start_date="2026-01-01", end_date="2026-12-31"
+            )
         assert result is None
 
     def test_fetch_kline_without_amount_column(self) -> None:

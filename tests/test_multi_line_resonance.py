@@ -124,8 +124,8 @@ class TestMacd:
         prices = [100.0 + i * 0.5 for i in range(40)] + [120.0 - i * 0.5 for i in range(10)]
         s = pd.Series(prices)
         dif, prev = _macd(s)
-        assert dif > 0            # DIF 仍在零轴上方
-        assert dif < prev         # 但已拐头向下
+        assert dif > 0  # DIF 仍在零轴上方
+        assert dif < prev  # 但已拐头向下
 
 
 class TestResampleClose:
@@ -390,7 +390,9 @@ class TestMainFunction:
     def test_main_no_tickers_exits(self) -> None:
         from scripts.multi_line_resonance import main
 
-        with patch("scripts.multi_line_resonance._get_all_tickers", return_value=[]):
-            with patch("sys.argv", ["multi_line_resonance.py"]):
-                with pytest.raises(SystemExit):
-                    main()
+        with (
+            patch("scripts.multi_line_resonance._get_all_tickers", return_value=[]),
+            patch("sys.argv", ["multi_line_resonance.py"]),
+            pytest.raises(SystemExit),
+        ):
+            main()

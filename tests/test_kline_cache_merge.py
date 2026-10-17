@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import sqlite3
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import pytest
 
 from trade_krono_cli.cache import _KLINE_HISTORICAL_TTL, Cache, KlineCache
+
+if TYPE_CHECKING:
+    import sqlite3
 
 
 def _make_df(start: str, end: str) -> pd.DataFrame:

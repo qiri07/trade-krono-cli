@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from scripts.buffett_daily_analysis import (
     _build_buffett_card,
@@ -11,6 +11,9 @@ from scripts.buffett_daily_analysis import (
     _parse_total_screened,
     _ticker_to_code,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 SAMPLE_RESULT_FILE_CONTENT = """巴菲特六闸门筛选结果（增强版）— 2026-09-18 11:42
 通过五闸门（①~⑤）的股票共 18 只
@@ -70,7 +73,7 @@ class TestParsePassingStocks:
         result_file.write_text(content, encoding="utf-8")
         passing = _parse_passing_stocks(result_file)
         # Ensure none of the failure distribution lines are included
-        for code, name in passing:
+        for code, _name in passing:
             assert "PE=" not in code
             assert "ROE=" not in code
 

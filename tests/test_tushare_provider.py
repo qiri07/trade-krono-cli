@@ -29,11 +29,13 @@ class TestTushareProvider:
         # 直接重置类属性
         provider.__class__._ts = None
         provider.__class__._token = ""
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.dict("sys.modules", {"tushare": mock_ts}):
-                provider._ensure_import()
-                assert provider._ts is not None
-                assert provider._token == "fake_token"
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.dict("sys.modules", {"tushare": mock_ts}),
+        ):
+            provider._ensure_import()
+            assert provider._ts is not None
+            assert provider._token == "fake_token"
         # 恢复
         provider.__class__._ts = None
         provider.__class__._token = ""
@@ -42,10 +44,12 @@ class TestTushareProvider:
         """_ts 已加载时 _ensure_import 不应重复导入。"""
         mock_ts = MagicMock()
         provider.__class__._ts = mock_ts
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch("builtins.__import__") as mock_import:
-                provider._ensure_import()
-                mock_import.assert_not_called()
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch("builtins.__import__") as mock_import,
+        ):
+            provider._ensure_import()
+            mock_import.assert_not_called()
         # 恢复
         provider.__class__._ts = None
 
@@ -67,15 +71,19 @@ class TestTushareProvider:
         """tushare 包未安装时应抛出 RuntimeError。"""
         from trade_krono_cli.data_providers.tushare_provider import TushareProvider
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.dict("sys.modules", {"tushare": None}):
-                provider = TushareProvider()
-                provider._ts = None
-                provider._token = ""
-                with patch.object(provider.__class__, "_ts", None):
-                    with patch.object(provider.__class__, "_token", ""):
-                        with pytest.raises(RuntimeError, match="tushare 未安装"):
-                            provider._ensure_import()
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.dict("sys.modules", {"tushare": None}),
+        ):
+            provider = TushareProvider()
+            provider._ts = None
+            provider._token = ""
+            with (
+                patch.object(provider.__class__, "_ts", None),
+                patch.object(provider.__class__, "_token", ""),
+                pytest.raises(RuntimeError, match="tushare 未安装"),
+            ):
+                provider._ensure_import()
 
     def test_fetch_kline_success(self, provider) -> None:
         mock_df = pd.DataFrame(
@@ -92,43 +100,51 @@ class TestTushareProvider:
         mock_ts = MagicMock()
         mock_ts.pro_bar.return_value = mock_df
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is not None
-                assert result.length == 2
-                assert result.open[0] == 100.0
-                assert result.close[-1] == 103.0
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is not None
+            assert result.length == 2
+            assert result.open[0] == 100.0
+            assert result.close[-1] == 103.0
 
     def test_fetch_kline_empty_result(self, provider) -> None:
         """fetch_kline 返回空 DataFrame 时应返回 None。"""
         mock_ts = MagicMock()
         mock_ts.pro_bar.return_value = pd.DataFrame()
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is None
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is None
 
     def test_fetch_kline_none_df(self, provider) -> None:
         """fetch_kline API 返回 None 时应返回 None。"""
         mock_ts = MagicMock()
         mock_ts.pro_bar.return_value = None
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is None
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is None
 
     def test_fetch_kline_api_exception(self, provider) -> None:
         """fetch_kline API 异常时应返回 None 而非抛出。"""
         mock_ts = MagicMock()
         mock_ts.pro_bar.side_effect = Exception("API rate limit")
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
-                assert result is None
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+            assert result is None
 
     def test_fetch_kline_sz_ticker(self, provider) -> None:
         """SZ 股票代码转换正确。"""
@@ -146,12 +162,14 @@ class TestTushareProvider:
         mock_ts = MagicMock()
         mock_ts.pro_bar.return_value = mock_df
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                result = provider.fetch_kline("sz.000001", "2026-01-01", "2026-08-13")
-                assert result is not None
-                # 验证调用了 pro_bar
-                mock_ts.pro_bar.assert_called_once()
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            result = provider.fetch_kline("sz.000001", "2026-01-01", "2026-08-13")
+            assert result is not None
+            # 验证调用了 pro_bar
+            mock_ts.pro_bar.assert_called_once()
 
     def test_fetch_metadata_success(self, provider) -> None:
         mock_df = pd.DataFrame(
@@ -166,13 +184,15 @@ class TestTushareProvider:
         mock_ts = MagicMock()
         mock_ts.stock_basic.return_value = mock_df
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                meta = provider.fetch_metadata("sh.600519")
-                assert meta is not None
-                assert meta.industry == "白酒"
-                assert meta.ipo_date == "1999-11-10"
-                assert meta.is_st is False
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            meta = provider.fetch_metadata("sh.600519")
+            assert meta is not None
+            assert meta.industry == "白酒"
+            assert meta.ipo_date == "1999-11-10"
+            assert meta.is_st is False
 
     def test_fetch_metadata_st_stock(self, provider) -> None:
         mock_df = pd.DataFrame(
@@ -187,31 +207,37 @@ class TestTushareProvider:
         mock_ts = MagicMock()
         mock_ts.stock_basic.return_value = mock_df
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                meta = provider.fetch_metadata("sh.601234")
-                assert meta is not None
-                assert meta.is_st is True
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            meta = provider.fetch_metadata("sh.601234")
+            assert meta is not None
+            assert meta.is_st is True
 
     def test_fetch_metadata_empty_result(self, provider) -> None:
         """fetch_metadata 返回空 DataFrame 时应返回 None。"""
         mock_ts = MagicMock()
         mock_ts.stock_basic.return_value = pd.DataFrame()
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                result = provider.fetch_metadata("sh.600519")
-                assert result is None
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            result = provider.fetch_metadata("sh.600519")
+            assert result is None
 
     def test_fetch_metadata_api_exception(self, provider) -> None:
         """fetch_metadata API 异常时应返回 None。"""
         mock_ts = MagicMock()
         mock_ts.stock_basic.side_effect = Exception("API error")
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                result = provider.fetch_metadata("sh.600519")
-                assert result is None
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            result = provider.fetch_metadata("sh.600519")
+            assert result is None
 
     def test_fetch_quote_success(self, provider) -> None:
         """fetch_quote 成功时应返回 RealtimeQuote。"""
@@ -227,61 +253,73 @@ class TestTushareProvider:
         mock_ts = MagicMock()
         mock_ts.realtime_quote.return_value = mock_df
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                result = provider.fetch_quote("sh.600519")
-                assert result is not None
-                # price 优先取 last_close（前收盘价）
-                assert result.price == 1750.0
-                assert result.pe == 35.5
-                assert result.pb == 9.2
-                assert result.source == "tushare"
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            result = provider.fetch_quote("sh.600519")
+            assert result is not None
+            # price 优先取 last_close（前收盘价）
+            assert result.price == 1750.0
+            assert result.pe == 35.5
+            assert result.pb == 9.2
+            assert result.source == "tushare"
 
     def test_fetch_quote_empty_result(self, provider) -> None:
         """fetch_quote 返回空 DataFrame 时应返回 None。"""
         mock_ts = MagicMock()
         mock_ts.realtime_quote.return_value = pd.DataFrame()
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                result = provider.fetch_quote("sh.600519")
-                assert result is None
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            result = provider.fetch_quote("sh.600519")
+            assert result is None
 
     def test_fetch_quote_api_exception(self, provider) -> None:
         """fetch_quote API 异常时应返回 None。"""
         mock_ts = MagicMock()
         mock_ts.realtime_quote.side_effect = Exception("API error")
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                result = provider.fetch_quote("sh.600519")
-                assert result is None
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            result = provider.fetch_quote("sh.600519")
+            assert result is None
 
     def test_health_check_success(self, provider) -> None:
         mock_df = pd.DataFrame({"ts_code": ["600519.SH"]})
         mock_ts = MagicMock()
         mock_ts.stock_basic.return_value = mock_df
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                assert provider.health_check() is True
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            assert provider.health_check() is True
 
     def test_health_check_failure(self, provider) -> None:
         mock_ts = MagicMock()
         mock_ts.stock_basic.side_effect = Exception("fail")
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                assert provider.health_check() is False
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            assert provider.health_check() is False
 
     def test_health_check_empty_result(self, provider) -> None:
         """health_check 返回空结果时应返回 False。"""
         mock_ts = MagicMock()
         mock_ts.stock_basic.return_value = pd.DataFrame()
 
-        with patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}):
-            with patch.object(provider.__class__, "_ts", mock_ts):
-                assert provider.health_check() is False
+        with (
+            patch.dict("os.environ", {"TUSHARE_TOKEN": "fake_token"}),
+            patch.object(provider.__class__, "_ts", mock_ts),
+        ):
+            assert provider.health_check() is False
 
 
 # ═══════════════════════════════════════════════════════

@@ -539,10 +539,7 @@ def fetch_roe_history(
         if roe is not None:
             history.append({"year": year, "roe": roe, "roe_excl": roe_excl})
 
-    if history:
-        new_entry = {cache_key: history}
-    else:
-        new_entry = None
+    new_entry = {cache_key: history} if history else None
     return history, new_entry
 
 
@@ -589,10 +586,7 @@ def fetch_cfo_ratio_history(
                 {"year": year, "cfo": cfo, "net_profit": net_profit, "ratio": ratio}
             )
 
-    if ratio_history:
-        new_entry = {cache_key: ratio_history}
-    else:
-        new_entry = None
+    new_entry = {cache_key: ratio_history} if ratio_history else None
     return ratio_history, new_entry
 
 

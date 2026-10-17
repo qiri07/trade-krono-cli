@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from scripts.parse_top3 import parse_top3
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestParseTop3:

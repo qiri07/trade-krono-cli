@@ -26,14 +26,17 @@ class TestTradingAgentsAdapterImpl:
         settings = MagicMock()
         settings.tradingagents_root = Path("/fake/path")
 
-        with patch("trade_krono_cli.adapters.tradingagents.ensure_import_path"), patch.dict(
-            "sys.modules",
-            {
-                "cli_anything": MagicMock(),
-                "cli_anything.tradingagents": MagicMock(),
-                "cli_anything.tradingagents.core": MagicMock(),
-                "cli_anything.tradingagents.core.analysis": MagicMock(),
-            },
+        with (
+            patch("trade_krono_cli.adapters.tradingagents.ensure_import_path"),
+            patch.dict(
+                "sys.modules",
+                {
+                    "cli_anything": MagicMock(),
+                    "cli_anything.tradingagents": MagicMock(),
+                    "cli_anything.tradingagents.core": MagicMock(),
+                    "cli_anything.tradingagents.core.analysis": MagicMock(),
+                },
+            ),
         ):
             sys_modules = __import__("sys").modules
             sys_modules["cli_anything.tradingagents.core.analysis"].run_analysis = mock_run
@@ -61,14 +64,17 @@ class TestTradingAgentsAdapterImpl:
         settings = MagicMock()
         settings.tradingagents_root = Path("/fake/path")
 
-        with patch("trade_krono_cli.adapters.tradingagents.ensure_import_path"), patch.dict(
-            "sys.modules",
-            {
-                "cli_anything": MagicMock(),
-                "cli_anything.tradingagents": MagicMock(),
-                "cli_anything.tradingagents.core": MagicMock(),
-                "cli_anything.tradingagents.core.analysis": None,
-            },
+        with (
+            patch("trade_krono_cli.adapters.tradingagents.ensure_import_path"),
+            patch.dict(
+                "sys.modules",
+                {
+                    "cli_anything": MagicMock(),
+                    "cli_anything.tradingagents": MagicMock(),
+                    "cli_anything.tradingagents.core": MagicMock(),
+                    "cli_anything.tradingagents.core.analysis": None,
+                },
+            ),
         ):
             import sys
 
@@ -93,14 +99,17 @@ class TestTradingAgentsAdapterImpl:
         settings.tradingagents_root = Path("/fake/path")
 
         adapter = TradingAgentsAdapterImpl()
-        with patch("trade_krono_cli.adapters.tradingagents.ensure_import_path"), patch.dict(
-            "sys.modules",
-            {
-                "cli_anything": MagicMock(),
-                "cli_anything.tradingagents": MagicMock(),
-                "cli_anything.tradingagents.core": MagicMock(),
-                "cli_anything.tradingagents.core.analysis": MagicMock(),
-            },
+        with (
+            patch("trade_krono_cli.adapters.tradingagents.ensure_import_path"),
+            patch.dict(
+                "sys.modules",
+                {
+                    "cli_anything": MagicMock(),
+                    "cli_anything.tradingagents": MagicMock(),
+                    "cli_anything.tradingagents.core": MagicMock(),
+                    "cli_anything.tradingagents.core.analysis": MagicMock(),
+                },
+            ),
         ):
             import sys
 
@@ -117,14 +126,17 @@ class TestTradingAgentsAdapterImpl:
         settings.tradingagents_root = Path("/fake/path")
 
         adapter = TradingAgentsAdapterImpl()
-        with patch("trade_krono_cli.adapters.tradingagents.ensure_import_path"), patch.dict(
-            "sys.modules",
-            {
-                "cli_anything": MagicMock(),
-                "cli_anything.tradingagents": MagicMock(),
-                "cli_anything.tradingagents.core": MagicMock(),
-                "cli_anything.tradingagents.core.analysis": MagicMock(),
-            },
+        with (
+            patch("trade_krono_cli.adapters.tradingagents.ensure_import_path"),
+            patch.dict(
+                "sys.modules",
+                {
+                    "cli_anything": MagicMock(),
+                    "cli_anything.tradingagents": MagicMock(),
+                    "cli_anything.tradingagents.core": MagicMock(),
+                    "cli_anything.tradingagents.core.analysis": MagicMock(),
+                },
+            ),
         ):
             import sys
 
@@ -141,14 +153,17 @@ class TestTradingAgentsAdapterImpl:
         settings.tradingagents_root = Path("/fake/path")
 
         adapter = TradingAgentsAdapterImpl()
-        with patch("trade_krono_cli.adapters.tradingagents.ensure_import_path"), patch.dict(
-            "sys.modules",
-            {
-                "cli_anything": MagicMock(),
-                "cli_anything.tradingagents": MagicMock(),
-                "cli_anything.tradingagents.core": MagicMock(),
-                "cli_anything.tradingagents.core.analysis": MagicMock(),
-            },
+        with (
+            patch("trade_krono_cli.adapters.tradingagents.ensure_import_path"),
+            patch.dict(
+                "sys.modules",
+                {
+                    "cli_anything": MagicMock(),
+                    "cli_anything.tradingagents": MagicMock(),
+                    "cli_anything.tradingagents.core": MagicMock(),
+                    "cli_anything.tradingagents.core.analysis": MagicMock(),
+                },
+            ),
         ):
             import sys
 

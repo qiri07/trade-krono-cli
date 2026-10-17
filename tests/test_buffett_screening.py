@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 from tests.buffett_screening import (
@@ -27,6 +27,9 @@ from tests.buffett_screening import (
     screen_one,
     write_result_file,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ── _safe_float ────────────────────────────────────────────────────────────────
 

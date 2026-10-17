@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from trade_krono_cli.research_db.migrations import migrate_schema
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture

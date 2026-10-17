@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -132,10 +133,8 @@ def load_all_cache(conn: sqlite3.Connection) -> dict:
     now_ts = datetime.now(_CST).timestamp()
     for tbl, target in _CACHE_TABLE_MAP:
         for row in conn.execute(f"SELECT key, data FROM {tbl} WHERE expires_at > ?", (now_ts,)):
-            try:
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
                 cache[target][row[0]] = json.loads(row[1])
-            except (json.JSONDecodeError, TypeError):
-                pass
     return cache
 
 

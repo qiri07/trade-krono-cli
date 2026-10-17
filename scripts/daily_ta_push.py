@@ -95,7 +95,7 @@ def _build_feishu_card(result: Any, date: str) -> str:
     # 优先用 investment_decision，fallback 到 legacy 字段
     if result.investment_decision is not None:
         dec = result.investment_decision
-        signal = dec.signal.value if hasattr(dec.signal, 'value') else str(dec.signal)
+        signal = dec.signal.value if hasattr(dec.signal, "value") else str(dec.signal)
         confidence = dec.confidence
         reasoning = dec.thesis or ""
     else:
@@ -192,8 +192,7 @@ def main() -> None:
 
     # ── 汇总 ───────────────────────────────────────────────────────────────
     logger.info(
-        f"📊 分析完成: {success_count} 只成功推送, {fail_count} 只失败, "
-        f"共 {len(results)} 只"
+        f"📊 分析完成: {success_count} 只成功推送, {fail_count} 只失败, 共 {len(results)} 只"
     )
 
 
