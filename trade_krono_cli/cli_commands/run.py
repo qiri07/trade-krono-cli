@@ -212,7 +212,9 @@ def run(
             f"{', '.join(sorted(valid_boosters))}"
         )
     if not (0 < risk_boost_multiplier <= 5.0):
-        runtime_errors.append(f"--risk-boost-multiplier={risk_boost_multiplier} 必须在 (0, 5.0] 范围内")
+        runtime_errors.append(
+            f"--risk-boost-multiplier={risk_boost_multiplier} 必须在 (0, 5.0] 范围内"
+        )
     if not (0 < risk_boost_diminishing_power <= 1.0):
         runtime_errors.append(
             f"--risk-boost-power={risk_boost_diminishing_power} 必须在 (0, 1.0] 范围内"

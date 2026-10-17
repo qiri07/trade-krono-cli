@@ -242,8 +242,7 @@ class BacktestEngine:
             if not today_signals:
                 # 估算当日持仓市值，记录权益曲线
                 equity = cash + sum(
-                    pos.shares
-                    * (self._get_exit_price(pos.ticker, day, prev_close_map) or 0)
+                    pos.shares * (self._get_exit_price(pos.ticker, day, prev_close_map) or 0)
                     for pos in positions.values()
                 )
                 daily_equity.append((day, equity))
@@ -282,11 +281,7 @@ class BacktestEngine:
                 # 确定订单类型和费用
                 order_type = self.default_order_type.value
                 is_maker = order_type == "limit"
-                cost_bps = (
-                    self.cfg.buy_cost_bps_maker()
-                    if is_maker
-                    else self.cfg.buy_cost_bps()
-                )
+                cost_bps = self.cfg.buy_cost_bps_maker() if is_maker else self.cfg.buy_cost_bps()
 
                 position_value = shares * entry_price
                 cash -= position_value
@@ -392,10 +387,8 @@ class BacktestEngine:
     def _can_buy_on_day(self, ticker: str, date: str, positions: dict[str, _Position]) -> bool:
         """T+1：若当日或前一日有买入，则今日不可再买。"""
         pos = positions.get(ticker)
-        if pos is None:
-            return True
         # 已有持仓不重复买入
-        return False
+        return pos is None
 
     def _close_position(
         self,

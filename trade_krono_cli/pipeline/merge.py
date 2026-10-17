@@ -267,10 +267,13 @@ def merge_results(
 
         # ── 降级模式标记 ──────────────────────────────────────────
         item["degradation_mode"] = None
-        if degrade_mode == "ta_only_on_kronos_fail":
-            if ta.error is None and (kr is None or kr.error is not None):
-                item["degradation_mode"] = "kronos_degraded"
-                logger.info(f"⚠️  {ta.ticker} Kronos 不可用，降级为「仅 TA 评分」模式")
+        if (
+            degrade_mode == "ta_only_on_kronos_fail"
+            and ta.error is None
+            and (kr is None or kr.error is not None)
+        ):
+            item["degradation_mode"] = "kronos_degraded"
+            logger.info(f"⚠️  {ta.ticker} Kronos 不可用，降级为「仅 TA 评分」模式")
 
         # ── A 股交易约束检查 ──────────────────────────────────────
         if constraints_config.enable_limit_check or constraints_config.enable_t1:

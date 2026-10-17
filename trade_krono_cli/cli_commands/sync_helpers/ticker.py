@@ -45,9 +45,7 @@ def _resolve_tickers(raw: str) -> list[str]:
             # 长度错误的纯数字：跳过（既不是 A 股也不是期货）
             logger.warning(f"⚠️  白名单代码格式错误，已跳过: {code}")
             continue
-        if code.isdigit() and (
-            code[:2] in ("51", "58") or code[:3] in ("159", "156", "158")
-        ):
+        if code.isdigit() and (code[:2] in ("51", "58") or code[:3] in ("159", "156", "158")):
             # ETF 代码：51xxxx/588xxx(沪)、159xxx/156xxx(深) → "etf.<code>"
             ticker = f"etf.{code}"
         elif code.isdigit():

@@ -167,7 +167,11 @@ class UnifiedInvestmentDecision:
 
         # 对称假设：prob_win ≈ 0.5 + sign(ret) * bias
         # bias 由 direction_bias_weight 控制，默认 0.0（无先验）
-        bias = self.direction_bias_weight if ret > 0 else (-self.direction_bias_weight if ret < 0 else 0.0)
+        bias = (
+            self.direction_bias_weight
+            if ret > 0
+            else (-self.direction_bias_weight if ret < 0 else 0.0)
+        )
         self.prob_win = round(max(0.05, min(0.95, 0.5 + bias)), 3)
         self.prob_loss = round(1.0 - self.prob_win, 3)
 

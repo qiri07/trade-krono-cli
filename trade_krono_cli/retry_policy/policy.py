@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import random
+import secrets
 import time
 import uuid
 from collections.abc import Callable
@@ -113,7 +113,9 @@ def _make_smart_retry_decorator(fn: F, policy: RetryPolicy) -> F:
                 category, desc = classify_error(e)
 
                 if category == "non_retriable" and policy.skip_non_retriable:
-                    logger.warning(f"❌ [{fn.__name__}] 不可重试错误（放弃） trace={trace_id}: {desc}")
+                    logger.warning(
+                        f"❌ [{fn.__name__}] 不可重试错误（放弃） trace={trace_id}: {desc}"
+                    )
                     raise
 
                 if attempt >= policy.max_attempts:
@@ -159,5 +161,5 @@ def _exp_backoff(attempt: int, base_delay: float, jitter: bool) -> float:
     """指数退避 + 可选抖动。"""
     delay = base_delay * (2 ** (attempt - 1))
     if jitter:
-        delay = delay * (0.5 + 0.5 * random.random())  # [0.5, 1.0] 随机因子
+        delay = delay * (0.5 + 0.5 * secrets.randbelow(10_000) / 10_000)  # [0.5, 1.0] 随机因子
     return delay

@@ -241,6 +241,7 @@ def ensure_import_path(*paths: Path) -> None:
     """
     # 白名单：只允许这些根目录下的路径
     import pathlib
+
     _ALLOWED_ROOTS = [
         pathlib.Path(__file__).parent.parent.parent,  # 项目根
         pathlib.Path(__file__).parent.parent / "external",  # external/

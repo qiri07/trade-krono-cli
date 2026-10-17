@@ -92,7 +92,9 @@ class TADataCache:
             if existing:
                 stored_version, stored_hash = existing
                 # 条件更新：只有当 incoming > stored 且 input_hash 相同时才更新
-                if incoming_version > stored_version and (not input_hash or input_hash == stored_hash):
+                if incoming_version > stored_version and (
+                    not input_hash or input_hash == stored_hash
+                ):
                     conn.execute(
                         "UPDATE ta_cache SET data=?, version=?, trace_id=?, input_hash=?, created=? "
                         "WHERE ticker=? AND date=? AND config_hash=? AND prompt_ver=? AND model_ver=?",
@@ -102,12 +104,18 @@ class TADataCache:
                             trace_id,
                             input_hash,
                             time.time(),
-                            ticker, date, config_hash, prompt_ver, model_ver,
+                            ticker,
+                            date,
+                            config_hash,
+                            prompt_ver,
+                            model_ver,
                         ),
                     )
                     logger.debug(f"📦 TA 缓存更新: {ticker} v{incoming_version}")
                 else:
-                    logger.debug(f"📦 TA 缓存跳过: {ticker} 版本不更新 (stored={stored_version}, incoming={incoming_version})")
+                    logger.debug(
+                        f"📦 TA 缓存跳过: {ticker} 版本不更新 (stored={stored_version}, incoming={incoming_version})"
+                    )
             else:
                 conn.execute(
                     "INSERT INTO ta_cache "

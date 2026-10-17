@@ -176,10 +176,7 @@ def detect_missing_dates(
                 expected_dates.add(current)
             current += timedelta(days=1)
     else:
-        expected_dates = {
-            start_date + timedelta(days=i)
-            for i in range(total_days)
-        }
+        expected_dates = {start_date + timedelta(days=i) for i in range(total_days)}
 
     # 实际存在的日期
     actual_dates = set(ts.dt.date.unique())
