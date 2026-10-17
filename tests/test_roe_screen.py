@@ -214,6 +214,7 @@ class TestMain:
         with (
             patch("scripts.roe_screen._load_whitelist", return_value=["hk.00700"]),
             patch("scripts.roe_screen.logger") as mock_logger,
+            patch("scripts.roe_screen.check_data_freshness", return_value="mocked"),
             patch("sys.argv", ["roe_screen.py"]),
         ):
             main()
