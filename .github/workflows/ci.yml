@@ -20,7 +20,9 @@ jobs:
   check:
     name: ${{ matrix.task }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # test 任务含覆盖率，CI 冷缓存 + 网络文件系统下实测 ~25-30m；
+    # 给到 45m 留足 buffer，避免 30m 上限触发 cancel-in-progress 取消
+    timeout-minutes: ${{ matrix.task == 'test' && 45 || 30 }}
 
     strategy:
       fail-fast: false

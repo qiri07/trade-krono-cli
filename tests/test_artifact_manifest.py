@@ -245,7 +245,9 @@ class TestBuildManifest:
 
         settings = self._make_mock_settings(tmp_path)
 
-        manifest = build_manifest(settings=settings, project_root=tmp_path)
+        with patch("trade_krono_cli.artifact_manifest._build_data_artifact") as mock_data:
+            mock_data.return_value = MagicMock(source="baostock", latest_date=None)
+            manifest = build_manifest(settings=settings, project_root=tmp_path)
         assert manifest.code.trade_krono_cli == {}
         assert manifest.code.tradingagents == {}
         assert manifest.code.kronos == {}
