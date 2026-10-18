@@ -196,7 +196,15 @@ class TestProviderChainForTicker:
         """无缓存时回退到固定顺序。"""
         # 确保缓存为空
         DataProviderFactory._rank_cache.clear()
-        chain = DataProviderFactory._provider_chain_for_ticker("sh.600519")
+        factory = DataProviderFactory(
+            primary="tonghuashun",
+            fallbacks=["baostock", "akshare", "mootdx", "tushare"],
+        )
+        with patch(
+            "trade_krono_cli.data_providers.factory.get_data_factory",
+            return_value=factory,
+        ):
+            chain = DataProviderFactory._provider_chain_for_ticker("sh.600519")
         # 默认顺序：tonghuashun → baostock → akshare → mootdx → tushare
         assert chain[0] == "tonghuashun"
         assert chain[1] == "baostock"
@@ -205,12 +213,17 @@ class TestProviderChainForTicker:
         """缓存中的 provider 若不在 base_chain 中则被过滤掉。"""
         # 写入一个包含 baostock/akshare 但不含 tonghuashun 的缓存
         DataProviderFactory._rank_cache.clear()
-        from trade_krono_cli.data_providers.factory import get_data_factory
-
-        factory = get_data_factory()
+        factory = DataProviderFactory(
+            primary="tonghuashun",
+            fallbacks=["baostock", "akshare", "mootdx", "tushare"],
+        )
         factory._write_ranked_chain("sh", ["baostock", "akshare"])
-        chain = DataProviderFactory._provider_chain_for_ticker("sh.600519")
-        # tonghuashun 在 base_chain 中（当前 .env DATA_PROVIDER=tonghuashun），不应被过滤
+        with patch(
+            "trade_krono_cli.data_providers.factory.get_data_factory",
+            return_value=factory,
+        ):
+            chain = DataProviderFactory._provider_chain_for_ticker("sh.600519")
+        # tonghuashun 在 base_chain 中（primary），不应被过滤
         assert "tonghuashun" in chain
         # 缓存中的 baostock/akshare 应在 base_chain 中保留，并保持缓存顺序
         assert chain.index("baostock") < chain.index("akshare")
