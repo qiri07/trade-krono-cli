@@ -42,7 +42,7 @@ from trade_krono_cli.config import get_settings  # type: ignore[import-not-found
 from trade_krono_cli.data_providers import get_data_factory
 
 # ── Agnes API 限流（全局模块，线程安全）─────────────────────────────────────
-from trade_krono_cli.llm_rate_limiter import wait_for_rate_limit
+from trade_krono_cli.llm_rate_limiter import backoff_wait, is_quota_exhausted, wait_for_rate_limit
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 常量
@@ -245,7 +245,7 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
 
     def _call_one(prompt: str) -> dict | None:
         wait_for_rate_limit()
-        for attempt in range(1, 4):
+        for attempt in range(1, 6):
             try:
                 response = client.chat.completions.create(
                     model=_AI_MODEL,
@@ -263,11 +263,19 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
                 )
                 break
             except RateLimitError as e:
-                if attempt >= 3:
-                    logger.warning(f"AI 核实限流（3次重试后仍失败）: {e}")
+                # 账户额度耗尽/付费墙类型：短暂等待无法恢复，快速失败并明确提示
+                if is_quota_exhausted(e):
+                    logger.error(
+                        "AI 核实触发 Agnes 免费账户额度限制，等待无法恢复："
+                        f" {str(e)[:120]}。请升级 Token Plan 或更换 AGNES_API_KEY 后重试。"
+                    )
                     break
-                wait = 2.0 * attempt
-                logger.warning(f"AI 核实触发限流，{wait:.0f}s 后重试 ({attempt}/3)...")
+                # 普通频率限流（429）：指数退避，最多重试 5 次
+                if attempt >= 5:
+                    logger.warning(f"AI 核实限流（5次退避重试后仍失败）: {e}")
+                    break
+                wait = backoff_wait(attempt)
+                logger.warning(f"AI 核实触发频率限流，{wait:.1f}s 后重试 ({attempt}/5)...")
                 time.sleep(wait)
             except Exception as e:
                 logger.warning(f"AI 核实调用失败（attempt {attempt}）: {type(e).__name__}: {e}")
@@ -341,6 +349,7 @@ def get_kline(ticker: str, start: str | None = None, end: str | None = None) -> 
     """
     cache = get_cache()
     kline_cache = cache  # Cache 实例本身有 get_kline/set_kline 方法
+    # ETF 无复权概念，缓存统一按 adjustflag='1' 存储，与普通股票一致
     if start is not None and end is not None:
         return kline_cache.get_kline(ticker, start, end, freq="d", adjustflag="1")
     # 无日期限制：直接读原始行

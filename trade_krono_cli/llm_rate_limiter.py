@@ -81,3 +81,42 @@ def reset_rate_limit() -> None:
     """重置限流状态（用于测试）。"""
     with _lock:
         _request_log.clear()
+
+
+# Agnes 免费账户额度耗尽的错误特征（需升级 Token Plan 或更换 key）
+_QUOTA_EXHAUSTED_MARKERS: tuple[str, ...] = (
+    "token plan",
+    "free users",
+    "quota",
+    "billing",
+    "insufficient",
+    "credit",
+    "upgrade to",
+)
+
+# 频率限流的退避参数（服务端 429 通常几秒~几十秒内恢复）
+_BACKOFF_BASE: float = 5.0  # 首次重试等待秒数
+_BACKOFF_MAX: float = 30.0  # 单次等待上限
+
+
+def is_quota_exhausted(error: Exception) -> bool:
+    """判断异常是否为账户额度/付费墙类型限流（非普通频率限流）。
+
+    命中任一特征关键词返回 True；此类错误通常需升级付费计划或更换 key，
+    短暂等待无法恢复，调用方应据此快速失败并给出明确提示。
+    """
+    msg = str(error).lower()
+    return any(marker in msg for marker in _QUOTA_EXHAUSTED_MARKERS)
+
+
+def backoff_wait(attempt: int) -> float:
+    """返回频率限流的等待秒数（指数退避，带确定性抖动，上限 30s）。
+
+    attempt 从 1 开始；等待 = min(_BACKOFF_BASE * 2**(attempt-1), _BACKOFF_MAX)，
+    并附加一个 0~1s 的确定性抖动（基于 attempt 与等待值的哈希），避免惊群，
+    同时满足静态检查（不使用随机数生成器）。
+    """
+    wait = min(_BACKOFF_BASE * (2 ** (attempt - 1)), _BACKOFF_MAX)
+    # 确定性抖动：对 (attempt, wait) 做哈希取模，落在 0.0~1.0 区间
+    jitter = (abs(hash((attempt, wait))) % 1000) / 1000.0
+    return wait + jitter
