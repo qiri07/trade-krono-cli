@@ -101,7 +101,13 @@ def _save_ai_result(ai_result: AiVerificationResult, result_txt_path: str) -> No
     """
     results_dir = Path(result_txt_path).parent
     results_dir.mkdir(parents=True, exist_ok=True)
-    json_path = results_dir / f"buffett_screen_{Path(result_txt_path).stem}_ai.json"
+    # The txt file is named "buffett_screen_{YYYYMMDD}.txt", so its stem already
+    # carries the "buffett_screen_" prefix. Strip that exact prefix to recover the
+    # bare date (YYYYMMDD), then build the clean JSON name (matches
+    # scripts/buffett_daily.py: f"buffett_screen_{date_str}_ai.json").
+    stem = Path(result_txt_path).stem
+    date_str = stem[len("buffett_screen_"):] if stem.startswith("buffett_screen_") else stem
+    json_path = results_dir / f"buffett_screen_{date_str}_ai.json"
 
     # 写入 JSON（完整数据，供后续查阅）
     with open(json_path, "w", encoding="utf-8") as f:
