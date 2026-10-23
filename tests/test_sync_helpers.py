@@ -216,15 +216,15 @@ class TestResolveTickers:
         ]
 
     def test_etf_codes_normalized(self) -> None:
-        """51/58/159 开头的 6 位数字归一化为 etf.*。"""
+        """51/58/159 开头的 6 位数字归一化为带交易所前缀（沪→sh.，深→sz.）。"""
         from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers
 
         assert _resolve_tickers("510310,588000,159915,159948,513650") == [
-            "etf.510310",
-            "etf.588000",
-            "etf.159915",
-            "etf.159948",
-            "etf.513650",
+            "sh.510310",
+            "sh.588000",
+            "sz.159915",
+            "sz.159948",
+            "sh.513650",
         ]
 
     def test_futures_pass_through(self) -> None:
@@ -238,7 +238,7 @@ class TestResolveTickers:
         from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers
 
         result = _resolve_tickers("600519,hk.00700,510310,600519,hk.00700,IC2610")
-        assert result == ["sh.600519", "hk.00700", "etf.510310", "IC2610"]
+        assert result == ["sh.600519", "hk.00700", "sh.510310", "IC2610"]
 
     def test_empty_input(self) -> None:
         """空字符串返回空列表。"""

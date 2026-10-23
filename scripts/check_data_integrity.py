@@ -115,6 +115,11 @@ def main() -> None:
         SELECT
             CASE
                 WHEN ticker LIKE 'bj.%' THEN '北交所'
+                WHEN ticker LIKE 'sh.51%' THEN 'ETF(沪)'
+                WHEN ticker LIKE 'sh.58%' THEN 'ETF(沪)'
+                WHEN ticker LIKE 'sz.159%' THEN 'ETF(深)'
+                WHEN ticker LIKE 'sz.156%' THEN 'ETF(深)'
+                WHEN ticker LIKE 'sz.158%' THEN 'ETF(深)'
                 WHEN ticker LIKE 'sh.68%' THEN '科创板'
                 WHEN ticker LIKE 'sz.30%' THEN '创业板'
                 WHEN ticker LIKE 'sh.60%' THEN '上海主板'

@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
+from scripts._utils import get_provider_chain
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.data_providers.factory import get_data_factory
 
@@ -46,9 +47,11 @@ def get_missing_tickers() -> list[str]:
 def fetch_one(factory, ticker: str) -> tuple[str, bool, str]:
     """拉取增量数据并追加到现有记录。"""
     try:
-        # 非北交所：tonghuashun 主，baostock 备
-        # 北交所：只用 tonghuashun
-        providers = ["tonghuashun"] if ticker.startswith("bj.") else ["tonghuashun", "baostock"]
+        # ETF 走 get_provider_chain（baostock 优先，tonghuashun/mootdx 降级）
+        # 北交所/普通股票仍由 get_provider_chain 统一路由
+        providers = get_provider_chain(ticker)
+        # ETF 无复权概念，缓存统一按 adjustflag='1' 存储，与普通股票一致
+        adjustflag = "1"
 
         result = None
         used_provider = ""
@@ -58,7 +61,7 @@ def fetch_one(factory, ticker: str) -> tuple[str, bool, str]:
                 continue
             try:
                 result = provider.fetch_kline(
-                    ticker, SYNC_START, SYNC_END, frequency="d", adjustflag="1"
+                    ticker, SYNC_START, SYNC_END, frequency="d", adjustflag=adjustflag
                 )
                 if result is not None and not result.is_empty:
                     used_provider = pname
@@ -108,7 +111,7 @@ def fetch_one(factory, ticker: str) -> tuple[str, bool, str]:
             freq="d",
             df=combined,
             ttl=0.0,
-            adjustflag="1",
+            adjustflag=adjustflag,
         )
         n_new = len(combined) - len(existing_df) if row else len(combined)
         return (ticker, True, f"{n_new}rows@{used_provider}")

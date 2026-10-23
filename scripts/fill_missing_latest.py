@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""补齐缺少最新数据（9-12~9-14）的股票增量数据。
+"""补齐缺少最新数据的股票增量数据。
 
-从增量同步失败中提取的 849 只股票，统一走 tonghuashun 重试。
+默认从增量同步失败中提取的股票（缺 2026-09-14 数据），统一走 tonghuashun 重试。
+
+可通过命令行参数自定义目标最新日期与拉取窗口：
+    python scripts/fill_missing_latest.py                    # 默认 9-01~10-07, 缺 9-14
+    python scripts/fill_missing_latest.py --before 2026-10-16 --start 2026-09-01 --end 2026-10-19
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,12 +21,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
+from scripts._utils import get_provider_chain
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
-FETCH_START = "2026-09-01"
-FETCH_END = "2026-10-07"
+# 默认值：补齐 9-12~9-14 缺失的增量数据
+DEFAULT_FETCH_START = "2026-09-01"
+DEFAULT_FETCH_END = "2026-10-07"
+DEFAULT_BEFORE = "2026-09-14"
 WORKERS = 10
 BATCH_SIZE = 50
 FETCH_TIMEOUT = 25
@@ -30,27 +38,57 @@ CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 _load_env()
 
 
-def get_missing_tickers() -> list[str]:
-    """获取缺少 2026-09-14 数据的股票。"""
+def parse_args() -> argparse.Namespace:
+    """解析命令行参数。"""
+    parser = argparse.ArgumentParser(description="补齐缺少最新数据的股票增量数据")
+    parser.add_argument("--before", default=DEFAULT_BEFORE, help="目标最新日期阈值（缺此日期的股票被补齐）")
+    parser.add_argument("--start", default=DEFAULT_FETCH_START, help="拉取窗口起始日期")
+    parser.add_argument("--end", default=DEFAULT_FETCH_END, help="拉取窗口结束日期")
+    return parser.parse_args()
+
+
+def get_missing_tickers(before: str) -> list[str]:
+    """获取缺少指定最新日期的股票。"""
     import sqlite3
 
     conn = sqlite3.connect(str(CACHE_DB))
     rows = conn.execute(
         "SELECT ticker, MAX(end) as latest_end FROM kline_cache "
-        "GROUP BY ticker HAVING latest_end < '2026-09-14' ORDER BY ticker"
+        "GROUP BY ticker HAVING latest_end < ? ORDER BY ticker",
+        (before,),
     ).fetchall()
     conn.close()
     return [r[0] for r in rows]
 
 
-def fetch_and_append(factory, ticker: str) -> tuple[str, bool, str]:
-    """拉取增量数据并追加到现有记录（不覆盖历史）。"""
-    try:
-        provider = factory.get_provider("tonghuashun")
-        if provider is None:
-            return (ticker, False, "no_provider")
+def fetch_and_append(
+    factory, ticker: str, fetch_start: str, fetch_end: str
+) -> tuple[str, bool, str]:
+    """拉取增量数据并追加到现有记录（不覆盖历史）。
 
-        result = provider.fetch_kline(ticker, FETCH_START, FETCH_END, frequency="d", adjustflag="1")
+    使用 get_provider_chain 路由：ETF 优先 baostock（原生支持 ETF K 线），
+    普通股票按交易所降级链。ETF 无复权概念，缓存统一按 adjustflag='1' 存储。
+    """
+    try:
+        providers = get_provider_chain(ticker)
+        adjustflag = "1"
+
+        result = None
+        used_provider = ""
+        for pname in providers:
+            provider = factory.get_provider(pname)
+            if provider is None:
+                continue
+            try:
+                result = provider.fetch_kline(
+                    ticker, fetch_start, fetch_end, frequency="d", adjustflag=adjustflag
+                )
+                if result is not None and not result.is_empty:
+                    used_provider = pname
+                    break
+            except Exception:
+                continue
+
         if result is None or result.is_empty:
             return (ticker, False, "empty")
 
@@ -93,20 +131,21 @@ def fetch_and_append(factory, ticker: str) -> tuple[str, bool, str]:
             freq="d",
             df=combined,
             ttl=0.0,
-            adjustflag="1",
+            adjustflag=adjustflag,
         )
         n_new = len(combined) - len(existing_df) if row else len(combined)
-        return (ticker, True, f"{n_new}rows")
+        return (ticker, True, f"{n_new}rows@{used_provider}")
     except Exception as e:
         return (ticker, False, str(e)[:60])
 
 
 def main() -> None:
+    args = parse_args()
     logger.info("=" * 60)
-    logger.info("补齐缺失最新数据（9-12~9-14）— tonghuashun 重试")
+    logger.info(f"补齐缺失最新数据（缺 {args.before}）— tonghuashun 重试，拉取窗口 {args.start}~{args.end}")
     logger.info("=" * 60)
 
-    tickers = get_missing_tickers()
+    tickers = get_missing_tickers(args.before)
     bj = [t for t in tickers if t.startswith("bj.")]
     shsz = [t for t in tickers if not t.startswith("bj.")]
     logger.info(f"需补齐 {len(tickers)} 只: bj={len(bj)}, sh/sz={len(shsz)}")
@@ -130,7 +169,10 @@ def main() -> None:
         batch_failed: list[tuple[str, str]] = []
 
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-            futures = {executor.submit(fetch_and_append, factory, t): t for t in batch}
+            futures = {
+                executor.submit(fetch_and_append, factory, t, args.start, args.end): t
+                for t in batch
+            }
             for future in as_completed(futures, timeout=FETCH_TIMEOUT * len(batch) // WORKERS + 10):
                 ticker, succeeded, detail = future.result()
                 if succeeded:

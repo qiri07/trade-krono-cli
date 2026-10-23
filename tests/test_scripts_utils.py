@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts._utils import get_all_tickers, get_provider_chain
+from scripts._utils import get_all_tickers, get_provider_chain, normalize_ticker_key
 
 
 class TestGetProviderChain:
@@ -19,6 +19,16 @@ class TestGetProviderChain:
     def test_sz_ticker(self) -> None:
         assert get_provider_chain("sz.000001") == ["tonghuashun", "baostock", "mootdx"]
 
+    def test_sh_etf_ticker(self) -> None:
+        """沪市 ETF（51/58 开头）baostock 优先。"""
+        assert get_provider_chain("sh.510300") == ["baostock", "tonghuashun", "mootdx"]
+        assert get_provider_chain("sh.588000") == ["baostock", "tonghuashun", "mootdx"]
+
+    def test_sz_etf_ticker(self) -> None:
+        """深市 ETF（159/156/158 开头）baostock 优先。"""
+        assert get_provider_chain("sz.159915") == ["baostock", "tonghuashun", "mootdx"]
+        assert get_provider_chain("sz.156001") == ["baostock", "tonghuashun", "mootdx"]
+
     def test_bj_ticker(self) -> None:
         assert get_provider_chain("bj.920001") == ["tonghuashun", "baostock"]
 
@@ -27,6 +37,27 @@ class TestGetProviderChain:
 
     def test_empty_ticker(self) -> None:
         assert get_provider_chain("") == ["baostock", "tonghuashun"]
+
+
+class TestNormalizeTickerKey:
+    """normalize_ticker_key 归一化测试。"""
+
+    def test_sh_etf_code(self) -> None:
+        assert normalize_ticker_key("510300") == "sh.510300"
+        assert normalize_ticker_key("588000") == "sh.588000"
+
+    def test_sz_etf_code(self) -> None:
+        assert normalize_ticker_key("159915") == "sz.159915"
+        assert normalize_ticker_key("156001") == "sz.156001"
+
+    def test_a_share_code(self) -> None:
+        assert normalize_ticker_key("600519") == "sh.600519"
+        assert normalize_ticker_key("000858") == "sz.000858"
+        assert normalize_ticker_key("920001") == "bj.920001"
+
+    def test_prefixed_passthrough(self) -> None:
+        assert normalize_ticker_key("sh.600519") == "sh.600519"
+        assert normalize_ticker_key("hk.00700") == "hk.00700"
 
 
 class TestGetAllTickers:

@@ -132,8 +132,11 @@ def normalize_ticker_key(ticker: str) -> str:
     if not code.isdigit():
         return ticker
     if code[:2] in ("51", "58") or code[:3] in ("159", "156", "158"):
-        # ETF 代码：51xxxx/588xxx(沪)、159xxx/156xxx(深) → "etf.<code>"
-        return f"etf.{code}"
+        # ETF 代码：51xxxx/58xxxx(沪)、159xxx/156xxx/158xxx(深)
+        # 归一化为带交易所前缀格式，使 baostock 能直接识别
+        if code[:2] in ("51", "58"):
+            return f"sh.{code}"
+        return f"sz.{code}"
     # 纯数字：根据代码范围推断交易所前缀，保持原始字符串以保留前导零
     # A股代码范围：000xxx~002xxx(深主板) 003xxx~399xxx(深创业板) 600xxx~688xxx(沪主板/科创) 8xxxxx(北交所/新三板) 9xxxxx(北交所)
     num = int(code)
@@ -149,6 +152,23 @@ def normalize_ticker_key(ticker: str) -> str:
         # 000xxx / 001xxx / 002xxx 深市主板，始终带前导零
         return f"sz.{code.zfill(6)}"
     return ticker
+
+
+def is_etf_ticker(ticker: str) -> bool:
+    """判断 ticker 是否为 ETF 基金（sh.51x/sh.58x/sz.159/sz.156/sz.158）。
+
+    Args:
+        ticker: 带交易所前缀的 ticker，如 "sh.510300"、"sz.159915"。
+
+    Returns:
+        True 表示该 ticker 是 ETF 基金代码。
+    """
+    if "." not in ticker:
+        return False
+    prefix, code = ticker.split(".", 1)
+    if prefix not in ("sh", "sz"):
+        return False
+    return code[:2] in ("51", "58") or code[:3] in ("159", "156", "158")
 
 
 def get_all_tickers() -> list[str]:
@@ -177,6 +197,11 @@ def get_provider_chain(ticker: str) -> list[str]:
     elif ticker.startswith("hk."):
         return ["akshare_hk", "tonghuashun", "mootdx", "akshare"]
     elif ticker.startswith("sh.") or ticker.startswith("sz."):
+        # ETF 代码（51/58 沪、159/156/158 深）：baostock 原生支持 ETF K 线，优先使用
+        code = ticker.split(".", 1)[1]
+        is_etf = code[:2] in ("51", "58") or code[:3] in ("159", "156", "158")
+        if is_etf:
+            return ["baostock", "tonghuashun", "mootdx"]
         return ["tonghuashun", "baostock", "mootdx"]
     return ["baostock", "tonghuashun"]
 

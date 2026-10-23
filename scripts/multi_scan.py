@@ -30,6 +30,7 @@ from scripts._utils import (
     check_data_freshness,
     get_cache_db_path,
     is_bse_or_hk,
+    is_etf_ticker,
     ticker_to_thscode,
 )
 from scripts.daily_analysis import _load_env, ai_verify, analyze_stock
@@ -72,10 +73,12 @@ def _get_all_tickers(db_path: Path) -> list[str]:
     all_tickers = [r[0] for r in cur.fetchall()]
     conn.close()
 
-    # 排除北交所（bj.开头）和港股（hk.开头）
+    # 排除北交所（bj.开头）和港股（hk.开头），保留 A 股 + ETF
     astock_tickers = [t for t in all_tickers if not is_bse_or_hk(t)]
+    etf_tickers = [t for t in astock_tickers if is_etf_ticker(t)]
     logger.info(
         f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所/港股后 {len(astock_tickers)} 只"
+        f"（含ETF {len(etf_tickers)} 只，纯技术面参与）"
     )
     return astock_tickers
 
@@ -414,23 +417,33 @@ def main() -> None:
     # 扫描多头排列股票
     results = scan_multi_head_stocks(tickers, max_workers=args.workers, top_n=args.top)
 
-    # PE 过滤：剔除亏损（PE<0）、PE≥40、PE 缺失的股票
+    # PE 过滤：剔除亏损（PE<0）、PE≥40、PE 缺失的股票（ETF 无 PE，纯技术面豁免）
     pe_map: dict[str, dict] = {}
     if results:
-        pe_tickers = [r["ticker"] for r in results]
-        logger.info(f"📊 获取 {len(pe_tickers)} 只股票的 PE 数据用于过滤...")
-        pe_map = _fetch_pe_snapshot(pe_tickers)
-        logger.info(f"  PE API 返回 {len(pe_map)} 只有效数据")
-        results, pe_removed = _filter_by_pe(results, pe_map)
-        logger.info(f"PE 过滤：剔除 {pe_removed} 只（亏损/PE≥40/缺失），剩余 {len(results)} 只")
+        etf_results = [r for r in results if is_etf_ticker(r["ticker"])]
+        stock_results = [r for r in results if not is_etf_ticker(r["ticker"])]
+        pe_tickers = [r["ticker"] for r in stock_results]
+        if pe_tickers:
+            logger.info(f"📊 获取 {len(pe_tickers)} 只股票的 PE 数据用于过滤...")
+            pe_map = _fetch_pe_snapshot(pe_tickers)
+            logger.info(f"  PE API 返回 {len(pe_map)} 只有效数据")
+        stock_results, pe_removed = _filter_by_pe(stock_results, pe_map)
+        logger.info(
+            f"PE 过滤：剔除 {pe_removed} 只（亏损/PE≥40/缺失），"
+            f"剩余 {len(stock_results)} 只 + ETF {len(etf_results)} 只（纯技术面）"
+        )
+        results = stock_results + etf_results
+        results.sort(key=lambda x: x.get("score", 0), reverse=True)
 
-    # 估值评估：为每只股票计算估值评分和建议买入价
+    # 估值评估：为每只股票计算估值评分和建议买入价（ETF 无 PE/ROE，跳过）
     if results:
-        logger.info("📊 启动估值评估...")
-        val_tickers = [_strip_prefix(r["ticker"]) for r in results]
+        val_results = [r for r in results if not is_etf_ticker(r["ticker"])]
+        etf_kept = [r for r in results if is_etf_ticker(r["ticker"])]
+        logger.info(f"📊 启动估值评估...（ETF {len(etf_kept)} 只无基本面指标，跳过）")
+        val_tickers = [_strip_prefix(r["ticker"]) for r in val_results]
         # 批量获取 PE 分位（akshare）
         pe_percentiles = _fetch_pe_percentiles(val_tickers)
-        for r in results:
+        for r in val_results:
             code = _strip_prefix(r["ticker"])
             price = r.get("close", 0)
             pe = _safe_float(pe_map.get(code, {}).get("pe"))
@@ -458,7 +471,13 @@ def main() -> None:
                 r["valuation_score"] = None
                 r["buy_price_suggested"] = None
                 r["valuation_conclusion"] = ""
-        logger.info(f"✅ 估值评估完成：{len(results)} 只股票")
+        for r in etf_kept:
+            r["valuation_score"] = None
+            r["buy_price_suggested"] = None
+            r["valuation_conclusion"] = ""
+        results = val_results + etf_kept
+        results.sort(key=lambda x: x.get("score", 0), reverse=True)
+        logger.info(f"✅ 估值评估完成：{len(val_results)} 只股票 + ETF {len(etf_kept)} 只")
 
     # AI 核实
     logger.info("🤖 启动 AI 核实...")

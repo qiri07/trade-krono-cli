@@ -33,6 +33,7 @@ sys.path.insert(0, "/run/media/onai/MyDisk/Work/trade-krono-cli")
 from scripts._utils import (
     get_all_tickers,
     get_cache_db_path,
+    is_etf_ticker,
     normalize_ticker_key,
     ticker_to_thscode,
 )
@@ -249,20 +250,24 @@ def run_lite(
             _fill_pe_and_industry(results)
         before = len(results)
         results = [
-            s for s in results if s.get("pe_ttm") is not None and PE_MIN < s["pe_ttm"] < PE_MAX
+            s
+            for s in results
+            if s.get("is_etf")
+            or (s.get("pe_ttm") is not None and PE_MIN < s["pe_ttm"] < PE_MAX)
         ]
         if len(results) < before:
             logger.info(
                 f"  PE 界内过滤(0,{PE_MAX}): 剔除 {before - len(results)} 只"
-                f"（PE缺失或越界），剩余 {len(results)} 只"
+                f"（PE缺失或越界），剩余 {len(results)} 只（含ETF纯技术面）"
             )
 
-    results.sort(key=lambda x: (x.get("pe_ttm") is None, x["pe_ttm"]))
+    results.sort(key=lambda x: (x.get("is_etf") or x.get("pe_ttm") is None, x.get("pe_ttm") or 0))
 
+    etf_count = sum(1 for s in results if s.get("is_etf"))
     logger.info("=" * 60)
     logger.info("筛选完成！")
     logger.info(f"  总扫描: {len(all_tickers)} 只")
-    logger.info(f"  通过双均线金叉+PE+MACD过滤: {len(results)} 只")
+    logger.info(f"  通过双均线金叉+PE+MACD过滤: {len(results)} 只（含ETF {etf_count} 只纯技术面）")
     logger.info(f"  - 筛选失败（无数据/不达标）: {skipped_no_data}")
     logger.info("=" * 60)
 
@@ -295,7 +300,7 @@ def _print_top30(results: list[dict], *, with_roe: bool) -> None:
         for i, s in enumerate(results[:top_n], 1):
             logger.info(
                 f"{i:<4} {s['ticker']:<10} {s['name'] or 'N/A':<10} {s['industry'] or 'N/A':<10} "
-                f"{s['latest_close']:<8.2f} {s['pe_ttm']:<6.2f} "
+                f"{s['latest_close']:<8.2f} {s['pe_ttm'] or 0:<6.2f} "
                 f"{s.get('roe') or 0:<6.2f} {s.get('net_profit_yi') or 0:<6.2f} "
                 f"{s['daily_ratio']:<8.4f} {s['weekly_ratio']:<8.4f} {s['macd']:<10.6f}"
             )
@@ -308,7 +313,7 @@ def _print_top30(results: list[dict], *, with_roe: bool) -> None:
         for i, s in enumerate(results[:top_n], 1):
             logger.info(
                 f"{i:<4} {s['ticker']:<10} {s['name'] or 'N/A':<10} {s['industry'] or 'N/A':<10} "
-                f"{s['latest_close']:<8.2f} {s['pe_ttm']:<6.2f} "
+                f"{s['latest_close']:<8.2f} {s['pe_ttm'] or 0:<6.2f} "
                 f"{s['daily_ratio']:<8.4f} {s['weekly_ratio']:<8.4f} {s['macd']:<10.6f}"
             )
 
@@ -457,6 +462,8 @@ def process_ticker(
     if ".BJ" in ticker or ticker.startswith("hk."):
         return None
 
+    is_etf = is_etf_ticker(ticker)
+
     # 查询K线数据
     cur = conn.execute(
         "SELECT data FROM kline_cache WHERE ticker = ? ORDER BY created DESC LIMIT 1",
@@ -512,28 +519,31 @@ def process_ticker(
         return None
 
     # PE过滤（skip_pe 时本地缺 PE 不丢弃，保留 None 由调用方后续 API 补充）
+    # ETF 无基本面指标，直接豁免 PE 门槛（纯技术面参与）
     pe = None
-    meta = metadata.get(ticker, {})
-    if isinstance(meta, dict):
-        for key in ["pe_ttm", "pe"]:
-            if key in meta:
-                try:
-                    pe = float(meta[key])
-                except (ValueError, TypeError):
-                    pe = None
-                break
-    if pe is not None and (pe <= PE_MIN or pe >= PE_MAX):
-        return None
-    if pe is None and not skip_pe:
-        return None
+    if not is_etf:
+        meta = metadata.get(ticker, {})
+        if isinstance(meta, dict):
+            for key in ["pe_ttm", "pe"]:
+                if key in meta:
+                    try:
+                        pe = float(meta[key])
+                    except (ValueError, TypeError):
+                        pe = None
+                    break
+        if pe is not None and (pe <= PE_MIN or pe >= PE_MAX):
+            return None
+        if pe is None and not skip_pe:
+            return None
 
     # 收集结果（ROE稍后补充）
     latest_date = df.index[-1].strftime("%Y-%m-%d")
     latest_close = float(df["close"].iloc[-1])
+    meta = metadata.get(ticker, {})
     name = meta.get("name", "") if isinstance(meta, dict) else ""
     industry = (meta.get("industry") or "N/A") if isinstance(meta, dict) else "N/A"
 
-    return {
+    result = {
         "ticker": ticker,
         "name": name,
         "industry": industry,
@@ -549,6 +559,10 @@ def process_ticker(
         "macd": round(macd_val, 6),
         "roe": None,  # 待填充
     }
+    if is_etf:
+        # ETF 无基本面指标，纯技术面参与；PE 保持 None
+        result["is_etf"] = True
+    return result
 
 
 def run_full(
@@ -641,6 +655,11 @@ def run_full(
     skipped_profit_low = 0
 
     for s in results:
+        # ETF 无基本面指标，技术面达标即入选（完整模式下也保留）
+        if s.get("is_etf"):
+            final_results.append(s)
+            continue
+
         thscode = ticker_to_thscode(s["ticker"])
 
         # ROE检查
@@ -665,8 +684,8 @@ def run_full(
         s["net_profit_yi"] = round(profit / 1e8, 2)  # 转换为亿元
         final_results.append(s)
 
-    # 按PE升序排列
-    final_results.sort(key=lambda x: x["pe_ttm"])
+    # 按PE升序排列（ETF 无 PE，排最后）
+    final_results.sort(key=lambda x: (x.get("is_etf") or x.get("pe_ttm") is None, x.get("pe_ttm") or 0))
 
     # ── 输出结果 ───────────────────────────────────────────────────────────
     logger.info("=" * 60)

@@ -41,6 +41,7 @@ from scripts._utils import (
     check_data_freshness,
     get_cache_db_path,
     is_bse_or_hk,
+    is_etf_ticker,
     ticker_to_thscode,
 )
 from scripts.daily_analysis import ai_verify
@@ -68,10 +69,12 @@ def _get_all_tickers(db_path: Path) -> list[str]:
     all_tickers = [r[0] for r in cur.fetchall()]
     conn.close()
 
-    # 排除北交所（bj.开头）和港股（hk.开头）
+    # 排除北交所（bj.开头）和港股（hk.开头），保留 A 股 + ETF
     astock_tickers = [t for t in all_tickers if not is_bse_or_hk(t)]
+    etf_tickers = [t for t in astock_tickers if is_etf_ticker(t)]
     logger.info(
         f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所/港股后 {len(astock_tickers)} 只"
+        f"（含ETF {len(etf_tickers)} 只，纯技术面参与）"
     )
     return astock_tickers
 
@@ -244,6 +247,7 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
         若三线均共振则 d_ok/w_ok/m_ok 均为 True
     """
     conn = sqlite3.connect(str(db_path))
+    # ETF 无复权概念，缓存统一按 adjustflag='1' 存储，与普通股票一致
     row = conn.execute(
         "SELECT data FROM kline_cache WHERE ticker=? AND freq='d' AND adjustflag='1'",
         (ticker,),
@@ -446,6 +450,8 @@ def _run_scan(
         for future in as_completed(futures):
             r = future.result()
             if r is not None:
+                if is_etf_ticker(r.get("ticker", "")):
+                    r["is_etf"] = True
                 results.append(r)
             completed += 1
             if completed % progress_interval == 0 or completed == total:
@@ -495,9 +501,11 @@ def main() -> None:
     # 扫描
     results = _run_scan(tickers, db_path, workers=args.workers)
 
-    # 获取 PE 快照（用于名称填充和筛选）
+    # 获取 PE 快照（用于名称填充和筛选；ETF 无 PE，纯技术面豁免）
     pe_map: dict[str, dict[str, Any]] = {}
-    a_stocks = [r["ticker"] for r in results if not r["ticker"].startswith("hk.")]
+    a_stocks = [
+        r["ticker"] for r in results if not r["ticker"].startswith("hk.") and not is_etf_ticker(r["ticker"])
+    ]
     hk_stocks = [r["ticker"] for r in results if r["ticker"].startswith("hk.")]
     try:
         pe_map = _fetch_pe_snapshot(a_stocks)
@@ -510,6 +518,9 @@ def main() -> None:
             logger.info(f"📊 港股 PE 获取：{len(hk_pe_map)}/{len(hk_stocks)} 只")
         except Exception as e:
             logger.debug(f"港股 PE 获取失败: {str(e)[:80]}")
+    etf_in_results = [r for r in results if r.get("is_etf")]
+    if etf_in_results:
+        logger.info(f"📊 ETF 纯技术面参与: {len(etf_in_results)} 只（豁免 PE 门槛）")
     for r in results:
         code = _strip_prefix(r["ticker"])
         entry = pe_map.get(code)
@@ -517,12 +528,19 @@ def main() -> None:
             r["name"] = entry.get("name", "")
             r["pe"] = entry.get("pe")
 
-    # ── 过滤：ST 股、PE≤0、评分<50 ──
+    # ── 过滤：ST 股、PE≤0（ETF 豁免）、评分<50 ──
     removed_st = 0
     removed_pe = 0
     removed_score = 0
     filtered: list[dict[str, Any]] = []
     for r in results:
+        if r.get("is_etf"):
+            # ETF 无基本面指标，技术面达标即保留
+            if r["score"] >= 50:
+                filtered.append(r)
+            else:
+                removed_score += 1
+            continue
         name = r.get("name", "")
         if _is_st(name):
             removed_st += 1
@@ -536,10 +554,11 @@ def main() -> None:
             continue
         filtered.append(r)
 
+    etf_passed = sum(1 for r in filtered if r.get("is_etf"))
     logger.info(
         f"📊 过滤完成：共振 {len(results)} 只 → "
         f"剔除 ST {removed_st} 只、PE≤0/缺失 {removed_pe} 只、评分<50 {removed_score} 只 → "
-        f"有效 {len(filtered)} 只"
+        f"有效 {len(filtered)} 只（含ETF {etf_passed} 只纯技术面）"
     )
     results = filtered
 

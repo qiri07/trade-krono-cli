@@ -95,6 +95,7 @@ def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[s
                 df = result.to_dataframe()
                 if len(df) == 0:
                     continue
+                # ETF 无复权概念，缓存统一按 adjustflag='1' 存储
                 cache = get_cache()
                 ts = pd.to_datetime(df["timestamps"])
                 cache.set_kline(
@@ -151,31 +152,31 @@ def fetch_today_incremental(
                     continue
                 cache = get_cache()
                 ts = pd.to_datetime(df["timestamps"])
-                # 检查是否已存在今日数据，如存在则更新
-                today = get_today_date()
-                cur_result = cache.get_kline(ticker, today, today, "d", "1")
-                if cur_result is not None and len(cur_result) > 0:
-                    # 合并：保留历史数据，追加/更新今日数据
-                    combined = pd.concat([cur_result, df], ignore_index=True)
-                    combined = combined.drop_duplicates(subset=["timestamps"], keep="last")
-                    combined = combined.sort_values("timestamps").reset_index(drop=True)
-                    cache.set_kline(
-                        ticker,
-                        combined["timestamps"].min().strftime("%Y-%m-%d"),
-                        combined["timestamps"].max().strftime("%Y-%m-%d"),
-                        "d",
-                        combined,
-                        ttl=0.0,
+                # 把今日 K 线追加到现有历史行，而非新建独立的今日行：
+                # 读取该 ticker 从 START_DATE 起至今的全部 K 线（含历史行与已有今日行），
+                # 与今日数据合并去重后写回单条记录。
+                combined = df
+                existing = cache.get_kline(ticker, START_DATE, get_today_date(), "d", "1")
+                if existing is not None and len(existing) > 0:
+                    # 统一 timestamps 为 datetime，避免 str 与 datetime64 混型导致排序崩溃
+                    existing = existing.copy()
+                    existing["timestamps"] = pd.to_datetime(existing["timestamps"])
+                    df = df.copy()
+                    df["timestamps"] = pd.to_datetime(df["timestamps"])
+                    combined = (
+                        pd.concat([existing, df], ignore_index=True)
+                        .drop_duplicates(subset=["timestamps"], keep="last")
+                        .sort_values("timestamps")
+                        .reset_index(drop=True)
                     )
-                else:
-                    cache.set_kline(
-                        ticker,
-                        ts.min().strftime("%Y-%m-%d"),
-                        ts.max().strftime("%Y-%m-%d"),
-                        "d",
-                        df,
-                        ttl=0.0,
-                    )
+                cache.set_kline(
+                    ticker,
+                    combined["timestamps"].min().strftime("%Y-%m-%d"),
+                    combined["timestamps"].max().strftime("%Y-%m-%d"),
+                    "d",
+                    combined,
+                    ttl=0.0,
+                )
                 result_container.append(
                     (
                         provider_name,

@@ -25,7 +25,12 @@ uv run python scripts/full_history_from_2015.py        # 全量历史同步（20
 uv run python scripts/full_history_sync.py             # 全量历史同步（2020起，~22分钟）
 uv run python scripts/retry_missing_history.py         # 重试缺失历史的股票
 uv run python scripts/fill_missing_and_today.py        # 补齐失败股票 + 同步今日增量（日期动态检测）
+uv run python scripts/etf_history_sync.py               # ETF K线同步（自动发现~1409只，默认今日增量）
+uv run python scripts/etf_history_sync.py --full        # ETF 全量历史同步（2020起，~15-30分钟）
+uv run python scripts/etf_history_sync.py --codes "510300,159915"  # 指定ETF代码同步
 uv run python scripts/check_data_integrity.py          # 数据完整性检查
+uv run python scripts/intraday_scan.py                 # 盘中技术信号扫描（白名单，全 4 类信号）
+uv run python scripts/intraday_scan.py --mode resonance --min-signals 2  # 指定信号类型 + 命中阈值
 uv run python scripts/cleanup_duplicates.py            # 清理重复记录
 uv run python scripts/daily_analysis.py                # 每日白名单分析 + AI 验证 + 飞书推送
 uv run python scripts/fetch_reference_data.py          # 批量获取股票参考数据（PE/PB/行业等）
@@ -162,18 +167,35 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 
 ```
 1. 数据同步     → trade-krono-cli sync-whitelist / scripts/full_history_sync.py
+   + ETF 同步   → uv run python scripts/etf_history_sync.py（默认增量 / --full 全量 7 年）
 2. 巴菲特筛选   → tests/buffett_screen_parallel.py（已过滤 ST / 北交所）
-3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股）
-4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股）
+3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股；含 ETF 纯技术面）
+4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股；含 ETF 纯技术面）
 5. 白名单分析   → scripts/daily_analysis.py（已过滤 ST / 北交所）
-6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；已过滤 ST / 北交所）
+6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；
+                  已过滤 ST / 北交所；ETF 以纯技术面参与，豁免 PE/ROE/净利润门槛）
 7. AI 核实      → AGNES LLM（agnes-3.0-flash，10 RPM 限流）
 8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
 9. 综合交集汇总 → scripts/combined_stock_analysis.py（多线共振交集 + 技术面 + 基本面 + AI + 飞书汇总 + 逐只）
+10. 盘中扫描   → scripts/intraday_scan.py（盘中可选，分钟 K 线检测金叉/多头/MACD/三线共振，见「盘中扫描」节）
 ```
 
 > **注意**：各筛选脚本均已内置 ST / 北交所（BSE）/ 港股过滤，逐只飞书推送逻辑已移除，
 > 仅保留汇总推送 + AI 核实。ST / BSE 关键词与代码前缀统一维护在 `scripts/_utils.py`。
+
+### ETF 数据支持（2026-10-21 起）
+
+- **归一化**：ETF 代码（`51`/`58`→`sh.`，`159`/`156`/`158`→`sz.`）与普通股票统一前缀，
+  由 `scripts/_utils.py::is_etf_ticker()` 识别；`get_provider_chain()` 对 ETF 路由 baostock 优先
+  （baostock 原生支持 ETF K 线，实测 510300/159915/518880/588000/159949 全部成功）。
+- **数据同步**：`scripts/etf_history_sync.py` 通过 akshare `fund_etf_category_ths` 发现全市场 ETF
+  （约 1400+ 只），baostock→tonghuashun→mootdx 降级拉取；默认增量（补最新），`--full` 拉 2020 起全量
+  （约 2 小时，建议每周一次）。K 线统一按 `adjustflag='1'` 入库（ETF 无复权概念，各 provider 返回一致）。
+- **参与范围**：ETF 仅在**纯技术面**脚本中参与（三线共振 / 多头排列 / 双均线金叉的 MA+MACD 部分），
+  无 PE/PB/ROE/净利润/现金流，基本面筛选（巴菲特六闸门、ROE/净利润门槛）自然豁免，
+  结果带 `is_etf: true` 标记并在日志中单独统计。
+- **共享数据导出**：`export_shared_data.py` 导出 CSV/Parquet 时 ETF ticker 与普通股票同表（sh.5xxxxx/sz.159xxx），
+  下游 qlib/vnpy 可直接使用。
 
 ### 第 9 步：综合选股交集汇总（`scripts/combined_stock_analysis.py`）
 
@@ -206,6 +228,32 @@ uv run python scripts/combined_stock_analysis.py --min-sources 3         # 仅 3
 uv run python scripts/combined_stock_analysis.py --push 0                # 跳过飞书推送
 uv run python scripts/combined_stock_analysis.py --per-stock-push 0      # 跳过逐只推送
 uv run python scripts/combined_stock_analysis.py --kronos 1 --backtest 1  # 卡片含 Kronos 预测 + 历史回测
+```
+
+### 盘中扫描（可选，`scripts/intraday_scan.py`）
+
+盘中（9:30–15:00）实盘研判用，**分钟 K 线上检测「当日已触发」的技术信号**，与日级筛选（1–9 步）互补：
+日级看趋势位置，盘中看「今天刚发生」的触发事件。
+
+- **数据源**：分钟 K 线用 akshare `stock_zh_a_minute`（5/15/30/60min，股票 + ETF 通吃，约 13 个月），
+  实时价用腾讯 `fetch_realtime_quote`（免费无 key）。
+  > 注：mootdx 通达信行情服务器（7709/7719）在本网络环境不可达（`Quotes.bars()` 全空），故盘中 K 线改走 akshare 新浪接口。
+- **信号定义**（15min 为主周期，判定取倒数第 2 根 `_REF_IDX=-2`，因最后一根未完成）：
+  - `golden_cross`：MA5 刚上穿 MA13（前 MA5≤MA13 且 当前 MA5>MA13）
+  - `multi_head`：close > MA5 > MA10 > MA20（多头排列）
+  - `macd`：DIF>0 且 DIF 上行（MACD 12,26）
+  - `resonance`：5min + 15min + 60min 三周期 MACD DIF 同时 >0（盘中三线共振变体）
+- **扫描范围**：默认静态白名单 + 巴菲特动态白名单合并（约 500 只），已过滤 ST / 北交所 / 港股；
+  `--tickers` 可显式指定（裸代码或带前缀均可，含 ETF）。
+- **结果**：按命中信号数降序，输出 Rich 表 + JSON（`outputs/results/intraday_scan_*.json`），
+  `--push 1` 飞书汇总推送。
+
+```bash
+uv run python scripts/intraday_scan.py                       # 白名单，全 4 类信号
+uv run python scripts/intraday_scan.py --mode golden_cross   # 仅金叉
+uv run python scripts/intraday_scan.py --mode resonance      # 盘中三线共振
+uv run python scripts/intraday_scan.py --min-signals 2       # 至少命中 2 类
+uv run python scripts/intraday_scan.py --tickers "600519,000858,510300" --push 1
 ```
 
 ## 巴菲特六闸门筛选（Buffett Six-Gate Screening）
@@ -290,6 +338,8 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `cleanup_duplicates.py` | 清理同一 ticker 的多条记录（保留最长） |
 | `full_sync_v2.py` | 优化版主备降级同步（沪深优先 tonghuashun） |
 | `fill_missing_latest.py` | 补齐缺少最新日期的股票增量数据（tonghuashun 主，baostock 降级） |
+| `etf_history_sync.py` | ETF K 线同步（akshare 同花顺发现全市场 ~1409 只，baostock 拉取；`--full` 全量 / `--codes` 指定） |
+| `intraday_scan.py` | 盘中技术信号扫描（akshare 分钟 K 线 + 腾讯实时价；金叉/多头/MACD/三线共振，`--mode` 选类型，`--min-signals` 过滤，`--push` 飞书） |
 
 ### 数据质量指标（截至 2026-09-15）
 - 总记录数：5,288（无重复）

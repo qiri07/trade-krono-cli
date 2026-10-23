@@ -21,7 +21,8 @@ def _resolve_tickers(raw: str) -> list[str]:
     规则：
     - 已带前缀（如 "hk.00700"、"sh.600519"、"us.BABA"）：原样保留。
     - 6 位纯数字 A 股：6xxxxx→sh.，0/3xxxxx→sz.，9xxxxx→bj.
-    - 6 位纯数字 ETF（51/58/159/156/158 开头）：归一化为 "etf.<code>"。
+    - 6 位纯数字 ETF（51/58/159/156/158 开头）：归一化为 "sh.<code>"（沪）或 "sz.<code>"（深）。
+      51xxxx/58xxxx（沪市 ETF）→ sh.；159xxx/156xxx/158xxx（深市 ETF）→ sz.。
     - 期货合约（字母数字混合，如 IC2610）：原样保留，由上层 provider 层路由。
     - 非法字符或超过 8 位的代码：跳过并告警。
     自动去重并保持首次出现的顺序。
@@ -46,8 +47,9 @@ def _resolve_tickers(raw: str) -> list[str]:
             logger.warning(f"⚠️  白名单代码格式错误，已跳过: {code}")
             continue
         if code.isdigit() and (code[:2] in ("51", "58") or code[:3] in ("159", "156", "158")):
-            # ETF 代码：51xxxx/588xxx(沪)、159xxx/156xxx(深) → "etf.<code>"
-            ticker = f"etf.{code}"
+            # ETF 代码：51xxxx/58xxxx(沪)、159xxx/156xxx/158xxx(深)
+            # 归一化为带交易所前缀格式，使 baostock 能直接识别
+            ticker = f"sh.{code}" if code[:2] in ("51", "58") else f"sz.{code}"
         elif code.isdigit():
             prefix = _EXCHANGE_PREFIX.get(code[0])
             if prefix is None:
