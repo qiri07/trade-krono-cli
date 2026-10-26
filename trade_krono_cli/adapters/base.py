@@ -56,5 +56,6 @@ class KronosAdapter(ABC):
         T: float,
         top_p: float,
         sample_count: int = 1,
+        verbose: bool = False,
     ) -> list:
         """批量预测，返回列表形式预测结果（每个元素为 DataFrame）。"""

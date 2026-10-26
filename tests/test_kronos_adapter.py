@@ -182,3 +182,77 @@ class TestKronosAdapterPredict:
         assert call_kwargs["T"] == 1.0
         assert call_kwargs["verbose"] is False
         assert len(result) == 1
+
+    def test_predict_batch_passes_verbose_true(self) -> None:
+        """显式传入 verbose=True 时应透传给内部预测器。"""
+        from trade_krono_cli.adapters.kronos import KronosAdapterImpl
+
+        adapter = KronosAdapterImpl()
+        mock_predictor = MagicMock()
+        mock_predictor.predict_batch.return_value = [MagicMock()]
+        adapter._predictor = mock_predictor
+
+        adapter.predict_batch(
+            df_list=[MagicMock()],
+            x_timestamp_list=["x"],
+            y_timestamp_list=["y"],
+            pred_len=30,
+            T=1.0,
+            top_p=0.9,
+            sample_count=1,
+            verbose=True,
+        )
+
+        call_kwargs = mock_predictor.predict_batch.call_args[1]
+        assert call_kwargs["verbose"] is True
+
+
+class TestKronosPredictorBatchLoad:
+    """KronosPredictor.predict_batch 批量推理前应确保模型已加载。"""
+
+    def test_predict_batch_loads_model_before_inference(self) -> None:
+        from unittest.mock import MagicMock
+
+        from trade_krono_cli.kronos_predictor.predictor import KronosPredictor
+
+        predictor = KronosPredictor.__new__(KronosPredictor)
+        predictor._settings = MagicMock(kronos_pred_len=30, kronos_T=1.0, kronos_top_p=0.9)
+        predictor.use_cache = False
+        predictor.sample_count = 1
+        predictor.batch_size = 8
+        predictor._cache = None
+        predictor._config_hash = "h"
+        predictor._model_version = "v"
+
+        runner = MagicMock()
+        runner._load = MagicMock()
+        runner._adapter = MagicMock()
+        runner._adapter.predict_batch.return_value = [MagicMock()]
+        predictor._runner = runner
+
+        import pandas as pd
+        n = 400
+        df = pd.DataFrame({c: [1.0] * n for c in ["open", "high", "low", "close", "volume", "amount"]})
+        predictor._data_prep = MagicMock()
+        predictor._data_prep.prepare.return_value = (
+            df,
+            pd.Series(range(n)),
+            pd.date_range("2026-08-13", periods=30, freq="B"),
+            100.0,
+        )
+        predictor._data_prep.split_batches = staticmethod(
+            lambda items, bs: [items[i : i + bs] for i in range(0, len(items), bs)]
+        )
+
+        predictor._result_parser = MagicMock()
+        predictor._result_parser.create_empty_result.side_effect = lambda **k: type(
+            "R", (), {**k, "error": None}
+        )()
+        predictor._result_parser.parse_batch_result.side_effect = lambda res, pred_df, lc, sc: (
+            setattr(res, "expected_change_pct", 1.0) or res
+        )
+
+        results = predictor.predict_batch(["sh.600519"], "2026-08-12")
+        assert runner._load.called
+        assert len(results) == 1
+        assert results[0].error is None

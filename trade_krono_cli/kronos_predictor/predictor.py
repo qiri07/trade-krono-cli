@@ -201,6 +201,10 @@ class KronosPredictor:
         if not valid_items:
             return results
 
+        # 确保外部模型已加载（KronosSession._predictor 在首次 predict_one/_load 时赋值，
+        # 批量路径若直接首次执行需先加载，否则 _adapter 回退到 KronosRunner 自身导致签名不匹配）
+        self._runner._load()
+
         # 分批推理
         batches = self._data_prep.split_batches(valid_items, self.batch_size)
 

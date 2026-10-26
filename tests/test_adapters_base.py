@@ -149,3 +149,4 @@ class TestAdapterMethodSignatures:
         assert "T" in params
         assert "top_p" in params
         assert "sample_count" in params
+        assert "verbose" in params

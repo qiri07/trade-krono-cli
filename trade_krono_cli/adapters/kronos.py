@@ -124,6 +124,7 @@ class KronosAdapterImpl(KronosAdapter):
         T: float,
         top_p: float,
         sample_count: int = 1,
+        verbose: bool = False,
     ) -> list[pd.DataFrame]:
         """批量预测，返回 DataFrame 列表。"""
         if self._predictor is None:
@@ -137,5 +138,5 @@ class KronosAdapterImpl(KronosAdapter):
             T=T,
             top_p=top_p,
             sample_count=sample_count,
-            verbose=False,
+            verbose=verbose,
         )
