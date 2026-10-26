@@ -611,22 +611,44 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
     latest = close.iloc[-1]
     prev = close.iloc[-2] if len(close) > 1 else latest
 
-    # ── 除权检测：当日跌幅超过 30% 视为除权日，以最后一个非除权交易日为准 ──
-    daily_change = (latest - prev) / prev * 100 if prev > 0 else 0
-    _is_exrights = bool(daily_change < -30)
+    # ── 除权检测：最近 5 个交易日内出现过 >30% 单日跳变即视为除权日 ──
+    # 前复权序列中除权跳变后价格体系切换，跳变后的行与跳变前行不可比，
+    # 统一取「最近一次除权日及之前」为有效技术计算基准。
+    _recent5 = close.iloc[-5:] if len(close) >= 5 else close
+    _recent5_chg = _recent5.pct_change().abs()
+    _ex_mask = _recent5_chg > 0.30
+    _is_exrights = bool(_ex_mask.any())
     if _is_exrights:
-        logger.info(
-            f"📌 {ticker} 检测到除权日：当日跌幅 {daily_change:+.1f}%，"
-            f"技术指标将基于前一日收盘价（{prev:.2f}）计算"
+        # 除权日在序列中的全局位置：_ex_mask 是 recent5 上的布尔掩码，
+        # 先定位到 recent5 内的首个跳变局部位置，再映射回 close 的全局位置。
+        # 取首个跳变而非末个：跳变后价格体系已切换，后续所有"小跳变"
+        # 都发生在同一新体系内，无意义；真正需要回退的是首个切换点。
+        _local_ex = _ex_mask.reset_index(drop=True)
+        _first_local = int(_local_ex.idxmin()) if bool(_local_ex.any()) else len(close) - 1
+        _last_ex_pos = max(0, len(close) - 5) + _first_local
+        daily_change = (
+            (close.iloc[-1] - close.iloc[-2]) / close.iloc[-2] * 100
+            if len(close) > 1 and close.iloc[-2] > 0
+            else 0.0
         )
-    # 用于技术指标计算的有效收盘价（排除除权跳空当天）
-    _effective_close = close.iloc[-2] if _is_exrights and len(close) > 2 else latest
-    # 用于买卖信号计算的有效收盘价
+        logger.info(
+            f"📌 {ticker} 检测到除权日：最近5日最大跳变 {float(_recent5_chg.max()):+.1f}%，"
+            f"技术指标将基于除权前一日收盘价（{close.iloc[_last_ex_pos - 1]:.2f}）计算"
+            if _last_ex_pos >= 1
+            else f"📌 {ticker} 检测到除权日，数据不足无法回退"
+        )
+        # 有效收盘价：最近一次除权日的前一日
+        _effective_close = close.iloc[_last_ex_pos - 1] if _last_ex_pos >= 1 else latest
+        # 有效计算序列：除权日（含）之前的全部数据
+        _ma_src = close.iloc[:_last_ex_pos] if _last_ex_pos >= 1 else close
+    else:
+        daily_change = (latest - prev) / prev * 100 if prev > 0 else 0
+        _effective_close = latest
+        _ma_src = close
     _sig_price = _effective_close
     daily_change_display = 0.0 if _is_exrights else daily_change
 
     # 均线（基于有效收盘价序列，避免除权日污染）
-    _ma_src = close.iloc[:-1] if _is_exrights else close
     ma5 = _ma_src.rolling(5).mean().iloc[-1] if len(_ma_src) >= 5 else latest
     ma10 = _ma_src.rolling(10).mean().iloc[-1] if len(_ma_src) >= 10 else latest
     ma20 = _ma_src.rolling(20).mean().iloc[-1] if len(_ma_src) >= 20 else latest
@@ -643,8 +665,8 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
     else:
         ma_signal = "震荡"
 
-    # 趋势判断（近5日涨跌，排除除权日）
-    _trend_src = close.iloc[-6:-1] if _is_exrights else close.iloc[-5:]
+    # 趋势判断（近5日涨跌，基于有效序列，排除除权跳变）
+    _trend_src = _ma_src.iloc[-5:]
     up_days = sum(
         1 for i in range(1, len(_trend_src)) if _trend_src.iloc[i] > _trend_src.iloc[i - 1]
     )
@@ -657,7 +679,7 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
     else:
         trend = "横盘整理"
 
-    # 量能（近5日均量 vs 近20日均量，排除除权日）
+    # 量能（近5日均量 vs 近20日均量，基于有效序列，排除除权跳变）
     vol_col = "volume" if "volume" in df.columns else None
     vol_signal = "无"
     buy_points: list[str] = []
@@ -665,7 +687,7 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
 
     if vol_col:
         vol = df[vol_col].astype(float)
-        _vol_src = vol.iloc[:-1] if _is_exrights else vol
+        _vol_src = vol.iloc[: len(_ma_src)] if _is_exrights else vol
         avg_vol_5 = _vol_src.iloc[-5:].mean()
         avg_vol_20 = _vol_src.iloc[-20:].mean()
         if avg_vol_20 > 0:
@@ -682,16 +704,10 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
     low_col = "low" if "low" in df.columns else None
     if high_col and low_col:
         _sub = df.iloc[-30:].copy()
-        _close_sub = _sub["close"].astype(float)
-        _high_30 = float(_sub[high_col].astype(float).max())
-        # 若检测到除权日，剔除收盘异常低的行（除权后价格），只保留同一价格体系的数据
+        # 若检测到除权日，剔除除权跳变日及之后的行（新价格体系），只保留跳变前数据
         if _is_exrights:
-            _prev_close = close.iloc[-2]
-            # 标记：收盘价远低于前一日（除权后低价），这些行需要排除
-            _ex_mask = _close_sub < _prev_close * 0.5
-            _clean = _sub.loc[~_ex_mask]
-            if len(_clean) >= 5:
-                _sub = _clean
+            _clean = _sub[_sub.index < _last_ex_pos]
+            _sub = _clean if len(_clean) >= 5 else _sub
         high_20 = float(_sub[high_col].astype(float).max())
         low_20 = float(_sub[low_col].astype(float).min())
     else:

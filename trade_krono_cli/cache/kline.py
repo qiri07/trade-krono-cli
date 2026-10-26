@@ -94,11 +94,12 @@ class KlineCache:
         # 统一各记录 timestamps 为 datetime，防止历史记录(str)与增量记录(datetime64)混型导致排序崩溃
         # format="mixed" 支持同一列内 "2020-01-02" 与 "2020-01-02 00:00:00" 等异构字符串并存
         for i, df in enumerate(dfs):
-            if df is not None and "timestamps" in df.columns:
-                if not pd.api.types.is_datetime64_any_dtype(df["timestamps"]):
-                    dfs[i] = df.assign(
-                        timestamps=pd.to_datetime(df["timestamps"], format="mixed")
-                    )
+            if (
+                df is not None
+                and "timestamps" in df.columns
+                and not pd.api.types.is_datetime64_any_dtype(df["timestamps"])
+            ):
+                dfs[i] = df.assign(timestamps=pd.to_datetime(df["timestamps"], format="mixed"))
         merged = (
             pd.concat(dfs)
             .drop_duplicates(subset=["timestamps"], keep="last")
@@ -162,7 +163,9 @@ class KlineCache:
             # 统一 timestamps 为 datetime，防止 str 与 datetime64 混型导致排序崩溃
             # format="mixed" 支持异构字符串（"2020-01-02" 与 "2020-01-02 00:00:00"）并存
             for i, df in enumerate(all_dfs):
-                if "timestamps" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["timestamps"]):
+                if "timestamps" in df.columns and not pd.api.types.is_datetime64_any_dtype(
+                    df["timestamps"]
+                ):
                     all_dfs[i] = df.assign(
                         timestamps=pd.to_datetime(df["timestamps"], format="mixed")
                     )

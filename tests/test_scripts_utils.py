@@ -14,10 +14,11 @@ class TestGetProviderChain:
     """Provider chain logic tests."""
 
     def test_sh_ticker(self) -> None:
-        assert get_provider_chain("sh.600519") == ["tonghuashun", "baostock", "mootdx"]
+        # 沪深普通股锁定 baostock 为 K 线复权唯一源（避免多源基准漂移）
+        assert get_provider_chain("sh.600519") == ["baostock", "tonghuashun", "mootdx"]
 
     def test_sz_ticker(self) -> None:
-        assert get_provider_chain("sz.000001") == ["tonghuashun", "baostock", "mootdx"]
+        assert get_provider_chain("sz.000001") == ["baostock", "tonghuashun", "mootdx"]
 
     def test_sh_etf_ticker(self) -> None:
         """沪市 ETF（51/58 开头）baostock 优先。"""

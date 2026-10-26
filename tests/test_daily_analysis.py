@@ -418,6 +418,28 @@ class TestRunAnalysisExRights:
         # high_20 可能来自除权前的正常高位（21.25 或 21.41 等），不强制小于某值
         assert r["high_20"] > 20.0  # 仍应反映除权前的价格水平
 
+    def test_exrights_multiple_jumps_uses_last(self) -> None:
+        """最近 5 日内出现 >30% 跳变时，以首次触发跳变的日期的前一日为基准。"""
+        # 设计：100 天稳定 100 价格体系；第 95-99 天依次跳变，每次 >30%。
+        # 最近 5 天 = [30, 22, 12, 9, 3]：
+        #   idx=95: 30 (从100, -70% 触发)
+        #   idx=96: 22 (从30, -26.7% 不触发)
+        #   idx=97: 12 (从22, -45% 触发)
+        #   idx=98: 9  (从12, -25% 不触发)
+        #   idx=99: 3  (从9, -67% 触发)
+        # 首次触发跳变在 idx=95（close=30.0），_last_ex_pos=95，
+        # 有效价 = idx 94 = 100.0（跳变日之前的最后一个值）。
+        closes = [100.0] * 95 + [30.0, 22.0, 12.0, 9.0, 3.0]
+        df = self._make_df(closes)
+        from scripts.daily_analysis import _run_analysis
+
+        r = _run_analysis("sz.000005", df, "2026-09-22")
+        assert r.get("exrights")
+        # 首次触发跳变在 idx=95，有效价 = idx 94 = 100.0
+        assert r["close"] == 100.0
+        # MA 基于 idx<95 序列（100 体系），不应用跳变后的值计算
+        assert r["ma5"] > 99.0
+
     def test_exrights_short_history(self) -> None:
         """除权日短历史（6行）因不足20行触发 no_data 保护，不应崩溃。"""
         closes = [10.0, 10.1, 10.2, 10.3, 10.4, 1.0]

@@ -39,7 +39,6 @@ from loguru import logger
 from scripts._utils import (
     ST_NAME_KEYWORDS,
     check_data_freshness,
-    check_kline_regime,
     get_cache_db_path,
     is_bse_or_hk,
     is_etf_ticker,
@@ -47,7 +46,6 @@ from scripts._utils import (
 )
 from scripts.daily_analysis import ai_verify
 from scripts.feishu_core import load_config, send_notification
-from trade_krono_cli.errors import DataInconsistencyError
 
 # ── 路径常量 ─────────────────────────────────────────────────────────────────
 
@@ -269,15 +267,12 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
     if df.empty or len(df) < 50:
         return None
 
-    # 复权基准漂移守卫：最近 20 日出现 >50% 单日跳变即判定数据源混入，跳过该股票
-    try:
-        check_kline_regime(ticker, df, window=20)
-    except DataInconsistencyError:
-        return None
-
-    # timestamps 列已经是 datetime64，直接设置索引用于 resample
+    # timestamps 列统一为 datetime（兼容 str 与 datetime64 混存）
     df = df.copy()
-    df["timestamps"] = pd.to_datetime(df["timestamps"])
+    if not pd.api.types.is_datetime64_any_dtype(df["timestamps"]):
+        df["timestamps"] = pd.to_datetime(df["timestamps"], errors="coerce")
+    else:
+        df["timestamps"] = pd.to_datetime(df["timestamps"])
     df = df.set_index("timestamps").sort_index()
     close = df["close"].astype(float)
 
@@ -285,6 +280,14 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
     close_clean = close[(close > 0) & (close < close.quantile(0.99) * 1.5)]
     if len(close_clean) < 50:
         return None
+    # 除权日（单日涨跌幅 >30%）：前复权序列中除权跳变后价格体系切换，
+    # 跳变后的行与跳变前行不可比，统一剔除跳变日及之后所有行，避免 MACD 污染
+    daily_change_pct = close_clean.pct_change().abs()
+    ex_dates = close_clean.index[daily_change_pct > 0.30]
+    if not ex_dates.empty:
+        close_clean = close_clean[close_clean.index < ex_dates.min()]
+        if len(close_clean) < 50:
+            return None
 
     # ── 日线 MACD（最新 DIF + 前一期 DIF）──
     d_macd, d_macd_prev = _macd(close_clean)
@@ -294,7 +297,7 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
     # ── 周线 MACD ──
     w_macd, w_macd_prev = float("nan"), float("nan")
     try:
-        w_series = close.resample("W").last().dropna()
+        w_series = close_clean.resample("W").last().dropna()
         w_macd, w_macd_prev = _macd(w_series)
     except Exception:
         pass
@@ -302,7 +305,7 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
     # ── 月线 MACD ──
     m_macd, m_macd_prev = float("nan"), float("nan")
     try:
-        m_series = close.resample("ME").last().dropna()
+        m_series = close_clean.resample("ME").last().dropna()
         m_macd, m_macd_prev = _macd(m_series)
     except Exception:
         pass
@@ -512,7 +515,9 @@ def main() -> None:
     # 获取 PE 快照（用于名称填充和筛选；ETF 无 PE，纯技术面豁免）
     pe_map: dict[str, dict[str, Any]] = {}
     a_stocks = [
-        r["ticker"] for r in results if not r["ticker"].startswith("hk.") and not is_etf_ticker(r["ticker"])
+        r["ticker"]
+        for r in results
+        if not r["ticker"].startswith("hk.") and not is_etf_ticker(r["ticker"])
     ]
     hk_stocks = [r["ticker"] for r in results if r["ticker"].startswith("hk.")]
     try:

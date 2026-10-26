@@ -193,8 +193,18 @@ def get_provider_chain(ticker: str) -> list[str]:
 
     Returns:
         Provider 名称列表，按优先级降序排列。
+
+    Notes:
+        沪深 A 股与 ETF 的 K 线同步一律 baostock 优先：baostock 的 adjustflag='1'
+        （前复权）基准稳定，而 tonghuashun 同参数实际返回后复权口径（实测 sh.600674
+        同日 2024-12-31 前复权 284.67 vs 后复权 16.35，差 17.4 倍）。同步侧若混合
+        两源会向缓存写入两套复权体系，造成"伪除权跳变"污染 MA/MACD 等技术指标。
+        tonghuashun 仅作 baostock 失败时的降级兜底；降级发生时应在同步后运行
+        scripts/fix_dirty_kline.py 对混源记录做基准对齐清理。
     """
     if ticker.startswith("bj."):
+        # 北交所 baostock 支持有限，tonghuashun 优先；北交所无复权体系混用问题
+        # （历史链路仅 baostock 兜底，增量基本走 tonghuashun 单源）
         return ["tonghuashun", "baostock"]
     elif ticker.startswith("hk."):
         return ["akshare_hk", "tonghuashun", "mootdx", "akshare"]
@@ -204,7 +214,8 @@ def get_provider_chain(ticker: str) -> list[str]:
         is_etf = code[:2] in ("51", "58") or code[:3] in ("159", "156", "158")
         if is_etf:
             return ["baostock", "tonghuashun", "mootdx"]
-        return ["tonghuashun", "baostock", "mootdx"]
+        # 沪深普通股票：锁定 baostock 为 K 线复权唯一源，避免基准漂移
+        return ["baostock", "tonghuashun", "mootdx"]
     return ["baostock", "tonghuashun"]
 
 
