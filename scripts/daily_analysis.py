@@ -32,6 +32,7 @@ from scripts._utils import (
     ST_NAME_KEYWORDS_MINIMAL,
     STOCK_NAMES,
     check_data_freshness,
+    check_kline_regime,
     is_bse_or_hk,
 )
 from scripts.feishu_utils import push_feishu
@@ -40,6 +41,7 @@ from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands._core_helpers import _load_env
 from trade_krono_cli.config import get_settings  # type: ignore[import-not-found]
 from trade_krono_cli.data_providers import get_data_factory
+from trade_krono_cli.errors import DataInconsistencyError
 
 # ── Agnes API 限流（全局模块，线程安全）─────────────────────────────────────
 from trade_krono_cli.llm_rate_limiter import backoff_wait, is_quota_exhausted, wait_for_rate_limit
@@ -456,6 +458,17 @@ def _get_stock_name(ticker: str) -> str:
     return ""
 
 
+def _check_regime_guard(ticker: str, df: pd.DataFrame, end_date: str) -> None:
+    """复权基准一致性守卫：检测 K 线最近 20 日是否存在 >50% 单日跳变。
+
+    命中时记录 warning（不阻断分析，由下游除权检测兜底处理），并提示数据需重拉对齐。
+    """
+    try:
+        check_kline_regime(ticker, df, window=20)
+    except DataInconsistencyError as e:
+        logger.warning(f"⚠️ {ticker} 复权基准漂移，数据需重拉对齐（end_date={end_date}）: {e}")
+
+
 def analyze_stock(ticker: str, end_date: str | None = None) -> dict[str, Any]:
     """对单只股票做基础技术分析。
 
@@ -470,17 +483,20 @@ def analyze_stock(ticker: str, end_date: str | None = None) -> dict[str, Any]:
     # 第 1 步：尝试从缓存读取（带日期范围）
     df = get_kline(ticker, start="2020-01-01", end=end_date)
     if df is not None and len(df) >= 20:
+        _check_regime_guard(ticker, df, end_date)
         return _run_analysis(ticker, df, end_date)
 
     # 第 2 步：尝试全量缓存读取（兼容旧格式）
     df = get_kline(ticker)
     if df is not None and len(df) >= 20:
+        _check_regime_guard(ticker, df, end_date)
         return _run_analysis(ticker, df, end_date)
 
     # 第 3 步：从外部数据源拉取
     logger.info(f"{ticker} 本地无缓存，尝试从外部源拉取...")
     df = _fetch_and_save_kline(ticker, end_date)
     if df is not None and len(df) >= 20:
+        _check_regime_guard(ticker, df, end_date)
         return _run_analysis(ticker, df, end_date)
 
     name = _get_stock_name(ticker)

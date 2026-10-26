@@ -91,6 +91,14 @@ class KlineCache:
                     logger.warning("⚠️ 缓存数据格式异常，跳过")
         if not dfs:
             return None
+        # 统一各记录 timestamps 为 datetime，防止历史记录(str)与增量记录(datetime64)混型导致排序崩溃
+        # format="mixed" 支持同一列内 "2020-01-02" 与 "2020-01-02 00:00:00" 等异构字符串并存
+        for i, df in enumerate(dfs):
+            if df is not None and "timestamps" in df.columns:
+                if not pd.api.types.is_datetime64_any_dtype(df["timestamps"]):
+                    dfs[i] = df.assign(
+                        timestamps=pd.to_datetime(df["timestamps"], format="mixed")
+                    )
         merged = (
             pd.concat(dfs)
             .drop_duplicates(subset=["timestamps"], keep="last")
@@ -151,6 +159,13 @@ class KlineCache:
                 except Exception as e:
                     logger.warning(f"⚠️ 缓存数据损坏，跳过 ticker={ticker} rowid={rows[0][0]}: {e}")
             all_dfs.append(pd.read_pickle(BytesIO(raw_bytes)))
+            # 统一 timestamps 为 datetime，防止 str 与 datetime64 混型导致排序崩溃
+            # format="mixed" 支持异构字符串（"2020-01-02" 与 "2020-01-02 00:00:00"）并存
+            for i, df in enumerate(all_dfs):
+                if "timestamps" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["timestamps"]):
+                    all_dfs[i] = df.assign(
+                        timestamps=pd.to_datetime(df["timestamps"], format="mixed")
+                    )
             merged = (
                 pd.concat(all_dfs)
                 .drop_duplicates(subset=["timestamps"], keep="last")

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
 if TYPE_CHECKING:
@@ -144,3 +145,61 @@ class TestCheckDataFreshness:
         assert len(messages) == 2
         assert "缓存较旧" in messages[0]
         assert "同步失败" in messages[1]
+
+
+class TestCheckKlineRegime:
+    """check_kline_regime: 复权基准漂移检测。"""
+
+    def _df(self, closes: list[float]) -> pd.DataFrame:
+
+        n = len(closes)
+        return pd.DataFrame(
+            {
+                "timestamps": pd.date_range("2026-01-01", periods=n, freq="B"),
+                "close": closes,
+            }
+        )
+
+    def test_normal_kline_passes(self) -> None:
+        from scripts._utils import check_kline_regime
+
+        # 正常 100 天，价格 100→105 缓升
+        closes = [100.0 + i * 0.05 for i in range(100)]
+        check_kline_regime("sh.600519", self._df(closes))  # 不抛异常
+
+    def test_regime_drift_raises(self) -> None:
+        import pytest
+
+        from scripts._utils import check_kline_regime
+        from trade_krono_cli.errors import DataInconsistencyError
+
+        # 前 99 天 ~300（旧复权体系），最后 1 天 17.4（新复权体系，-94%）
+        closes = [300.0] * 99 + [17.4]
+        with pytest.raises(DataInconsistencyError, match="复权基准漂移"):
+            check_kline_regime("sh.600674", self._df(closes))
+
+    def test_30pct_exright_passes(self) -> None:
+        """真实除权日 ~30% 跌幅不应触发（阈值 50% 之上才判漂移）。"""
+        from scripts._utils import check_kline_regime
+
+        closes = [100.0] * 99 + [70.0]  # -30%
+        check_kline_regime("sz.000001", self._df(closes))  # 不抛
+
+    def test_single_day_skips(self) -> None:
+        """仅 1 日数据直接跳过（无相邻比较）。"""
+        from scripts._utils import check_kline_regime
+
+        check_kline_regime("sh.600000", self._df([100.0]))
+
+    def test_none_kline_passes(self) -> None:
+        from scripts._utils import check_kline_regime
+
+        check_kline_regime("sh.600000", None)  # type: ignore[arg-type]
+
+    def test_empty_close_passes(self) -> None:
+        import pandas as pd
+
+        df = pd.DataFrame({"timestamps": pd.date_range("2026-01-01", periods=5), "close": [None] * 5})
+        from scripts._utils import check_kline_regime
+
+        check_kline_regime("sh.600000", df)

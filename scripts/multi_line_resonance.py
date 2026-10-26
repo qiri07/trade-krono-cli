@@ -39,6 +39,7 @@ from loguru import logger
 from scripts._utils import (
     ST_NAME_KEYWORDS,
     check_data_freshness,
+    check_kline_regime,
     get_cache_db_path,
     is_bse_or_hk,
     is_etf_ticker,
@@ -46,6 +47,7 @@ from scripts._utils import (
 )
 from scripts.daily_analysis import ai_verify
 from scripts.feishu_core import load_config, send_notification
+from trade_krono_cli.errors import DataInconsistencyError
 
 # ── 路径常量 ─────────────────────────────────────────────────────────────────
 
@@ -265,6 +267,12 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
     if not isinstance(df, pd.DataFrame):
         return None
     if df.empty or len(df) < 50:
+        return None
+
+    # 复权基准漂移守卫：最近 20 日出现 >50% 单日跳变即判定数据源混入，跳过该股票
+    try:
+        check_kline_regime(ticker, df, window=20)
+    except DataInconsistencyError:
         return None
 
     # timestamps 列已经是 datetime64，直接设置索引用于 resample

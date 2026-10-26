@@ -19,6 +19,8 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pandas as pd
+
 CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 
 # ── 共享常量 ────────────────────────────────────────────────────────────────
@@ -214,6 +216,58 @@ def _get_expected_date() -> str:
         days_back = today.weekday() - 4  # 周六→1, 周日→2
         yesterday = today - timedelta(days=days_back)
     return yesterday.strftime("%Y-%m-%d")
+
+
+def check_kline_regime(ticker: str, kline: pd.DataFrame, window: int = 20) -> None:
+    """校验 K 线最近 window 日的复权基准一致性。
+
+    不同数据源（tonghuashun 前复权 / baostock 前复权）的复权基准会随拉取时间漂移，
+    同一只股票的历史段与增量段可能混入两套复权体系，导致最近某日出现 -50%~-94%
+    的非交易性跳变（实际是复权基准切换而非真实除权）。本函数检测最近 window 日
+    内相邻收盘的涨跌幅绝对值，超过 A 股单日 ±11% 涨跌停限制（含 ST ±5%、新股 ±44%）
+    的合理上界即判定为复权基准漂移。
+
+    真实除权日：除权跳空一般 ≤ 30%（大盘股分红），且伴随 volume/amount 正常，
+    但本函数不区分真实除权与基准漂移 —— 两者在纯 K 线视角下都表现为"价格体系切换"，
+    都应触发数据重拉（用单一数据源重新对齐），由上层决定重拉策略。
+
+    Args:
+        ticker: 股票代码（带前缀，用于日志）
+        kline: 至少含 close 列的 DataFrame（timestamps/date 列需可解析）
+        window: 校验最近多少个交易日（默认 20）
+
+    Raises:
+        DataInconsistencyError: 最近 window 日内出现单日涨跌幅绝对值 > 50% 的跳变
+            （真实 A 股除权/复权或数据源漂移都会落入此区间，新股首日除外）
+    """
+    from trade_krono_cli.errors import DataInconsistencyError
+
+    if kline is None or len(kline) < 2:
+        return
+
+    ts_col = "timestamps" if "timestamps" in kline.columns else "date"
+    df = kline.copy()
+    if ts_col in df.columns:
+        df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce")
+        df = df.sort_values(ts_col).reset_index(drop=True)
+    close = pd.to_numeric(df["close"], errors="coerce")
+    if close.dropna().empty:
+        return
+
+    tail = close.iloc[-window:]
+    if len(tail) < 2:
+        return
+    pct = tail.pct_change().abs()
+    for i in range(1, len(tail)):
+        p = pct.iloc[i]
+        if pd.notna(p) and p > 0.50:
+            date = str(df[ts_col].iloc[-window + i])[:10] if ts_col in df.columns else "n/a"
+            msg = (
+                f"K线复权基准漂移 {ticker}: {date} 单日涨跌幅 {p * 100:.1f}% "
+                f"(close={tail.iloc[i]:.2f} prev={tail.iloc[i - 1]:.2f})，"
+                f"疑似不同数据源复权体系混入，需重拉对齐"
+            )
+            raise DataInconsistencyError(msg)
 
 
 def _get_cache_latest_date() -> str | None:

@@ -48,6 +48,14 @@ class DataValidationError(DataError):
     """数据校验失败：格式异常、数据过旧、未来数据等。"""
 
 
+class DataInconsistencyError(DataError):
+    """数据不一致：不同数据源复权基准漂移、价格序列混入多套复权体系等。
+
+    此类异常表示底层数据源之间存在系统性偏差（如前复权基准随
+    拉取时间漂移），直接消费会导致技术指标计算错误，应阻断下游分析。
+    """
+
+
 class ModelError(TradeKronoError):
     """模型相关错误基类。"""
 

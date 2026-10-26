@@ -103,3 +103,20 @@ class TestSafeRun:
 
         result = safe_run(slow, module="timing")
         assert result.elapsed_sec > 0.04
+
+
+class TestDataInconsistencyError:
+    """DataInconsistencyError 继承 DataError。"""
+
+    def test_inherits_data_error(self) -> None:
+        from trade_krono_cli.errors import DataError, DataInconsistencyError
+
+        assert issubclass(DataInconsistencyError, DataError)
+
+    def test_catchable_as_data_error(self) -> None:
+        from trade_krono_cli.errors import DataError, DataInconsistencyError
+
+        try:
+            raise DataInconsistencyError("复权基准漂移")
+        except DataError as e:
+            assert "复权基准漂移" in str(e)
