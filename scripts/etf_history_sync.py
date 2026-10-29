@@ -28,6 +28,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import re
+
 import pandas as pd
 from loguru import logger
 
@@ -78,6 +80,24 @@ def discover_etf_codes() -> list[str]:
             raise RuntimeError("东财通道无法拉取列表，请检查网络")
         except Exception:
             raise
+
+
+def _load_retry_failed_list(path_str: str) -> list[str]:
+    """读取失败清单文件，返回 6 位裸代码列表（支持逗号/换行/带交易所前缀）。"""
+    path = Path(path_str)
+    if not path.exists():
+        raise FileNotFoundError(f"失败清单不存在: {path}")
+    text = path.read_text()
+    codes: list[str] = []
+    for token in re.split(r"[,\n;\s]+", text.strip()):
+        token = token.strip()
+        if not token:
+            continue
+        # 去掉交易所前缀（sz./sh.），只保留 6 位裸代码
+        bare = token.split(".")[-1] if "." in token else token
+        if bare.isdigit() and len(bare) == 6:
+            codes.append(bare.zfill(6))
+    return codes
 
 
 def fetch_and_append(
@@ -164,6 +184,12 @@ def parse_args() -> argparse.Namespace:
         help="指定 ETF 代码（逗号分隔），跳过自动发现。如：510300,159915,518880",
     )
     parser.add_argument(
+        "--retry-failed",
+        type=str,
+        default="",
+        help="仅重试上次失败清单文件（etf_failed_YYYYMMDD_HHMMSS.txt，逗号/换行分隔）",
+    )
+    parser.add_argument(
         "--start",
         type=str,
         default=FULL_START_DATE,
@@ -179,28 +205,24 @@ def main() -> None:
     # 确定待同步代码
     if args.codes.strip():
         raw_codes = [c.strip() for c in args.codes.split(",") if c.strip()]
-        tickers = []
-        for c in raw_codes:
-            t = etf_code_to_ticker(c)
-            if t is None:
-                logger.warning(f"  ⚠️  无法识别的 ETF 代码，跳过: {c}")
-            else:
-                tickers.append(t)
-        logger.info(f"📋 手动指定 {len(tickers)} 只 ETF: {tickers[:10]}...")
+        source_label = "手动指定"
+    elif args.retry_failed.strip():
+        raw_codes = _load_retry_failed_list(args.retry_failed)
+        source_label = f"失败清单 {args.retry_failed}"
     else:
         raw_codes = discover_etf_codes()
-        tickers = []
-        skipped = 0
-        for c in raw_codes:
-            t = etf_code_to_ticker(c)
-            if t is None:
-                skipped += 1
-            else:
-                tickers.append(t)
-        if skipped:
-            logger.info(f"  跳过 {skipped} 个无法识别的代码段")
-        logger.info(f"📋 发现 {len(tickers)} 只 ETF 待同步")
+        source_label = "自动发现"
 
+    tickers: list[str] = []
+    skipped = 0
+    for c in raw_codes:
+        t = etf_code_to_ticker(c)
+        if t is None:
+            skipped += 1
+            logger.warning(f"  ⚠️  无法识别的 ETF 代码，跳过: {c}")
+        else:
+            tickers.append(t)
+    logger.info(f"📋 {source_label} {len(tickers)} 只 ETF（跳过 {skipped} 只无法识别）: {tickers[:10]}...")
     if not tickers:
         logger.warning("无 ETF 可同步，退出")
         return
@@ -290,6 +312,10 @@ def main() -> None:
     if failed_list:
         sample = ", ".join(t for t, _ in failed_list[:20])
         logger.warning(f"失败股票 ({len(failed_list)}): {sample}...")
+        fail_file = Path("outputs/results") / f"etf_failed_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+        fail_file.parent.mkdir(parents=True, exist_ok=True)
+        fail_file.write_text(",".join(t for t, _ in failed_list))
+        logger.info(f"失败清单已写入 {fail_file}（可用 --retry-failed 重试）")
     logger.info("=" * 60)
 
 
