@@ -8,8 +8,9 @@
   - Qlib Binary: 供 qlib / RD-Agent qlib 使用
 
 用法:
-  uv run python scripts/export_shared_data.py --format parquet --dest /run/media/onai/MyDisk/Work/shared_data
-  uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data
+  uv run python scripts/export_shared_data.py --format parquet
+  uv run python scripts/export_shared_data.py --format all
+  # 默认导出到 <项目根>/data/shared_data，可用 --dest 覆盖
 """
 
 from __future__ import annotations
@@ -22,7 +23,13 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import get_cache_db_path
+try:
+    from scripts._utils import get_cache_db_path
+except ImportError:
+    import sys
+    from pathlib import Path as _P
+    sys.path.insert(0, str(_P(__file__).resolve().parents[1]))
+    from scripts._utils import get_cache_db_path
 
 try:
     from trade_krono_cli.config import get_settings  # type: ignore[import-not-found]
@@ -32,8 +39,9 @@ except ImportError:
 
 # ── 路径常量 ────────────────────────────────────────────────────────────────
 
-WORK_DIR = Path("/run/media/onai/MyDisk/Work")
-SHARED_DATA_ROOT = WORK_DIR / "shared_data"
+# 项目根目录：scripts/ 的上一级
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SHARED_DATA_ROOT = PROJECT_ROOT / "data" / "shared_data"
 
 CSV_DIR = SHARED_DATA_ROOT / "astock_daily_csv"
 QLIB_CSV_DIR = SHARED_DATA_ROOT / "astock_daily_qlib_csv"  # qlib 兼容格式（带 symbol 列）
@@ -281,7 +289,16 @@ def main() -> None:
     )
     parser.add_argument("--dest", type=Path, default=SHARED_DATA_ROOT)
     parser.add_argument("--db", type=Path, default=None)
+    parser.add_argument(
+        "--enable",
+        action="store_true",
+        help="实际执行导出；不传时默认跳过（dry-run 提示后退出）",
+    )
     args = parser.parse_args()
+
+    if not args.enable:
+        logger.info("⏭️  导出默认禁用，未传 --enable，跳过。")
+        return
 
     db_path = Path(args.db) if args.db else get_cache_db_path()
     if not db_path.exists():

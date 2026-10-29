@@ -40,6 +40,7 @@ uv run python scripts/combined_stock_analysis.py          # 第9步：多线共�
 uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data  # 导出共享数据
 uv run python scripts/export_vnpy_data.py              # 导出 vnpy 格式
 bash scripts/post_sync_export.sh                       # 同步后一键导出所有格式
+bash scripts/daily_flow.sh                             # 一键执行今日 10 步投研流程（同步+筛选+交集汇总+飞书+导出；NO_PUSH=1 关推送，NO_SYNC=1 跳同步，SKIP_ETF=1 跳ETF，DRY_RUN=1 只打印）
 uv run ruff check .                  # Lint 检查
 uv run ruff check --fix .            # Lint + 自动修复
 uv run mypy .                        # 类型检查
@@ -177,7 +178,9 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 7. AI 核实      → AGNES LLM（agnes-3.0-flash，10 RPM 限流）
 8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
 9. 综合交集汇总 → scripts/combined_stock_analysis.py（多线共振交集 + 技术面 + 基本面 + AI + 飞书汇总 + 逐只）
-10. 盘中扫描   → scripts/intraday_scan.py（盘中可选，分钟 K 线检测金叉/多头/MACD/三线共振，见「盘中扫描」节）
+10. MACD+均线筛选 → scripts/macd_ma_screener.py（MA5>MA13 + MACD DIF>0 + 剔ST/昨日涨停/市值<50亿/PE∈(0,30)；
+                  结果作为第9步 "macd_ma" 来源线参与交集，已过滤 ST/北交所/港股/ETF）
+11. 盘中扫描   → scripts/intraday_scan.py（盘中可选，分钟 K 线检测金叉/多头/MACD/三线共振，见「盘中扫描」节）
 ```
 
 > **注意**：各筛选脚本均已内置 ST / 北交所（BSE）/ 港股过滤，逐只飞书推送逻辑已移除，
@@ -221,6 +224,7 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 | 三线共振 | `resonance` | `macd_resonance_YYYY-MM-DD.json` |
 | 多头排列 | `multi_head` | `multi_head_YYYYMMDD.txt` |
 | 双均线金叉 | `double_ma` | `double_ma_golden_cross_YYYY-MM-DD.json` |
+| MACD+均线 | `macd_ma` | `macd_ma_screener_YYYYMMDD.json` |
 
 ```bash
 uv run python scripts/combined_stock_analysis.py --date 2026-10-16       # 交集+分析+汇总推送+逐只推送
@@ -254,6 +258,16 @@ uv run python scripts/intraday_scan.py --mode golden_cross   # 仅金叉
 uv run python scripts/intraday_scan.py --mode resonance      # 盘中三线共振
 uv run python scripts/intraday_scan.py --min-signals 2       # 至少命中 2 类
 uv run python scripts/intraday_scan.py --tickers "600519,000858,510300" --push 1
+```
+
+### 一键全流程（`scripts/daily_flow.sh`）
+
+```bash
+bash scripts/daily_flow.sh              # 全流程（含飞书推送）
+NO_PUSH=1 bash scripts/daily_flow.sh    # 跳过所有飞书推送
+NO_SYNC=1 bash scripts/daily_flow.sh    # 跳过第 1 步数据同步
+SKIP_ETF=1 bash scripts/daily_flow.sh   # 跳过 ETF 同步
+DRY_RUN=1 bash scripts/daily_flow.sh    # 只打印不执行
 ```
 
 ## 巴菲特六闸门筛选（Buffett Six-Gate Screening）
@@ -474,3 +488,44 @@ uv run python scripts/export_vnpy_data.py
 ### 缓存哈希
 - `trade_krono_cli/cache/kline.py` 使用 SHA-256 with `b"TKC1"` 前缀
 - 旧数据（pandas 序列化方式差异）哈希不匹配时仍尝试读取，仅记录 warning
+
+### Agnes API 限流（三层，全局 RPM）
+
+Agnes 免费档限制：**60s 内 ≤10 次请求**（RPM=10），相邻请求间隔 ≥1.5s。该限流分三层，
+**全局**覆盖「本地 grok build（TUI）」与「本项目 CLI 脚本」两条调用路径，任一层失效都会触发 429。
+
+| 层 | 位置 | 机制 | 状态 |
+|---|---|---|---|
+| ① Agnes 服务端 | `apihub.agnes-ai.cn` | 免费档 10 RPM 硬限流 → 429/503 | 服务端强制，无法绕过 |
+| ② 本地 grok build | `~/.grok/rpm_proxy/rpm_proxy.py` | 本地限速反向代理（端口 8899，滑动窗口 10/60s+1.5s 间隔），grok 的 `[model.agnes-3-flash] base_url` 指向它 | 全局生效，见下方说明 |
+| ③ CLI 脚本 | `trade_krono_cli/llm_rate_limiter.py` | `wait_for_rate_limit()` 线程安全滑动窗口；全仓所有 Agnes LLM 调用点必须挂接（清单见下） | 仅本项目脚本 |
+
+**第 ③ 层挂接点清单（新增 Agnes LLM 调用时必须挂 `wait_for_rate_limit()`）**：
+
+| 调用点 | 文件:行 | 用途 |
+|---|---|---|
+| `ai_verify._call_one` | `scripts/daily_analysis.py:250` | 白名单/共振/多头/第9步 AI 核实 |
+| `run_ai_verification` | `tests/buffett_screening.py:1286` | 巴菲特筛选 AI 核实（单次调用） |
+| `_verify_pe_percentile` | `tests/buffett_screening.py:101` | PE 历史分位 LLM 辅助判断（Gate ⑥） |
+
+- 所有挂接点共用同一模块级滑动窗口（`_request_log`），跨脚本、跨线程并发也统一限 10 RPM
+- `committee/__init__.py` 的 `llm_client.chat` 由 pipeline 调用方注入客户端，属离线批处理路径，未挂接
+- `tests/buffett_enhanced_screen.py` 指向 deepseek（非 Agnes），无需挂接
+
+**第 ② 层（全局 RPM 代理）要点**：
+- 脚本：`~/.grok/rpm_proxy/rpm_proxy.py`（单文件标准库，端口 8899，`RPM_PROXY_PORT` 可覆盖）
+- 配置：`~/.grok/config.toml` 中 `[model.agnes-3-flash] base_url = "http://127.0.0.1:8899/v1"`
+  （原值 `https://apihub.agnes-ai.cn/v1`，改回该值即回滚直连）
+- 守护：crontab `* * * * *` 每分钟检查，`pgrep -f rpm_proxy.py` 为空时自动拉起
+- 日志：`~/.grok/rpm_proxy/proxy.log`（出现「限流等待 Ns 后放行」即窗口生效）
+- 限流参数与第 ③ 层 `llm_rate_limiter.py` 对齐（60s≤10 次、间隔 1.5s），改限流需两处同步
+- **回滚**：`sed -i 's|base_url = "http://127.0.0.1:8899/v1"|base_url = "https://apihub.agnes-ai.cn/v1"|' ~/.grok/config.toml`
+  后重启 grok；代理可保留或 `pkill -f rpm_proxy.py` 终止
+- 其他 grok 模型（`zhipu-glm4-flash` 等默认模型）**不**走此代理，仅 agnes-3-flash 路由生效
+
+**排障提示**：
+- grok 出现 429/401：先确认 `pgrep -f rpm_proxy.py`（代理活着？）→ 看 `proxy.log`（是否限流等待？）
+  → `curl http://127.0.0.1:8899/v1/models`（代理连通？）→ 401 多为 shell 残留旧
+  `AGNES_API_KEY` 环境变量（`_load_env` 的 `load_dotenv(override=False)` 不会覆盖已有 shell 变量，
+  需 `unset AGNES_API_KEY` 或 source 新 key）。
+- 401 `This token status is unavailable`：key 失效，更新 `.env`/`~/.grok/config.toml` 的 `api_key`。

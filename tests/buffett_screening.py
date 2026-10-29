@@ -97,6 +97,8 @@ def _verify_pe_percentile(ticker: str, name: str, pe_ttm: float | None) -> tuple
         if not key:
             return True, "未配置 LLM API Key"
 
+        # Agnes 全局 10 RPM 限流：与 daily_analysis / run_ai_verification 共用同一滑动窗口
+        wait_for_rate_limit()
         client = OpenAI(api_key=key, base_url=base_url)
         response = client.chat.completions.create(
             model=_AI_MODEL,

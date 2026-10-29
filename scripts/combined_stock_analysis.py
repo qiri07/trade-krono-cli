@@ -58,6 +58,7 @@ _TEMPLATES: dict[str, str] = {
     "resonance": "macd_resonance_{dd}.json",
     "multi_head": "multi_head_{dc}.txt",
     "double_ma": "double_ma_golden_cross_{dd}.json",
+    "macd_ma": "macd_ma_screener_{dc}.json",
 }
 
 # 选股线中文名（用于展示）
@@ -66,6 +67,7 @@ _SOURCE_LABELS: dict[str, str] = {
     "resonance": "三线共振",
     "multi_head": "多头排列",
     "double_ma": "双均线金叉",
+    "macd_ma": "MACD+均线",
 }
 
 
@@ -449,6 +451,11 @@ def _codes_from_double_ma(path: Path) -> set[str]:
     return codes
 
 
+def _codes_from_macd_ma(path: Path) -> set[str]:
+    """从 MACD+均线筛选 JSON 提取 ticker 集合（格式与双均线一致）。"""
+    return _codes_from_double_ma(path)
+
+
 def collect_source_sets(date_str: str) -> dict[str, set[str]]:
     """汇总各选股线的 6 位代码集合。
 
@@ -462,9 +469,11 @@ def collect_source_sets(date_str: str) -> dict[str, set[str]]:
       - resonance: 三线共振（MACD DIF）macd_resonance_{dd}.json
       - multi_head: 多头排列 multi_head_{dc}.txt
       - double_ma: 双均线金叉 double_ma_golden_cross_{dd}.json
+      - macd_ma: MACD+均线筛选 macd_ma_screener_{dc}.json（第10步，MA5>MA13+MACD>0
+        +剔ST/涨停/小市值/PE异常）
 
     注意：白名单/巴菲特被合并为单一 "whitelist" 来源参与命中计数；
-    其余三条选股线独立计数。
+    其余选股线独立计数。
     """
     dc, dd = _date_tags(date_str)
     fmaps = {k: t.format(dc=dc, dd=dd) for k, t in _TEMPLATES.items()}
@@ -482,6 +491,7 @@ def collect_source_sets(date_str: str) -> dict[str, set[str]]:
     result["resonance"] = _codes_from_resonance(_RESULTS / fmaps["resonance"])
     result["multi_head"] = _codes_from_multi_head(_RESULTS / fmaps["multi_head"])
     result["double_ma"] = _codes_from_double_ma(_RESULTS / fmaps["double_ma"])
+    result["macd_ma"] = _codes_from_macd_ma(_RESULTS / fmaps["macd_ma"])
 
     return result
 

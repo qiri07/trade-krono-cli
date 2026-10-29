@@ -14,8 +14,9 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-WORK_DIR = Path("/run/media/onai/MyDisk/Work")
-SHARED_DATA = WORK_DIR / "shared_data"
+# 项目根目录：scripts/ 的上一级
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SHARED_DATA = PROJECT_ROOT / "data" / "shared_data"
 
 
 def ticker_to_vt_symbol(ticker: str) -> str:
@@ -130,6 +131,20 @@ def export_vnpy_parquet(
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="导出 vnpy alpha 格式 parquet")
+    parser.add_argument(
+        "--enable",
+        action="store_true",
+        help="实际执行导出；不传时默认跳过（提示后退出）",
+    )
+    args = parser.parse_args()
+
+    if not args.enable:
+        logger.info("⏭️  导出默认禁用，未传 --enable，跳过。")
+        return
+
     csv_dir = SHARED_DATA / "astock_daily_csv"
     dest_dir = SHARED_DATA / "vnpy_daily"
 

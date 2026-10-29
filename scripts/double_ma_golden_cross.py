@@ -719,9 +719,14 @@ def main() -> None:
         action="store_true",
         help="轻量模式：仅 MA+PE+MACD 技术分析（默认完整模式含 ROE+净利润）",
     )
+    parser.add_argument(
+        "--date",
+        default=datetime.now().strftime("%Y-%m-%d"),
+        help="分析日期 YYYY-MM-DD，用作结果文件命名（默认今日）",
+    )
     args = parser.parse_args()
 
-    date_tag = datetime.now().strftime("%Y-%m-%d")
+    date_tag = args.date
     output_dir = Path("outputs/results")
     output_dir.mkdir(parents=True, exist_ok=True)
 
