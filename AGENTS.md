@@ -40,7 +40,7 @@ uv run python scripts/combined_stock_analysis.py          # 第9步：多线共�
 uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data  # 导出共享数据
 uv run python scripts/export_vnpy_data.py              # 导出 vnpy 格式
 bash scripts/post_sync_export.sh                       # 同步后一键导出所有格式
-bash scripts/daily_flow.sh                             # 一键执行今日 10 步投研流程（同步+筛选+交集汇总+飞书+导出；NO_PUSH=1 关推送，NO_SYNC=1 跳同步，SKIP_ETF=1 跳ETF，DRY_RUN=1 只打印）
+bash scripts/daily_flow.sh                             # 一键执行今日 10 步投研流程（同步+筛选+交集汇总+飞书；不含数据导出；NO_PUSH=1 关推送，NO_SYNC=1 跳同步，SKIP_ETF=1 跳ETF，EXPORT=1 加导出，DRY_RUN=1 只打印）
 uv run ruff check .                  # Lint 检查
 uv run ruff check --fix .            # Lint + 自动修复
 uv run mypy .                        # 类型检查
@@ -263,10 +263,11 @@ uv run python scripts/intraday_scan.py --tickers "600519,000858,510300" --push 1
 ### 一键全流程（`scripts/daily_flow.sh`）
 
 ```bash
-bash scripts/daily_flow.sh              # 全流程（含飞书推送）
+bash scripts/daily_flow.sh              # 全流程（含飞书推送，不含数据导出）
 NO_PUSH=1 bash scripts/daily_flow.sh    # 跳过所有飞书推送
 NO_SYNC=1 bash scripts/daily_flow.sh    # 跳过第 1 步数据同步
 SKIP_ETF=1 bash scripts/daily_flow.sh   # 跳过 ETF 同步
+EXPORT=1 bash scripts/daily_flow.sh     # 额外执行共享数据导出
 DRY_RUN=1 bash scripts/daily_flow.sh    # 只打印不执行
 ```
 

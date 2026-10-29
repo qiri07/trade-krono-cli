@@ -7,6 +7,7 @@
 #   NO_PUSH=1 bash scripts/daily_flow.sh        # 跳过所有飞书推送
 #   NO_SYNC=1 bash scripts/daily_flow.sh        # 跳过第 1 步数据同步
 #   SKIP_ETF=1 bash scripts/daily_flow.sh       # 跳过 ETF 同步
+#   EXPORT=1 bash scripts/daily_flow.sh          # 额外执行共享数据导出
 #
 # 各步骤（与 AGENTS.md「每日分析流程」一致）：
 #   1. 数据同步    fill_missing_and_today.py + etf_history_sync.py
@@ -18,6 +19,8 @@
 #   10. MACD+均线  macd_ma_screener.py（第 9 步交集来源线之一，提前跑）
 #   9. 综合交集汇总 combined_stock_analysis.py
 #   11. 盘中扫描   intraday_scan.py（9:30-15:00 盘中可选，默认跑不推送）
+#
+# 数据导出（post_sync_export.sh）不再默认执行，用 EXPORT=1 单独开启。
 
 set -uo pipefail
 
@@ -27,6 +30,7 @@ DRY_RUN="${DRY_RUN:-0}"
 NO_PUSH="${NO_PUSH:-0}"
 NO_SYNC="${NO_SYNC:-0}"
 SKIP_ETF="${SKIP_ETF:-0}"
+EXPORT="${EXPORT:-0}"
 
 # 推送开关：NO_PUSH=1 时全部关闭
 PUSH_FLAG=1
@@ -94,9 +98,14 @@ run "8/10 综合选股交集汇总（combined_stock_analysis）" \
 run "9/10 盘中技术信号扫描（intraday_scan）" \
     uv run python scripts/intraday_scan.py --push 0
 
-# ── 共享数据导出（供 qlib/vnpy/RD-Agent 等下游项目）────────────────────
-run "10/10 共享数据导出" \
-    bash scripts/post_sync_export.sh
+# ── 共享数据导出（默认关闭，EXPORT=1 时执行；供 qlib/vnpy/RD-Agent 等下游）─
+if [ "$EXPORT" = "1" ]; then
+    run "10/10 共享数据导出" \
+        bash scripts/post_sync_export.sh
+else
+    echo
+    echo "跳过共享数据导出（用 EXPORT=1 开启）"
+fi
 
 # ── 汇总 ────────────────────────────────────────────────────────────────
 echo
