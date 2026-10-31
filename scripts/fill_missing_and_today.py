@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
-from scripts._utils import get_provider_chain
+from scripts._utils import FAILED_MIN_RECORDS, get_provider_chain
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
@@ -37,17 +37,58 @@ def get_today_date() -> str:
     return _today
 
 
+def load_sync_plan(plan_path: str | Path) -> tuple[list[str], list[str]]:
+    """读取 check_data_status.py 产出的补拉计划 JSON，返回 (failed, need_today)。
+
+    计划文件结构：
+        {"plan": {"fetch_kline": {"tickers": [...],
+                                   "reasons": {"failed": [...], "need_today": [...]}}}}
+
+    Args:
+        plan_path: 计划 JSON 文件路径。
+
+    Returns:
+        (failed_tickers, need_today_tickers) 两个列表；文件缺失或字段缺省对应列表为空。
+    """
+    import json
+
+    path = Path(plan_path)
+    if not path.exists():
+        print(f"⚠️  补拉计划文件不存在: {path}，回退到全库扫描")
+        return [], []
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"⚠️  补拉计划 JSON 解析失败: {e}，回退到全库扫描")
+        return [], []
+
+    fetch = (data.get("plan") or {}).get("fetch_kline") or {}
+    reasons = fetch.get("reasons") or {}
+    failed = [t for t in (reasons.get("failed") or []) if isinstance(t, str)]
+    need_today = [t for t in (reasons.get("need_today") or []) if isinstance(t, str)]
+    if not failed and not need_today:
+        # reasons 缺省时直接用顶层 tickers 列表（全部视为需补今日）
+        fallback = [t for t in (fetch.get("tickers") or []) if isinstance(t, str)]
+        need_today = fallback
+    print(
+        f"📋 补拉计划: 历史失败 {len(failed)} 只, 需补今日 {len(need_today)} 只"
+        f"（来源: {path.name}）"
+    )
+    return failed, need_today
+
+
 def get_failed_tickers() -> list[str]:
     """动态查询 DB 中记录数过少的股票（全量同步失败或未补齐的历史数据）。"""
     import sqlite3
 
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
-    # 记录条数 < 100 说明历史数据严重不足，视为同步失败
-    cur.execute("""
+    # 记录条数 < FAILED_MIN_RECORDS 说明历史数据严重不足，视为同步失败
+    cur.execute(f"""
         SELECT DISTINCT ticker FROM kline_cache
         WHERE ticker NOT LIKE 'bj.%'
-          AND (SELECT COUNT(*) FROM kline_cache k2 WHERE k2.ticker = kline_cache.ticker) < 100
+          AND (SELECT COUNT(*) FROM kline_cache k2 WHERE k2.ticker = kline_cache.ticker) < {FAILED_MIN_RECORDS}
         ORDER BY ticker
     """)
     tickers = [r[0] for r in cur.fetchall()]
@@ -200,14 +241,141 @@ def fetch_today_incremental(
     return ("failed", 0, "; ".join(error_container) if error_container else "无结果")
 
 
-def main() -> None:
+def fetch_missing_report() -> dict:
+    """查询当前缺失情况，返回报告字典。
+
+    Returns:
+        dict with keys:
+            failed: list[str] — 记录数 < FAILED_MIN_RECORDS 的非北交所 ticker
+            need_today: list[str] — 缺少今日 K 线的非北交所 ticker
+            total: int — 总记录数
+            tickers: int — 总股票数
+            latest: str — 最新数据日期
+            has_today: int — 已有今日数据的股票数
+            has_2020: int — 已有 2020 年数据的股票数
+            today: str — 今日日期
+    """
+    import sqlite3
+
+    today = get_today_date()
+    conn = sqlite3.connect(str(CACHE_DB))
+    cur = conn.cursor()
+
+    cur.execute(
+        f"""
+        SELECT DISTINCT ticker FROM kline_cache
+        WHERE ticker NOT LIKE 'bj.%'
+          AND (SELECT COUNT(*) FROM kline_cache k2 WHERE k2.ticker = kline_cache.ticker) < {FAILED_MIN_RECORDS}
+        ORDER BY ticker
+    """
+    )
+    failed = [r[0] for r in cur.fetchall()]
+
+    cur.execute(
+        f"""
+        SELECT DISTINCT ticker FROM kline_cache
+        WHERE ticker NOT IN (
+            SELECT DISTINCT ticker FROM kline_cache
+            WHERE end >= '{today}'
+        )
+        AND ticker NOT LIKE 'bj.%'
+        ORDER BY ticker
+    """
+    )
+    need_today = [r[0] for r in cur.fetchall()]
+
+    cur.execute("SELECT COUNT(*) FROM kline_cache")
+    total = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache")
+    tickers = cur.fetchone()[0]
+    cur.execute("SELECT MAX(end) FROM kline_cache")
+    latest = cur.fetchone()[0] or ""
+    cur.execute(f"SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE end >= '{today}'")
+    has_today = cur.fetchone()[0]
+    cur.execute(
+        """
+        SELECT COUNT(DISTINCT ticker) FROM kline_cache
+        WHERE start <= '2020-12-31' AND end >= '2020-01-01'
+    """
+    )
+    has_2020 = cur.fetchone()[0]
+    conn.close()
+
+    return {
+        "failed": failed,
+        "need_today": need_today,
+        "total": total,
+        "tickers": tickers,
+        "latest": latest,
+        "has_today": has_today,
+        "has_2020": has_2020,
+        "today": today,
+    }
+
+
+def print_missing_report(report: dict) -> None:
+    """打印缺失情况报告。"""
+    print("=" * 60)
+    print(f"📊 缺失检查报告（{report['today']}）")
+    print("=" * 60)
+    print(f"  总记录数:   {report['total']}")
+    print(f"  股票数:     {report['tickers']}")
+    print(f"  最新日期:   {report['latest']}")
+    print(
+        f"  今日数据:   {report['has_today']}/{report['tickers']}"
+        f" ({report['has_today'] * 100 / max(report['tickers'], 1):.1f}%)"
+    )
+    print(
+        f"  2020年数据: {report['has_2020']}/{report['tickers']}"
+        f" ({report['has_2020'] * 100 / max(report['tickers'], 1):.1f}%)"
+    )
+
+    print()
+    print(f"  需补全历史: {len(report['failed'])} 只")
+    if report["failed"]:
+        shown = report["failed"][:10]
+        suffix = f" ... 等 {len(report['failed'])} 只" if len(report["failed"]) > 10 else ""
+        print(f"    {', '.join(shown)}{suffix}")
+    else:
+        print("    无")
+
+    print(f"  需补今日:   {len(report['need_today'])} 只")
+    if report["need_today"]:
+        shown = report["need_today"][:10]
+        suffix = f" ... 等 {len(report['need_today'])} 只" if len(report["need_today"]) > 10 else ""
+        print(f"    {', '.join(shown)}{suffix}")
+    else:
+        print("    无")
+    print("=" * 60)
+
+
+def main(
+    plan_path: str | None = None,
+    dry_run: bool = False,
+    no_incremental: bool = False,
+) -> None:
+    # ── 第零步：检查当前缺失情况 ─────────────────────────────
+    print_missing_report(fetch_missing_report())
+
+    # 补拉来源：优先读计划 JSON，缺省回退到全库扫描
+    if plan_path:
+        plan_failed, plan_need_today = load_sync_plan(plan_path)
+    else:
+        plan_failed, plan_need_today = [], []
+
+    if dry_run:
+        print("\n🧪 DRY-RUN 模式：仅打印补拉清单，不写缓存、不拉取数据")
+        print(f"   将补齐历史: {len(plan_failed) if plan_path else '待全库扫描'} 只")
+        print(f"   将补今日增量: {len(plan_need_today) if plan_path else '待全库扫描'} 只")
+        return
+
     factory = get_data_factory()
 
-    # ── 第一步：补齐13只失败股票的历史数据 ─────────────────────
+    # ── 第一步：补齐失败股票的历史数据 ─────────────────────
     print("=" * 60)
-    print("📌 第一步：补齐13只失败股票的历史数据")
+    print("📌 第一步：补齐失败股票的历史数据")
     print("=" * 60)
-    failed_tickers = get_failed_tickers()
+    failed_tickers = plan_failed if plan_path else get_failed_tickers()
     success_13 = 0
     failed_13 = []
     with ThreadPoolExecutor(max_workers=WORKERS) as executor:
@@ -246,35 +414,52 @@ def main() -> None:
     print("=" * 60)
     import sqlite3
 
-    today = get_today_date()
-    conn = sqlite3.connect(str(CACHE_DB))
-    cur = conn.cursor()
-    cur.execute(f"""
-        SELECT DISTINCT ticker FROM kline_cache
-        WHERE ticker NOT IN (
+    if plan_path:
+        need_today = plan_need_today
+    else:
+        today = get_today_date()
+        conn = sqlite3.connect(str(CACHE_DB))
+        cur = conn.cursor()
+        cur.execute(f"""
             SELECT DISTINCT ticker FROM kline_cache
-            WHERE end >= '{today}'
-        )
-        AND ticker NOT LIKE 'bj.%'
-        ORDER BY ticker
-    """)
-    need_today = [r[0] for r in cur.fetchall()]
-    conn.close()
-    print(f"需要补今日数据的股票: {len(need_today)} 只（非北交所）")
+            WHERE ticker NOT IN (
+                SELECT DISTINCT ticker FROM kline_cache
+                WHERE end >= '{today}'
+            )
+            AND ticker NOT LIKE 'bj.%'
+            ORDER BY ticker
+        """)
+        need_today = [r[0] for r in cur.fetchall()]
+        conn.close()
+    print(
+        f"需要补今日数据的股票: {len(need_today)} 只"
+        + ("（来自补拉计划）" if plan_path else "（非北交所）")
+    )
     print()
 
     # 分批同步今日增量
     success_today = 0
     failed_today = []
     batch_size = 50
+    # 增量合并（默认）：仅追加最新 K 线到现有记录，不覆盖历史
+    # no_incremental（全量覆盖）：重拉完整历史段，覆盖该 ticker 的 K 线记录
     for batch_start in range(0, len(need_today), batch_size):
         batch = need_today[batch_start : batch_start + batch_size]
-        print(f"  批次 [{batch_start + 1}~{batch_start + len(batch)}/{len(need_today)}]")
+        mode_label = "全量覆盖" if no_incremental else "增量合并"
+        print(
+            f"  批次 [{batch_start + 1}~{batch_start + len(batch)}/{len(need_today)}]（{mode_label}）"
+        )
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-            futures = {
-                executor.submit(fetch_today_incremental, factory, t, get_provider_chain(t)): t
-                for t in batch
-            }
+            if no_incremental:
+                futures = {
+                    executor.submit(fetch_full_range, factory, t, get_provider_chain(t)): t
+                    for t in batch
+                }
+            else:
+                futures = {
+                    executor.submit(fetch_today_incremental, factory, t, get_provider_chain(t)): t
+                    for t in batch
+                }
             for future in as_completed(futures):
                 ticker = futures[future]
                 try:
@@ -326,4 +511,29 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="补齐失败股票历史数据 + 今日增量同步"
+    )
+    parser.add_argument(
+        "--plan",
+        default=None,
+        help="补拉计划 JSON 路径（由 scripts/check_data_status.py 生成）；缺省时全库扫描",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="仅打印补拉清单，不写缓存",
+    )
+    parser.add_argument(
+        "--no-incremental",
+        action="store_true",
+        help="禁用增量合并，改为全量覆盖（重拉完整历史段）",
+    )
+    args = parser.parse_args()
+    main(
+        plan_path=args.plan,
+        dry_run=args.dry_run,
+        no_incremental=args.no_incremental,
+    )

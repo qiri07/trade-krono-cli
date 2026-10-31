@@ -506,8 +506,7 @@ def run(
     removed_pe = 0
     for r in candidates:
         pe = r.get("pe_ttm")
-        pe_val: float = 999.0 if isinstance(pe, float | int) else -1.0
-        if pe_val <= 0 or pe_val >= 30:
+        if not isinstance(pe, (int, float)) or pe <= 0 or pe >= 30:
             removed_pe += 1
             continue
         pe_kept.append(r)
@@ -525,7 +524,7 @@ def run(
 
     def _pe_sort_key(item: dict[str, object]) -> float:
         pe = item.get("pe_ttm")
-        return float(pe) if isinstance(pe, float | int) else 999.0
+        return float(pe) if isinstance(pe, (int, float)) else 999.0
 
     results.sort(key=_pe_sort_key)
     if top_n > 0:
@@ -566,7 +565,7 @@ def _push_feishu(
     lines.append("")
     for r in results[:30]:
         cap = r.get("market_cap")
-        cap_str = f"{cap:.0f}亿" if isinstance(cap, float | int) else "N/A"
+        cap_str = f"{cap:.0f}亿" if isinstance(cap, (int, float)) else "N/A"
         lines.append(
             f"  {str(r.get('ticker', ''))[:7]} {str(r.get('name', ''))[:8]:<8} "
             f"PE={r.get('pe_ttm')} 市值={cap_str} MACD={r.get('macd')}"

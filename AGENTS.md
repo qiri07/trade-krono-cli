@@ -33,14 +33,16 @@ uv run python scripts/intraday_scan.py                 # 盘中技术信号扫�
 uv run python scripts/intraday_scan.py --mode resonance --min-signals 2  # 指定信号类型 + 命中阈值
 uv run python scripts/cleanup_duplicates.py            # 清理重复记录
 uv run python scripts/daily_analysis.py                # 每日白名单分析 + AI 验证 + 飞书推送
-uv run python scripts/fetch_reference_data.py          # 批量获取股票参考数据（PE/PB/行业等）
+uv run python scripts/fetch_reference_data.py          # 批量获取股票参考数据（PE/PB/行业等；TTL 24h 自动判断，过期才全量重拉）
+uv run python scripts/fetch_reference_data.py --tickers "600519,000858"  # 部分拉取（合并进现有 metadata.json，不覆盖全量）
+uv run python scripts/fetch_reference_data.py --force-refresh            # 忽略 TTL 强制全量刷新
 uv run python scripts/double_ma_golden_cross.py         # 双均线金叉统一筛选（默认完整模式：日+周MA5>MA13，PE∈(0,30)，MACD>0，ROE>15%，净利润>1亿）
 uv run python scripts/double_ma_golden_cross.py --lite   # 轻量模式（仅技术分析：MA+PE+MACD，原 double_ma_screener 功能）
 uv run python scripts/combined_stock_analysis.py          # 第9步：多线共振交集汇总 + 技术分析 + AI + 飞书（--min-sources 2 --push 1）
 uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data  # 导出共享数据
 uv run python scripts/export_vnpy_data.py              # 导出 vnpy 格式
 bash scripts/post_sync_export.sh                       # 同步后一键导出所有格式
-bash scripts/daily_flow.sh                             # 一键执行今日 10 步投研流程（同步+筛选+交集汇总+飞书；不含数据导出；NO_PUSH=1 关推送，NO_SYNC=1 跳同步，SKIP_ETF=1 跳ETF，EXPORT=1 加导出，DRY_RUN=1 只打印）
+bash scripts/daily_flow.sh                             # 一键执行今日投研流程（调度 scripts/flow_runner.py run --all：check→sync→sync_etf→metadata→buffett→resonance→multi_head→whitelist→double_ma→macd_ma→combined→intraday；不含数据导出；支持 RESUME=1 断点续传）
 uv run ruff check .                  # Lint 检查
 uv run ruff check --fix .            # Lint + 自动修复
 uv run mypy .                        # 类型检查
@@ -169,6 +171,8 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 ```
 1. 数据同步     → trade-krono-cli sync-whitelist / scripts/full_history_sync.py
    + ETF 同步   → uv run python scripts/etf_history_sync.py（默认增量 / --full 全量 7 年）
+   + 元数据刷新 → uv run python scripts/fetch_reference_data.py（TTL 24h：metadata.json 超过 24h 未更新才全量重拉 PE/PB/行业，
+                  否则秒级跳过；daily_flow.sh 第 1 步已内置。全量约 6954 只/50 分钟，部分 --tickers 拉取为合并模式不覆盖全量）
 2. 巴菲特筛选   → tests/buffett_screen_parallel.py（已过滤 ST / 北交所）
 3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股；含 ETF 纯技术面）
 4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股；含 ETF 纯技术面）
@@ -269,7 +273,11 @@ NO_SYNC=1 bash scripts/daily_flow.sh    # 跳过第 1 步数据同步
 SKIP_ETF=1 bash scripts/daily_flow.sh   # 跳过 ETF 同步
 EXPORT=1 bash scripts/daily_flow.sh     # 额外执行共享数据导出
 DRY_RUN=1 bash scripts/daily_flow.sh    # 只打印不执行
+RESUME=1 bash scripts/daily_flow.sh    # 断点续传：跳过已成功 step，从失败处继续
 ```
+
+实际调度：`bash scripts/daily_flow.sh` → `uv run python scripts/flow_runner.py run --all`
+（step 注册表：check / sync / sync_etf / metadata / buffett / resonance / multi_head / whitelist / double_ma / macd_ma / combined / intraday；export 默认关闭）；失败后可用 `RESUME=1` 续传，或 `uv run python scripts/flow_runner.py run --all --strict` 首错即停。运行中 step 有超时兜底（`DEFAULT_STEP_TIMEOUT_SECONDS=3600`，buffett 5400s 等）。
 
 ## 巴菲特六闸门筛选（Buffett Six-Gate Screening）
 位置：`tests/buffett_screen_parallel.py`（并行版）或 `tests/buffett_screen.py`（串行版）

@@ -493,6 +493,16 @@ def collect_source_sets(date_str: str) -> dict[str, set[str]]:
     result["double_ma"] = _codes_from_double_ma(_RESULTS / fmaps["double_ma"])
     result["macd_ma"] = _codes_from_macd_ma(_RESULTS / fmaps["macd_ma"])
 
+    # 防御性告警：来源文件缺失会让该线静默记 0 只，需明确提示
+    for key, tmpl in fmaps.items():
+        if key in ("whitelist", "buffett_wl"):
+            continue  # 白名单为三路并集 / 静态文件，单路缺失不告警
+        if not (_RESULTS / tmpl).exists():
+            logger.warning(
+                f"⚠️ 选股线 [{_SOURCE_LABELS.get(key, key)}] 结果文件缺失："
+                f"{tmpl}（{date_str}），该线记 0 只；如非预期请检查 daily_flow.sh 是否已先跑第 10 步"
+            )
+
     return result
 
 

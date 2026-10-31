@@ -1474,6 +1474,28 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
 9. 综合交集汇总 → scripts/combined_stock_analysis.py（白名单/巴菲特合并为单一来源，
                   技术面+基本面评估 + AI 核实 + 飞书汇总卡片 + 逐只卡片）
+
+
+执行入口：bash scripts/daily_flow.sh → 调度 uv run python scripts/flow_runner.py run --all
+本次将执行的 Step（默认开启，按依赖序）：
+ 1. check — 数据现状检查 + 补拉计划
+ 2. sync — K 线增量补拉（fill_missing_and_today.py）
+ 3. sync_etf — ETF K 线同步（etf_history_sync.py）
+ 4. metadata — 参考数据 TTL 刷新（fetch_reference_data.py）
+ 5. buffett — 巴菲特六闸门筛选（tests/buffett_screen_parallel.py）
+ 6. resonance — 三线共振（multi_line_resonance.py）
+ 7. multi_head — 多头排列（multi_scan.py）
+ 8. whitelist — 白名单分析 + AI 核实 + 飞书推送（daily_analysis.py）
+ 9. double_ma — 双均线金叉筛选（double_ma_golden_cross.py）
+10. macd_ma — MACD+均线筛选 + 推送（macd_ma_screener.py）
+11. combined — 综合交集汇总（combined_stock_analysis.py）
+12. intraday — 盘中技术信号扫描（intraday_scan.py，不推送）
+注意事项：
+- 共享数据导出（export）默认关闭，不会执行
+- 飞书推送默认开启（NO_PUSH=0）
+- 数据同步类 step 默认开启（NO_SYNC=0）
+流程包含大量网络拉取（数据源 API + LLM + 飞书），预计耗时较长（巴菲特全量筛选约 30 分钟级别）。执行结果会通过通知回传，完成后我会汇总各 step 状态。
+
 ```
 
 > **注意**：各筛选脚本均已内置 ST / 北交所（BSE）/ 港股过滤；逐只飞书推送逻辑已移除，

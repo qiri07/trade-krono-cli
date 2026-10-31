@@ -462,6 +462,19 @@ def _save_json(results: list[IntradayResult], mode: str) -> Path:
     return out
 
 
+def is_trading_day(now: datetime | None = None) -> bool:
+    """判断给定时间是否为 A 股交易日（周一~周五；节假日不做精确节假日校准，宽松放行工作日）。
+
+    Args:
+        now: 可选指定判定时间（默认当前时间）。
+
+    Returns:
+        True 为交易日，False 为周末等非交易日。
+    """
+    dt = now if now is not None else datetime.now()
+    return dt.weekday() < 5
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 
@@ -489,6 +502,10 @@ def main() -> None:
     parser.add_argument("--push", type=int, default=0, help="飞书推送：1=汇总推送")
     parser.add_argument("--verbose", type=int, default=1, help="0=安静模式")
     args = parser.parse_args()
+
+    if not is_trading_day():
+        logger.info("📅 今日为非交易日（周末），跳过盘中技术信号扫描")
+        return
 
     console = Console()
     tickers = _normalize_tickers(args.tickers.split(",")) if args.tickers else _load_whitelist()

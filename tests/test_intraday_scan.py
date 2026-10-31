@@ -6,6 +6,7 @@ mock ``akshare.stock_zh_a_minute`` 和 ``trade_krono_cli.data.fetch_realtime_quo
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -23,6 +24,7 @@ from scripts.intraday_scan import (
     _fetch_minute_bars,
     _normalize_tickers,
     _ticker_to_akshare_symbol,
+    is_trading_day,
     scan,
 )
 
@@ -213,9 +215,13 @@ class TestFetchMinuteBars:
         # 构造乱序数据
         df_in = _make_df([10.0, 20.0, 30.0, 40.0, 50.0])
         # 重新排列 day 列使其乱序
-        df_in["day"] = ["2026-10-05 09:30:00", "2026-10-01 09:30:00",
-                        "2026-10-04 09:30:00", "2026-10-02 09:30:00",
-                        "2026-10-03 09:30:00"]
+        df_in["day"] = [
+            "2026-10-05 09:30:00",
+            "2026-10-01 09:30:00",
+            "2026-10-04 09:30:00",
+            "2026-10-02 09:30:00",
+            "2026-10-03 09:30:00",
+        ]
         df_in = df_in.reset_index(drop=True)
         # 但 close 对应原始顺序，排序后 close 顺序会变 → 使用对应正确的 day/close 映射
         # 简单测试：验证结果 day 是升序
@@ -287,9 +293,9 @@ class TestScan:
         flat = [100.0] * 40
 
         by_symbol = {
-            "sh600519": _make_df(uptrend),   # 多头 + MACD + 金叉都可能触发
-            "sz000858": _make_df(flat),      # 无信号（flat → 无金叉/多头/MACD）
-            "sh510300": _make_df(flat),      # 无信号
+            "sh600519": _make_df(uptrend),  # 多头 + MACD + 金叉都可能触发
+            "sz000858": _make_df(flat),  # 无信号（flat → 无金叉/多头/MACD）
+            "sh510300": _make_df(flat),  # 无信号
         }
         mock_ak = _make_mock_akshare(**by_symbol)
 
@@ -352,3 +358,20 @@ class TestModeToSignals:
 
     def test_ref_idx_is_negative(self) -> None:
         assert _REF_IDX == -2
+
+
+# ── is_trading_day ────────────────────────────────────────────────────────────
+
+
+class TestIsTradingDay:
+    def test_friday_is_trading_day(self) -> None:
+        assert is_trading_day(datetime(2026, 10, 30, 10, 0, 0)) is True
+
+    def test_saturday_is_not_trading_day(self) -> None:
+        assert is_trading_day(datetime(2026, 10, 31, 10, 0, 0)) is False
+
+    def test_sunday_is_not_trading_day(self) -> None:
+        assert is_trading_day(datetime(2026, 11, 1, 10, 0, 0)) is False
+
+    def test_monday_is_trading_day(self) -> None:
+        assert is_trading_day(datetime(2026, 11, 2, 10, 0, 0)) is True

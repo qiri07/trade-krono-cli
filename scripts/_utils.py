@@ -21,7 +21,115 @@ from pathlib import Path
 
 import pandas as pd
 
+try:
+    import yaml  # noqa: PLC0415
+
+    _YAML_AVAILABLE = True
+except ImportError:
+    _YAML_AVAILABLE = False
+
 CACHE_DB = Path("outputs/cache/pipeline_cache.db")
+
+# providers.yaml 路径与回退硬编码链（configs/providers.yaml 缺失/损坏时使用，
+# 与历史行为一致，保证向后兼容）
+PROVIDERS_CONFIG_FILE = Path("configs/providers.yaml")
+
+_HARDCODED_PROVIDER_CHAINS: dict[str, list[str]] = {
+    "bj": ["tonghuashun", "baostock"],
+    "hk": ["akshare_hk", "tonghuashun", "mootdx", "akshare"],
+    "sh": ["baostock", "tonghuashun", "mootdx"],
+    "sz": ["baostock", "tonghuashun", "mootdx"],
+    "default": ["baostock", "tonghuashun"],
+}
+
+_provider_config_cache: dict | None = None
+
+
+def set_providers_config_file(path: Path) -> None:
+    """设置 providers.yaml 路径（测试用），并强制下次重载。"""
+    global PROVIDERS_CONFIG_FILE, _provider_config_cache
+    PROVIDERS_CONFIG_FILE = path
+    _provider_config_cache = None
+
+
+def reset_providers_config() -> None:
+    """恢复默认 providers.yaml 路径并清空缓存（测试隔离用）。"""
+    global PROVIDERS_CONFIG_FILE, _provider_config_cache
+    PROVIDERS_CONFIG_FILE = Path("configs/providers.yaml")
+    _provider_config_cache = None
+
+
+def _hardcoded_chain(ticker: str) -> list[str]:
+    """按前缀返回回退硬编码 provider 链（configs/providers.yaml 不可用时的兜底）。"""
+    prefix = ticker.split(".", 1)[0] if "." in ticker else ""
+    if prefix == "bj":
+        return list(_HARDCODED_PROVIDER_CHAINS["bj"])
+    if prefix == "hk":
+        return list(_HARDCODED_PROVIDER_CHAINS["hk"])
+    if prefix in ("sh", "sz"):
+        # ETF 代码（51/58 沪、159/156/158 深）与普通沪深 A 股 provider 链一致
+        return list(_HARDCODED_PROVIDER_CHAINS[prefix])
+    return list(_HARDCODED_PROVIDER_CHAINS["default"])
+
+
+def load_provider_config(force_reload: bool = False) -> dict:
+    """读取 configs/providers.yaml，解析失败或缺失时回退到内置硬编码结构。
+
+    返回统一结构：
+        {
+            "defaults": {"sh": [...], "sz": [...], "bj": [...], "hk": [...]},
+            "etf": {"sh": [...], "sz": [...]},
+            "override": {"sh.600519": [...], ...},
+            "fetch": {"timeout_seconds": int, "workers": int},
+        }
+
+    解析结果缓存于模块级 `_provider_config_cache`，`force_reload=True` 时强制重读。
+    """
+    global _provider_config_cache
+    if _provider_config_cache is not None and not force_reload:
+        return _provider_config_cache
+
+    fallback = {
+        "defaults": {k: list(v) for k, v in _HARDCODED_PROVIDER_CHAINS.items()},
+        "etf": {
+            "sh": list(_HARDCODED_PROVIDER_CHAINS["sh"]),
+            "sz": list(_HARDCODED_PROVIDER_CHAINS["sz"]),
+        },
+        "override": {},
+        "fetch": {"timeout_seconds": 45, "workers": 8},
+    }
+
+    if not _YAML_AVAILABLE:
+        _provider_config_cache = fallback
+        return fallback
+
+    try:
+        if not PROVIDERS_CONFIG_FILE.exists():
+            _provider_config_cache = fallback
+            return fallback
+        raw = yaml.safe_load(PROVIDERS_CONFIG_FILE.read_text(encoding="utf-8")) or {}
+        if not isinstance(raw, dict):
+            _provider_config_cache = fallback
+            return fallback
+        cfg: dict = {
+            "defaults": {k: list(v) for k, v in (raw.get("defaults") or {}).items()},
+            "etf": {k: list(v) for k, v in (raw.get("etf") or {}).items()},
+            "override": {k: list(v) for k, v in (raw.get("override") or {}).items()},
+            "fetch": dict(raw.get("fetch") or {}),
+        }
+        # 缺省段补齐：defaults 未定义的交易所前缀回退到硬编码
+        for key, chain in _HARDCODED_PROVIDER_CHAINS.items():
+            cfg["defaults"].setdefault(key, list(chain))
+        for etf_key in ("sh", "sz"):
+            cfg["etf"].setdefault(etf_key, list(_HARDCODED_PROVIDER_CHAINS[etf_key]))
+        cfg["fetch"].setdefault("timeout_seconds", 45)
+        cfg["fetch"].setdefault("workers", 8)
+        _provider_config_cache = cfg
+        return cfg
+    except (ImportError, OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
+        # YAML 未安装 / 文件读取失败 / 结构异常：回退硬编码，保证同步脚本可运行
+        _provider_config_cache = fallback
+        return fallback
 
 # ── 共享常量 ────────────────────────────────────────────────────────────────
 # ST / 异常股名称关键词（各脚本统一使用，避免多处重复定义）
@@ -33,6 +141,9 @@ ST_NAME_KEYWORDS_MINIMAL: tuple[str, ...] = ("ST", "*ST", "退市")
 # 注意：用 "920" 而非 "92"，避免误杀 92 开头的其他代码段（如 920xxx 北交所新股）
 BSE_CODE_PREFIXES: tuple[str, ...] = ("920",)
 BSE_TICKER_PREFIXES: tuple[str, ...] = ("bj.",)
+
+# 历史 K 线记录数低于此值视为同步失败（历史数据严重不足），用于全量回补判定
+FAILED_MIN_RECORDS: int = 100
 
 
 def is_bse_code(code: str) -> bool:
@@ -186,7 +297,13 @@ def get_all_tickers() -> list[str]:
 
 
 def get_provider_chain(ticker: str) -> list[str]:
-    """根据股票类型返回 Provider 优先级链。
+    """根据 configs/providers.yaml 返回 Provider 优先级链。
+
+    解析顺序：
+      1. ``override[ticker]``  —— 单只票精确覆盖
+      2. ``etf[ticker_type]``  —— ETF（``is_etf_ticker``）走 etf 段
+      3. ``defaults[ticker_type]`` —— 普通票按前缀 sh/sz/bj/hk 路由
+      4. 回退到内置硬编码链（``configs/providers.yaml`` 缺失或解析失败时）
 
     Args:
         ticker: 股票代码，支持 sh.600519 / sz.000001 / bj.920001 / hk.00700 格式。
@@ -195,28 +312,36 @@ def get_provider_chain(ticker: str) -> list[str]:
         Provider 名称列表，按优先级降序排列。
 
     Notes:
-        沪深 A 股与 ETF 的 K 线同步一律 baostock 优先：baostock 的 adjustflag='1'
-        （前复权）基准稳定，而 tonghuashun 同参数实际返回后复权口径（实测 sh.600674
-        同日 2024-12-31 前复权 284.67 vs 后复权 16.35，差 17.4 倍）。同步侧若混合
-        两源会向缓存写入两套复权体系，造成"伪除权跳变"污染 MA/MACD 等技术指标。
-        tonghuashun 仅作 baostock 失败时的降级兜底；降级发生时应在同步后运行
-        scripts/fix_dirty_kline.py 对混源记录做基准对齐清理。
+        沪深 A 股与 ETF 的 K 线同步默认 baostock 优先（configs/providers.yaml）。
+        baostock 的 adjustflag='1'（前复权）基准稳定，而 tonghuashun 同参数实际
+        返回后复权口径（实测 sh.600674 同日 2024-12-31 前复权 284.67 vs 后复权
+        16.35，差 17.4 倍）。同步侧若混合两源会向缓存写入两套复权体系，造成
+        "伪除权跳变"污染 MA/MACD 等技术指标。tonghuashun 仅作 baostock 失败时
+        的降级兜底；降级发生时应在同步后运行 scripts/fix_dirty_kline.py 对混源
+        记录做基准对齐清理。
     """
-    if ticker.startswith("bj."):
-        # 北交所 baostock 支持有限，tonghuashun 优先；北交所无复权体系混用问题
-        # （历史链路仅 baostock 兜底，增量基本走 tonghuashun 单源）
-        return ["tonghuashun", "baostock"]
-    elif ticker.startswith("hk."):
-        return ["akshare_hk", "tonghuashun", "mootdx", "akshare"]
-    elif ticker.startswith("sh.") or ticker.startswith("sz."):
-        # ETF 代码（51/58 沪、159/156/158 深）：baostock 原生支持 ETF K 线，优先使用
-        code = ticker.split(".", 1)[1]
-        is_etf = code[:2] in ("51", "58") or code[:3] in ("159", "156", "158")
-        if is_etf:
-            return ["baostock", "tonghuashun", "mootdx"]
-        # 沪深普通股票：锁定 baostock 为 K 线复权唯一源，避免基准漂移
-        return ["baostock", "tonghuashun", "mootdx"]
-    return ["baostock", "tonghuashun"]
+    cfg = load_provider_config()
+
+    # 1. 单只票精确覆盖
+    override = cfg.get("override") or {}
+    if ticker in override:
+        return list(override[ticker])
+
+    prefix = ticker.split(".", 1)[0] if "." in ticker else ""
+
+    # 2. ETF 走 etf 段
+    if prefix in ("sh", "sz") and is_etf_ticker(ticker):
+        etf_cfg = (cfg.get("etf") or {}).get(prefix)
+        if etf_cfg:
+            return list(etf_cfg)
+
+    # 3. 普通票按前缀路由到 defaults
+    defaults = cfg.get("defaults") or {}
+    if prefix in defaults:
+        return list(defaults[prefix])
+
+    # 4. 兜底：内置硬编码链（含 unknown 前缀）
+    return _hardcoded_chain(ticker)
 
 
 def _get_expected_date() -> str:
