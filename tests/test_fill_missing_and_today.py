@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import time
+from datetime import datetime
+from types import SimpleNamespace
 
 import scripts.fill_missing_and_today as fmat
 from scripts.fill_missing_and_today import get_failed_tickers, load_sync_plan, main
+from trade_krono_cli.data_providers.base import KlineData
 
 
 class TestLoadSyncPlan:
@@ -227,3 +231,223 @@ class TestMainFlags:
         result = get_failed_tickers()
         assert captured["called"]
         assert result == ["sh.600519", "sz.000001"]
+
+
+def _make_kline() -> KlineData:
+    """构造带有效字段数据的 KlineData（供降级链路测试使用）。"""
+    return KlineData(
+        timestamps=[datetime(2026, 10, 30)],
+        open=[1.0],
+        high=[1.1],
+        low=[0.9],
+        close=[1.0],
+        volume=[100.0],
+        amount=[100.0],
+    )
+
+
+class TestFetchKlineProvider:
+    """_fetch_kline_provider：单 provider 拉取 + 超时 / 异常处理。"""
+
+    def test_success_returns_data(self, monkeypatch) -> None:
+        """正常拉取成功时返回 (KlineData, None, False)，不标记超时。"""
+
+        class _OkProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                return _make_kline()
+
+        factory = SimpleNamespace(get_provider=lambda name: _OkProvider())
+        result, error, timed_out = fmat._fetch_kline_provider(
+            factory, "sh.600519", "baostock", "2020-01-01", "2026-10-30"
+        )
+        assert timed_out is False
+        assert error is None
+        assert result is not None
+        assert result.is_empty is False
+
+    def test_timeout_returns_timed_out(self, monkeypatch) -> None:
+        """fetch_kline 挂起超过 FETCH_TIMEOUT 时返回 (None, None, True)。"""
+
+        class _HangProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                time.sleep(5)
+                return None
+
+        factory = SimpleNamespace(get_provider=lambda name: _HangProvider())
+        monkeypatch.setattr(fmat, "FETCH_TIMEOUT", 0.05)
+        result, error, timed_out = fmat._fetch_kline_provider(
+            factory, "sh.600519", "baostock", "2020-01-01", "2026-10-30"
+        )
+        assert timed_out is True
+        assert result is None
+        assert error is None
+
+    def test_exception_returns_error(self, monkeypatch) -> None:
+        """fetch_kline 抛异常时返回 (None, 异常, False)，不误判为超时。"""
+
+        class _FailProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                raise RuntimeError("boom")
+
+        factory = SimpleNamespace(get_provider=lambda name: _FailProvider())
+        result, error, timed_out = fmat._fetch_kline_provider(
+            factory, "sh.600519", "baostock", "2020-01-01", "2026-10-30"
+        )
+        assert timed_out is False
+        assert error is not None
+        assert result is None
+
+
+class TestFetchFullRangeFallback:
+    """fetch_full_range：provider 级超时 / 异常后自动降级到下一个 provider。"""
+
+    def test_falls_back_to_next_provider_on_timeout(self, monkeypatch) -> None:
+        """provider 1 超时 → 自动降级尝试 provider 2，成功则返回 provider 2 结果。"""
+
+        class _HangProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                time.sleep(5)
+                return None
+
+        class _OkProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                return _make_kline()
+
+        factory = SimpleNamespace(
+            get_provider=lambda name: _HangProvider() if name == "hang" else _OkProvider()
+        )
+        monkeypatch.setattr(fmat, "FETCH_TIMEOUT", 0.05)
+        provider, n_rows, detail = fmat.fetch_full_range(factory, "sh.600519", ["hang", "ok"])
+        assert provider == "ok"
+        assert n_rows == 1
+
+    def test_all_providers_timeout_marks_failed(self, monkeypatch) -> None:
+        """所有 provider 均超时时，fetch_full_range 返回 failed。"""
+
+        class _HangProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                time.sleep(5)
+                return None
+
+        factory = SimpleNamespace(get_provider=lambda name: _HangProvider())
+        monkeypatch.setattr(fmat, "FETCH_TIMEOUT", 0.05)
+        provider, n_rows, detail = fmat.fetch_full_range(factory, "sh.600519", ["hang"])
+        assert provider == "failed"
+        assert n_rows == 0
+        assert "超时" in detail
+
+
+class TestFetchTodayIncrementalFallback:
+    """fetch_today_incremental：provider 级异常 / 超时后自动降级到下一个 provider。"""
+
+    def test_falls_back_to_next_provider_on_exception(self, monkeypatch) -> None:
+        """provider 1 抛异常 → 自动降级尝试 provider 2，成功则返回 provider 2 结果。"""
+
+        class _FailProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                raise RuntimeError("boom")
+
+        class _OkProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                return _make_kline()
+
+        factory = SimpleNamespace(
+            get_provider=lambda name: _FailProvider() if name == "fail" else _OkProvider()
+        )
+        provider, n_rows, detail = fmat.fetch_today_incremental(
+            factory, "sh.600036", ["fail", "ok"]
+        )
+        assert provider == "ok"
+        assert n_rows == 1
+
+    def test_falls_back_to_next_provider_on_timeout(self, monkeypatch) -> None:
+        """provider 1 超时 → 自动降级尝试 provider 2，成功则返回 provider 2 结果。"""
+
+        class _HangProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                time.sleep(5)
+                return None
+
+        class _OkProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                return _make_kline()
+
+        factory = SimpleNamespace(
+            get_provider=lambda name: _HangProvider() if name == "hang" else _OkProvider()
+        )
+        monkeypatch.setattr(fmat, "FETCH_TIMEOUT", 0.05)
+        provider, n_rows, detail = fmat.fetch_today_incremental(
+            factory, "sh.600018", ["hang", "ok"]
+        )
+        assert provider == "ok"
+        assert n_rows == 1
