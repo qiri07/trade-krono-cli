@@ -750,8 +750,7 @@ trade-krono-cli
 │   │   ├── data_fetcher.py     # 并行 K 线获取 + 缓存写入
 │   │   ├── merge.py            # merge_results / filter_pool / default_scorer / run_risk_assessment
 │   │   ├── reporter.py         # save_json_report / save_html_report / print_results_table / print_results_summary
-│   │   ├── resource_manager.py # 单只股票资源生命周期管理器
-│   │   └── resource_pool.py    # 共享资源池（LLM 客户端、GPU 会话）
+│   │   └── resource_manager.py # 共享资源池 + 单只股票资源生命周期（CPU/IO/GPU/LLM）
 │   ├── models/             # 会话状态模型
 650→│   │   ├── kronos_session.py # Kronos 模型会话生命周期（懒加载、设备选择）
 │   │   └── ta_session.py     # TradingAgents 会话状态（供应商、辩论轮次）
@@ -1270,8 +1269,7 @@ pytest tests/ -v
 | `test_ta_runner.py` | BuildConfig、provider 校验、图懒加载、批量分析、raw 报告读写 |
 | `test_committee.py` | 投资委员会 LLM 审议存根 |
 | `test_signal_lifecycle.py` | 信号状态流转追踪 |
-| `test_resource_manager.py` | 单只股票资源生命周期 |
-| `test_resource_pool.py` | 共享资源池（LLM/GPU） |
+| `test_resource_manager.py` | 共享资源池 + 单只股票资源生命周期（CPU/IO/GPU/LLM） |
 | `test_analytics_db.py` | 分析数据库操作 |
 | `test_artifact_manifest.py` | 实验产物清单 |
 | `test_llm_request.py` | LLM 请求处理 |

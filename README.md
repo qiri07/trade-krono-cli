@@ -703,8 +703,7 @@ trade-krono-cli
 │   │   ├── merge.py            # merge_results / filter_pool / default_scorer / run_risk_assessment
 │   │   ├── reporter.py         # save_json_report / save_html_report / print_results_table / print_results_summary
 │   │   ├── stream_pipeline.py  # StreamPipeline (streaming K-line → Kronos predict)
-│   │   ├── resource_manager.py # ResourceManager: CPU/IO/GPU/LLM resource lifecycle
-│   │   └── resource_pool.py    # ResourcePool (legacy, kept for backward compat tests)
+│   │   └── resource_manager.py # ResourceManager: CPU/IO/GPU/LLM resource lifecycle
 │   ├── models/                 # Session state models
 │   │   ├── kronos_session.py   # Kronos model session lifecycle (lazy-load, device selection)
 │   │   └── ta_session.py       # TradingAgents session state (provider, debate rounds)
@@ -1270,8 +1269,7 @@ Test Results: **2617 passed** · **88%+ overall coverage** · **mypy clean**
 | `test_ta_runner.py` | BuildConfig, provider validation, graph lazy-load, batch analysis, raw report I/O |
 | `test_committee.py` | Investment Committee LLM deliberation stub |
 | `test_signal_lifecycle.py` | Signal state transition tracking |
-| `test_resource_manager.py` | Per-stock resource lifecycle |
-| `test_resource_pool.py` | Shared resource pool (LLM/GPU) |
+| `test_resource_manager.py` | Per-stock resource lifecycle (CPU/IO/GPU/LLM + compat get_pool) |
 | `test_analytics_db.py` | Analytics database operations |
 | `test_artifact_manifest.py` | Experiment artifact manifest |
 | `test_llm_request.py` | LLM request handling |
