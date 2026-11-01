@@ -687,7 +687,9 @@ trade-krono-cli
 │   ├── external.py             # External repo management (repo status/doctor/update/pin)
 │   ├── cli_commands/           # CLI command implementations
 │   │   ├── core.py             # Thin wrapper re-exporting run/ta/kronos + shared helpers
-│   │   ├── _core_commands.py   # run/ta/kronos command implementations
+│   │   ├── run.py              # run command implementation (TA + Kronos parallel)
+│   │   ├── ta.py               # ta command implementation (TradingAgents only)
+│   │   ├── kronos.py           # kronos command implementation (Kronos only)
 │   │   ├── _core_helpers.py    # Shared utilities: _load_env, _load_tickers, _sanitize_path
 │   │   ├── _sync_helpers.py    # Sync utilities: health check, provider selection
 │   │   ├── sync_universe.py    # sync-universe command

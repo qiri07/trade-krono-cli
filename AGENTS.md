@@ -55,10 +55,11 @@ uv run pytest -x                     # 首个失败即停
 ```
 trade_krono_cli/
 ├── cli.py                # Typer CLI 入口（app / repo_app 注册、命令分发）
-├── cli_commands.py       # 向后兼容薄包装（DeprecationWarning）
-├── cli_commands/         # CLI 命令包
+├── cli_commands/         # CLI 命令包（包优先级高于同名 .py，无同名薄包装文件）
 │   ├── __init__.py       # 统一导出 run/ta/kronos/repo_* 等
-│   ├── _core_commands.py # run/ta/kronos 主流程命令实际实现
+│   ├── run.py            # run 命令实际实现（TA + Kronos 一键并行）
+│   ├── ta.py             # ta 命令实际实现（仅 TradingAgents）
+│   ├── kronos.py         # kronos 命令实际实现（仅 Kronos 预测）
 │   ├── _core_helpers.py  # 共享工具函数（_load_env / _load_tickers / _sanitize_path）
 │   ├── _sync_helpers.py  # 同步辅助函数
 │   ├── core.py           # 薄包装（re-export）
