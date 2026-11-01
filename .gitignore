@@ -44,3 +44,10 @@ RD-Agent-Work/git_ignore_folder/**/*.parquet
 *.pkl
 *.pkl.gz
 coverage.json
+
+# 共享数据导出产物（scripts/export_shared_data.py / export_vnpy_data.py 生成，可随时重建）
+data/
+
+# 覆盖率 HTML 快照（由 coverage 生成）
+.cov_all/
+.cov_html/
