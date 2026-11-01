@@ -131,6 +131,7 @@ def load_provider_config(force_reload: bool = False) -> dict:
         _provider_config_cache = fallback
         return fallback
 
+
 # ── 共享常量 ────────────────────────────────────────────────────────────────
 # ST / 异常股名称关键词（各脚本统一使用，避免多处重复定义）
 # 全市场扫描脚本用完整列表（含 N/C 新股标识），白名单分析用精简版（仅 ST 类）
@@ -294,6 +295,53 @@ def get_all_tickers() -> list[str]:
     tickers = [r[0] for r in conn.execute("SELECT DISTINCT ticker FROM kline_cache").fetchall()]
     conn.close()
     return sorted(tickers)
+
+
+def get_astock_tickers(db_path: Path, logger_fn: Callable[[str], None] | None = None) -> list[str]:
+    """从指定缓存数据库读取全部 ticker，并排除北交所与港股。
+
+    保留 A 股 + ETF（ETF 以纯技术面参与各筛选线）。
+
+    Args:
+        db_path: kline_cache 数据库路径。
+        logger_fn: 可选日志函数（如 ``logger.info``），用于输出扫描统计。
+
+    Returns:
+        排除北交所/港股后的 ticker 列表（按字母序）。
+    """
+    conn = sqlite3.connect(str(db_path))
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
+    all_tickers = [r[0] for r in cur.fetchall()]
+    conn.close()
+
+    astock_tickers = [t for t in all_tickers if not is_bse_or_hk(t)]
+    if logger_fn is not None:
+        etf_count = sum(1 for t in astock_tickers if is_etf_ticker(t))
+        logger_fn(
+            f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所/港股后 {len(astock_tickers)} 只"
+            f"（含ETF {etf_count} 只，纯技术面参与）"
+        )
+    return astock_tickers
+
+
+def strip_ticker_prefix(ticker: str) -> str:
+    """去除交易所前缀，返回 6 位纯数字代码（``sh.600519`` → ``600519``）。"""
+    return ticker.split(".", 1)[1] if "." in ticker else ticker
+
+
+def is_st_name(name: str, keywords: tuple[str, ...] | None = None) -> bool:
+    """判断股票名称是否含 ST 类标识。
+
+    Args:
+        name: 股票名称（如 ``*ST 金钰``）。
+        keywords: 自定义关键词元组；缺省用完整版 :data:`ST_NAME_KEYWORDS`。
+
+    Returns:
+        名称命中任一关键词时返回 True。
+    """
+    kws = ST_NAME_KEYWORDS if keywords is None else keywords
+    return any(kw in name for kw in kws)
 
 
 def get_provider_chain(ticker: str) -> list[str]:

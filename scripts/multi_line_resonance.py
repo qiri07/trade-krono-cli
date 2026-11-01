@@ -37,11 +37,12 @@ import pandas as pd
 from loguru import logger
 
 from scripts._utils import (
-    ST_NAME_KEYWORDS,
     check_data_freshness,
+    get_astock_tickers,
     get_cache_db_path,
-    is_bse_or_hk,
     is_etf_ticker,
+    is_st_name,
+    strip_ticker_prefix,
     ticker_to_thscode,
 )
 from scripts.daily_analysis import ai_verify
@@ -57,31 +58,6 @@ _FUYAO_BASE = "https://fuyao.aicubes.cn"
 _FUYAO_API_KEY = (
     os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
 )
-
-_ST_KEYWORDS = ST_NAME_KEYWORDS
-
-
-def _get_all_tickers(db_path: Path) -> list[str]:
-    """从缓存数据库获取所有股票代码（排除北交所和港股）。"""
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
-    all_tickers = [r[0] for r in cur.fetchall()]
-    conn.close()
-
-    # 排除北交所（bj.开头）和港股（hk.开头），保留 A 股 + ETF
-    astock_tickers = [t for t in all_tickers if not is_bse_or_hk(t)]
-    etf_tickers = [t for t in astock_tickers if is_etf_ticker(t)]
-    logger.info(
-        f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所/港股后 {len(astock_tickers)} 只"
-        f"（含ETF {len(etf_tickers)} 只，纯技术面参与）"
-    )
-    return astock_tickers
-
-
-def _is_st(name: str) -> bool:
-    """判断股票名称是否含 ST 标识。"""
-    return any(kw in name for kw in _ST_KEYWORDS)
 
 
 def _fetch_hk_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, dict[str, Any]]:
@@ -504,7 +480,7 @@ def main() -> None:
 
     # 获取股票列表
     db_path = get_cache_db_path()
-    tickers = _get_all_tickers(db_path)
+    tickers = get_astock_tickers(db_path, logger.info)
     if not tickers:
         logger.error("❌ 未找到任何股票，退出")
         sys.exit(1)
@@ -535,7 +511,7 @@ def main() -> None:
     if etf_in_results:
         logger.info(f"📊 ETF 纯技术面参与: {len(etf_in_results)} 只（豁免 PE 门槛）")
     for r in results:
-        code = _strip_prefix(r["ticker"])
+        code = strip_ticker_prefix(r["ticker"])
         entry = pe_map.get(code)
         if entry:
             r["name"] = entry.get("name", "")
@@ -555,7 +531,7 @@ def main() -> None:
                 removed_score += 1
             continue
         name = r.get("name", "")
-        if _is_st(name):
+        if is_st_name(name):
             removed_st += 1
             continue
         pe = r.get("pe")
@@ -619,11 +595,6 @@ def main() -> None:
         logger.info(f"{'✅' if ok else '❌'} 汇总飞书推送完成")
     else:
         logger.warning("⚠️ 未找到三线共振股票")
-
-
-def _strip_prefix(ticker: str) -> str:
-    """去除交易所前缀，返回 6 位纯数字代码。"""
-    return ticker.split(".", 1)[1] if "." in ticker else ticker
 
 
 if __name__ == "__main__":

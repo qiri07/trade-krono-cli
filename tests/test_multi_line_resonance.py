@@ -14,7 +14,7 @@ class TestIsSt:
     """ST 股票识别测试。"""
 
     def test_normal_stock_not_st(self) -> None:
-        from scripts.multi_line_resonance import _is_st
+        from scripts._utils import is_st_name as _is_st
 
         assert _is_st("贵州茅台") is False
 
@@ -29,7 +29,7 @@ class TestIsSt:
         ],
     )
     def test_st_keywords_detected(self, name: str) -> None:
-        from scripts.multi_line_resonance import _is_st
+        from scripts._utils import is_st_name as _is_st
 
         assert _is_st(name) is True
 
@@ -62,17 +62,17 @@ class TestStripPrefix:
     """交易所前缀剥离测试。"""
 
     def test_sh(self) -> None:
-        from scripts.multi_line_resonance import _strip_prefix
+        from scripts._utils import strip_ticker_prefix as _strip_prefix
 
         assert _strip_prefix("sh.600519") == "600519"
 
     def test_sz(self) -> None:
-        from scripts.multi_line_resonance import _strip_prefix
+        from scripts._utils import strip_ticker_prefix as _strip_prefix
 
         assert _strip_prefix("sz.000001") == "000001"
 
     def test_no_prefix(self) -> None:
-        from scripts.multi_line_resonance import _strip_prefix
+        from scripts._utils import strip_ticker_prefix as _strip_prefix
 
         assert _strip_prefix("600519") == "600519"
 
@@ -224,27 +224,27 @@ class TestComputeMacdForTicker:
 
 
 class TestGetAllTickers:
-    """全市场 ticker 列表获取测试。"""
+    """全市场 ticker 列表获取测试（共享实现 scripts._utils.get_astock_tickers）。"""
 
     def test_excludes_bj(self) -> None:
-        from scripts.multi_line_resonance import _get_all_tickers
+        from scripts._utils import get_astock_tickers
 
         mock_rows = [("sh.600519",), ("sz.000001",), ("bj.920001",)]
-        with patch("scripts.multi_line_resonance.sqlite3.connect") as mock_connect:
+        with patch("scripts._utils.sqlite3.connect") as mock_connect:
             mock_conn = mock_connect.return_value
             mock_conn.cursor.return_value.fetchall.return_value = mock_rows
-            tickers = _get_all_tickers(Path("/tmp/fake.db"))
+            tickers = get_astock_tickers(Path("/tmp/fake.db"))
         assert "bj.920001" not in tickers
         assert "sh.600519" in tickers
         assert "sz.000001" in tickers
 
     def test_empty_result(self) -> None:
-        from scripts.multi_line_resonance import _get_all_tickers
+        from scripts._utils import get_astock_tickers
 
-        with patch("scripts.multi_line_resonance.sqlite3.connect") as mock_connect:
+        with patch("scripts._utils.sqlite3.connect") as mock_connect:
             mock_conn = mock_connect.return_value
             mock_conn.cursor.return_value.fetchall.return_value = []
-            tickers = _get_all_tickers(Path("/tmp/fake.db"))
+            tickers = get_astock_tickers(Path("/tmp/fake.db"))
         assert tickers == []
 
 
@@ -391,7 +391,7 @@ class TestMainFunction:
         from scripts.multi_line_resonance import main
 
         with (
-            patch("scripts.multi_line_resonance._get_all_tickers", return_value=[]),
+            patch("scripts.multi_line_resonance.get_astock_tickers", return_value=[]),
             patch("scripts.multi_line_resonance.check_data_freshness", return_value="mocked"),
             patch("sys.argv", ["multi_line_resonance.py"]),
             pytest.raises(SystemExit),

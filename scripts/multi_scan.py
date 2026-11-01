@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import time
@@ -26,11 +25,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from loguru import logger
 
 from scripts._utils import (
-    ST_NAME_KEYWORDS,
     check_data_freshness,
+    get_astock_tickers,
     get_cache_db_path,
-    is_bse_or_hk,
     is_etf_ticker,
+    is_st_name,
+    strip_ticker_prefix,
     ticker_to_thscode,
 )
 from scripts.daily_analysis import _load_env, ai_verify, analyze_stock
@@ -61,36 +61,6 @@ _FUYAO_BASE = "https://fuyao.aicubes.cn"
 _FUYAO_API_KEY = (
     os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
 )
-
-_ST_KEYWORDS = ST_NAME_KEYWORDS
-
-
-def _get_all_tickers(db_path: Path) -> list[str]:
-    """从缓存数据库获取所有股票代码（排除北交所和港股）。"""
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
-    all_tickers = [r[0] for r in cur.fetchall()]
-    conn.close()
-
-    # 排除北交所（bj.开头）和港股（hk.开头），保留 A 股 + ETF
-    astock_tickers = [t for t in all_tickers if not is_bse_or_hk(t)]
-    etf_tickers = [t for t in astock_tickers if is_etf_ticker(t)]
-    logger.info(
-        f"📊 全市场扫描：共 {len(all_tickers)} 只，排除北交所/港股后 {len(astock_tickers)} 只"
-        f"（含ETF {len(etf_tickers)} 只，纯技术面参与）"
-    )
-    return astock_tickers
-
-
-def _strip_prefix(ticker: str) -> str:
-    """去除交易所前缀，返回 6 位纯数字代码。"""
-    return ticker.split(".", 1)[1] if "." in ticker else ticker
-
-
-def _is_st(name: str) -> bool:
-    """判断股票名称是否含 ST 标识。"""
-    return any(kw in name for kw in _ST_KEYWORDS)
 
 
 def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, dict]:
@@ -182,7 +152,7 @@ def _filter_by_pe(
     filtered: list[dict[str, Any]] = []
     removed = 0
     for r in results:
-        code = _strip_prefix(r.get("ticker", ""))
+        code = strip_ticker_prefix(r.get("ticker", ""))
         entry = pe_map.get(code)
         if entry is None:
             # PE 数据缺失，剔除
@@ -282,7 +252,7 @@ def scan_multi_head_stocks(
                 if result.get("status") == "ok":
                     name = result.get("name", "")
                     # 剔除 ST / *ST 等异常股票
-                    if _is_st(name):
+                    if is_st_name(name):
                         logger.debug(f"  剔除 ST 股: {ticker} {name}")
                         continue
                     # 筛选多头排列且分数>=50的股票
@@ -412,7 +382,7 @@ def main() -> None:
         sys.exit(1)
 
     # 获取所有A股代码
-    tickers = _get_all_tickers(db_path)
+    tickers = get_astock_tickers(db_path, logger.info)
 
     # 扫描多头排列股票
     results = scan_multi_head_stocks(tickers, max_workers=args.workers, top_n=args.top)
@@ -440,11 +410,11 @@ def main() -> None:
         val_results = [r for r in results if not is_etf_ticker(r["ticker"])]
         etf_kept = [r for r in results if is_etf_ticker(r["ticker"])]
         logger.info(f"📊 启动估值评估...（ETF {len(etf_kept)} 只无基本面指标，跳过）")
-        val_tickers = [_strip_prefix(r["ticker"]) for r in val_results]
+        val_tickers = [strip_ticker_prefix(r["ticker"]) for r in val_results]
         # 批量获取 PE 分位（akshare）
         pe_percentiles = _fetch_pe_percentiles(val_tickers)
         for r in val_results:
-            code = _strip_prefix(r["ticker"])
+            code = strip_ticker_prefix(r["ticker"])
             price = r.get("close", 0)
             pe = _safe_float(pe_map.get(code, {}).get("pe"))
             try:
