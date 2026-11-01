@@ -1,5 +1,8 @@
 """artifact_manifest — 实验可复现性清单（Experiment Artifact Manifest）。
 
+> **状态：已建成、待接入生产** —— 截至 2026-11-01 生产代码零调用，仅测试覆盖；
+> 功能完整且测试全绿，接入流水线的排期待定（详见 AGENTS.md「已知限制」）。
+
 将"这次分析用了什么"从散落的多个字段合并成一个结构化的、可序列化、
 可比较的 artifact manifest。每个 experiment 有唯一 ID，对应一份完整清单。
 

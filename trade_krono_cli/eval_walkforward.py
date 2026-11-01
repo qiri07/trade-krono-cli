@@ -1,5 +1,8 @@
 """WalkForwardEngine — 滚动时间窗口的回测评估引擎。
 
+> **状态：已建成、待接入生产** —— 截至 2026-11-01 生产代码零调用，仅测试覆盖；
+> 功能完整且测试全绿，接入流水线的排期待定（详见 AGENTS.md「已知限制」）。
+
 与 backtest_engine.py 的区别：
   backtest_engine     对固定信号集合做一次性模拟（适合策略参数调优）
   WalkForwardEngine   按时间顺序滚动训练/测试，模拟真实投研流程

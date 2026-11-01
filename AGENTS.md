@@ -487,6 +487,25 @@ uv run python scripts/export_vnpy_data.py
 - 实际配置的 primary provider 是 `tonghuashun`（非 baostock），由 `get_data_factory()` 读取 Settings
 - 北交所股票特殊处理：provider 链为 `["tonghuashun", "baostock"]`
 
+### 待接入生产的实验子系统（2026-11-01 清理盘点）
+以下 8 个模块已建成、测试全绿，但**生产代码零调用**（仅测试引用）。它们构成
+「实验追踪 + 评估」子系统，接入流水线前不要误判为死代码删除，也不要重复造轮子：
+
+| 模块 | 用途 |
+|---|---|
+| `artifact_manifest/` | 实验可复现性清单（数据/配置/代码 sha 归档） |
+| `experiment_registry.py` | 假设驱动的实验登记与比较 |
+| `eval_benchmark.py` | 基准指数（CSI300/500/1000）Alpha 与绩效指标 |
+| `eval_walkforward.py` | 滚动时间窗口 Walk-Forward 评估引擎 |
+| `llm_request.py` | LLM 调用全上下文留痕（模型/参数/token/延迟） |
+| `unified_decision.py` | TA + Kronos + Committee 统一决策与期望收益 |
+| `signal_lifecycle/` | 信号状态流转 CREATED→…→CLOSED |
+| `utils/decimal_utils.py` | Decimal 金融计算（替代 float64 精度损失） |
+
+- 每个模块 docstring 首部已加「**状态：已建成、待接入生产**」标记
+- 接入路径：`pipeline/pipeline_core.py` 产出决策时调用 `unified_decision`，
+  实验/评估时调用 `experiment_registry` + `artifact_manifest` + `eval_walkforward`
+
 ### DecisionAdapter 文本解析
 - `_keyword_fallback` 仅匹配英文关键词（BUY/SELL/HOLD/OVERWEIGHT/UNDERWEIGHT）
 - 中文文本无法通过 keyword fallback 获得正确信号，需依赖 LLM JSON 输出

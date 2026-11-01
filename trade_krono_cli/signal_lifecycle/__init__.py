@@ -1,5 +1,8 @@
 """SignalLifecycle — 信号生命周期管理器。
 
+> **状态：已建成、待接入生产** —— 截至 2026-11-01 生产代码零调用，仅测试覆盖；
+> 功能完整且测试全绿，接入流水线的排期待定（详见 AGENTS.md「已知限制」）。
+
 每个股票的分析结果不是孤立的瞬态，而是一条随时间演化的状态链：
 
     CREATED → ACTIVE → UPDATED / WEAKENED → INVALIDATED → CLOSED
