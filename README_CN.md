@@ -714,8 +714,7 @@ trade-krono-cli
 │   ├── security.py         # 密钥校验 + 输入校验 + 重试 + 限流
 │   ├── health.py           # 健康检查（LLM API、Kronos 导入、数据库、磁盘）
 │   ├── cache.py            # Cache（TTL 性能缓存）+ ResearchDatabase（永久研究记录）
-│   ├── logger.py           # 日志配置
-│   ├── logging_config.py   # 结构化日志 sink（text + JSON）
+│   ├── logger.py           # 日志配置（text + JSON 结构化 sink）
 │   ├── globals.py          # 全局状态清理
 │   ├── ta_decision.py      # 投资决断标准化（Signal / InvestmentDecision / DecisionAdapter）
 │   ├── ta_runner.py        # TradingAgents 封装（含 save_raw_reports 三层存储）

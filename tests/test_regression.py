@@ -144,7 +144,7 @@ class TestRegressionLoggingJson:
     def test_json_sink_produces_valid_json(self) -> None:
         import json
 
-        from trade_krono_cli.logging_config import _JsonLogSink
+        from trade_krono_cli.logger import _JsonLogSink
 
         sink = _JsonLogSink()
         # write() 接收格式化后的字符串
@@ -158,7 +158,7 @@ class TestRegressionLoggingJson:
         assert parsed["level"] == "INFO"
 
     def test_setup_logger_creates_sink(self) -> None:
-        from trade_krono_cli.logging_config import setup_logger
+        from trade_krono_cli.logger import setup_logger
 
         # setup_logger 返回 None（它直接配置 loguru）
         result = setup_logger(level="DEBUG", json_format=True)

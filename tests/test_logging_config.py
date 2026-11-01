@@ -5,7 +5,7 @@ from io import StringIO
 
 from loguru import logger
 
-from trade_krono_cli.logging_config import (
+from trade_krono_cli.logger import (
     error_structured,
     info_structured,
     setup_logger,
@@ -31,7 +31,7 @@ class TestSetupLogger:
         """Json 模式下输出合法 JSON 行。"""
         setup_logger(level="INFO", json_format=True)
         logger.info("test json message")
-        import trade_krono_cli.logging_config as _mod
+        import trade_krono_cli.logger as _mod
 
         sink = getattr(_mod, "_json_sink", None)
         assert sink is not None

@@ -667,8 +667,7 @@ trade-krono-cli
 │   │   ├── kronos.py           # Kronos prediction cache (JSON, config-hash invalidated)
 │   │   ├── ta.py               # TA analysis cache (JSON, config-hash invalidated)
 │   │   └── queries.py          # Cache stats / export_daily_pv / clear_all
-│   ├── logger.py               # Logging configuration
-│   ├── logging_config.py       # Structured log sinks (text + JSON)
+│   ├── logger.py               # Logging configuration (text + JSON structured sinks)
 │   ├── globals.py              # Global state cleanup
 │   ├── ta_decision.py          # Investment decision standardization (Signal / InvestmentDecision / DecisionAdapter)
 │   ├── ta_runner.py            # TradingAgents wrapper (with save_raw_reports three-tier storage)
