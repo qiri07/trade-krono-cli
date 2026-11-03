@@ -163,11 +163,11 @@ DEEPSEEK_API_KEY=sk-xxx
 
 # ── LLM 行为配置 ────────────────────────────────────────
 LLM_PROVIDER=nemotron           # 默认 LLM 供应商：nemotron / deepseek / openai / anthropic / minimax / agnes
-DEEP_THINK_LLM=nemotron-3.5-super-vl-120b-a12b  # 深度思考模型
-QUICK_THINK_LLM=nemotron-3.5-super-vl-120b-a12b  # 快速思考模型
+DEEP_THINK_LLM=nvidia/nemotron-3.5-super-vl-120b-a12b  # 深度思考模型
+QUICK_THINK_LLM=nvidia/nemotron-3.5-super-vl-120b-a12b  # 快速思考模型
 
 # Nemotron 专用配置
-NEMOTRON_MODEL=nemotron-3.5-super-vl-120b-a12b
+NEMOTRON_MODEL=nvidia/nemotron-3.5-super-vl-120b-a12b
 NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1  # NVIDIA API 端点
 # NEMOTRON_BASE_URL=https://openrouter.ai/api/v1  # 备选：通过 OpenRouter
 
@@ -206,9 +206,9 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock 请求间隔（秒）
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `LLM_PROVIDER` | `nemotron` | 默认供应商：nemotron / deepseek / openai / anthropic / minimax / agnes |
-| `DEEP_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | 深度分析 Agent 使用的模型 |
-| `QUICK_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | 快速分析 Agent 使用的模型 |
-| `NEMOTRON_MODEL` | `nemotron-3.5-super-vl-120b-a12b` | Nemotron 模型名称 |
+| `DEEP_THINK_LLM` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | 深度分析 Agent 使用的模型 |
+| `QUICK_THINK_LLM` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | 快速分析 Agent 使用的模型 |
+| `NEMOTRON_MODEL` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | Nemotron 模型名称 |
 | `NEMOTRON_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Nemotron API 端点（NVIDIA 或 OpenRouter） |
 | `BACKEND_URL` | — | LLM 后端 API 地址（兼容旧配置，用于 Agnes/deepseek） |
 | `MAX_DEBATE_ROUNDS` | `1` | 多空辩论最大轮次，0 表示不辩论 |
@@ -1544,8 +1544,8 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | `SKIP_KRONOS` | `false` | 是否跳过 Kronos 预测 |
 | `OUTPUT_LANGUAGE` | `Chinese` | 报告语言 |
 | `LLM_PROVIDER` | `nemotron` | LLM 提供商（nemotron / deepseek / openai / anthropic / minimax / agnes） |
-| `DEEP_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | 深度思考模型 |
-| `QUICK_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | 快速思考模型 |
+| `DEEP_THINK_LLM` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | 深度思考模型 |
+| `QUICK_THINK_LLM` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | 快速思考模型 |
 | `NEMOTRON_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Nemotron API 端点 |
 | `BACKEND_URL` | — | LLM 后端 API 地址（兼容旧配置） |
 | `ANALYSIS_TIMEOUT_MINUTES` | `30` | 分析超时时间 |

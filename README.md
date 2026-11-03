@@ -164,11 +164,11 @@ DEEPSEEK_API_KEY=sk-xxx
 
 # ── LLM Behavior Config ────────────────────────────────────────
 LLM_PROVIDER=nemotron           # Default LLM provider: nemotron / deepseek / openai / anthropic / minimax / agnes
-DEEP_THINK_LLM=nemotron-3.5-super-vl-120b-a12b  # Deep thinking model
-QUICK_THINK_LLM=nemotron-3.5-super-vl-120b-a12b  # Quick thinking model
+DEEP_THINK_LLM=nvidia/nemotron-3.5-super-vl-120b-a12b  # Deep thinking model
+QUICK_THINK_LLM=nvidia/nemotron-3.5-super-vl-120b-a12b  # Quick thinking model
 
 # Nemotron 专用配置
-NEMOTRON_MODEL=nemotron-3.5-super-vl-120b-a12b
+NEMOTRON_MODEL=nvidia/nemotron-3.5-super-vl-120b-a12b
 NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1  # NVIDIA API endpoint
 # NEMOTRON_BASE_URL=https://openrouter.ai/api/v1  # Alternative: OpenRouter
 
@@ -207,9 +207,9 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock request interval (seconds)
 | Variable | Default | Description |
 |------|--------|------|
 | `LLM_PROVIDER` | `nemotron` | Default provider: nemotron / deepseek / openai / anthropic / minimax / agnes |
-| `DEEP_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | Model used by deep analysis Agent |
-| `QUICK_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | Model used by quick analysis Agent |
-| `NEMOTRON_MODEL` | `nemotron-3.5-super-vl-120b-a12b` | Nemotron model name |
+| `DEEP_THINK_LLM` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | Model used by deep analysis Agent |
+| `QUICK_THINK_LLM` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | Model used by quick analysis Agent |
+| `NEMOTRON_MODEL` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | Nemotron model name |
 | `NEMOTRON_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Nemotron API endpoint (NVIDIA or OpenRouter) |
 | `BACKEND_URL` | — | LLM backend API URL (legacy, for Agnes/deepseek compatibility) |
 | `MAX_DEBATE_ROUNDS` | `1` | Max long-short debate rounds, 0 = no debate |

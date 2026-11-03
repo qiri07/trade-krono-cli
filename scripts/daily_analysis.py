@@ -43,6 +43,7 @@ from trade_krono_cli.cli_commands._core_helpers import _load_env
 from trade_krono_cli.config import get_settings  # type: ignore[import-not-found]
 from trade_krono_cli.data_providers import get_data_factory
 from trade_krono_cli.errors import DataInconsistencyError
+from trade_krono_cli.llm_config import resolve_llm_config
 
 # ── Nemotron API 限流（全局模块，线程安全）─────────────────────────────────────
 from trade_krono_cli.llm_rate_limiter import backoff_wait, is_quota_exhausted, wait_for_rate_limit
@@ -114,8 +115,6 @@ def _get_merged_whitelist() -> str:
 # AI 核实
 # ─────────────────────────────────────────────────────────────────────────────
 
-_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "nemotron-3.5-super-vl-120b-a12b")
-
 try:
     from openai import OpenAI
 except ImportError:
@@ -126,35 +125,25 @@ def _ai_available() -> bool:
     """检查 LLM 是否可用（必须在 _load_env() 之后调用）。"""
     if OpenAI is None:
         return False
-    return bool(
-        os.getenv("NVIDIA_API_KEY", "")
-        or os.getenv("OPENROUTER_API_KEY", "")
-        or os.getenv("DEEPSEEK_API_KEY", "")
-        or os.getenv("OPENAI_API_KEY", "")
-        or os.getenv("AGNES_API_KEY", "")  # 兼容旧配置
-    )
+    return bool(resolve_llm_config().api_key)
 
 
 def _get_llm_client() -> Any | None:
-    if OpenAI is None or not _ai_available():
+    """构建 OpenAI 兼容客户端；Key 与端点按 provider 强匹配。"""
+    if OpenAI is None:
         return None
-    # 优先使用 Nemotron (NVIDIA/OpenRouter)，兼容旧配置
-    key = (
-        os.getenv("NVIDIA_API_KEY", "")
-        or os.getenv("OPENROUTER_API_KEY", "")
-        or os.getenv("DEEPSEEK_API_KEY", "")
-        or os.getenv("OPENAI_API_KEY", "")
-        or os.getenv("AGNES_API_KEY", "")  # 兼容旧配置
-    )
-    # Nemotron 专用 base_url，兼容旧 BACKEND_URL
-    base_url = os.getenv("NEMOTRON_BASE_URL", "") or os.getenv("BACKEND_URL", "") or os.getenv("LLM_BASE_URL", "")
-    if not base_url:
+    cfg = resolve_llm_config()
+    if not cfg.api_key:
         logger.warning(
-            "NEMOTRON_BASE_URL / BACKEND_URL 未配置，LLM 将回退到 deepseek。"
-            "建议在 .env 中设置 NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1"
+            f"LLM 未配置：{cfg.key_env} 为空（端点 {cfg.base_url}），"
+            "AI 核实将被跳过；请在 .env 中填入对应 API Key"
         )
-        base_url = "https://api.deepseek.com/v1"
-    return OpenAI(api_key=key, base_url=base_url)
+        return None
+    logger.info(
+        f"🔌 LLM 配置: provider={cfg.provider} base_url={cfg.base_url} "
+        f"key={cfg.key_env} model={cfg.model}"
+    )
+    return OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
 
 
 def _extract_json(text: str) -> dict | None:
@@ -221,6 +210,8 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
             "conclusion": "无",
         }
 
+    llm_model = resolve_llm_config().model
+
     _batch_size = int(os.getenv("AI_VERIFY_BATCH_SIZE", "30"))
     batches = [
         stock_results[i : i + _batch_size] for i in range(0, len(stock_results), _batch_size)
@@ -257,10 +248,12 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
         for attempt in range(1, 6):
             try:
                 response = client.chat.completions.create(
-                    model=_AI_MODEL,
+                    model=llm_model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
-                    max_tokens=800,
+                    # 推理型模型（Nemotron 等）会先消耗 token 产出 reasoning_content，
+                    # 800 会在 JSON 输出中途被截断（finish_reason=length），故需放宽。
+                    max_tokens=2048,
                     timeout=60,
                 )
                 raw = (response.choices[0].message.content or "").strip()
@@ -275,8 +268,8 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
                 # 账户额度耗尽/付费墙类型：短暂等待无法恢复，快速失败并明确提示
                 if is_quota_exhausted(e):
                     logger.error(
-                        "AI 核实触发 Agnes 免费账户额度限制，等待无法恢复："
-                        f" {str(e)[:120]}。请升级 Token Plan 或更换 AGNES_API_KEY 后重试。"
+                        "AI 核实触发 LLM 免费账户额度限制，等待无法恢复："
+                        f" {str(e)[:120]}。请升级 Token Plan 或更换 API Key 后重试。"
                     )
                     break
                 # 普通频率限流（429）：指数退避，最多重试 5 次

@@ -93,8 +93,12 @@ def _load_env() -> tuple[Settings, Path]:
     """启动时初始化配置和日志。返回 (Settings, log_file_path)。"""
     from dotenv import load_dotenv
 
-    project_root = Path(__file__).resolve().parent.parent
-    load_dotenv(project_root / ".env", override=False)
+    # 注意：本文件位于 <repo>/trade_krono_cli/cli_commands/，仓库根见模块级 _PROJECT_ROOT。
+    project_root = _PROJECT_ROOT
+    # override=True：.env 是本项目的配置唯一来源。若 shell 中残留旧的 API Key
+    # （例如早前会话 export 的 AGNES_API_KEY），默认的 override=False 会让旧值
+    # 生效，导致 AI 核实 401（历史故障），故这里强制以 .env 为准。
+    load_dotenv(project_root / ".env", override=True)
 
     s = get_settings()
 

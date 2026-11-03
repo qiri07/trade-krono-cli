@@ -548,5 +548,5 @@ Nemotron 3.5 Super VL 通过 NVIDIA API 或 OpenRouter 调用，建议配置适�
 - 在 `.env` 中设置 `NVIDIA_API_KEY` 或 `OPENROUTER_API_KEY`
 - 设置 `NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1`（或 `https://openrouter.ai/api/v1`）
 - 设置 `LLM_PROVIDER=nemotron`
-- 设置 `DEEP_THINK_LLM=nemotron-3.5-super-vl-120b-a12b`
-- 设置 `QUICK_THINK_LLM=nemotron-3.5-super-vl-120b-a12b`
+- 设置 `DEEP_THINK_LLM=nvidia/nemotron-3.5-super-vl-120b-a12b`
+- 设置 `QUICK_THINK_LLM=nvidia/nemotron-3.5-super-vl-120b-a12b`

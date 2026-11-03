@@ -116,3 +116,42 @@ class TestSanitizePath:
         """路径遍历攻击应被阻止。"""
         with pytest.raises(typer.Exit):
             _sanitize_path(str(tmp_path.parent / "etc"), "test", tmp_path)
+
+
+class TestLoadEnv:
+    """_load_env 必须加载仓库根的 .env，并让 .env 覆盖残留的 shell 变量。"""
+
+    def test_uses_repo_root_dotenv_with_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """加载路径应为仓库根 .env，且 override=True（防止旧 Key 覆盖）。"""
+        from pathlib import Path as RuntimePath
+        from types import SimpleNamespace
+
+        import dotenv
+
+        from trade_krono_cli.cli_commands import _core_helpers
+
+        calls: list[tuple[RuntimePath, bool]] = []
+
+        def fake_load_dotenv(
+            dotenv_path: RuntimePath | None = None, override: bool = False
+        ) -> bool:
+            assert dotenv_path is not None
+            calls.append((RuntimePath(dotenv_path), override))
+            return True
+
+        monkeypatch.setattr(dotenv, "load_dotenv", fake_load_dotenv)
+        monkeypatch.setattr(
+            _core_helpers,
+            "get_settings",
+            lambda: SimpleNamespace(cache_dir=RuntimePath("/tmp/tk-test/cache")),
+        )
+        monkeypatch.setattr("trade_krono_cli.config.run_validation", lambda: ([], []))
+        monkeypatch.setattr(_core_helpers, "setup_logger", lambda **_: None)
+
+        _core_helpers._load_env()
+
+        assert len(calls) == 1
+        loaded_path, override = calls[0]
+        assert loaded_path.name == ".env"
+        assert loaded_path.parent == _core_helpers._PROJECT_ROOT
+        assert override is True

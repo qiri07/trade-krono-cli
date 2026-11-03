@@ -19,6 +19,7 @@ from urllib.parse import urlencode
 
 from loguru import logger
 
+from trade_krono_cli.llm_config import resolve_llm_config
 from trade_krono_cli.llm_rate_limiter import wait_for_rate_limit
 
 try:
@@ -39,21 +40,21 @@ _API_KEY = (
 )
 _BASE = "https://fuyao.aicubes.cn"
 _CONCURRENCY = 8
-_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "nemotron-3.5-super-vl-120b-a12b")
 
 # ── LLM 配置 ───────────────────────────────────────────────────────────────
-# 优先使用 NVIDIA/OpenRouter Nemotron，兼容 DEEPSEEK_API_KEY / OPENAI_API_KEY / AGNES_API_KEY
-_LLM_BASE_URL = os.getenv("NEMOTRON_BASE_URL", "https://integrate.api.nvidia.com/v1")
-_LLM_API_KEYS = ("NVIDIA_API_KEY", "OPENROUTER_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "AGNES_API_KEY")
-
-
+# Key 与端点按 provider 强匹配（agnes → AGNES_API_KEY 等），避免把过期
+# OPENAI_API_KEY 发往 Agnes/NVIDIA 端点导致 401/404（历史故障）。
 def _get_llm_config() -> tuple[str | None, str]:
-    """返回 (api_key, base_url) 或 (None, url) 如果无可用 key。"""
-    for key_name in _LLM_API_KEYS:
-        key = os.getenv(key_name, "")
-        if key and key.strip():
-            return key.strip(), _LLM_BASE_URL
-    return None, _LLM_BASE_URL
+    """返回 (api_key, base_url)；Key 与端点按 provider 强匹配。"""
+    global _LLM_AVAILABLE
+    cfg = resolve_llm_config()
+    _LLM_AVAILABLE = bool(cfg.api_key)
+    return cfg.api_key, cfg.base_url
+
+
+def _llm_model() -> str:
+    """返回与当前端点族匹配的模型名（agnes 端点不会拿到 nemotron 模型）。"""
+    return resolve_llm_config().model
 
 
 _LLM_AVAILABLE = bool(_get_llm_config()[0])
@@ -101,10 +102,11 @@ def _verify_pe_percentile(ticker: str, name: str, pe_ttm: float | None) -> tuple
         wait_for_rate_limit()
         client = OpenAI(api_key=key, base_url=base_url)
         response = client.chat.completions.create(
-            model=_AI_MODEL,
+            model=_llm_model(),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            max_tokens=200,
+            # 推理型模型先产出 reasoning，需留足 token 才能拿到最终回答
+            max_tokens=512,
         )
         text = response.choices[0].message.content or ""
 
@@ -1207,7 +1209,7 @@ def run_ai_verification(
     total_stocks: int,
     date_str: str,
 ) -> AiVerificationResult:
-    """调用 agnes-3.0-flash 对筛选结果进行整体核实与分析。
+    """调用当前配置的 LLM（默认 NVIDIA Nemotron）对筛选结果进行整体核实与分析。
 
     Parameters
     ----------
@@ -1288,11 +1290,12 @@ def run_ai_verification(
         for attempt in range(1, 4):
             try:
                 response = client.chat.completions.create(
-                    model=_AI_MODEL,
+                    model=_llm_model(),
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
-                    max_tokens=1000,
-                    timeout=60,
+                    # 推理型模型先产出 reasoning，JSON 需要更充裕的 token 预算
+                    max_tokens=2048,
+                    timeout=90,
                 )
                 break
             except RateLimitError as e:  # type: ignore[name-defined]
