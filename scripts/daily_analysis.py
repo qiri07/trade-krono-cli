@@ -44,7 +44,7 @@ from trade_krono_cli.config import get_settings  # type: ignore[import-not-found
 from trade_krono_cli.data_providers import get_data_factory
 from trade_krono_cli.errors import DataInconsistencyError
 
-# ── Agnes API 限流（全局模块，线程安全）─────────────────────────────────────
+# ── Nemotron API 限流（全局模块，线程安全）─────────────────────────────────────
 from trade_krono_cli.llm_rate_limiter import backoff_wait, is_quota_exhausted, wait_for_rate_limit
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -114,7 +114,7 @@ def _get_merged_whitelist() -> str:
 # AI 核实
 # ─────────────────────────────────────────────────────────────────────────────
 
-_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "agnes-3.0-flash")
+_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "nemotron-3.5-super-vl-120b-a12b")
 
 try:
     from openai import OpenAI
@@ -127,25 +127,31 @@ def _ai_available() -> bool:
     if OpenAI is None:
         return False
     return bool(
-        os.getenv("AGNES_API_KEY", "")
+        os.getenv("NVIDIA_API_KEY", "")
+        or os.getenv("OPENROUTER_API_KEY", "")
         or os.getenv("DEEPSEEK_API_KEY", "")
         or os.getenv("OPENAI_API_KEY", "")
+        or os.getenv("AGNES_API_KEY", "")  # 兼容旧配置
     )
 
 
 def _get_llm_client() -> Any | None:
     if OpenAI is None or not _ai_available():
         return None
+    # 优先使用 Nemotron (NVIDIA/OpenRouter)，兼容旧配置
     key = (
-        os.getenv("AGNES_API_KEY", "")
+        os.getenv("NVIDIA_API_KEY", "")
+        or os.getenv("OPENROUTER_API_KEY", "")
         or os.getenv("DEEPSEEK_API_KEY", "")
         or os.getenv("OPENAI_API_KEY", "")
+        or os.getenv("AGNES_API_KEY", "")  # 兼容旧配置
     )
-    base_url = os.getenv("BACKEND_URL", "") or os.getenv("LLM_BASE_URL", "")
+    # Nemotron 专用 base_url，兼容旧 BACKEND_URL
+    base_url = os.getenv("NEMOTRON_BASE_URL", "") or os.getenv("BACKEND_URL", "") or os.getenv("LLM_BASE_URL", "")
     if not base_url:
         logger.warning(
-            "BACKEND_URL 未配置，LLM 将回退到 deepseek。"
-            "建议在 .env 中设置 BACKEND_URL=https://apihub.agnes-ai.cn/v1"
+            "NEMOTRON_BASE_URL / BACKEND_URL 未配置，LLM 将回退到 deepseek。"
+            "建议在 .env 中设置 NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1"
         )
         base_url = "https://api.deepseek.com/v1"
     return OpenAI(api_key=key, base_url=base_url)

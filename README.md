@@ -158,13 +158,20 @@ DEEPSEEK_API_KEY=sk-xxx
 # OPENAI_API_KEY=sk-xxx
 # ANTHROPIC_API_KEY=sk-ant-xxx
 # MINIMAX_API_KEY=xxx
-# AGNES_API_KEY=xxx
+# AGNES_API_KEY=xxx              # Sapiens AI Agnes LLM (legacy)
+# NVIDIA_API_KEY=nvapi-xxx       # NVIDIA Nemotron 3.5 Super VL
+# OPENROUTER_API_KEY=sk-or-xxx   # OpenRouter API Key
 
 # ── LLM Behavior Config ────────────────────────────────────────
-LLM_PROVIDER=agnes             # Default LLM provider
-DEEP_THINK_LLM=agnes-3.0-flash   # Deep thinking model
-QUICK_THINK_LLM=agnes-3.0-flash  # Quick thinking model
-BACKEND_URL=https://api.example.com/v1  # Backend API URL (optional)
+LLM_PROVIDER=nemotron           # Default LLM provider: nemotron / deepseek / openai / anthropic / minimax / agnes
+DEEP_THINK_LLM=nemotron-3.5-super-vl-120b-a12b  # Deep thinking model
+QUICK_THINK_LLM=nemotron-3.5-super-vl-120b-a12b  # Quick thinking model
+
+# Nemotron 专用配置
+NEMOTRON_MODEL=nemotron-3.5-super-vl-120b-a12b
+NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1  # NVIDIA API endpoint
+# NEMOTRON_BASE_URL=https://openrouter.ai/api/v1  # Alternative: OpenRouter
+
 MAX_DEBATE_ROUNDS=1            # Max debate rounds
 MAX_RISK_DISCUSS_ROUNDS=1      # Max risk discussion rounds
 CHECKPOINT_ENABLED=true        # Enable checkpoint (skip completed analysis)
@@ -199,10 +206,12 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock request interval (seconds)
 
 | Variable | Default | Description |
 |------|--------|------|
-| `LLM_PROVIDER` | `agnes` | Default provider: deepseek / openai / anthropic / minimax / agnes |
-| `DEEP_THINK_LLM` | `agnes-3.0-flash` | Model used by deep analysis Agent |
-| `QUICK_THINK_LLM` | `agnes-3.0-flash` | Model used by quick analysis Agent |
-| `BACKEND_URL` | — | LLM backend API URL, required by some providers |
+| `LLM_PROVIDER` | `nemotron` | Default provider: nemotron / deepseek / openai / anthropic / minimax / agnes |
+| `DEEP_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | Model used by deep analysis Agent |
+| `QUICK_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | Model used by quick analysis Agent |
+| `NEMOTRON_MODEL` | `nemotron-3.5-super-vl-120b-a12b` | Nemotron model name |
+| `NEMOTRON_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Nemotron API endpoint (NVIDIA or OpenRouter) |
+| `BACKEND_URL` | — | LLM backend API URL (legacy, for Agnes/deepseek compatibility) |
 | `MAX_DEBATE_ROUNDS` | `1` | Max long-short debate rounds, 0 = no debate |
 | `MAX_RISK_DISCUSS_ROUNDS` | `1` | Max risk discussion rounds |
 | `CHECKPOINT_ENABLED` | `true` | Skip cached TA analysis results when enabled |
@@ -588,7 +597,7 @@ Each analysis job automatically records a complete version snapshot:
   "data_version": "baostock-2026-08-11",
   "model_versions": {
     "kronos": "kronos-kronos-base-kronos-Tokenizer-base-cpu",
-    "llm": "agnes/agnes-3.0-flash+agnes-3.0-flash"
+    "llm": "nemotron/nemotron-3.5-super-vl-120b-a12b+nemotron-3.5-super-vl-120b-a12b"
   },
   "prompt_version": "ta-v1r1-chinese",
   "strategy_version": "0.1.0",
@@ -1467,7 +1476,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for full release history. | [中文版更新�
 4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股，仅汇总推送）
 5. 白名单分析   → scripts/daily_analysis.py（已过滤 ST / 北交所，仅汇总推送）
 6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；已过滤 ST / 北交所）
-7. AI 核实      → AGNES LLM（agnes-3.0-flash，10 RPM 限流）
+7. AI 核实      → Nemotron 3.5 Super VL 120B A12B（NVIDIA/OpenRouter API）
 8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
 9. 综合交集汇总 → scripts/combined_stock_analysis.py（白名单/巴菲特合并为单一来源，
                   技术面+基本面评估 + AI 核实 + 飞书汇总卡片 + 逐只卡片）

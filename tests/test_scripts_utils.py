@@ -25,24 +25,24 @@ class TestGetProviderChain:
     """Provider chain logic tests."""
 
     def test_sh_ticker(self) -> None:
-        # 沪深普通股锁定 baostock 为 K 线复权唯一源（避免多源基准漂移）
-        assert get_provider_chain("sh.600519") == ["baostock", "tonghuashun", "mootdx"]
+        # 沪深普通股走 tonghuashun/mootdx 链（baostock 已从默认链移除）
+        assert get_provider_chain("sh.600519") == ["tonghuashun", "mootdx"]
 
     def test_sz_ticker(self) -> None:
-        assert get_provider_chain("sz.000001") == ["baostock", "tonghuashun", "mootdx"]
+        assert get_provider_chain("sz.000001") == ["tonghuashun", "mootdx"]
 
     def test_sh_etf_ticker(self) -> None:
-        """沪市 ETF（51/58 开头）baostock 优先。"""
-        assert get_provider_chain("sh.510300") == ["baostock", "tonghuashun", "mootdx"]
-        assert get_provider_chain("sh.588000") == ["baostock", "tonghuashun", "mootdx"]
+        """沪市 ETF（51/58 开头）走 etf 段。"""
+        assert get_provider_chain("sh.510300") == ["tonghuashun", "mootdx"]
+        assert get_provider_chain("sh.588000") == ["tonghuashun", "mootdx"]
 
     def test_sz_etf_ticker(self) -> None:
-        """深市 ETF（159/156/158 开头）baostock 优先。"""
-        assert get_provider_chain("sz.159915") == ["baostock", "tonghuashun", "mootdx"]
-        assert get_provider_chain("sz.156001") == ["baostock", "tonghuashun", "mootdx"]
+        """深市 ETF（159/156/158 开头）走 etf 段。"""
+        assert get_provider_chain("sz.159915") == ["tonghuashun", "mootdx"]
+        assert get_provider_chain("sz.156001") == ["tonghuashun", "mootdx"]
 
     def test_bj_ticker(self) -> None:
-        assert get_provider_chain("bj.920001") == ["tonghuashun", "baostock"]
+        assert get_provider_chain("bj.920001") == ["tonghuashun"]
 
     def test_unknown_prefix(self) -> None:
         assert get_provider_chain("unknown.123456") == ["baostock", "tonghuashun"]

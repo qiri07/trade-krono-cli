@@ -98,11 +98,11 @@ class TestDataclasses:
         from trade_krono_cli.artifact_manifest import LlmArtifact
 
         la = LlmArtifact(
-            provider="agnes",
-            deep_think_model="agnes-3.0-flash",
-            quick_think_model="agnes-3.0-flash",
+            provider="nemotron",
+            deep_think_model="nemotron-3.5-super-vl-120b-a12b",
+            quick_think_model="nemotron-3.5-super-vl-120b-a12b",
         )
-        assert la.version_tag == "agnes/agnes-3.0-flash+agnes-3.0-flash"
+        assert la.version_tag == "nemotron/nemotron-3.5-super-vl-120b-a12b+nemotron-3.5-super-vl-120b-a12b"
 
     def test_prompt_artifact_version_tag(self) -> None:
         from trade_krono_cli.artifact_manifest import PromptArtifact
@@ -210,9 +210,9 @@ class TestBuildManifest:
             kronos_device="cpu",
             kronos_sample_count=5,
             kronos_pred_len=30,
-            llm_provider="agnes",
-            deep_think_llm="agnes-3.0-flash",
-            quick_think_llm="agnes-3.0-flash",
+            llm_provider="nemotron",
+            deep_think_llm="nemotron-3.5-super-vl-120b-a12b",
+            quick_think_llm="nemotron-3.5-super-vl-120b-a12b",
             backend_url=None,
             data_provider="baostock",
             max_debate_rounds=1,
@@ -234,7 +234,7 @@ class TestBuildManifest:
             manifest = build_manifest(settings=settings, project_root=tmp_path)
 
         assert manifest.model.name == "kronos-base"
-        assert manifest.llm.provider == "agnes"
+        assert manifest.llm.provider == "nemotron"
         assert manifest.prompt.max_debate_rounds == 1
         assert manifest.strategy.scoring_strategy == "linear"
         assert manifest.environment.python_version

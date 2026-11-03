@@ -10,18 +10,18 @@
 # 本文件缺失或解析失败时，回退到脚本内硬编码链（保持向后兼容）。
 
 defaults:
-  sh: [baostock, tonghuashun, mootdx]
-  sz: [baostock, tonghuashun, mootdx]
-  bj: [tonghuashun, baostock]
+  sh: [tonghuashun, mootdx]
+  sz: [tonghuashun, mootdx]
+  bj: [tonghuashun]
   hk: [akshare_hk, tonghuashun, mootdx, akshare]
 
 etf:
-  sh: [baostock, tonghuashun, mootdx]
-  sz: [baostock, tonghuashun, mootdx]
+  sh: [tonghuashun, mootdx]
+  sz: [tonghuashun, mootdx]
 
 # 单只/单段覆盖（可选，按需启用）
 override: {}
 
 fetch:
   timeout_seconds: 45
-  workers: 8
+  workers: 16

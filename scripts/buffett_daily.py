@@ -107,7 +107,7 @@ def _save_ai_result(ai_result: AiVerificationResult, result_txt_path: str) -> No
     if summary:
         with open(result_txt_path, "a", encoding="utf-8") as f:
             f.write(f"\n{'=' * 60}\n")
-            f.write(f"🤖 AI 核实分析（agnes-3.0-flash）— {ai_result.date}\n")
+            f.write(f"🤖 AI 核实分析（Nemotron 3.5 Super VL 120B）— {ai_result.date}\n")
             f.write(f"{'=' * 60}\n\n")
             f.write(summary)
             f.write("\n")

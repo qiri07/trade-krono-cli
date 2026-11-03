@@ -22,9 +22,9 @@ class TestSettingsDefaults:
         monkeypatch.delenv("KRONOS_MODEL", raising=False)
         clear_settings()
         s = Settings()
-        assert s.llm_provider == "agnes"
-        assert s.deep_think_llm == "agnes-3.0-flash"
-        assert s.quick_think_llm == "agnes-3.0-flash"
+        assert s.llm_provider == "nemotron"
+        assert s.deep_think_llm == "nemotron-3.5-super-vl-120b-a12b"
+        assert s.quick_think_llm == "nemotron-3.5-super-vl-120b-a12b"
         assert s.kronos_model == "kronos-base"
 
     def test_max_debate_rounds_default(self, monkeypatch: pytest.MonkeyPatch) -> None:

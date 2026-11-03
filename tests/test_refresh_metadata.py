@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 from scripts.fetch_reference_data import (
@@ -12,6 +12,9 @@ from scripts.fetch_reference_data import (
     metadata_age_hours,
     refresh_metadata_if_stale,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestMetadataAgeHours:
@@ -83,15 +86,18 @@ class TestRefreshIfStale:
 class TestMainPartialMerge:
     """--tickers 部分拉取合并模式：不覆盖现有全量数据."""
 
-    def test_partial_mode_preserves_existing_entries(self, monkeypatch) -> None:
+    def test_partial_mode_preserves_existing_entries(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
         existing = {"sh.600519": {"pe_ttm": 8.1}}
+        metadata_file = tmp_path / "metadata.json"
         monkeypatch.setattr(
             "scripts.fetch_reference_data._load_existing_metadata", lambda: existing
         )
         monkeypatch.setattr("scripts.fetch_reference_data.get_all_tickers", lambda: ["sh.600519"])
         monkeypatch.setattr(
             "scripts.fetch_reference_data.METADATA_FILE",
-            Path("outputs/cache/metadata.json"),
+            metadata_file,
         )
         # _fetch_metadata_one 返回 ok + 新 meta
         monkeypatch.setattr(
@@ -99,11 +105,14 @@ class TestMainPartialMerge:
             lambda factory, t: (t, {"ticker": t, "pe_ttm": 9.0}, "ok"),
         )
         main(["sh.600519"])
-        written = json.loads(Path("outputs/cache/metadata.json").read_text(encoding="utf-8"))
+        written = json.loads(metadata_file.read_text(encoding="utf-8"))
         assert written["sh.600519"]["pe_ttm"] == 9.0
         # 若此前有其他键，也应保留（本次只测 single key）
 
-    def test_full_mode_rebuilds_from_scratch(self, monkeypatch) -> None:
+    def test_full_mode_rebuilds_from_scratch(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        metadata_file = tmp_path / "metadata.json"
         monkeypatch.setattr(
             "scripts.fetch_reference_data.get_all_tickers", lambda: ["sh.600519", "sz.000858"]
         )
@@ -111,10 +120,13 @@ class TestMainPartialMerge:
             "scripts.fetch_reference_data._fetch_metadata_one",
             lambda factory, t: (t, {"ticker": t, "pe_ttm": 1.0}, "ok"),
         )
+        # 全量模式重建：现有 metadata 视为空，只保留本次拉取结果
+        monkeypatch.setattr("scripts.fetch_reference_data._load_existing_metadata", lambda: {})
+        monkeypatch.setattr("scripts.fetch_reference_data.load_checkpoint", lambda: {})
         monkeypatch.setattr(
             "scripts.fetch_reference_data.METADATA_FILE",
-            Path("outputs/cache/metadata.json"),
+            metadata_file,
         )
         main(None)
-        written = json.loads(Path("outputs/cache/metadata.json").read_text(encoding="utf-8"))
+        written = json.loads(metadata_file.read_text(encoding="utf-8"))
         assert set(written.keys()) == {"sh.600519", "sz.000858"}

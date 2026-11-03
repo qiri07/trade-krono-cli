@@ -180,7 +180,7 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 5. 白名单分析   → scripts/daily_analysis.py（已过滤 ST / 北交所）
 6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；
                   已过滤 ST / 北交所；ETF 以纯技术面参与，豁免 PE/ROE/净利润门槛）
-7. AI 核实      → AGNES LLM（agnes-3.0-flash，10 RPM 限流）
+7. AI 核实      → Nemotron 3.5 Super VL 120B A12B（NVIDIA/OpenRouter API）
 8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
 9. 综合交集汇总 → scripts/combined_stock_analysis.py（多线共振交集 + 技术面 + 基本面 + AI + 飞书汇总 + 逐只）
 10. MACD+均线筛选 → scripts/macd_ma_screener.py（MA5>MA13 + MACD DIF>0 + 剔ST/昨日涨停/市值<50亿/PE∈(0,30)；
@@ -518,18 +518,16 @@ uv run python scripts/export_vnpy_data.py
 - `trade_krono_cli/cache/kline.py` 使用 SHA-256 with `b"TKC1"` 前缀
 - 旧数据（pandas 序列化方式差异）哈希不匹配时仍尝试读取，仅记录 warning
 
-### Agnes API 限流（三层，全局 RPM）
+### Nemotron API 限流（全局 RPM）
 
-Agnes 免费档限制：**60s 内 ≤10 次请求**（RPM=10），相邻请求间隔 ≥1.5s。该限流分三层，
-**全局**覆盖「本地 grok build（TUI）」与「本项目 CLI 脚本」两条调用路径，任一层失效都会触发 429。
+Nemotron 3.5 Super VL 通过 NVIDIA API 或 OpenRouter 调用，建议配置适当的限流以避免超额。
 
 | 层 | 位置 | 机制 | 状态 |
 |---|---|---|---|
-| ① Agnes 服务端 | `apihub.agnes-ai.cn` | 免费档 10 RPM 硬限流 → 429/503 | 服务端强制，无法绕过 |
-| ② 本地 grok build | `~/.grok/rpm_proxy/rpm_proxy.py` | 本地限速反向代理（端口 8899，滑动窗口 10/60s+1.5s 间隔），grok 的 `[model.agnes-3-flash] base_url` 指向它 | 全局生效，见下方说明 |
-| ③ CLI 脚本 | `trade_krono_cli/llm_rate_limiter.py` | `wait_for_rate_limit()` 线程安全滑动窗口；全仓所有 Agnes LLM 调用点必须挂接（清单见下） | 仅本项目脚本 |
+| ① NVIDIA/OpenRouter 服务端 | `integrate.api.nvidia.com` / `openrouter.ai` | 依据 API Key 套餐限流 | 服务端强制，无法绕过 |
+| ② CLI 脚本 | `trade_krono_cli/llm_rate_limiter.py` | `wait_for_rate_limit()` 线程安全滑动窗口；全仓所有 Nemotron LLM 调用点必须挂接（清单见下） | 仅本项目脚本 |
 
-**第 ③ 层挂接点清单（新增 Agnes LLM 调用时必须挂 `wait_for_rate_limit()`）**：
+**第 ② 层挂接点清单（新增 Nemotron LLM 调用时必须挂 `wait_for_rate_limit()`）**：
 
 | 调用点 | 文件:行 | 用途 |
 |---|---|---|
@@ -537,24 +535,18 @@ Agnes 免费档限制：**60s 内 ≤10 次请求**（RPM=10），相邻请求�
 | `run_ai_verification` | `tests/buffett_screening.py:1286` | 巴菲特筛选 AI 核实（单次调用） |
 | `_verify_pe_percentile` | `tests/buffett_screening.py:101` | PE 历史分位 LLM 辅助判断（Gate ⑥） |
 
-- 所有挂接点共用同一模块级滑动窗口（`_request_log`），跨脚本、跨线程并发也统一限 10 RPM
+- 所有挂接点共用同一模块级滑动窗口（`_request_log`），跨脚本、跨线程并发也统一限流
 - `committee/__init__.py` 的 `llm_client.chat` 由 pipeline 调用方注入客户端，属离线批处理路径，未挂接
-- `tests/buffett_enhanced_screen.py` 指向 deepseek（非 Agnes），无需挂接
+- `tests/buffett_enhanced_screen.py` 指向 deepseek（非 Nemotron），无需挂接
 
-**第 ② 层（全局 RPM 代理）要点**：
-- 脚本：`~/.grok/rpm_proxy/rpm_proxy.py`（单文件标准库，端口 8899，`RPM_PROXY_PORT` 可覆盖）
-- 配置：`~/.grok/config.toml` 中 `[model.agnes-3-flash] base_url = "http://127.0.0.1:8899/v1"`
-  （原值 `https://apihub.agnes-ai.cn/v1`，改回该值即回滚直连）
-- 守护：crontab `* * * * *` 每分钟检查，`pgrep -f rpm_proxy.py` 为空时自动拉起
-- 日志：`~/.grok/rpm_proxy/proxy.log`（出现「限流等待 Ns 后放行」即窗口生效）
-- 限流参数与第 ③ 层 `llm_rate_limiter.py` 对齐（60s≤10 次、间隔 1.5s），改限流需两处同步
-- **回滚**：`sed -i 's|base_url = "http://127.0.0.1:8899/v1"|base_url = "https://apihub.agnes-ai.cn/v1"|' ~/.grok/config.toml`
-  后重启 grok；代理可保留或 `pkill -f rpm_proxy.py` 终止
-- 其他 grok 模型（`zhipu-glm4-flash` 等默认模型）**不**走此代理，仅 agnes-3-flash 路由生效
+**限流参数**（`trade_krono_cli/llm_rate_limiter.py`）：
+- `MIN_REQUEST_DELAY = 1.0` 秒（相邻请求最小间隔）
+- `WINDOW_SECONDS = 60.0` 秒（滑动窗口大小）
+- `MAX_REQUESTS_PER_WINDOW = 40`（每窗口最大请求数，Nemotron 3.5 免费档 60s ≤ 40 次）
 
-**排障提示**：
-- grok 出现 429/401：先确认 `pgrep -f rpm_proxy.py`（代理活着？）→ 看 `proxy.log`（是否限流等待？）
-  → `curl http://127.0.0.1:8899/v1/models`（代理连通？）→ 401 多为 shell 残留旧
-  `AGNES_API_KEY` 环境变量（`_load_env` 的 `load_dotenv(override=False)` 不会覆盖已有 shell 变量，
-  需 `unset AGNES_API_KEY` 或 source 新 key）。
-- 401 `This token status is unavailable`：key 失效，更新 `.env`/`~/.grok/config.toml` 的 `api_key`。
+**配置建议**：
+- 在 `.env` 中设置 `NVIDIA_API_KEY` 或 `OPENROUTER_API_KEY`
+- 设置 `NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1`（或 `https://openrouter.ai/api/v1`）
+- 设置 `LLM_PROVIDER=nemotron`
+- 设置 `DEEP_THINK_LLM=nemotron-3.5-super-vl-120b-a12b`
+- 设置 `QUICK_THINK_LLM=nemotron-3.5-super-vl-120b-a12b`

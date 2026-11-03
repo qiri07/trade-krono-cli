@@ -13,10 +13,10 @@ import threading
 import time
 from collections import deque
 
-# 限流参数
-MIN_REQUEST_DELAY: float = 1.5  # 相邻请求最小间隔（秒）
+# 限流参数 (Nemotron 3.5 Super VL: 60秒内 ≤40 次请求)
+MIN_REQUEST_DELAY: float = 1.0  # 相邻请求最小间隔（秒）
 WINDOW_SECONDS: float = 60.0  # 滑动窗口大小（秒）
-MAX_REQUESTS_PER_WINDOW: int = 10  # 每窗口最大请求数
+MAX_REQUESTS_PER_WINDOW: int = 40  # 每窗口最大请求数
 
 # 模块级状态（线程安全）
 _lock = threading.Lock()

@@ -157,13 +157,20 @@ DEEPSEEK_API_KEY=sk-xxx
 # OPENAI_API_KEY=sk-xxx
 # ANTHROPIC_API_KEY=sk-ant-xxx
 # MINIMAX_API_KEY=xxx
-# AGNES_API_KEY=xxx              # Sapiens AI Agnes LLM（可选）
+# AGNES_API_KEY=xxx              # Sapiens AI Agnes LLM（兼容旧配置）
+# NVIDIA_API_KEY=nvapi-xxx       # NVIDIA Nemotron 3.5 Super VL
+# OPENROUTER_API_KEY=sk-or-xxx   # OpenRouter API Key
 
 # ── LLM 行为配置 ────────────────────────────────────────
-LLM_PROVIDER=agnes             # 默认 LLM 供应商
-DEEP_THINK_LLM=agnes-3.0-flash   # 深度思考模型
-QUICK_THINK_LLM=agnes-3.0-flash  # 快速思考模型
-BACKEND_URL=https://api.example.com/v1  # 后端 API 地址（可选）
+LLM_PROVIDER=nemotron           # 默认 LLM 供应商：nemotron / deepseek / openai / anthropic / minimax / agnes
+DEEP_THINK_LLM=nemotron-3.5-super-vl-120b-a12b  # 深度思考模型
+QUICK_THINK_LLM=nemotron-3.5-super-vl-120b-a12b  # 快速思考模型
+
+# Nemotron 专用配置
+NEMOTRON_MODEL=nemotron-3.5-super-vl-120b-a12b
+NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1  # NVIDIA API 端点
+# NEMOTRON_BASE_URL=https://openrouter.ai/api/v1  # 备选：通过 OpenRouter
+
 MAX_DEBATE_ROUNDS=1            # 辩论最大轮次
 MAX_RISK_DISCUSS_ROUNDS=1      # 风险分析最大轮次
 CHECKPOINT_ENABLED=true        # 启用检查点（跳过已完成分析）
@@ -198,10 +205,12 @@ BAOSTOCK_SLEEP_SEC=1.0         # baostock 请求间隔（秒）
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `LLM_PROVIDER` | `agnes` | 默认供应商：deepseek / openai / anthropic / minimax / agnes |
-| `DEEP_THINK_LLM` | `agnes-3.0-flash` | 深度分析 Agent 使用的模型 |
-| `QUICK_THINK_LLM` | `agnes-3.0-flash` | 快速分析 Agent 使用的模型 |
-| `BACKEND_URL` | — | LLM 后端 API 地址，部分供应商需要配置 |
+| `LLM_PROVIDER` | `nemotron` | 默认供应商：nemotron / deepseek / openai / anthropic / minimax / agnes |
+| `DEEP_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | 深度分析 Agent 使用的模型 |
+| `QUICK_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | 快速分析 Agent 使用的模型 |
+| `NEMOTRON_MODEL` | `nemotron-3.5-super-vl-120b-a12b` | Nemotron 模型名称 |
+| `NEMOTRON_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Nemotron API 端点（NVIDIA 或 OpenRouter） |
+| `BACKEND_URL` | — | LLM 后端 API 地址（兼容旧配置，用于 Agnes/deepseek） |
 | `MAX_DEBATE_ROUNDS` | `1` | 多空辩论最大轮次，0 表示不辩论 |
 | `MAX_RISK_DISCUSS_ROUNDS` | `1` | 风险分析最大轮次 |
 | `CHECKPOINT_ENABLED` | `true` | 启用后跳过已缓存的 TA 分析结果 |
@@ -640,7 +649,7 @@ trade-krono-cli sync-universe --no-progress
   "data_version": "baostock-2026-08-11",
   "model_versions": {
     "kronos": "kronos-kronos-base-kronos-Tokenizer-base-cpu",
-    "llm": "agnes/agnes-3.0-flash+agnes-3.0-flash"
+    "llm": "nemotron/nemotron-3.5-super-vl-120b-a12b+nemotron-3.5-super-vl-120b-a12b"
   },
   "prompt_version": "ta-v1r1-chinese",
   "strategy_version": "0.1.0",
@@ -1467,7 +1476,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股，仅汇总推送）
 5. 白名单分析   → scripts/daily_analysis.py（已过滤 ST / 北交所，仅汇总推送）
 6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；已过滤 ST / 北交所）
-7. AI 核实      → AGNES LLM（agnes-3.0-flash，10 RPM 限流）
+7. AI 核实      → Nemotron 3.5 Super VL 120B A12B（NVIDIA/OpenRouter API）
 8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
 9. 综合交集汇总 → scripts/combined_stock_analysis.py（白名单/巴菲特合并为单一来源，
                   技术面+基本面评估 + AI 核实 + 飞书汇总卡片 + 逐只卡片）
@@ -1518,7 +1527,9 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | `DEEPSEEK_API_KEY` | DeepSeek LLM API Key（必须至少配置一个） |
 | `OPENAI_API_KEY` | OpenAI API Key（可选备用） |
 | `ANTHROPIC_API_KEY` | Anthropic API Key（可选备用） |
-| `AGNES_API_KEY` | Sapiens AI Agnes LLM API Key（可选备用，需配合 `LLM_PROVIDER=agnes`） |
+| `NVIDIA_API_KEY` | NVIDIA Nemotron 3.5 Super VL API Key（推荐） |
+| `OPENROUTER_API_KEY` | OpenRouter API Key（备选 Nemotron 通道） |
+| `AGNES_API_KEY` | Sapiens AI Agnes LLM API Key（兼容旧配置） |
 
 **可选 Variables**（同路径下 Variables 标签页）：
 
@@ -1532,8 +1543,11 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 | `ALLOWED_SIGNALS` | `BUY,HOLD` | 允许的 TA 信号（支持 BUY / OVERWEIGHT / HOLD / SELL，默认只保留看涨和中性） |
 | `SKIP_KRONOS` | `false` | 是否跳过 Kronos 预测 |
 | `OUTPUT_LANGUAGE` | `Chinese` | 报告语言 |
-| `LLM_PROVIDER` | `deepseek` | LLM 提供商（deepseek / openai / anthropic / minimax / agnes） |
-| `BACKEND_URL` | — | LLM 后端 API 地址（Agnes 等供应商需要配置） |
+| `LLM_PROVIDER` | `nemotron` | LLM 提供商（nemotron / deepseek / openai / anthropic / minimax / agnes） |
+| `DEEP_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | 深度思考模型 |
+| `QUICK_THINK_LLM` | `nemotron-3.5-super-vl-120b-a12b` | 快速思考模型 |
+| `NEMOTRON_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Nemotron API 端点 |
+| `BACKEND_URL` | — | LLM 后端 API 地址（兼容旧配置） |
 | `ANALYSIS_TIMEOUT_MINUTES` | `30` | 分析超时时间 |
 | `FEISHU_WEBHOOK_URL` | — | 飞书群机器人 Webhook URL（可选，用于推送运行结果到飞书群） |
 

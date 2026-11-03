@@ -38,7 +38,20 @@ WORKERS = 20
 BATCH_SIZE = 100
 FETCH_TIMEOUT = 15
 FETCH_PER_TICKER_TIMEOUT = 180  # 单只元数据拉取超时（网络读挂起时兜底，避免批次阻塞）
-METADATA_FILE = Path("outputs/cache/metadata.json")
+
+
+def _get_metadata_file() -> Path:
+    """获取 metadata.json 路径（兼容测试隔离，与 get_cache_db_path 同模式）。"""
+    try:
+        from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
+        settings = get_settings()
+        return Path(settings.cache_dir) / "metadata.json"
+    except Exception:
+        return Path("outputs/cache/metadata.json")
+
+
+METADATA_FILE = _get_metadata_file()
 CHECKPOINT_FILE = Path("outputs/cache/metadata_checkpoint.json")
 
 _load_env()

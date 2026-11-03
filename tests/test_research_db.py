@@ -356,9 +356,9 @@ class _MockSettings:
     kronos_top_p = 0.9
     kronos_use_sample_confidence = False
     default_min_confidence = 30.0
-    llm_provider = "agnes"
-    deep_think_llm = "agnes-3.0-flash"
-    quick_think_llm = "agnes-3.0-flash"
+    llm_provider = "nemotron"
+    deep_think_llm = "nemotron-3.5-super-vl-120b-a12b"
+    quick_think_llm = "nemotron-3.5-super-vl-120b-a12b"
     output_language = "Chinese"
     checkpoint_enabled = True
 

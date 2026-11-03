@@ -39,12 +39,12 @@ _API_KEY = (
 )
 _BASE = "https://fuyao.aicubes.cn"
 _CONCURRENCY = 8
-_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "agnes-3.0-flash")
+_AI_MODEL = os.getenv("AI_VERIFICATION_MODEL", "nemotron-3.5-super-vl-120b-a12b")
 
 # ── LLM 配置 ───────────────────────────────────────────────────────────────
-# 优先使用 AGNES_API_KEY（agnes-3.0-flash 模型），兼容 DEEPSEEK_API_KEY / OPENAI_API_KEY
-_LLM_BASE_URL = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.cn/v1")
-_LLM_API_KEYS = ("AGNES_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY")
+# 优先使用 NVIDIA/OpenRouter Nemotron，兼容 DEEPSEEK_API_KEY / OPENAI_API_KEY / AGNES_API_KEY
+_LLM_BASE_URL = os.getenv("NEMOTRON_BASE_URL", "https://integrate.api.nvidia.com/v1")
+_LLM_API_KEYS = ("NVIDIA_API_KEY", "OPENROUTER_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "AGNES_API_KEY")
 
 
 def _get_llm_config() -> tuple[str | None, str]:
@@ -97,7 +97,7 @@ def _verify_pe_percentile(ticker: str, name: str, pe_ttm: float | None) -> tuple
         if not key:
             return True, "未配置 LLM API Key"
 
-        # Agnes 全局 10 RPM 限流：与 daily_analysis / run_ai_verification 共用同一滑动窗口
+        # Nemotron 全局限流：与 daily_analysis / run_ai_verification 共用同一滑动窗口
         wait_for_rate_limit()
         client = OpenAI(api_key=key, base_url=base_url)
         response = client.chat.completions.create(
@@ -1283,6 +1283,7 @@ def run_ai_verification(
             "}"
         )
 
+        # Nemotron 全局限流
         wait_for_rate_limit()
         for attempt in range(1, 4):
             try:

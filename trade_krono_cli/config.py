@@ -52,14 +52,17 @@ class Settings:
     )
 
     # ── LLM 配置 ──────────────────────────────────────────
-    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "agnes"))
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "nemotron"))
     deep_think_llm: str = field(
-        default_factory=lambda: os.getenv("DEEP_THINK_LLM", "agnes-3.0-flash"),
+        default_factory=lambda: os.getenv("DEEP_THINK_LLM", "nemotron-3.5-super-vl-120b-a12b"),
     )
     quick_think_llm: str = field(
-        default_factory=lambda: os.getenv("QUICK_THINK_LLM", "agnes-3.0-flash"),
+        default_factory=lambda: os.getenv("QUICK_THINK_LLM", "nemotron-3.5-super-vl-120b-a12b"),
     )
     backend_url: str | None = field(default_factory=lambda: os.getenv("BACKEND_URL", None))
+    # Nemotron 专用配置
+    nemotron_model: str = field(default_factory=lambda: os.getenv("NEMOTRON_MODEL", "nemotron-3.5-super-vl-120b-a12b"))
+    nemotron_base_url: str = field(default_factory=lambda: os.getenv("NEMOTRON_BASE_URL", "https://integrate.api.nvidia.com/v1"))
     max_debate_rounds: int = field(default_factory=lambda: int(os.getenv("MAX_DEBATE_ROUNDS", "1")))
     max_risk_discuss_rounds: int = field(
         default_factory=lambda: int(os.getenv("MAX_RISK_DISCUSS_ROUNDS", "1")),
@@ -283,6 +286,8 @@ class Settings:
             "ANTHROPIC_API_KEY",
             "MINIMAX_API_KEY",
             "AGNES_API_KEY",
+            "NVIDIA_API_KEY",
+            "OPENROUTER_API_KEY",
         ):
             if os.getenv(key):
                 available.append(key.replace("_API_KEY", "").lower())
