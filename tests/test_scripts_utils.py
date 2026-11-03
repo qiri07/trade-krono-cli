@@ -25,13 +25,14 @@ class TestGetProviderChain:
     """Provider chain logic tests."""
 
     def test_sh_ticker(self) -> None:
-        # 沪深普通股走 tonghuashun/efinance/akshare/easyquotation/mootdx 链
+        # 沪深普通股走 tonghuashun/efinance/akshare/easyquotation/mootdx/baostock 链（baostock 置末）
         assert get_provider_chain("sh.600519") == [
             "tonghuashun",
             "efinance",
             "akshare",
             "easyquotation",
             "mootdx",
+            "baostock",
         ]
 
     def test_sz_ticker(self) -> None:
@@ -41,6 +42,7 @@ class TestGetProviderChain:
             "akshare",
             "easyquotation",
             "mootdx",
+            "baostock",
         ]
 
     def test_sh_etf_ticker(self) -> None:
@@ -160,6 +162,7 @@ class TestGetProviderChainWithYaml:
             "akshare",
             "easyquotation",
             "mootdx",
+            "baostock",
         ]
         assert get_provider_chain("bj.920001") == ["tonghuashun", "efinance", "baostock"]
 
@@ -174,6 +177,7 @@ class TestGetProviderChainWithYaml:
             "akshare",
             "easyquotation",
             "mootdx",
+            "baostock",
         ]
 
     def test_empty_yaml_fills_defaults(self, tmp_path: Path) -> None:
@@ -186,6 +190,7 @@ class TestGetProviderChainWithYaml:
             "akshare",
             "easyquotation",
             "mootdx",
+            "baostock",
         ]
         assert cfg["fetch"]["timeout_seconds"] == 45
         assert cfg["fetch"]["workers"] == 8

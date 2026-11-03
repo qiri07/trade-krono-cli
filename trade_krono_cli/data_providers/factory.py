@@ -208,10 +208,10 @@ class DataProviderFactory:
             if not provider.supports_kline:
                 logger.debug(f"{name}: 不支持 K 线，跳过")
                 continue
-            if not provider.health_check():
-                logger.debug(f"{name}: 健康检查未通过，跳过")
-                continue
             try:
+                # 先尝试 fetch_kline，健康检查仅作为参考不作为守门条件。
+                # 某些 provider（如 baostock）网络波动时 health_check 可能假阴性，
+                # 但 fetch_kline 本身仍可成功；若 fetch_kline 失败再降级到下一个 provider。
                 data = provider.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
                 if data is not None and not data.is_empty:
                     logger.info(f"✅ K 线获取成功: {ticker} ← {name} ({len(data.timestamps)} 条)")

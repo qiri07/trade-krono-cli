@@ -123,7 +123,7 @@ def _fetch_one_provider(
     def _run() -> None:
         try:
             res = provider.fetch_kline(ticker, start, end, frequency="d", adjustflag="1")
-        except (RuntimeError, ValueError, OSError) as e:
+        except Exception as e:
             logger.debug(f"{provider.name} 拉取 {ticker} 失败: {e}")
             box.append(None)
             return

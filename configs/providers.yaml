@@ -10,8 +10,8 @@
 # 本文件缺失或解析失败时，回退到脚本内硬编码链（保持向后兼容）。
 
 defaults:
-  sh: [tonghuashun, efinance, akshare, easyquotation, mootdx]
-  sz: [tonghuashun, efinance, akshare, easyquotation, mootdx]
+  sh: [tonghuashun, efinance, akshare, easyquotation, mootdx, baostock]
+  sz: [tonghuashun, efinance, akshare, easyquotation, mootdx, baostock]
   bj: [tonghuashun, efinance]
   hk: [akshare_hk, tonghuashun, akshare, easyquotation]
 

@@ -37,8 +37,8 @@ PROVIDERS_CONFIG_FILE = Path("configs/providers.yaml")
 _HARDCODED_PROVIDER_CHAINS: dict[str, list[str]] = {
     "bj": ["tonghuashun", "efinance", "baostock"],
     "hk": ["akshare_hk", "tonghuashun", "akshare", "easyquotation"],
-    "sh": ["tonghuashun", "efinance", "akshare", "easyquotation", "mootdx"],
-    "sz": ["tonghuashun", "efinance", "akshare", "easyquotation", "mootdx"],
+    "sh": ["tonghuashun", "efinance", "akshare", "easyquotation", "mootdx", "baostock"],
+    "sz": ["tonghuashun", "efinance", "akshare", "easyquotation", "mootdx", "baostock"],
     "default": ["baostock", "tonghuashun", "efinance"],
 }
 
