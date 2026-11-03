@@ -36,19 +36,23 @@ def main() -> int:
     converted = skipped = 0
     for ticker, blob in rows:
         out_path = BARS_DIR / f"{ticker}.parquet"
-        if out_path.exists():
-            # 增量检查：DB end > parquet 最后日期
-            try:
-                import pandas as pd2
-                df_existing = pd2.read_parquet(out_path, columns=["dt"])
-                if len(df_existing) > 0:
-                    # 这里简化：已存在即跳过（增量检查可后续加强）
+        # 增量检查：若 parquet 已存在，仅在 DB end > parquet 最大日期时重新导出
+        try:
+            df_existing = pd.read_parquet(out_path, columns=["dt"])
+            if len(df_existing) > 0:
+                parquet_max = pd.to_datetime(df_existing["dt"]).max()
+                df_blob = pickle.loads(blob)
+                ts = df_blob["timestamps"]
+                if ts.dtype == object or str(ts.dtype).startswith("str"):
+                    ts = pd.to_datetime(ts, format="mixed")
+                db_end = ts.max()
+                if pd.Timestamp(db_end) <= parquet_max:
                     skipped += 1
                     continue
-            except Exception:
-                pass
+        except Exception:
+            pass
 
-        df = pickle.loads(blob)
+        df = df_blob if "df_blob" in locals() else pickle.loads(blob)
         if len(df) < MIN_BARS:
             skipped += 1
             continue
