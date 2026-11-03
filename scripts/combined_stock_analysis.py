@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import sys
@@ -50,6 +51,7 @@ from trade_krono_cli.research_db import ResearchDatabase
 
 # ── 结果文件路径（按日期）────────────────────────────────────────────────
 _RESULTS = Path("outputs/results")
+_CZSC_DIR = Path("outputs/czsc_signal_scan")
 
 # 各选股线结果文件名模板（date_compact 无连字符，date_dash 有连字符）
 _TEMPLATES: dict[str, str] = {
@@ -61,6 +63,12 @@ _TEMPLATES: dict[str, str] = {
     "macd_ma": "macd_ma_screener_{dc}.json",
 }
 
+# czsc 缠论信号结果文件名（在 outputs/czsc_signal_scan/，不在 _RESULTS）
+_CZSC_TEMPLATES: dict[str, str] = {
+    "czsc_bi_ma": "matched_bi_ma_{dc}.csv",
+    "czsc_third_buy": "matched_third_buy_{dc}.csv",
+}
+
 # 选股线中文名（用于展示）
 _SOURCE_LABELS: dict[str, str] = {
     "whitelist": "白名单/巴菲特",
@@ -68,6 +76,8 @@ _SOURCE_LABELS: dict[str, str] = {
     "multi_head": "多头排列",
     "double_ma": "双均线金叉",
     "macd_ma": "MACD+均线",
+    "czsc_bi_ma": "缠论-笔向上+均线多头",
+    "czsc_third_buy": "缠论-三买+笔向上",
 }
 
 
@@ -456,6 +466,32 @@ def _codes_from_macd_ma(path: Path) -> set[str]:
     return _codes_from_double_ma(path)
 
 
+def _codes_from_czsc_csv(path: Path) -> set[str]:
+    """从 czsc 信号扫描 CSV 提取 6 位代码集合。
+
+    CSV 列：symbol, dt, close, signals, matched_signals
+    symbol 为带前缀 ticker，如 sh.600519，取其 6 位代码。
+    """
+    if not path.exists():
+        return set()
+    codes: set[str] = set()
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                symbol = (row.get("symbol") or "").strip()
+                if not symbol:
+                    continue
+                code6 = symbol.split(".")[0]
+                # 排除北交所（920 开头）
+                if code6.startswith("920"):
+                    continue
+                codes.add(code6)
+    except (OSError, csv.Error):
+        return set()
+    return codes
+
+
 def collect_source_sets(date_str: str) -> dict[str, set[str]]:
     """汇总各选股线的 6 位代码集合。
 
@@ -493,6 +529,15 @@ def collect_source_sets(date_str: str) -> dict[str, set[str]]:
     result["double_ma"] = _codes_from_double_ma(_RESULTS / fmaps["double_ma"])
     result["macd_ma"] = _codes_from_macd_ma(_RESULTS / fmaps["macd_ma"])
 
+    # czsc 缠论信号（两个预设，独立于其他选股线计数）
+    dc, _ = _date_tags(date_str)
+    result["czsc_bi_ma"] = _codes_from_czsc_csv(
+        _CZSC_DIR / _CZSC_TEMPLATES["czsc_bi_ma"].format(dc=dc)
+    )
+    result["czsc_third_buy"] = _codes_from_czsc_csv(
+        _CZSC_DIR / _CZSC_TEMPLATES["czsc_third_buy"].format(dc=dc)
+    )
+
     # 防御性告警：来源文件缺失会让该线静默记 0 只，需明确提示
     for key, tmpl in fmaps.items():
         if key in ("whitelist", "buffett_wl"):
@@ -501,6 +546,14 @@ def collect_source_sets(date_str: str) -> dict[str, set[str]]:
             logger.warning(
                 f"⚠️ 选股线 [{_SOURCE_LABELS.get(key, key)}] 结果文件缺失："
                 f"{tmpl}（{date_str}），该线记 0 只；如非预期请检查 daily_flow.sh 是否已先跑第 10 步"
+            )
+    for key, tmpl in _CZSC_TEMPLATES.items():
+        czsc_path = _CZSC_DIR / tmpl.format(dc=dc)
+        if not czsc_path.exists():
+            logger.warning(
+                f"⚠️ 缠论选股线 [{_SOURCE_LABELS.get(key, key)}] 结果文件缺失："
+                f"{czsc_path.name}（{date_str}），该线记 0 只；"
+                f"如非预期请检查 daily_flow.sh 是否已先跑 czsc 步骤"
             )
 
     return result

@@ -25,6 +25,7 @@ import os
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -188,8 +189,21 @@ STEPS: list[Step] = [
         depends_on=["sync"],
     ),
     Step(
+        name="czsc",
+        description="缠论信号全市场扫描（先 czsc_convert_db.py DB→parquet 导出，再 czsc_universe_signal_scan.py 扫描+飞书推送）",
+        command=[
+            "bash",
+            "scripts/czsc_full_scan.sh",
+            time.strftime("%Y-%m-%d"),
+            str(PUSH_FLAG),
+        ],
+        enabled_by_default=True,
+        depends_on=["sync"],
+        timeout=3600,
+    ),
+    Step(
         name="combined",
-        description="综合选股交集汇总（combined_stock_analysis.py）",
+        description="综合选股交集汇总（combined_stock_analysis.py，需其他选股步骤产出文件）",
         command=[
             "uv",
             "run",
@@ -199,7 +213,16 @@ STEPS: list[Step] = [
             str(PUSH_FLAG),
         ],
         enabled_by_default=True,
-        depends_on=["sync"],
+        depends_on=[
+            "sync",
+            "buffett",
+            "resonance",
+            "multi_head",
+            "whitelist",
+            "double_ma",
+            "macd_ma",
+            "czsc",
+        ],
     ),
     Step(
         name="intraday",
@@ -296,6 +319,44 @@ def resolve_enabled_steps(
     return order
 
 
+def _topo_layers(steps: list[Step]) -> list[list[Step]]:
+    """基于 depends_on 进行拓扑分层。
+
+    同一层的步骤互不直接依赖，可并行执行；层之间串行。
+    返回 [[step, step, ...], [step, ...], ...]。
+
+    若存在循环依赖，剩余未放入任何层的 step 会按注册序追加到最后一层。
+    """
+    step_map = {s.name: s for s in steps}
+    in_degree = {s.name: 0 for s in steps}
+    dependents: dict[str, list[str]] = {s.name: [] for s in steps}
+    for s in steps:
+        for d in s.depends_on:
+            if d in step_map:
+                in_degree[s.name] += 1
+                dependents[d].append(s.name)
+
+    layers: list[list[Step]] = []
+    current = [name for name, deg in in_degree.items() if deg == 0]
+    while current:
+        layers.append([step_map[name] for name in current])
+        next_current: list[str] = []
+        for name in current:
+            for dep_name in dependents[name]:
+                in_degree[dep_name] -= 1
+                if in_degree[dep_name] == 0:
+                    next_current.append(dep_name)
+        current = next_current
+
+    # 环依赖兜底：剩余未放入任何层的 step 按注册序追加到最后一层
+    placed = {s.name for layer in layers for s in layer}
+    remaining = [s for s in steps if s.name not in placed]
+    if remaining:
+        layers.append(remaining)
+
+    return layers
+
+
 def cmd_list() -> int:
     """打印全部 step（含默认启用状态）。"""
     print(f"{'step':<12} {'default':<10} {'description'}")
@@ -335,33 +396,69 @@ def cmd_run(
         statuses: dict[str, str] = {}
         if resume:
             statuses = load_checkpoint()
-            pending = [s for s in targets if statuses.get(s.name) != "success"]
-            if not pending:
+            pending_names = {s.name for s in targets if statuses.get(s.name) != "success"}
+            if not pending_names:
                 print("✅ 断点续传：当天所有启用 step 均已成功，无待执行 step")
                 return 0
-            targets = pending
-        print(f"▶ 串行执行 {len(targets)} 个 step: {[s.name for s in targets]}")
-        failed: list[str] = []
+            targets = [s for s in targets if s.name in pending_names]
+        print(f"▶ 分层并行执行 {len(targets)} 个 step")
+        # 基于 depends_on 拓扑分层：同层互不依赖，可并行；层间串行
+        layers = _topo_layers(targets)
+        for i, layer in enumerate(layers, 1):
+            layer_names = [s.name for s in layer]
+            print(f"  第 {i} 层: {layer_names}")
+
         failed_set: set[str] = set()
-        for s in targets:
-            if any(d in failed_set for d in s.depends_on):
-                # 前置 step 已失败 → 跳过本 step（避免用脏数据推导后续结论）
+        first_failure_rc: int | None = None
+        for layer_idx, layer in enumerate(layers, 1):
+            # 过滤掉依赖已失败 step 的 step（避免用脏数据推导后续结论）
+            runnable = [
+                s for s in layer if not any(d in failed_set for d in s.depends_on)
+            ]
+            skipped_in_layer = [s for s in layer if s not in runnable]
+            for s in skipped_in_layer:
                 print(
                     f"  ⏭️  跳过 [{s.name}]：前置 step 失败（{sorted(d for d in s.depends_on if d in failed_set)}）"
                 )
+            if not runnable:
                 continue
-            rc = run_step(s, dry_run=dry_run)
-            statuses[s.name] = "success" if rc == 0 else "failed"
+
+            print(
+                f"\n▶ 第 {layer_idx} 层并行执行 {len(runnable)} 个 step: "
+                f"{[s.name for s in runnable]}"
+            )
+            layer_results: dict[str, int] = {}
+            max_workers = min(len(runnable), 8)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(run_step, s, dry_run=dry_run): s for s in runnable
+                }
+                for future in as_completed(futures):
+                    s = futures[future]
+                    rc = future.result()
+                    layer_results[s.name] = rc
+                    statuses[s.name] = "success" if rc == 0 else "failed"
+                    if rc != 0:
+                        failed_set.add(s.name)
+                        if first_failure_rc is None:
+                            first_failure_rc = rc
             if not dry_run:
                 save_checkpoint(statuses)
-            if rc != 0:
-                failed.append(s.name)
-                failed_set.add(s.name)
-                if strict or resume:
-                    print(f"  ✋ 断点停止于 [{s.name}]，后续 step 未执行")
-                    return rc
-        if failed:
-            print(f"\n❌ 失败 step: {failed}（继续执行完成）")
+
+            # 打印本层结果
+            for s in runnable:
+                rc = layer_results[s.name]
+                print(f"  {'✅' if rc == 0 else '❌'} [{s.name}] exit {rc}")
+
+            # strict 模式：首错即停，不执行后续层
+            if strict and failed_set:
+                print(
+                    f"  ✋ 严格模式：首个失败于 [{sorted(failed_set)[0]}]，停止后续层"
+                )
+                return first_failure_rc or 1
+
+        if failed_set:
+            print(f"\n❌ 失败 step: {sorted(failed_set)}")
             return 1
         print(f"\n✅ 全部 {len(targets)} 个 step 执行完成")
         return 0
