@@ -54,22 +54,44 @@ def _load_completed_tickers() -> set[str]:
         return set()
 
 
-def _save_completed_tickers(completed: set[str]) -> None:
-    """将已完成的 ticker 集合原子写入进度文件。
+def _load_failed_tickers() -> set[str]:
+    """从进度文件加载标记为失败的 ticker 集合。
+
+    失败的 ticker 会在后续运行中被重试，避免一次失败就永久放弃。
+
+    Returns:
+        已标记失败的 ticker 集合。
+    """
+    if not PROGRESS_FILE.exists():
+        return set()
+    try:
+        data = json.loads(PROGRESS_FILE.read_text(encoding="utf-8"))
+        return set(data.get("failed", [])) if isinstance(data, dict) else set()
+    except (json.JSONDecodeError, OSError):
+        return set()
+
+
+def _save_progress(completed: set[str], failed: set[str]) -> None:
+    """将已完成和失败的 ticker 集合原子写入进度文件。
 
     Args:
         completed: 已完成的 ticker 集合。
+        failed: 已标记失败的 ticker 集合。
     """
     PROGRESS_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = PROGRESS_FILE.with_suffix(".json.tmp")
     tmp.write_text(
-        json.dumps({"completed": sorted(completed)}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {"completed": sorted(completed), "failed": sorted(failed)},
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
     os.replace(tmp, PROGRESS_FILE)
 
 
-def _mark_completed(ticker: str, completed: set[str]) -> None:
+def _mark_completed(ticker: str, completed: set[str], failed: set[str]) -> None:
     """将单个 ticker 标记为完成并持久化到进度文件。
 
     线程安全：内部使用全局锁，可在多线程场景下安全调用。
@@ -79,25 +101,47 @@ def _mark_completed(ticker: str, completed: set[str]) -> None:
     Args:
         ticker: 已成功处理的 ticker。
         completed: 当前已完成的 ticker 集合（原地修改）。
+        failed: 当前已标记失败的 ticker 集合（原地修改）。
     """
     global _progress_write_count
     with _progress_lock:
         completed.add(ticker)
+        failed.discard(ticker)  # 从失败集中移除，避免重复重试
         _progress_write_count += 1
         if _progress_write_count % PROGRESS_FLUSH_EVERY == 0:
-            _save_completed_tickers(completed)
+            _save_progress(completed, failed)
 
 
-def _flush_completed(completed: set[str]) -> None:
+def _mark_failed(ticker: str, completed: set[str], failed: set[str]) -> None:
+    """将单个 ticker 标记为失败并持久化到进度文件。
+
+    失败的 ticker 会在后续运行中被重试。
+
+    Args:
+        ticker: 拉取失败的 ticker。
+        completed: 当前已完成的 ticker 集合（原地修改）。
+        failed: 当前已标记失败的 ticker 集合（原地修改）。
+    """
+    global _progress_write_count
+    with _progress_lock:
+        failed.add(ticker)
+        completed.discard(ticker)
+        _progress_write_count += 1
+        if _progress_write_count % PROGRESS_FLUSH_EVERY == 0:
+            _save_progress(completed, failed)
+
+
+def _flush_completed(completed: set[str], failed: set[str]) -> None:
     """强制将当前进度写入磁盘。应在每个步骤结束时调用。
 
     Args:
         completed: 当前已完成的 ticker 集合。
+        failed: 当前已标记失败的 ticker 集合。
     """
     global _progress_write_count
     with _progress_lock:
         _progress_write_count = 0
-        _save_completed_tickers(completed)
+        _save_progress(completed, failed)
 
 
 def _has_sufficient_history(ticker: str) -> bool:
@@ -179,23 +223,25 @@ def load_sync_plan(plan_path: str | Path) -> tuple[list[str], list[str]]:
 
 
 def get_failed_tickers() -> list[str]:
-    """动态查询 DB 中记录数过少的股票（全量同步失败或未补齐的历史数据）。"""
+    """动态查询 DB 中记录数过少的股票（全量同步失败或未补齐的历史数据）。
+
+    使用 GROUP BY 替代子查询，避免对每行执行 COUNT(*) 导致的全表扫描。
+    """
     import sqlite3
 
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
-    # 记录条数 < FAILED_MIN_RECORDS 说明历史数据严重不足，视为同步失败
     cur.execute(f"""
-        SELECT DISTINCT ticker FROM kline_cache
+        SELECT ticker FROM kline_cache
         WHERE ticker NOT LIKE 'bj.%'
-          AND (SELECT COUNT(*) FROM kline_cache k2 WHERE k2.ticker = kline_cache.ticker) < {FAILED_MIN_RECORDS}
+        GROUP BY ticker
+        HAVING COUNT(*) < {FAILED_MIN_RECORDS}
         ORDER BY ticker
     """)
     tickers = [r[0] for r in cur.fetchall()]
     conn.close()
     if tickers:
         return tickers
-    # 兼容：若无不足记录，返回空列表（后续步骤只跑今日增量）
     return []
 
 
@@ -545,10 +591,13 @@ def main(
 
     factory = get_data_factory()
 
-    # 加载已完成进度（断点续传）
+    # 加载已完成和失败进度（断点续传）
     completed_tickers: set[str] = _load_completed_tickers()
+    failed_tickers_cache: set[str] = _load_failed_tickers()
     if completed_tickers:
         print(f"📍 检测到已完成进度：{len(completed_tickers)} 只股票已成功拉取，将跳过")
+    if failed_tickers_cache:
+        print(f"📍 检测到失败进度：{len(failed_tickers_cache)} 只股票曾拉取失败，将重试")
 
     # ── 第一步：补齐失败股票的历史数据 ─────────────────────
     print("=" * 60)
@@ -560,8 +609,13 @@ def main(
     failed_tickers = [t for t in failed_tickers if not _has_sufficient_history(t)]
     # 断点续传：跳过已在进度文件中标记完成的 ticker
     failed_tickers = [t for t in failed_tickers if t not in completed_tickers]
-    if failed_before > len(failed_tickers):
-        print(f"ℹ️  跳过 {failed_before - len(failed_tickers)} 只已完成的股票")
+    # 将之前标记失败的 ticker 加入重试列表（去重）
+    retry_failed = [t for t in failed_tickers_cache if t not in completed_tickers and t not in failed_tickers]
+    if retry_failed:
+        failed_tickers.extend(retry_failed)
+        print(f"ℹ️  加入 {len(retry_failed)} 只之前失败的股票进行重试")
+    if failed_before > len(failed_tickers) - len(retry_failed):
+        print(f"ℹ️  跳过 {failed_before - len(failed_tickers) + len(retry_failed)} 只已完成的股票")
     success_13 = 0
     failed_13 = []
     with ThreadPoolExecutor(max_workers=WORKERS) as executor:
@@ -575,18 +629,21 @@ def main(
                 provider, n_rows, detail = future.result(timeout=FETCH_TIMEOUT + 5)
                 if provider == "timeout":
                     failed_13.append((ticker, f"超时 {FETCH_TIMEOUT}s"))
+                    _mark_failed(ticker, completed_tickers, failed_tickers_cache)
                     print(f"  ⏱️  {i}/{len(failed_tickers)} 超时: {ticker}")
                 elif provider == "failed":
                     failed_13.append((ticker, detail))
+                    _mark_failed(ticker, completed_tickers, failed_tickers_cache)
                     print(f"  ❌ {i}/{len(failed_tickers)} 失败: {ticker} ({detail[:60]})")
                 else:
                     success_13 += 1
-                    _mark_completed(ticker, completed_tickers)
+                    _mark_completed(ticker, completed_tickers, failed_tickers_cache)
                     print(
                         f"  ✅ {i}/{len(failed_tickers)} {ticker}: {provider} 拉取 {n_rows} 条 {detail}"
                     )
             except Exception as e:
                 failed_13.append((ticker, str(e)))
+                _mark_failed(ticker, completed_tickers, failed_tickers_cache)
                 print(f"  ❌ {i}/{len(failed_tickers)} 异常: {ticker} ({e})")
     print(
         f"\n第一步结果: 成功 {success_13}/{len(failed_tickers)}, 失败 {len(failed_13)}/{len(failed_tickers)}"
@@ -594,7 +651,7 @@ def main(
     if failed_13:
         print(f"   仍失败: {[t for t, _ in failed_13]}")
     print()
-    _flush_completed(completed_tickers)
+    _flush_completed(completed_tickers, failed_tickers_cache)
 
     # ── 第二步：检查哪些股票缺少今日数据 ───────────────────────
     print("=" * 60)
@@ -664,11 +721,13 @@ def main(
                     provider, n_rows, detail = future.result(timeout=FETCH_TIMEOUT + 5)
                     if provider in ("timeout", "failed"):
                         failed_today.append((ticker, detail))
+                        _mark_failed(ticker, completed_tickers, failed_tickers_cache)
                     else:
                         success_today += 1
-                        _mark_completed(ticker, completed_tickers)
+                        _mark_completed(ticker, completed_tickers, failed_tickers_cache)
                 except Exception as e:
                     failed_today.append((ticker, str(e)))
+                    _mark_failed(ticker, completed_tickers, failed_tickers_cache)
         time.sleep(1)  # 短暂休息避免API限流
 
     print(
@@ -677,7 +736,7 @@ def main(
     if failed_today:
         print(f"   仍失败: {[t for t, _ in failed_today]}")
     print()
-    _flush_completed(completed_tickers)
+    _flush_completed(completed_tickers, failed_tickers_cache)
 
     # ── 第三步：最终统计 ───────────────────────────────────────
     print("=" * 60)

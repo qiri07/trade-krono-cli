@@ -7,20 +7,20 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
+from scripts._utils import _get_expected_date
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
 START_DATE = "2020-01-01"
-# 以今日为上限，动态适配
-END_DATE = date.today().isoformat()
+# 以最近已收盘交易日为上限，避免写入今日未收盘的部分 K 线
+END_DATE = _get_expected_date()
 WORKERS = 16
 FETCH_TIMEOUT = 30
 BATCH_DELAY = 2.0

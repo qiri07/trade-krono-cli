@@ -35,11 +35,9 @@ def decode_data(raw: bytes) -> tuple[int, str, str]:
         return -1, "", ""
 
 
-def main() -> None:
+def main(full_decode: bool = False) -> None:
     conn = sqlite3.connect(str(DB_PATH))
     cur = conn.cursor()
-
-    print("=" * 65)
     print("📊 数据完整性检查报告")
     print(f"   检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 65)
@@ -215,7 +213,49 @@ def main() -> None:
         print(f"  {bp.name}: {size_mb:.1f} MB ({mtime})")
     print()
 
-    # ── 11. 总结 ─────────────────────────────────────────────
+    # ── 11. 全量解码验证（可选）──────────────────────────────
+    if full_decode:
+        print("【11. 全量解码验证（全部标的）】")
+        cur.execute("SELECT ticker, data FROM kline_cache ORDER BY ticker")
+        all_rows = cur.fetchall()
+        valid_all = 0
+        invalid_all = 0
+        invalid_samples: list[str] = []
+        for i, (ticker, raw) in enumerate(all_rows):
+            n_records, _, _ = decode_data(raw)
+            if n_records > 0:
+                valid_all += 1
+            else:
+                invalid_all += 1
+                if len(invalid_samples) < 10:
+                    invalid_samples.append(ticker)
+            if (i + 1) % 1000 == 0:
+                print(f"  已验证 {i + 1}/{len(all_rows)} …")
+        print(f"  解码成功: {valid_all}/{len(all_rows)}, 失败: {invalid_all}/{len(all_rows)}")
+        if invalid_samples:
+            print(f"  失败样例: {', '.join(invalid_samples)}")
+        print()
+    else:
+        # ── 11. 数据解码验证（随机20只）──────────────────────────
+        print("【11. 数据解码验证（随机20只股票）】")
+        cur.execute("SELECT ticker, start, end, data FROM kline_cache ORDER BY RANDOM() LIMIT 20")
+        valid = 0
+        invalid = 0
+        for row in cur.fetchall():
+            ticker, db_start, db_end, raw = row
+            n_records, first_date, last_date = decode_data(raw)
+            if n_records > 0:
+                print(
+                    f"  ✅ {ticker}: {db_start}~{db_end}, {n_records}条K线, 首:{first_date}, 末:{last_date}"
+                )
+                valid += 1
+            else:
+                print(f"  ❌ {ticker}: 解码失败")
+                invalid += 1
+        print(f"  解码成功: {valid}/20, 失败: {invalid}/20")
+        print()
+
+    # ── 12. 总结 ─────────────────────────────────────────────
     print("=" * 65)
     issues: list[str] = []
     warnings: list[str] = []
@@ -230,6 +270,8 @@ def main() -> None:
         issues.append(f"记录数({total_records})≠股票数({total_tickers})")
     if invalid > 0:
         issues.append(f"解码失败 {invalid}/20 只抽样")
+    if full_decode and invalid_all > 0:
+        issues.append(f"全量解码失败 {invalid_all}/{len(all_rows)} 只")
 
     if has_2020 < total_tickers * 0.6:
         warnings.append(f"2020年数据覆盖仅 {has_2020 * 100 / total_tickers:.1f}%（新股多属正常）")
@@ -248,4 +290,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="数据完整性检查脚本")
+    parser.add_argument(
+        "--full-decode",
+        action="store_true",
+        help="对全部标的做解码验证（默认仅抽样20只）",
+    )
+    args = parser.parse_args()
+    main(full_decode=args.full_decode)

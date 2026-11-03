@@ -62,7 +62,7 @@ def _query_kline_status(today: str, expected_date: str) -> dict:
         SELECT DISTINCT ticker FROM kline_cache
         WHERE ticker NOT IN (
             SELECT DISTINCT ticker FROM kline_cache
-            WHERE end >= '{today}'
+            WHERE end >= '{expected_date}'
         )
         AND ticker NOT LIKE 'bj.%'
         ORDER BY ticker
