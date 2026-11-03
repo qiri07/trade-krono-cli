@@ -106,7 +106,8 @@ def _verify_pe_percentile(ticker: str, name: str, pe_ttm: float | None) -> tuple
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             # 推理型模型先产出 reasoning，需留足 token 才能拿到最终回答
-            max_tokens=512,
+            max_tokens=2048,
+            timeout=90,
         )
         text = response.choices[0].message.content or ""
 

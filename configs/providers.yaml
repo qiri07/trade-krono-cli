@@ -10,14 +10,16 @@
 # 本文件缺失或解析失败时，回退到脚本内硬编码链（保持向后兼容）。
 
 defaults:
-  sh: [tonghuashun, mootdx]
-  sz: [tonghuashun, mootdx]
-  bj: [tonghuashun]
-  hk: [akshare_hk, tonghuashun, mootdx, akshare]
+  sh: [tonghuashun, efinance, akshare, easyquotation, mootdx]
+  sz: [tonghuashun, efinance, akshare, easyquotation, mootdx]
+  bj: [tonghuashun, efinance]
+  hk: [akshare_hk, tonghuashun, akshare, easyquotation]
 
 etf:
-  sh: [tonghuashun, mootdx]
-  sz: [tonghuashun, mootdx]
+  # ETF：baostock 对 ETF K 线可用（实测 sh.510300 可取数），tonghuashun/mootdx 对 ETF 返回空。
+  # efinance 作为补充（免费，支持 ETF K 线 + 基本面）。akshare 兜底。
+  sh: [baostock, efinance, tonghuashun, akshare, mootdx]
+  sz: [baostock, efinance, tonghuashun, akshare, mootdx]
 
 # 单只/单段覆盖（可选，按需启用）
 override: {}

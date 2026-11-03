@@ -25,30 +25,67 @@ class TestGetProviderChain:
     """Provider chain logic tests."""
 
     def test_sh_ticker(self) -> None:
-        # 沪深普通股走 tonghuashun/mootdx 链（baostock 已从默认链移除）
-        assert get_provider_chain("sh.600519") == ["tonghuashun", "mootdx"]
+        # 沪深普通股走 tonghuashun/efinance/akshare/easyquotation/mootdx 链
+        assert get_provider_chain("sh.600519") == [
+            "tonghuashun",
+            "efinance",
+            "akshare",
+            "easyquotation",
+            "mootdx",
+        ]
 
     def test_sz_ticker(self) -> None:
-        assert get_provider_chain("sz.000001") == ["tonghuashun", "mootdx"]
+        assert get_provider_chain("sz.000001") == [
+            "tonghuashun",
+            "efinance",
+            "akshare",
+            "easyquotation",
+            "mootdx",
+        ]
 
     def test_sh_etf_ticker(self) -> None:
-        """沪市 ETF（51/58 开头）走 etf 段。"""
-        assert get_provider_chain("sh.510300") == ["tonghuashun", "mootdx"]
-        assert get_provider_chain("sh.588000") == ["tonghuashun", "mootdx"]
+        """沪市 ETF（51/58 开头）走 etf 段，baostock 置首。"""
+        assert get_provider_chain("sh.510300") == [
+            "baostock",
+            "efinance",
+            "tonghuashun",
+            "akshare",
+            "mootdx",
+        ]
+        assert get_provider_chain("sh.588000") == [
+            "baostock",
+            "efinance",
+            "tonghuashun",
+            "akshare",
+            "mootdx",
+        ]
 
     def test_sz_etf_ticker(self) -> None:
         """深市 ETF（159/156/158 开头）走 etf 段。"""
-        assert get_provider_chain("sz.159915") == ["tonghuashun", "mootdx"]
-        assert get_provider_chain("sz.156001") == ["tonghuashun", "mootdx"]
+        assert get_provider_chain("sz.159915") == [
+            "baostock",
+            "efinance",
+            "tonghuashun",
+            "akshare",
+            "mootdx",
+        ]
+        assert get_provider_chain("sz.156001") == [
+            "baostock",
+            "efinance",
+            "tonghuashun",
+            "akshare",
+            "mootdx",
+        ]
 
     def test_bj_ticker(self) -> None:
-        assert get_provider_chain("bj.920001") == ["tonghuashun"]
+        assert get_provider_chain("bj.920001") == ["tonghuashun", "efinance"]
 
     def test_unknown_prefix(self) -> None:
-        assert get_provider_chain("unknown.123456") == ["baostock", "tonghuashun"]
+        # 未知前缀走硬编码 default 链
+        assert get_provider_chain("unknown.123456") == ["baostock", "tonghuashun", "efinance"]
 
     def test_empty_ticker(self) -> None:
-        assert get_provider_chain("") == ["baostock", "tonghuashun"]
+        assert get_provider_chain("") == ["baostock", "tonghuashun", "efinance"]
 
 
 class TestGetProviderChainWithYaml:
@@ -117,21 +154,39 @@ class TestGetProviderChainWithYaml:
     def test_missing_file_falls_back_to_hardcoded(self, tmp_path: Path) -> None:
         """YAML 文件缺失时回退到内置硬编码链。"""
         set_providers_config_file(tmp_path / "nonexistent.yaml")
-        assert get_provider_chain("sh.600519") == ["baostock", "tonghuashun", "mootdx"]
-        assert get_provider_chain("bj.920001") == ["tonghuashun", "baostock"]
+        assert get_provider_chain("sh.600519") == [
+            "tonghuashun",
+            "efinance",
+            "akshare",
+            "easyquotation",
+            "mootdx",
+        ]
+        assert get_provider_chain("bj.920001") == ["tonghuashun", "efinance", "baostock"]
 
     def test_corrupt_yaml_falls_back_to_hardcoded(self, tmp_path: Path) -> None:
         """YAML 解析失败（非 dict / 语法错误）时回退到硬编码，不 raise。"""
         p = tmp_path / "providers.yaml"
         p.write_text("defaults: [broken, syntax, ::]", encoding="utf-8")
         set_providers_config_file(p)
-        assert get_provider_chain("sh.600519") == ["baostock", "tonghuashun", "mootdx"]
+        assert get_provider_chain("sh.600519") == [
+            "tonghuashun",
+            "efinance",
+            "akshare",
+            "easyquotation",
+            "mootdx",
+        ]
 
     def test_empty_yaml_fills_defaults(self, tmp_path: Path) -> None:
         """空 YAML 文件：defaults 段缺失，但 sh/sz 仍由 setdefault 补齐。"""
         set_providers_config_file(tmp_path / "missing.yaml")
         cfg = load_provider_config(force_reload=True)
-        assert cfg["defaults"]["sh"] == ["baostock", "tonghuashun", "mootdx"]
+        assert cfg["defaults"]["sh"] == [
+            "tonghuashun",
+            "efinance",
+            "akshare",
+            "easyquotation",
+            "mootdx",
+        ]
         assert cfg["fetch"]["timeout_seconds"] == 45
         assert cfg["fetch"]["workers"] == 8
 

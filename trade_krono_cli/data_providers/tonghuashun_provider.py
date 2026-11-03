@@ -80,7 +80,7 @@ class TongHuaShunProvider(DataProvider):
                 url,
                 params=params if params is not None else {},
                 headers=TongHuaShunProvider._headers(),
-                timeout=15,
+                timeout=(8, 15),  # connect 8s，read 15s，避免握手阶段长期挂起
             )
             resp.raise_for_status()
             body = resp.json()
@@ -276,7 +276,7 @@ class TongHuaShunProvider(DataProvider):
                 prefix = "sh" if thscode.endswith(".SH") else "sz"
                 tencent_code = f"{prefix}{thscode_part}"
                 url = f"https://qt.gtimg.cn/q={tencent_code}"
-                resp = requests.get(url, timeout=10)
+                resp = requests.get(url, timeout=(5, 10))
                 resp.raise_for_status()
                 # 格式: v_sh600519="51~贵州茅台~600519~1258.00~...~39~19.32~46~6.26~29~~"
                 parts = resp.text.strip().split("~")

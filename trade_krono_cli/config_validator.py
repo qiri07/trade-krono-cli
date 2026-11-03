@@ -146,7 +146,7 @@ def validate_settings(s: Settings) -> tuple[list[str], list[str]]:
         )
 
     # ── 数据源配置校验 ─────────────────────────────────────────────────────
-    valid_sources = {"baostock", "akshare", "mootdx", "tushare", "tonghuashun"}
+    valid_sources = {"baostock", "akshare", "mootdx", "tushare", "tonghuashun", "efinance", "easyquotation"}
     primary = s.data_provider.strip().lower() if s.data_provider else "baostock"
     if primary not in valid_sources:
         errors.append(

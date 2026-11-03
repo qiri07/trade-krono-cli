@@ -510,6 +510,32 @@ toml = [
 ]
 
 [[package]]
+name = "cssselect"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11' and sys_platform == 'linux'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8e/5a/6d6fcf922709391fac986f0a03ad4546f4f45b94d10aeb6c1ee041599993/cssselect-1.5.0.tar.gz", hash = "sha256:3cbe82dd7acbee9ba9e5723b5f9e4749826912f1fb31cd7f92aabed5fde15b15", size = 47598, upload-time = "2026-07-27T09:17:34.189Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/e9/6734502f67533a752ea8b1c8f7f227c94eecf300252ba8bf23e3e59d8a36/cssselect-1.5.0-py3-none-any.whl", hash = "sha256:1d1aded98e82bdde447ded990a191fd6916177c4f0c914fb62eccd58e2ffcdcc", size = 20797, upload-time = "2026-07-27T09:17:33.04Z" },
+]
+
+[[package]]
+name = "cssselect"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and sys_platform == 'linux'",
+    "python_full_version == '3.11.*' and sys_platform == 'linux'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c8/8b/dc32df939ab541fca6ee8964d26aa231dbe231cdc2b2713228161441ba9c/cssselect-1.6.0.tar.gz", hash = "sha256:8c83a7139e97b93aa5ebdc0f46e785f7056a08a8bf201e597a6a2629d7eb11db", size = 51743, upload-time = "2026-10-09T20:05:09.484Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/ae/f24b3aac56ba91a29c9d3a31c07a9ad4e9eb500e5d212742bb6d348edaef/cssselect-1.6.0-py3-none-any.whl", hash = "sha256:6df6eab9b264c0f2092a6e386b33610e1684a25e27925ecebe25e3d97cbf3525", size = 22244, upload-time = "2026-10-09T20:05:08.215Z" },
+]
+
+[[package]]
 name = "cuda-bindings"
 version = "13.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -628,6 +654,50 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e0/4d/f332313098c1de1b2d2ff91cf2674415cc7cddab2ca1b01ae29774bd5fdf/docstring_parser-0.18.0.tar.gz", hash = "sha256:292510982205c12b1248696f44959db3cdd1740237a968ea1e2e7a900eeb2015", size = 29341, upload-time = "2026-04-14T04:09:19.867Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/5f/ed01f9a3cdffbd5a008556fc7b2a08ddb1cc6ace7effa7340604b1d16699/docstring_parser-0.18.0-py3-none-any.whl", hash = "sha256:b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b", size = 22484, upload-time = "2026-04-14T04:09:18.638Z" },
+]
+
+[[package]]
+name = "easyquotation"
+version = "0.7.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "easyutils" },
+    { name = "requests" },
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f8/83/208337719363360d5aef61ef72af3c077b70f47ad3c45eabcf1473bc0d92/easyquotation-0.7.7.tar.gz", hash = "sha256:9951294d9577343f265e8e49e2da879c2cb0b21164ce80d57098a9a15730e4e8", size = 40617, upload-time = "2025-03-25T14:08:41.192Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/89/85bd8ec617dd2cebd2d98a2b43c49f47790d9eeeca6f4ff7213f51a12919/easyquotation-0.7.7-py3-none-any.whl", hash = "sha256:92b88cd05fc9ea6a08dbf48a0d6f2aa60092163aa64c8e0c5bc523db30b73a01", size = 34407, upload-time = "2025-03-25T14:08:38.991Z" },
+]
+
+[[package]]
+name = "easyutils"
+version = "0.1.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyquery" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f3/38/b0364c75308440c71a905b654f93a781988e1c971c3f44c4c3fe8f581292/easyutils-0.1.7.tar.gz", hash = "sha256:45b46748e20dd3c0e840fa9c1fa7d7f3dc295e58a81796d10329957c20b7f20a", size = 3231, upload-time = "2018-04-05T08:47:11.159Z" }
+
+[[package]]
+name = "efinance"
+version = "0.5.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "jsonpath" },
+    { name = "multitasking" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "requests" },
+    { name = "retry" },
+    { name = "rich" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/07/c8/0d5469a882293bdf3c8ebfa4dbe419a2d22f7a841b935aeff985ab13fa86/efinance-0.5.9.tar.gz", hash = "sha256:4a0d68768b2c6ef19836b4805b501abe446c35b90176070a38c7a693ef1dea22", size = 93060, upload-time = "2026-07-17T07:44:36.276Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/fb/114f3afe037e4a802ddceb7bdbcf2ff76a4a2c119c476b3ab14d66dcab34/efinance-0.5.9-py3-none-any.whl", hash = "sha256:787b4068eac2d0757a39c8f6f652067892586af24fa3795eb15268fac20a8b11", size = 75347, upload-time = "2026-07-17T07:44:34.787Z" },
 ]
 
 [[package]]
@@ -2120,6 +2190,15 @@ wheels = [
 ]
 
 [[package]]
+name = "py"
+version = "1.11.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/ff/fec109ceb715d2a6b4c4a85a61af3b40c723a961e8828319fbcb15b868dc/py-1.11.0.tar.gz", hash = "sha256:51c75c4126074b472f746a24399ad32f6053d1b34b68d2fa41e558e6f4a98719", size = 207796, upload-time = "2021-11-04T17:17:01.377Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f6/f0/10642828a8dfb741e5f3fbaac830550a518a775c7fff6f04a007259b0548/py-1.11.0-py2.py3-none-any.whl", hash = "sha256:607c53218732647dff4acdfcd50cb62615cedf612e72d1724fb1a0cc6405b378", size = 98708, upload-time = "2021-11-04T17:17:00.152Z" },
+]
+
+[[package]]
 name = "py-mini-racer"
 version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2257,6 +2336,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
+]
+
+[[package]]
+name = "pyquery"
+version = "2.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cssselect", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "cssselect", version = "1.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "lxml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c5/d8/955aef5c4ba7e01c67779a9856c4030aa89b6600b78544eae8a22a91185b/pyquery-2.1.0.tar.gz", hash = "sha256:75238388750fc6e254b7a52f771027b9beb3a6202b88048bef52a00b0abeadbb", size = 45963, upload-time = "2026-07-27T19:00:05.86Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/d2/5eab7f15bdb63c5281f625a003e999ef3f843c35972c936b07ea868cb854/pyquery-2.1.0-py3-none-any.whl", hash = "sha256:74c9e65ea0cfbcf644a8c3fd438a3dedbcbbd497b9cb366a4f360dba72f8aebb", size = 22907, upload-time = "2026-07-27T19:00:04.658Z" },
 ]
 
 [[package]]
@@ -2434,6 +2527,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f3/61/d7545dafb7ac2230c70d38d31cbfe4cc64f7144dc41f6e4e4b78ecd9f5bb/requests-toolbelt-1.0.0.tar.gz", hash = "sha256:7681a0a3d047012b5bdc0ee37d7f8f07ebe76ab08caeccfc3921ce23c88d5bc6", size = 206888, upload-time = "2023-05-01T04:11:33.229Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06", size = 54481, upload-time = "2023-05-01T04:11:28.427Z" },
+]
+
+[[package]]
+name = "retry"
+version = "0.9.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "decorator" },
+    { name = "py" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9d/72/75d0b85443fbc8d9f38d08d2b1b67cc184ce35280e4a3813cda2f445f3a4/retry-0.9.2.tar.gz", hash = "sha256:f8bfa8b99b69c4506d6f5bd3b0aabf77f98cdb17f3c9fc3f5ca820033336fba4", size = 6448, upload-time = "2016-05-11T13:58:51.541Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4b/0d/53aea75710af4528a25ed6837d71d117602b01946b307a3912cb3cfcbcba/retry-0.9.2-py2.py3-none-any.whl", hash = "sha256:ccddf89761fa2c726ab29391837d4327f819ea14d244c232a1d24c67a2f98606", size = 7986, upload-time = "2016-05-11T13:58:39.925Z" },
 ]
 
 [[package]]
@@ -2830,6 +2936,8 @@ dependencies = [
     { name = "akshare", version = "1.18.88", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "akshare", version = "1.18.94", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "baostock" },
+    { name = "easyquotation" },
+    { name = "efinance" },
     { name = "fire" },
     { name = "iniconfig" },
     { name = "langchain" },
@@ -2869,12 +2977,20 @@ akshare = [
 data = [
     { name = "akshare", version = "1.18.88", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "akshare", version = "1.18.94", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "easyquotation" },
+    { name = "efinance" },
     { name = "mootdx" },
     { name = "tushare" },
 ]
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
+]
+easyquotation = [
+    { name = "easyquotation" },
+]
+efinance = [
+    { name = "efinance" },
 ]
 full = [
     { name = "akshare", version = "1.18.88", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -2911,6 +3027,14 @@ requires-dist = [
     { name = "akshare", marker = "extra == 'data'", specifier = ">=1.10.0" },
     { name = "akshare", marker = "extra == 'full'", specifier = ">=1.10.0" },
     { name = "baostock", specifier = ">=0.8.8" },
+    { name = "easyquotation" },
+    { name = "easyquotation", specifier = ">=0.7.0" },
+    { name = "easyquotation", marker = "extra == 'data'", specifier = ">=0.7.0" },
+    { name = "easyquotation", marker = "extra == 'easyquotation'", specifier = ">=0.7.0" },
+    { name = "efinance" },
+    { name = "efinance", specifier = ">=0.5.0" },
+    { name = "efinance", marker = "extra == 'data'", specifier = ">=0.5.0" },
+    { name = "efinance", marker = "extra == 'efinance'", specifier = ">=0.5.0" },
     { name = "fire" },
     { name = "iniconfig", specifier = ">=2.3.0" },
     { name = "langchain" },
@@ -2950,7 +3074,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.9.0" },
     { name = "yfinance", specifier = ">=1.7.0" },
 ]
-provides-extras = ["ta", "kronos", "akshare", "mootdx", "tushare", "data", "dev", "full"]
+provides-extras = ["ta", "kronos", "akshare", "mootdx", "tushare", "efinance", "easyquotation", "data", "dev", "full"]
 
 [package.metadata.requires-dev]
 dev = [

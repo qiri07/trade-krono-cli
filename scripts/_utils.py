@@ -35,11 +35,11 @@ CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 PROVIDERS_CONFIG_FILE = Path("configs/providers.yaml")
 
 _HARDCODED_PROVIDER_CHAINS: dict[str, list[str]] = {
-    "bj": ["tonghuashun", "baostock"],
-    "hk": ["akshare_hk", "tonghuashun", "mootdx", "akshare"],
-    "sh": ["baostock", "tonghuashun", "mootdx"],
-    "sz": ["baostock", "tonghuashun", "mootdx"],
-    "default": ["baostock", "tonghuashun"],
+    "bj": ["tonghuashun", "efinance", "baostock"],
+    "hk": ["akshare_hk", "tonghuashun", "akshare", "easyquotation"],
+    "sh": ["tonghuashun", "efinance", "akshare", "easyquotation", "mootdx"],
+    "sz": ["tonghuashun", "efinance", "akshare", "easyquotation", "mootdx"],
+    "default": ["baostock", "tonghuashun", "efinance"],
 }
 
 _provider_config_cache: dict | None = None

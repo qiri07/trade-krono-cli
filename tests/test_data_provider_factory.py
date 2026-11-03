@@ -19,8 +19,8 @@ class TestDataProviderFactory:
     def test_default_chain(self) -> None:
         factory = DataProviderFactory()
         assert factory.primary == "baostock"
-        assert factory.fallbacks == ["akshare", "mootdx", "tushare", "tonghuashun"]
-        assert factory.provider_chain == ["baostock", "akshare", "mootdx", "tushare", "tonghuashun"]
+        assert factory.fallbacks == ["akshare", "mootdx", "tushare", "tonghuashun", "efinance", "easyquotation"]
+        assert factory.provider_chain == ["baostock", "akshare", "mootdx", "tushare", "tonghuashun", "efinance", "easyquotation"]
 
     def test_custom_chain(self) -> None:
         factory = DataProviderFactory(primary="akshare", fallbacks=["baostock", "mootdx"])

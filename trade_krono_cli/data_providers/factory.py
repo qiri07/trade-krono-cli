@@ -83,8 +83,12 @@ class DataProviderFactory:
 
     @staticmethod
     def _default_fallbacks() -> list[str]:
-        """默认降级顺序：baostock → akshare → mootdx → tushare → tonghuashun."""
-        return ["akshare", "mootdx", "tushare", "tonghuashun"]
+        """默认降级顺序：baostock → akshare → mootdx → tushare → tonghuashun → efinance → easyquotation。
+
+        efinance（免费，K线+行情+基本面）和 easyquotation（免费实时行情）
+        作为补充源，提升数据可用性。
+        """
+        return ["akshare", "mootdx", "tushare", "tonghuashun", "efinance", "easyquotation"]
 
     @property
     def provider_chain(self) -> list[str]:
@@ -475,6 +479,16 @@ class DataProviderFactory:
                 from trade_krono_cli.data_providers.akshare_hk_provider import AkShareHKProvider
 
                 registry[name] = AkShareHKProvider
+            elif name == "efinance":
+                from trade_krono_cli.data_providers.efinance_provider import EFinanceProvider
+
+                registry[name] = EFinanceProvider
+            elif name == "easyquotation":
+                from trade_krono_cli.data_providers.easyquotation_provider import (
+                    EasyQuotationProvider,
+                )
+
+                registry[name] = EasyQuotationProvider
             else:
                 logger.warning(f"未知的 Provider 名称: {name}")
                 return None
