@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from scripts import combined_stock_analysis as csa
 from scripts.combined_stock_analysis import (
@@ -378,6 +382,7 @@ class TestMainFlagWiring:
                     return_value=argparse.Namespace(
                         date="2026-10-15",
                         min_sources=2,
+                        sort_by="hits",
                         max_analyze=60,
                         push=1,
                         per_stock_push=0,
@@ -422,6 +427,7 @@ class TestMainFlagWiring:
             ns = argparse.Namespace(
                 date="2026-10-15",
                 min_sources=2,
+                sort_by="hits",
                 max_analyze=60,
                 push=1,
                 per_stock_push=0,
@@ -439,6 +445,26 @@ class TestMainFlagWiring:
                 csa.main()
                 assert mk.called is True
                 assert mb.called is True
+
+
+class TestCzscCodeParsing:
+    """缠论 CSV 代码解析回归（曾误取 sh/sz 前缀，导致命中数只剩 3）。"""
+
+    def test_extracts_six_digit_code_from_prefixed_symbol(self, tmp_path: Path) -> None:
+        """sh.600519 / sz.000858 应解析为 6 位代码，bj.920002 应被排除。"""
+        csv_path = tmp_path / "matched.csv"
+        csv_path.write_text(
+            "symbol,dt,close,signals,matched_signals\n"
+            'sh.600519,2026-11-02,10.0,{},"[]"\n'
+            'sz.000858,2026-11-02,20.0,{},"[]"\n'
+            'bj.920002,2026-11-02,30.0,{},"[]"\n',
+            encoding="utf-8",
+        )
+        assert csa._codes_from_czsc_csv(csv_path) == {"600519", "000858"}
+
+    def test_missing_file_returns_empty(self, tmp_path: Path) -> None:
+        """文件缺失时返回空集，不抛异常。"""
+        assert csa._codes_from_czsc_csv(tmp_path / "none.csv") == set()
 
 
 if __name__ == "__main__":

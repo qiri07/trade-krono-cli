@@ -470,7 +470,13 @@ def _codes_from_czsc_csv(path: Path) -> set[str]:
     """从 czsc 信号扫描 CSV 提取 6 位代码集合。
 
     CSV 列：symbol, dt, close, signals, matched_signals
-    symbol 为带前缀 ticker，如 sh.600519，取其 6 位代码。
+    symbol 为带前缀 ticker，如 sh.600519，取其末段 6 位代码。
+
+    Args:
+        path: czsc 扫描输出的 CSV 路径。
+
+    Returns:
+        6 位代码集合；文件缺失或格式异常时返回空集。
     """
     if not path.exists():
         return set()
@@ -482,7 +488,9 @@ def _codes_from_czsc_csv(path: Path) -> set[str]:
                 symbol = (row.get("symbol") or "").strip()
                 if not symbol:
                     continue
-                code6 = symbol.split(".")[0]
+                code6 = symbol.split(".")[-1].strip()
+                if len(code6) != 6 or not code6.isdigit():
+                    continue
                 # 排除北交所（920 开头）
                 if code6.startswith("920"):
                     continue
@@ -917,6 +925,12 @@ def main() -> None:
         help="最少命中几条选股线才进入交集池（默认 2）",
     )
     parser.add_argument(
+        "--sort-by",
+        choices=("hits", "score"),
+        default="hits",
+        help="结果排序：hits=按交集条数降序（默认），score=命中数*10+技术分",
+    )
+    parser.add_argument(
         "--max-analyze",
         type=int,
         default=60,
@@ -982,6 +996,9 @@ def main() -> None:
     # ── Step 3: 对候选做技术分析 ────────────────────────────────
     logger.info(f"\n📈 对前 {args.max_analyze} 只候选做技术分析...")
     analyzed = analyze_candidates(cands, args.date, args.max_analyze)
+    if args.sort_by == "hits":
+        # 交集条数优先（同条数再按技术分），满足「共振越多越靠前」
+        analyzed.sort(key=lambda c: (-c.hit_count, -c.rank_score))
     logger.info(f"  有效技术分析结果：{len(analyzed)} 只")
 
     # ── Step 4: 汇总文件路径（在 Step 5.6 回测 attach 之后写出，确保 kronos/backtest 完整）──

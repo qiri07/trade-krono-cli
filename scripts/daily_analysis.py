@@ -252,9 +252,10 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     # 推理型模型（Nemotron 等）会先消耗 token 产出 reasoning_content，
-                    # 800 会在 JSON 输出中途被截断（finish_reason=length），故需放宽。
-                    max_tokens=2048,
-                    timeout=60,
+                    # 批量（20 只）时 800 会在 JSON 输出中途被截断（finish_reason=length），
+                    # 故需留足预算。
+                    max_tokens=4096,
+                    timeout=90,
                 )
                 raw = (response.choices[0].message.content or "").strip()
                 result = _extract_json(raw)
