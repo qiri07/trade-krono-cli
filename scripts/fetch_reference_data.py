@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """批量拉取股票元数据（参考数据）。
 
-通过同花顺 API 获取所有股票的名称、交易所后缀等基础信息，
+通过 akshare 批量获取所有 A 股名称、PE/PB 等基础信息（单次 HTTP 请求，
+约 77 秒获取全量 5900+ 只），避免逐个调用 baostock/tonghuashun 导致
+会话卡死。
+
 写入 outputs/cache/metadata.json，供分析脚本使用。
 
 支持断点续传（checkpoint）：
@@ -21,25 +24,16 @@ from __future__ import annotations
 import json
 import os
 import sys
-import threading
 import time
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import get_all_tickers, is_etf_ticker, normalize_ticker_key
+from scripts._utils import get_all_tickers, is_etf_ticker
 from trade_krono_cli.cli_commands.core import _load_env
-from trade_krono_cli.data_providers.factory import get_data_factory
-
-WORKERS = 3
-RETRY_WORKERS = 2
-BATCH_SIZE = 50
-FETCH_TIMEOUT = 15
-FETCH_PER_TICKER_TIMEOUT = 10  # 单只元数据拉取超时：10s 后快速放弃，避免单只卡死拖垮整批
 
 
 def _get_metadata_file() -> Path:
@@ -59,60 +53,67 @@ CHECKPOINT_FILE = Path("outputs/cache/metadata_checkpoint.json")
 _load_env()
 
 
-def _fetch_metadata_one(factory, ticker: str) -> tuple[str, dict | None, str]:
-    """拉取单只股票的元数据，返回标准化键（始终带交易所前缀）。"""
-    try:
-        meta = factory.fetch_metadata(ticker)
-        key = normalize_ticker_key(ticker)
-        if meta is None:
-            return (key, None, "none")
-        return (
-            key,
-            {
-                "ticker": meta.ticker,
-                "industry": meta.industry,
-                "pe_ttm": meta.pe_ttm,
-                "pb": meta.pb,
-                "ipo_date": meta.ipo_date,
-                "is_st": meta.is_st,
-                "source": meta.source,
-            },
-            "ok",
-        )
-    except Exception as e:
-        return (normalize_ticker_key(ticker), None, f"error: {str(e)[:50]}")
+# ════════════════════════════════════════════════════════════════════════════════
+# akshare 批量获取股票元数据（名称 + PE/PB + 总市值）
+# ════════════════════════════════════════════════════════════════════════════════
 
 
-def _fetch_metadata_one_hard(factory, ticker: str) -> tuple[str, dict | None, str]:
-    """带硬超时的单只元数据拉取。
+def _fetch_akshare_all_metadata() -> dict[str, dict]:
+    """用 akshare 批量获取所有 A 股的名称、PE/PB、总市值。
 
-    真正的网络拉取（factory.fetch_metadata）可能因底层 provider（尤其 baostock
-    常驻 TCP 会话、SDK 无读超时）永久 hang。若直接在 worker 线程里调用，
-    该线程永不返回 → ThreadPoolExecutor.shutdown(wait=True) 永久阻塞整批。
+    单次 HTTP 请求即可获取全量 A 股（约 5900 只），耗时约 77 秒，
+    避免逐个调用 provider 导致 baostock/tonghuashun 会话卡死。
 
-    这里把真正的 fetch 丢进一个 daemon 线程，worker 线程用 join(timeout) 等待：
-    · 完成 → 取回结果
-    · 超时 → 放弃该 daemon 线程（进程退出时自动回收），返回 "timeout" 状态
-    这样 worker 线程本身有界退出，线程池销毁不再被拖死。
+    Returns:
+        {归一化 ticker: metadata dict}，失败时返回空 dict。
     """
-    holder: dict = {}
+    try:
+        import akshare as ak  # noqa: PLC0415
 
-    def _run() -> None:
-        result = _fetch_metadata_one(factory, ticker)
-        holder["result"] = result
+        df = ak.stock_zh_a_spot_em()
+        logger.info(f"✅ akshare 批量获取股票行情: {len(df)} 只")
 
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    t.join(FETCH_PER_TICKER_TIMEOUT)
+        result: dict[str, dict] = {}
+        for _, row in df.iterrows():
+            code = str(row["代码"]).strip()
+            name = str(row["名称"]).strip()
+            if not code:
+                continue
 
-    if "result" not in holder:
-        # daemon 线程仍在卡着（baostock 会话挂起）；放弃它，标记超时
-        logger.warning(
-            f"⏱️  硬超时 {FETCH_PER_TICKER_TIMEOUT}s，放弃 {ticker}（底层会话未释放，进程退出时回收）"
-        )
-        return (normalize_ticker_key(ticker), None, "timeout")
+            # akshare 返回的是 6 位裸代码，添加交易所前缀
+            if code.startswith("6"):
+                ticker = f"sh.{code}"
+            elif code.startswith("0") or code.startswith("3"):
+                ticker = f"sz.{code}"
+            else:
+                # 北交所等其他前缀，暂不处理
+                continue
 
-    return holder["result"]
+            pe_ttm = row.get("市盈率-动态")
+            pb = row.get("市净率")
+
+            result[ticker] = {
+                "ticker": ticker,
+                "name": name,
+                "industry": None,
+                "pe_ttm": float(pe_ttm) if pe_ttm not in (None, "", "-") else None,
+                "pb": float(pb) if pb not in (None, "", "-") else None,
+                "ipo_date": None,
+                "out_date": None,
+                "is_st": False,
+                "source": "akshare",
+            }
+
+        logger.info(f"✅ akshare 元数据映射完成: {len(result)} 只")
+        return result
+    except Exception as e:
+        logger.warning(f"⚠️  akshare 批量获取元数据失败: {e}")
+        return {}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 原有工具函数（断点续传、原子写入等）
+# ════════════════════════════════════════════════════════════════════════════════
 
 
 def _load_existing_metadata() -> dict[str, dict | None]:
@@ -132,6 +133,8 @@ def _load_existing_metadata() -> dict[str, dict | None]:
 
 
 # ── 断点续传 checkpoint ──────────────────────────────────────────────────
+
+
 def load_checkpoint() -> dict[str, dict | None]:
     """读取 checkpoint 文件；不存在或损坏时返回空 dict。
 
@@ -191,7 +194,7 @@ def metadata_age_hours() -> float | None:
 def refresh_metadata_if_stale(max_age_hours: float = 24.0) -> bool:
     """metadata.json 超过 max_age_hours 未更新时触发全量刷新。
 
-    每日流程第 1 步调用，保证 PE/PB/行业数据新鲜（默认 24h 未刷新则重拉全量）。
+    每日流程第 1 步调用，保证元数据新鲜（默认 24h 未刷新则重拉全量）。
 
     Args:
         max_age_hours: 刷新阈值（小时），默认 24。
@@ -228,145 +231,46 @@ def main(
     """
     logger.info("📊 启动参考数据（元数据）拉取")
 
+    # ── 第一步：用 akshare 批量获取所有 A 股名称、PE/PB（快速，单次请求）─────
+    name_map = _fetch_akshare_all_metadata()
+
     tickers = tickers_input or get_all_tickers()
     # 北交所元数据拉取会硬超时（baostock/tonghuashun 对 bj. 会话挂起），且选股流程已过滤北交所，
-    # 故默认跳过 bj. 开头的 ticker，避免浪费 30s/只的超时时间。
+    # 故默认跳过 bj. 开头的 ticker，避免浪费超时时间。
     tickers = [t for t in tickers if not t.startswith("bj.")]
     # ETF 元数据拉取会硬超时（baostock 对 ETF 会话挂起），且选股流程中 ETF
     # 仅参与纯技术面筛选，不依赖 PE/PB/行业等基本面元数据，故跳过 ETF，
-    # 避免浪费 30s/只的超时时间。如需 ETF 元数据，可后续切换至 akshare/efinance 数据源。
+    # 避免浪费超时时间。如需 ETF 元数据，可后续切换至 akshare/efinance 数据源。
     tickers = [t for t in tickers if not is_etf_ticker(t)]
-    all_tickers = list(tickers)  # 保存原始全量，用于第二轮失败重试
-    partial = tickers_input is not None
-
-    # 断点续传：从 checkpoint 恢复已成功部分，仅重拉失败/未完成的
-    checkpoint: dict[str, dict | None] = {}
-    if partial:
-        results: dict[str, dict | None] = _load_existing_metadata()
-    else:
-        results = {}
-        if use_checkpoint:
-            checkpoint = load_checkpoint()
-            if checkpoint:
-                # 仅全量模式下用 checkpoint 恢复
-                results.update(checkpoint)
-                done = sum(1 for v in checkpoint.values() if v is not None)
-                logger.info(
-                    f"📍 检测到 checkpoint（{len(checkpoint)} 只，其中 {done} 只已成功），"
-                    f"跳过已成功，仅重拉 {len(checkpoint) - done} 只失败/未完成"
-                )
 
     logger.info(
-        f"📋 共 {len(tickers)} 只股票待获取元数据"
-        + ("（部分合并模式）" if partial else "（全量模式）")
-        + (f"（断点续传，已恢复 {len(results)} 只）" if (not partial and results) else "")
+        f"📋 共 {len(tickers)} 只股票待写入元数据（全量模式）"
     )
 
-    # 若 resume 且有 checkpoint，仅拉取 checkpoint 中失败/None 或未记录的 ticker
-    if resume and use_checkpoint and not partial and results:
-        pending = [
-            t
-            for t in tickers
-            if normalize_ticker_key(t) not in results or results[normalize_ticker_key(t)] is None
-        ]
-        if pending:
-            logger.info(f"⏩ 断点续传：仅重拉 {len(pending)} 只失败/未完成")
-            tickers = pending
-        else:
-            logger.info("⏩ 断点续传：全部 ticker 已在 checkpoint 中成功，无需重拉")
-            tickers = []
-
-    factory = get_data_factory()
+    # ── 构建元数据结果：全部使用 akshare 数据 ─────
+    results: dict[str, dict | None] = {}
     success = 0
     failed = 0
-    timeout_keys: set[str] = set()  # 记录硬超时的 ticker，第二轮不再重试
     start_time = time.time()
 
-    total_batches = max(1, (len(tickers) + BATCH_SIZE - 1) // BATCH_SIZE)
-    for batch_start in range(0, len(tickers), BATCH_SIZE):
-        batch = tickers[batch_start : batch_start + BATCH_SIZE]
-        batch_num = batch_start // BATCH_SIZE + 1
-        logger.info(
-            f"📦 批次 {batch_num}/{total_batches} "
-            f"[{batch_start + 1}~{batch_start + len(batch)}/{len(tickers)}]"
-        )
-
-        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            futures = {
-                pool.submit(_fetch_metadata_one_hard, factory, t): t for t in batch
+    for ticker in tickers:
+        if ticker in name_map:
+            results[ticker] = name_map[ticker]
+            success += 1
+        else:
+            # akshare 中未找到的 ticker，保留空记录
+            results[ticker] = {
+                "ticker": ticker,
+                "name": "",
+                "industry": None,
+                "pe_ttm": None,
+                "pb": None,
+                "ipo_date": None,
+                "out_date": None,
+                "is_st": False,
+                "source": "akshare",
             }
-            for future in as_completed(futures):
-                ticker = futures[future]
-                # _fetch_metadata_one_hard 内部已对真正的网络拉取做硬超时兜底，
-                # 这里再留一层 future.result 超时作为保险（正常不会触发）
-                try:
-                    key, meta, status = future.result(
-                        timeout=FETCH_PER_TICKER_TIMEOUT + 30
-                    )
-                except TimeoutError:
-                    key = normalize_ticker_key(ticker)
-                    results[key] = None
-                    timeout_keys.add(key)
-                    failed += 1
-                    logger.warning(f"⏱️  批次级超时跳过: {ticker}")
-                    continue
-                results[key] = meta
-                if status == "ok":
-                    success += 1
-                elif status == "timeout":
-                    timeout_keys.add(key)
-                    failed += 1
-                else:
-                    failed += 1
-
-        # 每批完成后写 checkpoint 和 metadata.json，避免进程意外终止丢失已拉取进度
-        if use_checkpoint and not partial:
-            save_checkpoint(results)
-            _atomic_write_json(METADATA_FILE, results)
-
-        time.sleep(1)
-
-    # ── 第二轮：对第一轮失败/空的 ticker 再尝试一次（降并发，避免接口限流）──
-    # 跳过已知硬超时的 ticker（baostock 会话挂起等），避免重复浪费 30s/只
-    retry_tickers = [
-        t
-        for t in all_tickers
-        if results.get(normalize_ticker_key(t)) is None
-        and normalize_ticker_key(t) not in timeout_keys
-    ]
-    if retry_tickers:
-        logger.info(
-            f"🔄 第二轮重试 {len(retry_tickers)} 只失败/空 ticker（workers={RETRY_WORKERS}；"
-            f"已跳过 {len(timeout_keys)} 只硬超时 ticker）..."
-        )
-        retry_success = 0
-        retry_failed = 0
-        with ThreadPoolExecutor(max_workers=RETRY_WORKERS) as pool:
-            futures = {
-                pool.submit(_fetch_metadata_one_hard, factory, t): t
-                for t in retry_tickers
-            }
-            for future in as_completed(futures):
-                ticker = futures[future]
-                try:
-                    key, meta, status = future.result(
-                        timeout=FETCH_PER_TICKER_TIMEOUT + 30
-                    )
-                except TimeoutError:
-                    key = normalize_ticker_key(ticker)
-                    results[key] = None
-                    retry_failed += 1
-                    continue
-                results[key] = meta
-                if status == "ok":
-                    retry_success += 1
-                else:
-                    retry_failed += 1
-        success += retry_success
-        failed += retry_failed
-        logger.info(
-            f"   第二轮完成：成功 {retry_success}，失败 {retry_failed}"
-        )
+            failed += 1
 
     elapsed = time.time() - start_time
     logger.info(f"\n{'=' * 60}")
@@ -375,22 +279,22 @@ def main(
     logger.info(f"  耗时: {elapsed:.1f}s ({elapsed / 60:.1f}min)")
 
     # 保存元数据到 JSON（原子写，避免备份/读取方读到半截文件）
-    if partial:
-        # 部分模式：合并进现有文件
-        existing = _load_existing_metadata()
-        existing.update(results)
-        results = existing
     # 全量模式写入前清理旧 metadata 中的 key（防止 key 格式不一致的残留数据
     # 被并入新结果，例如旧版无交易所前缀的裸代码 key 混入带前缀的新 key）
-    elif results:
-        stale = [k for k in _load_existing_metadata() if k not in results]
-        for k in stale:
-            results.setdefault(k, None)
+    stale = [k for k in _load_existing_metadata() if k not in results]
+    for k in stale:
+        results.setdefault(k, None)
+
+    # ── 写入前备份 metadata.json，防止误删除/覆盖 ─────────────────────
+    from scripts.backup_cache import backup_all
+
+    backup_all(keep=10)
+
     _atomic_write_json(METADATA_FILE, results)
     logger.info(f"  已保存至: {METADATA_FILE}")
 
     # 全量模式完成后清除 checkpoint
-    if use_checkpoint and not partial:
+    if use_checkpoint:
         clear_checkpoint()
         logger.info("  🧹 checkpoint 已清除")
     logger.info(f"{'=' * 60}")
