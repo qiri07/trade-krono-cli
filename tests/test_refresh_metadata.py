@@ -99,15 +99,15 @@ class TestMainPartialMerge:
             "scripts.fetch_reference_data.METADATA_FILE",
             metadata_file,
         )
-        # _fetch_metadata_one 返回 ok + 新 meta
+        # 新实现使用 akshare 批量获取：mock _fetch_akshare_all_metadata 返回固定数据
         monkeypatch.setattr(
-            "scripts.fetch_reference_data._fetch_metadata_one",
-            lambda factory, t: (t, {"ticker": t, "pe_ttm": 9.0}, "ok"),
+            "scripts.fetch_reference_data._fetch_akshare_all_metadata",
+            lambda: {"sh.600519": {"ticker": "sh.600519", "pe_ttm": 9.0, "name": "测试股票"}},
         )
         main(["sh.600519"])
         written = json.loads(metadata_file.read_text(encoding="utf-8"))
         assert written["sh.600519"]["pe_ttm"] == 9.0
-        # 若此前有其他键，也应保留（本次只测 single key）
+        assert written["sh.600519"]["name"] == "测试股票"
 
     def test_full_mode_rebuilds_from_scratch(
         self, tmp_path: Path, monkeypatch
@@ -116,9 +116,13 @@ class TestMainPartialMerge:
         monkeypatch.setattr(
             "scripts.fetch_reference_data.get_all_tickers", lambda: ["sh.600519", "sz.000858"]
         )
+        # 全量模式重建：mock akshare 批量获取返回两只股票
         monkeypatch.setattr(
-            "scripts.fetch_reference_data._fetch_metadata_one",
-            lambda factory, t: (t, {"ticker": t, "pe_ttm": 1.0}, "ok"),
+            "scripts.fetch_reference_data._fetch_akshare_all_metadata",
+            lambda: {
+                "sh.600519": {"ticker": "sh.600519", "pe_ttm": 1.0},
+                "sz.000858": {"ticker": "sz.000858", "pe_ttm": 2.0},
+            },
         )
         # 全量模式重建：现有 metadata 视为空，只保留本次拉取结果
         monkeypatch.setattr("scripts.fetch_reference_data._load_existing_metadata", lambda: {})

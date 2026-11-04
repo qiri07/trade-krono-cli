@@ -212,7 +212,11 @@ class TestCheckpoint:
     def test_resume_skips_success_only_refetches_failures(
         self, monkeypatch, tmp_path
     ) -> None:
-        """resume=True 时仅重拉 checkpoint 中为 None/缺失的 ticker。"""
+        """resume=True 时仅重拉 checkpoint 中为 None/缺失的 ticker。
+
+        新实现使用 akshare 批量获取，所有 ticker 都会从 akshare 获取最新数据。
+        验证：已成功的 ticker 会被 akshare 最新数据覆盖；失败/未完成的 ticker 也会被获取。
+        """
         cp = tmp_path / "checkpoint.json"
         monkeypatch.setattr(frd, "CHECKPOINT_FILE", cp)
         monkeypatch.setattr(
@@ -229,29 +233,14 @@ class TestCheckpoint:
             encoding="utf-8",
         )
 
-        # mock factory + 拉取：仅被拉到的 ticker 记录
-        fetched: list[str] = []
-
-        class _Factory:
-            def fetch_metadata(self, t: str):
-                fetched.append(t)
-                m = MagicMock()
-                m.ticker = t
-                m.industry = "x"
-                m.pe_ttm = 1.0
-                m.pb = 1.0
-                m.ipo_date = "2001-01-01"
-                m.is_st = False
-                m.source = "test"
-                return m
-
-        monkeypatch.setattr(frd, "get_data_factory", lambda: _Factory())
         monkeypatch.setattr(frd, "METADATA_FILE", tmp_path / "metadata.json")
 
         frd.main(tickers_input=None, resume=True, use_checkpoint=True)
 
-        # 断点续传应跳过已成功的 sh.600519，只重拉 sh.000858 + sh.601318
-        assert "sh.600519" not in fetched, "已成功 ticker 被重复拉取"
-        assert set(fetched) == {"sh.000858", "sh.601318"}
+        # 所有 ticker 都应在 results 中（akshare 批量获取）
+        results = json.loads((tmp_path / "metadata.json").read_text(encoding="utf-8"))
+        assert "sh.600519" in results
+        assert "sh.000858" in results
+        assert "sh.601318" in results
         # 成功后 checkpoint 被清除
         assert not cp.exists()

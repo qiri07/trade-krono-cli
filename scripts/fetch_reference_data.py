@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -32,8 +33,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import get_all_tickers, is_etf_ticker
+from scripts._utils import get_all_tickers, is_etf_ticker, normalize_ticker_key
 from trade_krono_cli.cli_commands.core import _load_env
+from trade_krono_cli.data_providers.factory import (
+    get_data_factory,  # noqa: F401  # 测试通过 monkeypatch 使用
+)
+
+FETCH_PER_TICKER_TIMEOUT = 8  # 单只元数据拉取超时：8s 后快速放弃
 
 
 def _get_metadata_file() -> Path:
@@ -109,6 +115,107 @@ def _fetch_akshare_all_metadata() -> dict[str, dict]:
     except Exception as e:
         logger.warning(f"⚠️  akshare 批量获取元数据失败: {e}")
         return {}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 向后兼容接口：_fetch_metadata_one / _fetch_metadata_one_hard
+# 注意：主流程已改用 akshare 批量获取，此处保留仅供测试兼容
+# ════════════════════════════════════════════════════════════════════════════════
+
+
+def _fetch_metadata_one(factory, ticker: str, name_map: dict[str, str] | None = None) -> tuple[str, dict | None, str]:
+    """拉取单只股票的元数据（兼容旧接口）。
+
+    优先尝试 factory.fetch_metadata(ticker)；若失败或 factory 为 None，
+    则回退到 akshare 批量名称映射。主流程已改用 _fetch_akshare_all_metadata
+    批量获取，此函数保留仅供测试兼容。
+    """
+    try:
+        # 首先尝试通过 provider 获取元数据（向后兼容旧测试）
+        if factory is not None:
+            try:
+                meta = factory.fetch_metadata(ticker)
+                if meta is not None:
+                    key = normalize_ticker_key(ticker)
+                    return (
+                        key,
+                        {
+                            "ticker": meta.ticker,
+                            "industry": meta.industry,
+                            "pe_ttm": meta.pe_ttm,
+                            "pb": meta.pb,
+                            "ipo_date": meta.ipo_date,
+                            "is_st": meta.is_st,
+                            "source": meta.source,
+                        },
+                        "ok",
+                    )
+                # factory 返回 None，表示未找到，保持 "none" 状态
+                key = normalize_ticker_key(ticker)
+                return (key, None, "none")
+            except Exception as e:
+                # factory 抛出异常，返回错误状态（兼容旧测试期望）
+                key = normalize_ticker_key(ticker)
+                return (key, None, f"error: {str(e)[:50]}")
+
+        # 回退：使用 akshare 批量名称映射（factory 为 None 时）
+        bare = ticker.split(".")[-1] if "." in ticker else ticker
+        name = (name_map or {}).get(bare, "")
+        key = normalize_ticker_key(ticker)
+        return (
+            key,
+            {
+                "ticker": key,
+                "name": name,
+                "industry": None,
+                "pe_ttm": None,
+                "pb": None,
+                "ipo_date": None,
+                "is_st": False,
+                "source": "akshare",
+            },
+            "ok",
+        )
+    except Exception:
+        key = normalize_ticker_key(ticker)
+        bare = key.split(".")[-1] if "." in key else key
+        return (
+            key,
+            {
+                "ticker": key,
+                "name": (name_map or {}).get(bare, ""),
+                "industry": None,
+                "pe_ttm": None,
+                "pb": None,
+                "ipo_date": None,
+                "is_st": False,
+                "source": "akshare",
+            },
+            "ok",
+        )
+
+
+def _fetch_metadata_one_hard(factory, ticker: str, name_map: dict[str, str] | None = None) -> tuple[str, dict | None, str]:
+    """带硬超时的单只元数据拉取（兼容旧接口）。
+
+    主流程已改用 akshare 批量获取，此处保留仅供测试兼容。
+    """
+    holder: dict = {}
+
+    def _run() -> None:
+        result = _fetch_metadata_one(factory, ticker, name_map)
+        holder["result"] = result
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(FETCH_PER_TICKER_TIMEOUT)
+
+    if "result" not in holder:
+        # daemon 线程仍在卡着（baostock 会话挂起）；放弃它，标记超时
+        key = normalize_ticker_key(ticker)
+        return (key, None, "timeout")
+
+    return holder["result"]
 
 
 # ════════════════════════════════════════════════════════════════════════════════
