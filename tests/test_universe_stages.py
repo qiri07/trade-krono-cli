@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from trade_krono_cli.stock_filter import MaxValueRule
 from trade_krono_cli.universe.provider import UniverseTicket
+from trade_krono_cli.universe.stages import FilterStage
 from trade_krono_cli.universe.stages.factor import FactorFilterStage
 from trade_krono_cli.universe.stages.fundamental import FundamentalFilterStage
 from trade_krono_cli.universe.stages.rules import FilterRulesStage
@@ -220,3 +221,22 @@ class TestFilterRulesStage:
     def test_empty_input(self) -> None:
         stage = FilterRulesStage(rules=[])
         assert stage.filter([]) == []
+
+
+class _ConcreteFilterStage(FilterStage):
+    """用于测试的 FilterStage 具体子类。"""
+
+    name: str = "test"
+
+    def filter(self, tickets: list[UniverseTicket]) -> list[UniverseTicket]:
+        return tickets
+
+
+class TestFilterStageRepr:
+    """测试 FilterStage.__repr__。"""
+
+    def test_repr(self) -> None:
+        stage = _ConcreteFilterStage()
+        repr_str = repr(stage)
+        assert "FilterStage" in repr_str
+        assert "name='test'" in repr_str

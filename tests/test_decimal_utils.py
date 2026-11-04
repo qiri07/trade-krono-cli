@@ -5,12 +5,14 @@ from __future__ import annotations
 from decimal import Decimal
 
 from trade_krono_cli.utils.decimal_utils import (
+    apply_cost_to_return,
     calc_commission,
     calc_net_proceeds,
     calc_position_value,
     calc_return,
     calc_shares,
     dec_round,
+    safe_float,
     to_decimal,
 )
 
@@ -153,3 +155,35 @@ class TestDecRound:
     def test_none_input(self) -> None:
         result = dec_round(None, 2)  # type: ignore
         assert result == Decimal("0")
+
+
+class TestApplyCostToReturn:
+    """测试 apply_cost_to_return。"""
+
+    def test_basic(self) -> None:
+        result = apply_cost_to_return(Decimal("10.0"), Decimal("100"))
+        assert result == Decimal("9.0000")
+
+    def test_none_gross_return(self) -> None:
+        result = apply_cost_to_return(None, Decimal("100"))
+        assert result == Decimal("0")
+
+    def test_none_cost_bps(self) -> None:
+        result = apply_cost_to_return(Decimal("10.0"), None)
+        assert result == Decimal("0")
+
+
+class TestSafeFloat:
+    """测试 safe_float。"""
+
+    def test_float_passthrough(self) -> None:
+        result = safe_float(3.14)
+        assert result == 3.14
+
+    def test_decimal(self) -> None:
+        result = safe_float(Decimal("3.14"))
+        assert result == 3.14
+
+    def test_none(self) -> None:
+        result = safe_float(None)
+        assert result is None

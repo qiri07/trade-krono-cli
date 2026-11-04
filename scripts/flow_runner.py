@@ -202,6 +202,13 @@ STEPS: list[Step] = [
         timeout=3600,
     ),
     Step(
+        name="intraday",
+        description="盘中技术信号扫描（intraday_scan.py，不推送）",
+        command=["uv", "run", "python", "scripts/intraday_scan.py", "--push", "0"],
+        enabled_by_default=True,
+        depends_on=["sync"],
+    ),
+    Step(
         name="combined",
         description="综合选股交集汇总（combined_stock_analysis.py，需其他选股步骤产出文件）",
         command=[
@@ -222,14 +229,8 @@ STEPS: list[Step] = [
             "double_ma",
             "macd_ma",
             "czsc",
+            "intraday",
         ],
-    ),
-    Step(
-        name="intraday",
-        description="盘中技术信号扫描（intraday_scan.py，不推送）",
-        command=["uv", "run", "python", "scripts/intraday_scan.py", "--push", "0"],
-        enabled_by_default=True,
-        depends_on=["sync"],
     ),
     Step(
         name="export",

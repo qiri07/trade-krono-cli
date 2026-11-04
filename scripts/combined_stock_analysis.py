@@ -78,6 +78,7 @@ _SOURCE_LABELS: dict[str, str] = {
     "macd_ma": "MACD+均线",
     "czsc_bi_ma": "缠论-笔向上+均线多头",
     "czsc_third_buy": "缠论-三买+笔向上",
+    "intraday": "盘中共振",
 }
 
 
@@ -563,6 +564,36 @@ def collect_source_sets(date_str: str) -> dict[str, set[str]]:
                 f"{czsc_path.name}（{date_str}），该线记 0 只；"
                 f"如非预期请检查 daily_flow.sh 是否已先跑 czsc 步骤"
             )
+
+    # ── 盘中扫描结果（最新的 intraday_scan_YYYYMMDD_HHMM.json）──────────
+    intraday_files = sorted(
+        _RESULTS.glob("intraday_scan_*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if intraday_files:
+        latest_intraday = intraday_files[0]
+        try:
+            intraday_data = json.loads(latest_intraday.read_text(encoding="utf-8"))
+            intraday_codes: set[str] = set()
+            for item in intraday_data.get("results", []):
+                if isinstance(item, dict) and item.get("ticker"):
+                    result_ticker = normalize_ticker_key(item["ticker"])
+                    intraday_codes.add(result_ticker)
+            result["intraday"] = intraday_codes
+            logger.info(
+                f'📊 盘中共振来源（{latest_intraday.name}）: {len(intraday_codes)} 只'
+            )
+        except (json.JSONDecodeError, OSError, KeyError) as e:
+            logger.warning(f"⚠️ 盘中共振结果文件解析失败：{latest_intraday.name}，{e}")
+            result["intraday"] = set()
+    else:
+        logger.warning(
+            f"⚠️ 盘中共振选股线 [盘中共振] 结果文件缺失："
+            f"outputs/results/intraday_scan_*.json（{date_str}），该线记 0 只；"
+            f"如非预期请检查 daily_flow.sh 是否已先跑 intraday 步骤"
+        )
+        result["intraday"] = set()
 
     return result
 

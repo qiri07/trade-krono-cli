@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import pickle
+import sqlite3
 import time
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import TYPE_CHECKING
 
 import pandas as pd
 from loguru import logger
@@ -16,9 +16,6 @@ from trade_krono_cli.cache.base import (
     KLINE_HISTORICAL_TTL,
     Cache,
 )
-
-if TYPE_CHECKING:
-    import sqlite3
 
 # 数据完整性协议版本前缀（写入时拼接到数据头部，读取时验证）
 _CACHE_FMT_VERSION = b"TKC1"
@@ -125,11 +122,35 @@ class KlineCache:
         raw_bytes = buf.read()
         buf.seek(0)
         data_hash = _compute_data_hash(raw_bytes)
-        self._cache._transaction(
-            lambda conn: self._set_kline(
-                conn, ticker, start, end, freq, raw_bytes, data_hash, ttl, adjustflag
-            )
-        )
+
+        # 多线程环境下 SQLite 可能出现 "database is locked" 错误，
+        # 通过指数退避重试处理并发写冲突。
+        delay = 0.2
+        last_err: Exception | None = None
+        for attempt in range(8):
+            try:
+                self._cache._transaction(
+                    lambda conn: self._set_kline(
+                        conn,
+                        ticker,
+                        start,
+                        end,
+                        freq,
+                        raw_bytes,
+                        data_hash,
+                        ttl,
+                        adjustflag,
+                    )
+                )
+                return
+            except sqlite3.OperationalError as e:
+                last_err = e
+                if "locked" not in str(e).lower():
+                    raise
+                logger.debug(f"写入 {ticker} 遇到数据库锁，{delay:.1f}s 后重试 ({attempt + 1}/8)")
+                time.sleep(delay)
+                delay = min(delay * 2, 2.0)
+        raise sqlite3.OperationalError(f"写入 {ticker} 多次遇到数据库锁: {last_err}")
 
     def _set_kline(
         self,

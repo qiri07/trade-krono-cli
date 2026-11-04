@@ -67,8 +67,41 @@ PRIMARY_PERIOD = "15"
 _FETCH_PERIODS = 400
 # 三线共振盘中变体：5min / 15min / 60min 三周期
 RESONANCE_PERIODS = ("5", "15", "60")
-# 用倒数第 2 根（已收盘 bar）作主判断，最后一根可能未完成
+
+# 默认参考 K 线索引（盘中时段使用 -2，即最后一根未完成 K 线的前一根）
 _REF_IDX = -2
+
+# 交易时间范围（上海/深圳交易所交易时间）
+_TRADING_START = "09:30"
+_TRADING_END = "15:00"
+
+
+def is_trading_hours(now: datetime | None = None) -> bool:
+    """判断当前是否处于 A 股交易时间（9:30-15:00）。
+
+    盘中时间内，最后一根 K 线仍在形成，判断信号应使用倒数第 2 根已收盘 bar。
+    收盘后，最后一根 K 线已完成，可使用倒数第 1 根。
+    """
+    dt = now if now is not None else datetime.now()
+    # 非交易日直接返回 False
+    if not is_trading_day(dt):
+        return False
+    start_h, start_m = map(int, _TRADING_START.split(":"))
+    end_h, end_m = map(int, _TRADING_END.split(":"))
+    start_time = dt.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+    end_time = dt.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+    return start_time <= dt < end_time
+
+
+def get_ref_idx(now: datetime | None = None) -> int:
+    """根据当前是否在交易时间内，返回应使用的 K 线索引。
+
+    - 盘中（9:30-15:00）：返回 -2（最后一根未完成，使用倒数第2根）
+    - 收盘后/非交易时间：返回 -1（最后一根已完成，使用倒数第1根）
+    """
+    if is_trading_hours(now):
+        return -2
+    return -1
 
 # 信号类型
 SIG_GOLDEN_CROSS = "golden_cross"  # MA5 上穿 MA13（触发型）
@@ -193,23 +226,23 @@ def _calc_macd_dif(closes: list[float], fast: int = 12, slow: int = 26) -> list[
     return [f - s for f, s in zip(ema_fast, ema_slow, strict=True)]
 
 
-def _check_golden_cross(closes: list[float]) -> bool:
+def _check_golden_cross(closes: list[float], ref_idx: int = -2) -> bool:
     """MA5 刚上穿 MA13（已收盘 bar 处：前一根 MA5<=MA13，当前 MA5>MA13）。"""
     if len(closes) < 14:
         return False
     ma5 = _calc_ma(closes, 5)
     ma13 = _calc_ma(closes, 13)
-    i = _REF_IDX
+    i = ref_idx
     if ma5[i] != ma5[i] or ma13[i] != ma13[i]:  # NaN 检查
         return False
     return ma5[i] > ma13[i] and ma5[i - 1] <= ma13[i - 1]
 
 
-def _check_multi_head(closes: list[float]) -> bool:
+def _check_multi_head(closes: list[float], ref_idx: int = -2) -> bool:
     """多头排列：close > MA5 > MA10 > MA20（在已收盘 bar 处判断）。"""
     if len(closes) < 21:
         return False
-    i = _REF_IDX
+    i = ref_idx
     ma5 = _calc_ma(closes, 5)
     ma10 = _calc_ma(closes, 10)
     ma20 = _calc_ma(closes, 20)
@@ -217,24 +250,24 @@ def _check_multi_head(closes: list[float]) -> bool:
     return px > ma5[i] > ma10[i] > ma20[i]
 
 
-def _check_macd_rising(closes: list[float]) -> bool:
+def _check_macd_rising(closes: list[float], ref_idx: int = -2) -> bool:
     """15min MACD DIF > 0 且 DIF 上升（已收盘 bar 处）。"""
     if len(closes) < 30:
         return False
     dif = _calc_macd_dif(closes)
-    i = _REF_IDX
+    i = ref_idx
     return dif[i] > 0 and dif[i] > dif[i - 1]
 
 
-def _check_resonance(ticker: str) -> bool:
-    """三线共振盘中变体：5min + 15min + 60min 三周期 MACD DIF 同时 > 0。"""
+def _check_resonance(ticker: str, ref_idx: int = -2) -> bool:
+    """三线共振盘中变体：5min / 15min / 60min 三周期 MACD DIF 同时 > 0。"""
     for period in RESONANCE_PERIODS:
         df = _fetch_minute_bars(ticker, period)
         if df is None or len(df) < 30:
             return False
         closes = df["close"].tolist()
         dif = _calc_macd_dif(closes)
-        if dif[_REF_IDX] <= 0:
+        if dif[ref_idx] <= 0:
             return False
     return True
 
@@ -314,6 +347,8 @@ def _scan_one(ticker: str, signals: list[str]) -> IntradayResult:
     """扫描单只股票，返回命中结果。
 
     主周期（15min）拉一次；三线共振模式会额外拉 5min/60min。
+
+    盘中时段使用倒数第2根（最后一根未完成），收盘后使用倒数第1根（已完成）。
     """
     result = IntradayResult(
         ticker=ticker,
@@ -321,33 +356,36 @@ def _scan_one(ticker: str, signals: list[str]) -> IntradayResult:
         is_etf=is_etf_ticker(ticker),
     )
 
+    # 动态确定参考 K 线索引：盘中用 -2，收盘后用 -1
+    ref_idx = get_ref_idx()
+
     if SIG_RESONANCE in signals:
-        if _check_resonance(ticker):
+        if _check_resonance(ticker, ref_idx=ref_idx):
             result.signals.append(SIG_RESONANCE)
 
     # 主周期信号
     df = _fetch_minute_bars(ticker, PRIMARY_PERIOD)
     closes = df["close"].tolist() if df is not None else []
-    fallback_close = closes[_REF_IDX] if len(closes) > 1 else None
+    fallback_close = closes[ref_idx] if len(closes) > abs(ref_idx) else None
 
     for sig in signals:
         if sig == SIG_RESONANCE:
             continue  # 上面已处理
         if not closes:
             continue
-        if sig == SIG_GOLDEN_CROSS and _check_golden_cross(closes):
+        if sig == SIG_GOLDEN_CROSS and _check_golden_cross(closes, ref_idx=ref_idx):
             result.signals.append(sig)
-            result.detail["ma5"] = _calc_ma(closes, 5)[_REF_IDX]
-            result.detail["ma13"] = _calc_ma(closes, 13)[_REF_IDX]
-        elif sig == SIG_MULTI_HEAD and _check_multi_head(closes):
+            result.detail["ma5"] = _calc_ma(closes, 5)[ref_idx]
+            result.detail["ma13"] = _calc_ma(closes, 13)[ref_idx]
+        elif sig == SIG_MULTI_HEAD and _check_multi_head(closes, ref_idx=ref_idx):
             result.signals.append(sig)
-            result.detail["ma5"] = _calc_ma(closes, 5)[_REF_IDX]
-            result.detail["ma10"] = _calc_ma(closes, 10)[_REF_IDX]
-            result.detail["ma20"] = _calc_ma(closes, 20)[_REF_IDX]
-            result.detail["price"] = closes[_REF_IDX]
-        elif sig == SIG_MACD_RISING and _check_macd_rising(closes):
+            result.detail["ma5"] = _calc_ma(closes, 5)[ref_idx]
+            result.detail["ma10"] = _calc_ma(closes, 10)[ref_idx]
+            result.detail["ma20"] = _calc_ma(closes, 20)[ref_idx]
+            result.detail["price"] = closes[ref_idx]
+        elif sig == SIG_MACD_RISING and _check_macd_rising(closes, ref_idx=ref_idx):
             result.signals.append(sig)
-            result.detail["dif"] = _calc_macd_dif(closes)[_REF_IDX]
+            result.detail["dif"] = _calc_macd_dif(closes)[ref_idx]
 
     if result.signals:
         result.price = _get_price(ticker, fallback_close)
