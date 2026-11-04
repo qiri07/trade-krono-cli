@@ -952,8 +952,8 @@ def main() -> None:
     parser.add_argument(
         "--min-sources",
         type=int,
-        default=2,
-        help="最少命中几条选股线才进入交集池（默认 2）",
+        default=3,
+        help="最少命中几条选股线才进入交集池（默认 3）",
     )
     parser.add_argument(
         "--sort-by",
