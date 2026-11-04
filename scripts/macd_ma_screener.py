@@ -567,7 +567,7 @@ def _push_feishu(
         cap = r.get("market_cap")
         cap_str = f"{cap:.0f}亿" if isinstance(cap, (int, float)) else "N/A"
         lines.append(
-            f"  {str(r.get('ticker', ''))[:7]} {str(r.get('name', ''))[:8]:<8} "
+            f"  {str(r.get('ticker', ''))} {str(r.get('name', ''))[:8]:<8} "
             f"PE={r.get('pe_ttm')} 市值={cap_str} MACD={r.get('macd')}"
         )
     if len(results) > 30:
