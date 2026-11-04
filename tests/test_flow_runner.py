@@ -354,3 +354,92 @@ class TestBuildArgParser:
         # dry-run 下不真正跑子进程，但会打印
         rc = args.func(args)
         assert rc == 0
+
+
+class TestUnifiedBackup:
+    """backup step 与下游 `--no-backup` 注入（一轮流程只备一次）。"""
+
+    def test_backup_step_registered_and_enabled(self) -> None:
+        step = fr.get_step("backup")
+        assert step is not None
+        assert step.enabled_by_default is True
+        assert step.command[-1] == "scripts/backup_cache.py"
+
+    def test_backup_runs_before_sync(self) -> None:
+        names = [s.name for s in fr.resolve_enabled_steps()]
+        assert names.index("backup") < names.index("sync")
+
+    def test_sync_depends_on_backup(self) -> None:
+        sync = fr.get_step("sync")
+        assert sync is not None
+        assert "backup" in sync.depends_on
+
+    def test_suppress_appends_no_backup(self) -> None:
+        for name in ("sync", "sync_etf"):
+            step = fr.get_step(name)
+            assert step is not None
+            suppressed = fr._suppress_auto_backup(step)
+            assert suppressed.command[-1] == "--no-backup"
+            # Step 为 frozen dataclass，原定义不被改写
+            assert "--no-backup" not in step.command
+            # 幂等：重复调用不叠加
+            assert fr._suppress_auto_backup(suppressed).command == suppressed.command
+
+    def test_suppress_ignores_other_steps(self) -> None:
+        step = fr.get_step("buffett")
+        assert step is not None
+        assert fr._suppress_auto_backup(step) is step
+
+    def test_run_all_injects_no_backup(self, monkeypatch) -> None:
+        seen: dict[str, list[str]] = {}
+
+        def _fake_run_step(step, dry_run: bool = False) -> int:
+            seen[step.name] = list(step.command)
+            return 0
+
+        monkeypatch.setattr(fr, "run_step", _fake_run_step)
+        monkeypatch.setattr(fr, "save_checkpoint", lambda s: None)
+
+        assert fr.cmd_run(step=None, all_steps=True) == 0
+        assert seen["sync"][-1] == "--no-backup"
+        assert seen["sync_etf"][-1] == "--no-backup"
+        assert "--no-backup" not in seen["buffett"]
+
+    def test_run_all_without_backup_step_keeps_auto_backup(self, monkeypatch) -> None:
+        seen: dict[str, list[str]] = {}
+
+        def _fake_run_step(step, dry_run: bool = False) -> int:
+            seen[step.name] = list(step.command)
+            return 0
+
+        monkeypatch.setattr(fr, "run_step", _fake_run_step)
+        monkeypatch.setattr(fr, "save_checkpoint", lambda s: None)
+        monkeypatch.setattr(
+            fr,
+            "resolve_enabled_steps",
+            lambda **k: [s for s in fr.STEPS if s.name in ("sync", "sync_etf")],
+        )
+
+        assert fr.cmd_run(step=None, all_steps=True) == 0
+        assert "--no-backup" not in seen["sync"]
+        assert "--no-backup" not in seen["sync_etf"]
+
+    def test_resume_with_backup_already_succeeded_still_suppresses(self, monkeypatch) -> None:
+        seen: dict[str, list[str]] = {}
+
+        def _fake_run_step(step, dry_run: bool = False) -> int:
+            seen[step.name] = list(step.command)
+            return 0
+
+        monkeypatch.setattr(fr, "run_step", _fake_run_step)
+        monkeypatch.setattr(fr, "save_checkpoint", lambda s: None)
+        monkeypatch.setattr(fr, "load_checkpoint", lambda: {"backup": "success"})
+        monkeypatch.setattr(
+            fr,
+            "resolve_enabled_steps",
+            lambda **k: [s for s in fr.STEPS if s.name in ("sync",)],
+        )
+
+        assert fr.cmd_run(step=None, all_steps=True, resume=True) == 0
+        assert "backup" not in seen  # 已成功，断点跳过
+        assert seen["sync"][-1] == "--no-backup"

@@ -215,7 +215,12 @@ class TestCheckStatus:
 
         assert backup_cache.check_status() == 1
 
-    def test_main_returns_one_when_backup_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_main_returns_one_when_backup_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(backup_cache, "get_cache_dir", lambda: tmp_path)
+        _make_db(tmp_path / "pipeline_cache.db")
+        (tmp_path / "metadata.json").write_text("{}", encoding="utf-8")
         monkeypatch.setattr(
             backup_cache,
             "backup_all",
@@ -223,6 +228,19 @@ class TestCheckStatus:
         )
 
         assert backup_cache.main([]) == 1
+
+    def test_main_ok_when_sources_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """首次运行尚无 DB / metadata 时不算备份失败。"""
+        monkeypatch.setattr(backup_cache, "get_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr(
+            backup_cache,
+            "backup_all",
+            lambda *a, **kw: {"pipeline_cache.db": None, "metadata.json": None},
+        )
+
+        assert backup_cache.main([]) == 0
 
     def test_main_check_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(backup_cache, "check_status", lambda **kw: 0)

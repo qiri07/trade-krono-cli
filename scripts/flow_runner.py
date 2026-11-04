@@ -14,7 +14,12 @@
   uv run python scripts/flow_runner.py run --all
   uv run python scripts/flow_runner.py run --all --enable export
   uv run python scripts/flow_runner.py run --all --disable intraday
+  uv run python scripts/flow_runner.py run --all --disable backup   # 关闭统一备份（下游各自备份）
   uv run python scripts/flow_runner.py run --all --dry-run
+
+备份策略：`--all` 时由首个 `backup` step 统一做一次前置备份，`sync` / `sync_etf`
+会自动追加 `--no-backup`，避免一轮流程重复拷贝 ~1.1 GB 的 pipeline_cache.db；
+单独执行 `--step sync` 或 `--disable backup` 时，各 step 仍会自行备份。
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +46,10 @@ EXPORT = os.getenv("EXPORT", "0") == "1"
 PUSH_FLAG = 0 if NO_PUSH else 1
 
 DEFAULT_STEP_TIMEOUT_SECONDS = 3600
+
+# 由 backup step 统一备份后，这些自带备份的 step 追加 --no-backup，保证一轮流程只备一次
+BACKUP_STEP_NAME = "backup"
+STEPS_WITH_AUTO_BACKUP = frozenset({"sync", "sync_etf"})
 
 
 def checkpoint_path() -> Path:
@@ -102,6 +111,16 @@ class Step:
 # ── Step 注册表（按依赖序）────────────────────────────────────────────
 STEPS: list[Step] = [
     Step(
+        name="backup",
+        description=(
+            "写入前数据备份（backup_cache.py；本轮只备一次，"
+            "sync/sync_etf 将自动跳过各自备份）"
+        ),
+        command=["uv", "run", "python", "scripts/backup_cache.py"],
+        enabled_by_default=True,
+        timeout=1800,
+    ),
+    Step(
         name="check",
         description="数据现状检查 + 补拉计划生成（check_data_status.py）",
         command=["uv", "run", "python", "scripts/check_data_status.py"],
@@ -119,7 +138,7 @@ STEPS: list[Step] = [
             f"outputs/results/sync_plan_{time.strftime('%Y%m%d')}.json",
         ],
         enabled_by_default=not NO_SYNC,
-        depends_on=["check"],
+        depends_on=["check", "backup"],
         timeout=7200,
     ),
     Step(
@@ -277,6 +296,20 @@ def run_step(step: Step, dry_run: bool = False) -> int:
     return result.returncode
 
 
+def _suppress_auto_backup(step: Step) -> Step:
+    """给自带备份的 step 追加 `--no-backup`（本轮已由 backup step 统一备份）。
+
+    Args:
+        step: 待处理 step。
+
+    Returns:
+        追加 `--no-backup` 后的新 Step；不需要/已追加时原样返回。
+    """
+    if step.name not in STEPS_WITH_AUTO_BACKUP or "--no-backup" in step.command:
+        return step
+    return replace(step, command=[*step.command, "--no-backup"])
+
+
 def resolve_enabled_steps(
     enable: list[str] | None = None,
     disable: list[str] | None = None,
@@ -388,6 +421,9 @@ def cmd_run(
         避免用脏数据推导后续结论；单个 step 失败继续执行其余独立 step
       - resume=True：跳过当天 checkpoint 中标记为 success 的 step，从首个未成功
         的 step 开始执行；任一 step 失败时立即停止（断点），等待下次 resume 重试
+
+    备份语义：backup step 在本次执行计划内（或当天已成功）时，sync / sync_etf
+    自动追加 `--no-backup`，保证一轮流程只做一次前置备份。
     """
     if all_steps:
         targets = resolve_enabled_steps(enable=enable, disable=disable)
@@ -395,13 +431,19 @@ def cmd_run(
             print("没有可执行的 step（全部被禁用？）")
             return 1
         statuses: dict[str, str] = {}
+        # 本轮是否已有统一备份：backup step 在本次执行计划内，或当天 checkpoint 已记录成功
+        backup_done = any(s.name == BACKUP_STEP_NAME for s in targets)
         if resume:
             statuses = load_checkpoint()
+            backup_done = backup_done or statuses.get(BACKUP_STEP_NAME) == "success"
             pending_names = {s.name for s in targets if statuses.get(s.name) != "success"}
             if not pending_names:
                 print("✅ 断点续传：当天所有启用 step 均已成功，无待执行 step")
                 return 0
             targets = [s for s in targets if s.name in pending_names]
+        if backup_done:
+            # 一轮流程只保留一份前置备份：下游自带备份的 step 不再各自备份
+            targets = [_suppress_auto_backup(s) for s in targets]
         print(f"▶ 分层并行执行 {len(targets)} 个 step")
         # 基于 depends_on 拓扑分层：同层互不依赖，可并行；层间串行
         layers = _topo_layers(targets)

@@ -2,7 +2,7 @@
 # daily_flow.sh — 一键执行每日投研流程（薄壳，实际调度在 scripts/flow_runner.py）
 #
 # 用法（与历史保持兼容，env flag 透传给 flow_runner）：
-#   bash scripts/daily_flow.sh                 # 默认：全部 13 个 step 串行（export 默认禁用）
+#   bash scripts/daily_flow.sh                 # 默认：全部 14 个 step 串行（export 默认禁用）
 #   DRY_RUN=1 bash scripts/daily_flow.sh       # 只打印不执行
 #   NO_PUSH=1 bash scripts/daily_flow.sh        # 跳过飞书推送（PUSH_FLAG=0）
 #   NO_SYNC=1 bash scripts/daily_flow.sh        # 跳过数据同步类 step

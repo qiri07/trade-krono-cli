@@ -280,7 +280,9 @@ RESUME=1 bash scripts/daily_flow.sh    # 断点续传：跳过已成功 step，�
 ```
 
 实际调度：`bash scripts/daily_flow.sh` → `uv run python scripts/flow_runner.py run --all`
-（step 注册表：check / sync / sync_etf / metadata / buffett / resonance / multi_head / whitelist / double_ma / macd_ma / combined / intraday；export 默认关闭）；失败后可用 `RESUME=1` 续传，或 `uv run python scripts/flow_runner.py run --all --strict` 首错即停。运行中 step 有超时兜底（`DEFAULT_STEP_TIMEOUT_SECONDS=3600`，buffett 5400s 等）。
+（step 注册表：backup / check / sync / sync_etf / metadata / buffett / resonance / multi_head / whitelist / double_ma / macd_ma / czsc / combined / intraday；export 默认关闭）；失败后可用 `RESUME=1` 续传，或 `uv run python scripts/flow_runner.py run --all --strict` 首错即停。运行中 step 有超时兜底（`DEFAULT_STEP_TIMEOUT_SECONDS=3600`，buffett 5400s 等）。
+
+> **备份策略**：`--all` 时由首个 `backup` step 统一备份一次（SQLite 在线快照），`sync` / `sync_etf` 自动追加 `--no-backup`，一轮流程不会重复拷贝 ~1.1 GB 的 `pipeline_cache.db`；单独跑 `--step sync` 或 `--disable backup` 时，各脚本仍会各自备份。
 
 ## 巴菲特六闸门筛选（Buffett Six-Gate Screening）
 位置：`tests/buffett_screen_parallel.py`（并行版）或 `tests/buffett_screen.py`（串行版）

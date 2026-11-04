@@ -405,7 +405,11 @@ def main(argv: list[str] | None = None) -> int:
         return check_status(verify=args.verify)
 
     results = backup_all(args.keep, force=args.force)
-    failed = [name for name, path in results.items() if path is None]
+    cache_dir = get_cache_dir()
+    # 源文件不存在不算失败（首次运行尚无 DB），只有「文件在但备份失败」才返回非 0
+    failed = [
+        name for name, path in results.items() if path is None and (cache_dir / name).exists()
+    ]
     if failed:
         logger.error(f"❌ 备份失败 {len(failed)} 个文件: {failed}")
         return 1
