@@ -565,8 +565,23 @@ def main(
     plan_path: str | None = None,
     dry_run: bool = False,
     no_incremental: bool = False,
+    backup: bool = True,
 ) -> None:
-    # ── 第零步：检查当前缺失情况 ─────────────────────────────
+    """主流程：补齐失败股票历史数据 + 今日增量同步。
+
+    Args:
+        plan_path: 补拉计划 JSON 路径（由 scripts/check_data_status.py 生成）；缺省时全库扫描。
+        dry_run: 仅打印补拉清单，不写缓存。
+        no_incremental: 禁用增量合并，改为全量覆盖（重拉完整历史段）。
+        backup: 写入前是否自动备份核心数据文件（默认 True）。
+    """
+    # ── 前置步骤：数据安全备份（在任何写入操作前自动备份）─────────────────
+    if backup and not dry_run:
+        from scripts.backup_cache import backup_all
+
+        backup_all(keep=10)
+
+    # ── 第一步：检查当前缺失情况 ─────────────────────────────
     print_missing_report(fetch_missing_report())
 
     # 补拉来源：优先读计划 JSON，缺省回退到全库扫描
@@ -599,9 +614,9 @@ def main(
     if failed_tickers_cache:
         print(f"📍 检测到失败进度：{len(failed_tickers_cache)} 只股票曾拉取失败，将重试")
 
-    # ── 第一步：补齐失败股票的历史数据 ─────────────────────
+    # ── 第二步：补齐失败股票的历史数据 ─────────────────────
     print("=" * 60)
-    print("📌 第一步：补齐失败股票的历史数据")
+    print("📌 第二步：补齐失败股票的历史数据")
     print("=" * 60)
     failed_tickers = plan_failed if plan_path else get_failed_tickers()
     failed_before = len(failed_tickers)
@@ -646,16 +661,16 @@ def main(
                 _mark_failed(ticker, completed_tickers, failed_tickers_cache)
                 print(f"  ❌ {i}/{len(failed_tickers)} 异常: {ticker} ({e})")
     print(
-        f"\n第一步结果: 成功 {success_13}/{len(failed_tickers)}, 失败 {len(failed_13)}/{len(failed_tickers)}"
+        f"\n第二步结果: 成功 {success_13}/{len(failed_tickers)}, 失败 {len(failed_13)}/{len(failed_tickers)}"
     )
     if failed_13:
         print(f"   仍失败: {[t for t, _ in failed_13]}")
     print()
     _flush_completed(completed_tickers, failed_tickers_cache)
 
-    # ── 第二步：检查哪些股票缺少今日数据 ───────────────────────
+    # ── 第三步：检查哪些股票缺少今日数据 ───────────────────────
     print("=" * 60)
-    print(f"📌 第二步：同步今日（{get_today_date()}）增量数据")
+    print(f"📌 第三步：同步今日（{get_today_date()}）增量数据")
     print("=" * 60)
     import sqlite3
 
@@ -731,16 +746,16 @@ def main(
         time.sleep(1)  # 短暂休息避免API限流
 
     print(
-        f"\n第二步结果: 成功 {success_today}/{len(need_today)}, 失败 {len(failed_today)}/{len(need_today)}"
+        f"\n第三步结果: 成功 {success_today}/{len(need_today)}, 失败 {len(failed_today)}/{len(need_today)}"
     )
     if failed_today:
         print(f"   仍失败: {[t for t, _ in failed_today]}")
     print()
     _flush_completed(completed_tickers, failed_tickers_cache)
 
-    # ── 第三步：最终统计 ───────────────────────────────────────
+    # ── 第四步：最终统计 ───────────────────────────────────────
     print("=" * 60)
-    print("📌 第三步：最终数据统计")
+    print("📌 第四步：最终数据统计")
     print("=" * 60)
     conn = sqlite3.connect(str(CACHE_DB))
     cur = conn.cursor()
@@ -790,9 +805,15 @@ if __name__ == "__main__":
         action="store_true",
         help="禁用增量合并，改为全量覆盖（重拉完整历史段）",
     )
+    parser.add_argument(
+        "--no-backup",
+        action="store_true",
+        help="跳过写入前的自动备份（默认会备份 pipeline_cache.db / metadata.json）",
+    )
     args = parser.parse_args()
     main(
         plan_path=args.plan,
         dry_run=args.dry_run,
         no_incremental=args.no_incremental,
+        backup=not args.no_backup,
     )

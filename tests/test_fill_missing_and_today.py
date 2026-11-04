@@ -163,12 +163,22 @@ class TestMainFlags:
         monkeypatch.setattr(fmat, "fetch_full_range", _fake_full)
         monkeypatch.setattr(fmat, "fetch_today_incremental", _fake_today)
 
+        # 备份在写入前触发；此处替换掉真实备份，避免触碰 DB（sqlite3.connect 已被 mock）
+        backup_calls = {"n": 0}
+
+        def _fake_backup(*args: object, **kwargs: object) -> dict[str, object]:
+            backup_calls["n"] += 1
+            return {}
+
+        monkeypatch.setattr("scripts.backup_cache.backup_all", _fake_backup)
+
         # 跑完整主流程（非 dry-run）
         main(plan_path=None, dry_run=False, no_incremental=False)
 
         # 无失败票、无今日票 → 两个拉取函数都不应被触发
         assert called["full"] == 0
         assert called["today"] == 0
+        assert backup_calls["n"] == 1
 
     def test_main_plan_mode_limits_tickers(self, tmp_path, monkeypatch) -> None:
         """--plan 模式下，补拉清单来自计划 JSON，不触发全库扫描。"""

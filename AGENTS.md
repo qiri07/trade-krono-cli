@@ -31,7 +31,9 @@ uv run python scripts/etf_history_sync.py --codes "510300,159915"  # 指定ETF�
 uv run python scripts/check_data_integrity.py          # 数据完整性检查
 uv run python scripts/intraday_scan.py                 # 盘中技术信号扫描（白名单，全 4 类信号）
 uv run python scripts/intraday_scan.py --mode resonance --min-signals 2  # 指定信号类型 + 命中阈值
-uv run python scripts/cleanup_duplicates.py            # 清理重复记录
+uv run python scripts/cleanup_duplicates.py            # 清理重复记录（删除前自动备份）
+uv run python scripts/backup_cache.py                  # 备份 pipeline_cache.db + metadata.json（在线快照，未变化自动跳过）
+uv run python scripts/backup_cache.py --check-only --verify  # 查看备份状态并校验最新 DB 备份完整性
 uv run python scripts/daily_analysis.py                # 每日白名单分析 + AI 验证 + 飞书推送
 uv run python scripts/fetch_reference_data.py          # 批量获取股票参考数据（PE/PB/行业等；TTL 24h 自动判断，过期才全量重拉）
 uv run python scripts/fetch_reference_data.py --tickers "600519,000858"  # 部分拉取（合并进现有 metadata.json，不覆盖全量）
@@ -359,7 +361,8 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `retry_missing_history.py` | 重试缺失历史的股票（16 并发） |
 | `fill_missing_and_today.py` | 补齐失败股票历史 + 同步今日增量（8 并发） |
 | `check_data_integrity.py` | 数据完整性检查（重复/空数据/解码验证） |
-| `cleanup_duplicates.py` | 清理同一 ticker 的多条记录（保留最长） |
+| `cleanup_duplicates.py` | 清理同一 ticker 的多条记录（保留最长；删除前自动备份） |
+| `backup_cache.py` | 核心数据备份（SQLite 在线快照 + 原子写入；按族保留备份，未变化自动跳过） |
 | `full_sync_v2.py` | 优化版主备降级同步（沪深优先 tonghuashun） |
 | `fill_missing_latest.py` | 补齐缺少最新日期的股票增量数据（tonghuashun 主，baostock 降级） |
 | `etf_history_sync.py` | ETF K 线同步（akshare 同花顺发现全市场 ~1409 只，baostock 拉取；`--full` 全量 / `--codes` 指定） |

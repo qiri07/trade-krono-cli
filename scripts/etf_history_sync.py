@@ -200,6 +200,11 @@ def parse_args() -> argparse.Namespace:
         default=FULL_START_DATE,
         help=f"全量模式起始日期（默认 {FULL_START_DATE}）",
     )
+    parser.add_argument(
+        "--no-backup",
+        action="store_true",
+        help="跳过写入前的自动备份（默认会备份 pipeline_cache.db / metadata.json）",
+    )
     return parser.parse_args()
 
 
@@ -231,6 +236,12 @@ def main() -> None:
     if not tickers:
         logger.warning("无 ETF 可同步，退出")
         return
+
+    # ── 写入前备份（放在 ticker 解析与空集合早退之后，避免无实际写入时白拷 1 GB）──
+    if not args.no_backup:
+        from scripts.backup_cache import backup_all
+
+        backup_all(keep=10)
 
     # 确定拉取窗口
     today = time.strftime("%Y-%m-%d")

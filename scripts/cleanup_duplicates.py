@@ -4,13 +4,21 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
 
-DB_PATH = Path("outputs/cache/pipeline_cache.db")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from scripts._utils import get_cache_db_path
+from scripts.backup_cache import backup_all
 
 
 def main() -> None:
-    conn = sqlite3.connect(str(DB_PATH))
+    # ── 第零步：数据安全备份（在任何删除操作前自动备份）─────────────────
+    backup_all(keep=10)
+
+    db_path = get_cache_db_path()
+    conn = sqlite3.connect(str(db_path))
     cur = conn.cursor()
 
     print("=== 清理重复记录 ===")

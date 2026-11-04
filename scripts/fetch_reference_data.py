@@ -23,6 +23,7 @@ import os
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -147,16 +148,29 @@ def load_checkpoint() -> dict[str, dict | None]:
         return {}
 
 
+def _atomic_write_json(path: Path, data: Mapping[str, object]) -> None:
+    """原子写 JSON：先写同目录临时文件再 rename，避免其它进程读到半截文件。
+
+    Args:
+        path: 目标文件路径。
+        data: 待写入的 JSON 映射。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def save_checkpoint(results: dict[str, dict | None]) -> None:
     """将当前进度原子写入 checkpoint 文件（先写临时文件再 rename，避免写一半损坏）。
 
     Args:
         results: {归一化 ticker: metadata dict 或 None} 当前已完成的映射
     """
-    CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = CHECKPOINT_FILE.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, CHECKPOINT_FILE)
+    _atomic_write_json(CHECKPOINT_FILE, results)
 
 
 def clear_checkpoint() -> None:
@@ -341,8 +355,7 @@ def main(
     logger.info(f"  成功: {success}, 失败: {failed}")
     logger.info(f"  耗时: {elapsed:.1f}s ({elapsed / 60:.1f}min)")
 
-    # 保存元数据到 JSON
-    METADATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+    # 保存元数据到 JSON（原子写，避免备份/读取方读到半截文件）
     if partial:
         # 部分模式：合并进现有文件
         existing = _load_existing_metadata()
@@ -354,7 +367,7 @@ def main(
         stale = [k for k in _load_existing_metadata() if k not in results]
         for k in stale:
             results.setdefault(k, None)
-    METADATA_FILE.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_json(METADATA_FILE, results)
     logger.info(f"  已保存至: {METADATA_FILE}")
 
     # 全量模式完成后清除 checkpoint
