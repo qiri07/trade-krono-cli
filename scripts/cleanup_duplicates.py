@@ -3,13 +3,12 @@
 
 from __future__ import annotations
 
-import sqlite3
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts._utils import get_cache_db_path
+from scripts._utils import get_cache_db_path, get_sqlite_conn
 from scripts.backup_cache import backup_all
 
 
@@ -18,7 +17,7 @@ def main() -> None:
     backup_all(keep=10)
 
     db_path = get_cache_db_path()
-    conn = sqlite3.connect(str(db_path))
+    conn = get_sqlite_conn(db_path)
     cur = conn.cursor()
 
     print("=== 清理重复记录 ===")

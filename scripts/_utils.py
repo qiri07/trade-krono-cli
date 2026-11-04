@@ -291,7 +291,7 @@ def get_all_tickers() -> list[str]:
     Returns:
         按字母序排序的 ticker 列表。
     """
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     tickers = [r[0] for r in conn.execute("SELECT DISTINCT ticker FROM kline_cache").fetchall()]
     conn.close()
     return sorted(tickers)
@@ -309,7 +309,7 @@ def get_astock_tickers(db_path: Path, logger_fn: Callable[[str], None] | None = 
     Returns:
         排除北交所/港股后的 ticker 列表（按字母序）。
     """
-    conn = sqlite3.connect(str(db_path))
+    conn = get_sqlite_conn(db_path)
     cur = conn.cursor()
     cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
     all_tickers = [r[0] for r in cur.fetchall()]
@@ -459,7 +459,7 @@ def _get_cache_latest_date() -> str | None:
     if not CACHE_DB.exists():
         return None
     try:
-        conn = sqlite3.connect(str(CACHE_DB))
+        conn = get_sqlite_conn(CACHE_DB)
         latest = conn.execute("SELECT MAX(end) FROM kline_cache").fetchone()[0]
         conn.close()
         return latest
@@ -524,3 +524,29 @@ def check_data_freshness(logger_fn: Callable[[str], None] | None = None) -> str:
 
     log("⚠️  同步失败，继续执行但数据可能不完整")
     return f"⚠️  缓存较旧（最新 {latest}，期望 {expected}），已尝试同步但失败"
+
+
+def get_sqlite_conn(db_path: Path | str = CACHE_DB, readonly: bool = False) -> sqlite3.Connection:
+    """获取一个配置好的 SQLite 连接。
+
+    使用与 Cache 类相同的 WAL 模式和 busy_timeout 设置，确保多线程环境下
+    并发访问时不会出现 database is locked 错误。
+
+    Args:
+        db_path: 数据库文件路径，默认使用 CACHE_DB。
+        readonly: 是否以只读模式打开，默认 False。
+
+    Returns:
+        配置好的 sqlite3.Connection 实例。
+    """
+    if readonly:
+        uri = f"file:{db_path}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=30.0)
+    else:
+        conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30.0)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+    except Exception:
+        pass  # 测试中可能 mock 连接对象，不支持 PRAGMA
+    return conn

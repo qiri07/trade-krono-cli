@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import get_provider_chain
+from scripts._utils import get_provider_chain, get_sqlite_conn
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.data_providers.factory import get_data_factory
 
@@ -33,9 +33,8 @@ SYNC_END = "2026-09-17"
 
 def get_missing_tickers() -> list[str]:
     """获取缺少 SYNC_END 数据的 ticker。"""
-    import sqlite3
 
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     rows = conn.execute(
         "SELECT ticker FROM kline_cache WHERE end < ? ORDER BY ticker",
         (SYNC_END,),
@@ -79,9 +78,8 @@ def fetch_one(factory, ticker: str) -> tuple[str, bool, str]:
         ts_col = "timestamps" if "timestamps" in df.columns else "date"
         ts = pd.to_datetime(df[ts_col])
 
-        import sqlite3
 
-        conn = sqlite3.connect(str(CACHE_DB))
+        conn = get_sqlite_conn(CACHE_DB)
         row = conn.execute(
             "SELECT start, end, data FROM kline_cache WHERE ticker = ?", (ticker,)
         ).fetchone()

@@ -31,6 +31,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from scripts._utils import get_sqlite_conn
+
 DEFAULT_KEEP = 10
 TIMESTAMP_FMT = "%Y%m%d_%H%M%S"
 
@@ -145,7 +147,7 @@ def _backup_sqlite(src: Path, dst: Path) -> None:
     """
     tmp = dst.with_name(f"{dst.name}.tmp")
     tmp.unlink(missing_ok=True)
-    src_conn = sqlite3.connect(str(src), timeout=30.0)
+    src_conn = get_sqlite_conn(src)
     try:
         dst_conn = sqlite3.connect(str(tmp))
         try:
@@ -351,7 +353,7 @@ def check_status(*, verify: bool = False) -> int:
             logger.info("")
             logger.info(f"🔍 校验最新备份: {latest_db.name}")
             try:
-                conn = sqlite3.connect(f"file:{latest_db}?mode=ro", uri=True, timeout=10.0)
+                conn = get_sqlite_conn(latest_db, readonly=True)
                 try:
                     row = conn.execute("PRAGMA integrity_check").fetchone()
                 finally:

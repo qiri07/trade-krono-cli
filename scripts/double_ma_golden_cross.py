@@ -33,6 +33,7 @@ sys.path.insert(0, "/run/media/onai/MyDisk/Work/trade-krono-cli")
 from scripts._utils import (
     get_all_tickers,
     get_cache_db_path,
+    get_sqlite_conn,
     is_etf_ticker,
     normalize_ticker_key,
     ticker_to_thscode,
@@ -122,7 +123,7 @@ def load_roe_from_cache(buffett_cache_path: Path) -> dict[str, float]:
     """从巴菲特缓存数据库加载ROE数据"""
     if not buffett_cache_path.exists():
         return {}
-    conn = sqlite3.connect(buffett_cache_path)
+    conn = get_sqlite_conn(buffett_cache_path)
     rows = conn.execute("SELECT key, data FROM cache_financials").fetchall()
     conn.close()
 
@@ -149,7 +150,7 @@ def load_profit_from_cache(buffett_cache_path: Path) -> dict[str, float]:
     """从巴菲特缓存数据库加载最新净利润（parent_holder_net_profit，单位：元）"""
     if not buffett_cache_path.exists():
         return {}
-    conn = sqlite3.connect(buffett_cache_path)
+    conn = get_sqlite_conn(buffett_cache_path)
     rows = conn.execute("SELECT key, data FROM cache_income").fetchall()
     conn.close()
 
@@ -205,8 +206,7 @@ def run_lite(
         通过筛选的股票列表（已按 PE 升序排列）
     """
     db_path = get_cache_db_path()
-    conn = sqlite3.connect(db_path, check_same_thread=False, timeout=30.0)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = get_sqlite_conn(db_path)
 
     cache_dir = Path("outputs/cache")
     metadata = load_metadata(cache_dir)

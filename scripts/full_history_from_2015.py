@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import get_all_tickers, get_provider_chain
+from scripts._utils import get_all_tickers, get_provider_chain, get_sqlite_conn
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
@@ -91,9 +91,7 @@ def _fetch_and_append(
         merged_df = merged_df.drop_duplicates(subset=[ts_col]).reset_index(drop=True)
         ts = pd.to_datetime(merged_df[ts_col])
 
-        import sqlite3
-
-        conn = sqlite3.connect(str(cache_db))
+        conn = get_sqlite_conn(cache_db)
         row = conn.execute(
             "SELECT start, end, data FROM kline_cache WHERE ticker = ?", (ticker,)
         ).fetchone()
@@ -149,9 +147,7 @@ def main(start_date: str, end_date: str) -> None:
 
     # 先检查哪些股票需要补全
     # 选中 start 在 [START_DATE, END_DATE] 范围内的股票（IPO 日期在 2015 之后的股票）
-    import sqlite3
-
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     need_update = [
         r[0]
         for r in conn.execute(

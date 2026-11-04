@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -13,7 +12,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts._utils import get_provider_chain
+from scripts._utils import get_provider_chain, get_sqlite_conn
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import DataProviderFactory, get_data_factory
@@ -26,7 +25,7 @@ _WORKERS = 16
 def _get_tickers(prefix: str) -> list[str]:
     """读取指定前缀（bj./hk.）的股票代码列表。"""
     db = Path("outputs/cache/pipeline_cache.db")
-    conn = sqlite3.connect(str(db))
+    conn = get_sqlite_conn(db)
     tickers = [
         r[0]
         for r in conn.execute(

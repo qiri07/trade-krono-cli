@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import argparse
-import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -28,13 +27,15 @@ from loguru import logger
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DB = PROJECT_ROOT / "outputs" / "cache" / "pipeline_cache.db"
 
+from scripts._utils import get_sqlite_conn  # noqa: E402
+
 
 def get_cache_latest_date() -> str | None:
     """获取缓存中最新的交易日。"""
     if not CACHE_DB.exists():
         return None
     try:
-        conn = sqlite3.connect(str(CACHE_DB))
+        conn = get_sqlite_conn(CACHE_DB)
         cursor = conn.cursor()
         cursor.execute("SELECT MAX(end) FROM kline_cache")
         result = cursor.fetchone()[0]

@@ -11,7 +11,6 @@ RD-Agent 格式要求:
 from __future__ import annotations
 
 import os
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -20,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import get_cache_db_path
+from scripts._utils import get_cache_db_path, get_sqlite_conn
 
 try:
     from trade_krono_cli.config import get_settings  # type: ignore[import-not-found]
@@ -48,7 +47,7 @@ def _ticker_to_instrument(ticker: str) -> str:
 
 def export_to_rdagent(db_path: Path, dest: Path) -> dict:
     """从 SQLite 导出为 RD-Agent parquet 格式"""
-    conn = sqlite3.connect(db_path)
+    conn = get_sqlite_conn(db_path)
     cur = conn.cursor()
 
     rows: list[pd.DataFrame] = []

@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import json
 import pickle
-import sqlite3
 import subprocess
 import sys
 import time
@@ -41,6 +40,7 @@ from loguru import logger
 from scripts._utils import (
     ST_NAME_KEYWORDS_MINIMAL,
     get_cache_db_path,
+    get_sqlite_conn,
     is_etf_ticker,
     normalize_ticker_key,
     ticker_to_thscode,
@@ -143,7 +143,7 @@ def _fetch_all_stock_names(date_str: str) -> dict[str, str]:
 # ── 市值估算 ───────────────────────────────────────────────────────────────────
 def _init_share_cap_cache(db_path: Path) -> None:
     """确保总股本缓存表存在。"""
-    conn = sqlite3.connect(str(db_path))
+    conn = get_sqlite_conn(db_path)
     conn.execute(
         f"CREATE TABLE IF NOT EXISTS {_SHARE_CAP_TABLE} ("
         "ticker TEXT NOT NULL, quarter TEXT NOT NULL, total_share_wan REAL,"
@@ -167,7 +167,7 @@ def load_market_cap(
     _init_share_cap_cache(cache_db)
 
     # 读缓存
-    conn = sqlite3.connect(str(cache_db))
+    conn = get_sqlite_conn(cache_db)
     cached: dict[str, dict[str, float]] = {}
     for tk, q, val in conn.execute(f"SELECT ticker, quarter, total_share_wan FROM {_SHARE_CAP_TABLE}"):
         if val and val > 0:
@@ -228,7 +228,7 @@ def load_market_cap(
 
     # 写回缓存
     if fetched:
-        wconn = sqlite3.connect(str(cache_db))
+        wconn = get_sqlite_conn(cache_db)
         for tk, val in fetched.items():
             wconn.execute(
                 f"INSERT OR REPLACE INTO {_SHARE_CAP_TABLE} (ticker, quarter, total_share_wan) "
@@ -361,7 +361,7 @@ def _scan_all(
     -------
     (技术面通过的候选列表, 各剔除项计数)
     """
-    conn = sqlite3.connect(str(db_path))
+    conn = get_sqlite_conn(db_path)
     rows = conn.execute(
         "SELECT ticker, data FROM kline_cache WHERE ticker NOT LIKE 'bj.%' AND ticker NOT LIKE 'hk.%'"
     ).fetchall()

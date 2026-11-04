@@ -16,7 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
-from scripts._utils import FAILED_MIN_RECORDS, get_provider_chain, is_etf_ticker
+from scripts._utils import (
+    FAILED_MIN_RECORDS,
+    get_provider_chain,
+    get_sqlite_conn,
+    is_etf_ticker,
+)
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.base import KlineData
@@ -156,9 +161,8 @@ def _has_sufficient_history(ticker: str) -> bool:
     Returns:
         True 表示已有足够历史数据，可跳过；False 表示需要补拉。
     """
-    import sqlite3
 
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
     cur.execute(
         "SELECT COUNT(*) FROM kline_cache WHERE ticker = ?",
@@ -227,9 +231,8 @@ def get_failed_tickers() -> list[str]:
 
     使用 GROUP BY 替代子查询，避免对每行执行 COUNT(*) 导致的全表扫描。
     """
-    import sqlite3
 
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
     cur.execute(f"""
         SELECT ticker FROM kline_cache
@@ -247,9 +250,8 @@ def get_failed_tickers() -> list[str]:
 
 def get_today_only_tickers() -> list[str]:
     """获取只有今日数据的非北交所股票（需要补全历史）。"""
-    import sqlite3
 
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
     today = get_today_date()
     cur.execute(f"""
@@ -276,9 +278,8 @@ def _has_today_data(ticker: str, today: str) -> bool:
     Returns:
         True 表示已有今日数据，可跳过；False 表示需要补今日。
     """
-    import sqlite3
 
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
     cur.execute(
         "SELECT COUNT(*) FROM kline_cache WHERE ticker = ? AND end >= ?",
@@ -467,10 +468,9 @@ def fetch_missing_report() -> dict:
             has_2020: int — 已有 2020 年数据的股票数
             today: str — 今日日期
     """
-    import sqlite3
 
     today = get_today_date()
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
 
     cur.execute(
@@ -672,13 +672,12 @@ def main(
     print("=" * 60)
     print(f"📌 第三步：同步今日（{get_today_date()}）增量数据")
     print("=" * 60)
-    import sqlite3
 
     if plan_path:
         need_today = plan_need_today
     else:
         today = get_today_date()
-        conn = sqlite3.connect(str(CACHE_DB))
+        conn = get_sqlite_conn(CACHE_DB)
         cur = conn.cursor()
         cur.execute(f"""
             SELECT DISTINCT ticker FROM kline_cache
@@ -757,7 +756,7 @@ def main(
     print("=" * 60)
     print("📌 第四步：最终数据统计")
     print("=" * 60)
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM kline_cache")
     total = cur.fetchone()[0]

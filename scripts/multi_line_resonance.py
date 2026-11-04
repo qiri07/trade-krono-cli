@@ -20,7 +20,7 @@ import argparse
 import io
 import json
 import os
-import sqlite3
+import sqlite3  # noqa: F401  # 测试需 mock scripts.multi_line_resonance.sqlite3.connect
 import subprocess
 import sys
 import time
@@ -40,6 +40,7 @@ from scripts._utils import (
     check_data_freshness,
     get_astock_tickers,
     get_cache_db_path,
+    get_sqlite_conn,
     is_etf_ticker,
     is_st_name,
     strip_ticker_prefix,
@@ -222,7 +223,7 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
         {ticker, d_macd, w_macd, m_macd, d_ok, w_ok, m_ok, ...}
         若三线均共振则 d_ok/w_ok/m_ok 均为 True
     """
-    conn = sqlite3.connect(str(db_path))
+    conn = get_sqlite_conn(db_path)
     # ETF 无复权概念，缓存统一按 adjustflag='1' 存储，与普通股票一致
     row = conn.execute(
         "SELECT data FROM kline_cache WHERE ticker=? AND freq='d' AND adjustflag='1'",

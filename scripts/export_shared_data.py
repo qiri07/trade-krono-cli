@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -24,12 +23,12 @@ import pandas as pd
 from loguru import logger
 
 try:
-    from scripts._utils import get_cache_db_path
+    from scripts._utils import get_cache_db_path, get_sqlite_conn
 except ImportError:
     import sys
     from pathlib import Path as _P
     sys.path.insert(0, str(_P(__file__).resolve().parents[1]))
-    from scripts._utils import get_cache_db_path
+    from scripts._utils import get_cache_db_path, get_sqlite_conn
 
 try:
     from trade_krono_cli.config import get_settings  # type: ignore[import-not-found]
@@ -78,7 +77,7 @@ def _symbol_to_ticker(symbol: str) -> str:
 
 def export_parquet(db_path: Path, dest: Path) -> dict:
     """导出为 MultiIndex Parquet（RD-Agent / qlib 格式）"""
-    conn = sqlite3.connect(db_path)
+    conn = get_sqlite_conn(db_path)
     cur = conn.cursor()
 
     rows: list[dict] = []
@@ -119,7 +118,7 @@ def export_hdf5(db_path: Path, dest: Path) -> dict:
     except ImportError:
         logger.warning("  ⚠️  pytables 未安装，跳过 HDF5 导出（Parquet 已可用）")
         return {"success": 0, "skipped": "pytables not installed"}
-    conn = sqlite3.connect(db_path)
+    conn = get_sqlite_conn(db_path)
     cur = conn.cursor()
 
     rows: list[dict] = []
@@ -164,7 +163,7 @@ def export_qlib(db_path: Path, dest: Path, qlib_dir_name: str = "shared") -> dic
     # 生成 qlib 兼容 CSV（临时目录）
     csv_dest = dest / "csv_input"
     csv_dest.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = get_sqlite_conn(db_path)
     cur = conn.cursor()
     cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
     tickers = [r[0] for r in cur.fetchall()]
@@ -198,7 +197,7 @@ def export_qlib(db_path: Path, dest: Path, qlib_dir_name: str = "shared") -> dic
     (dest / "instruments").mkdir(parents=True, exist_ok=True)
 
     # calendars: 从数据中提取交易日
-    conn = sqlite3.connect(db_path)
+    conn = get_sqlite_conn(db_path)
     cur = conn.cursor()
     cur.execute("SELECT MIN(start) FROM kline_cache")
     start_date = cur.fetchone()[0]
@@ -212,7 +211,7 @@ def export_qlib(db_path: Path, dest: Path, qlib_dir_name: str = "shared") -> dic
     cal_df.to_csv(dest / "calendars" / "day.txt", index=False, header=False)
 
     # instruments: 所有 ticker
-    conn = sqlite3.connect(db_path)
+    conn = get_sqlite_conn(db_path)
     cur = conn.cursor()
     cur.execute("SELECT DISTINCT ticker FROM kline_cache ORDER BY ticker")
     tickers = [r[0] for r in cur.fetchall()]

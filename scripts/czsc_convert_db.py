@@ -8,11 +8,12 @@ DB → parquet 转换脚本（必须在 trade-krono-cli venv 运行，pandas 3.x
 from __future__ import annotations
 
 import pickle
-import sqlite3
 from pathlib import Path
 
 import pandas as pd
 from loguru import logger
+
+from scripts._utils import get_sqlite_conn
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "outputs/cache/pipeline_cache.db"
@@ -24,7 +25,7 @@ MIN_BARS = 60
 def main() -> int:
     BARS_DIR.mkdir(parents=True, exist_ok=True)
 
-    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    con = get_sqlite_conn(DB_PATH, readonly=True)
     cur = con.cursor()
     rows = cur.execute(
         "select ticker, data from kline_cache where freq='d' and (ticker like ? or ticker like ? or ticker like ?)",

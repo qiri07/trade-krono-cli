@@ -34,6 +34,7 @@ from scripts._utils import (
     STOCK_NAMES,
     check_data_freshness,
     check_kline_regime,
+    get_sqlite_conn,
     is_bse_or_hk,
 )
 from scripts.feishu_utils import push_feishu
@@ -359,9 +360,8 @@ def get_kline(ticker: str, start: str | None = None, end: str | None = None) -> 
     if start is not None and end is not None:
         return kline_cache.get_kline(ticker, start, end, freq="d", adjustflag="1")
     # 无日期限制：直接读原始行
-    import sqlite3
 
-    conn = sqlite3.connect(str(_get_cache_db()))
+    conn = get_sqlite_conn(_get_cache_db())
     row = conn.execute("SELECT data FROM kline_cache WHERE ticker = ?", (ticker,)).fetchone()
     conn.close()
     if not row:

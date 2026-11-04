@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
+from scripts._utils import get_sqlite_conn
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
@@ -40,9 +41,7 @@ def _get_saved_tickers() -> set[str]:
     """从数据库读取已保存的 ticker 集合。"""
     if not CACHE_DB.exists():
         return set()
-    import sqlite3
-
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
     cur.execute("SELECT DISTINCT ticker FROM kline_cache")
     saved = {row[0] for row in cur.fetchall()}

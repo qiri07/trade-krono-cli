@@ -18,7 +18,7 @@ import pandas as pd
 from loguru import logger
 
 from scripts._utils import get_all_tickers as _get_all_tickers
-from scripts._utils import get_provider_chain
+from scripts._utils import get_provider_chain, get_sqlite_conn
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
@@ -56,10 +56,9 @@ def _fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[
                     cache = get_cache()
                     ts = pd.to_datetime(df["timestamps"])
                     # 增量合并：保留 DB 中已有的记录，补充新历史数据
-                    import sqlite3
                     from io import BytesIO
 
-                    conn = sqlite3.connect(str(CACHE_DB))
+                    conn = get_sqlite_conn(CACHE_DB)
                     row = conn.execute(
                         "SELECT data FROM kline_cache WHERE ticker = ?", (ticker,)
                     ).fetchone()
@@ -180,9 +179,8 @@ def main() -> None:
             logger.info(f"   {t}: {p}")
 
     # 最终统计
-    import sqlite3
 
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
     total_records = cur.execute("SELECT COUNT(*) FROM kline_cache").fetchone()[0]
     distinct_tickers = cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache").fetchone()[0]

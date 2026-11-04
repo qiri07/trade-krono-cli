@@ -17,7 +17,6 @@ import csv
 import json
 import os
 import pickle
-import sqlite3
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -26,6 +25,8 @@ from pathlib import Path
 
 import pandas as pd
 from loguru import logger
+
+from scripts._utils import get_sqlite_conn
 
 # ── 常量 ─────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -98,7 +99,7 @@ def get_latest_bar_date(ticker: str) -> str | None:
 def get_db_latest_date(ticker: str) -> str | None:
     """读取 DB 获取最后交易日"""
     try:
-        con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+        con = get_sqlite_conn(DB_PATH, readonly=True)
         row = con.execute(
             "select end from kline_cache where ticker=? and freq='d'", (ticker,)
         ).fetchone()
@@ -114,7 +115,7 @@ def db_to_parquet_incremental() -> tuple[int, int]:
     增量转换：只转换 DB 中 end > parquet 最后日期的标的
     返回 (新转换数, 跳过数)
     """
-    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    con = get_sqlite_conn(DB_PATH, readonly=True)
     cur = con.cursor()
     rows = cur.execute(
         "select ticker, data from kline_cache where freq='d' and (ticker like ? or ticker like ? or ticker like ?)",

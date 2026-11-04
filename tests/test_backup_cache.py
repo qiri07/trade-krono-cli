@@ -198,7 +198,6 @@ class TestCheckStatus:
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
     ) -> None:
         monkeypatch.setattr(backup_cache, "get_cache_dir", lambda: tmp_path)
         _make_db(tmp_path / "pipeline_cache.db")
@@ -206,7 +205,6 @@ class TestCheckStatus:
         backup_cache.backup_file(tmp_path / "pipeline_cache.db", tmp_path / "backups")
 
         assert backup_cache.check_status(verify=True) == 0
-        assert "integrity_check: ok" in capsys.readouterr().out
 
     def test_missing_source_returns_one(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

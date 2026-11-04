@@ -33,7 +33,7 @@ import re
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import get_provider_chain
+from scripts._utils import get_provider_chain, get_sqlite_conn
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
@@ -113,7 +113,6 @@ def fetch_and_append(
     Provider 链来自 configs/providers.yaml 的 etf 段（get_provider_chain），
     缺省回退到 sh./sz. 硬编码链。
     """
-    import sqlite3
     from io import BytesIO
 
     for provider_name in get_provider_chain(ticker):
@@ -134,7 +133,7 @@ def fetch_and_append(
             ts = pd.to_datetime(df["timestamps"])
 
             # 增量合并
-            conn = sqlite3.connect(str(CACHE_DB))
+            conn = get_sqlite_conn(CACHE_DB)
             row = conn.execute(
                 "SELECT data FROM kline_cache WHERE ticker = ?", (ticker,)
             ).fetchone()
