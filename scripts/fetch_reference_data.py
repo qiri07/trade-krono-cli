@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import get_all_tickers, normalize_ticker_key
+from scripts._utils import get_all_tickers, is_etf_ticker, normalize_ticker_key
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
@@ -39,7 +39,7 @@ WORKERS = 3
 RETRY_WORKERS = 2
 BATCH_SIZE = 50
 FETCH_TIMEOUT = 15
-FETCH_PER_TICKER_TIMEOUT = 30  # 单只元数据拉取超时（网络读挂起时兜底，避免批次阻塞）
+FETCH_PER_TICKER_TIMEOUT = 10  # 单只元数据拉取超时：10s 后快速放弃，避免单只卡死拖垮整批
 
 
 def _get_metadata_file() -> Path:
@@ -229,6 +229,13 @@ def main(
     logger.info("📊 启动参考数据（元数据）拉取")
 
     tickers = tickers_input or get_all_tickers()
+    # 北交所元数据拉取会硬超时（baostock/tonghuashun 对 bj. 会话挂起），且选股流程已过滤北交所，
+    # 故默认跳过 bj. 开头的 ticker，避免浪费 30s/只的超时时间。
+    tickers = [t for t in tickers if not t.startswith("bj.")]
+    # ETF 元数据拉取会硬超时（baostock 对 ETF 会话挂起），且选股流程中 ETF
+    # 仅参与纯技术面筛选，不依赖 PE/PB/行业等基本面元数据，故跳过 ETF，
+    # 避免浪费 30s/只的超时时间。如需 ETF 元数据，可后续切换至 akshare/efinance 数据源。
+    tickers = [t for t in tickers if not is_etf_ticker(t)]
     all_tickers = list(tickers)  # 保存原始全量，用于第二轮失败重试
     partial = tickers_input is not None
 
