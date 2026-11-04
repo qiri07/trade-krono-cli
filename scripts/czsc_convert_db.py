@@ -12,6 +12,7 @@ import sqlite3
 from pathlib import Path
 
 import pandas as pd
+from loguru import logger
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "outputs/cache/pipeline_cache.db"
@@ -49,7 +50,8 @@ def main() -> int:
                 if pd.Timestamp(db_end) <= parquet_max:
                     skipped += 1
                     continue
-        except Exception:
+        except Exception as e:
+            logger.warning(f"⚠️  跳过 {ticker}: 读取缓存失败 - {e}")
             pass
 
         df = df_blob if "df_blob" in locals() else pickle.loads(blob)

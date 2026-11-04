@@ -88,8 +88,8 @@ def _fill_group(
                     print(f"  ✅ {ticker}: {src} ({rows} 条)")
                 else:
                     print(f"  ❌ {ticker}: {src}")
-            except Exception:
-                print(f"  ❌ {ticker}: 异常")
+            except Exception as e:
+                logger.warning(f"⚠️  {ticker}: 异常 - {e}")
             if i % progress_every == 0:
                 print(f"  {label} progress: {i}/{len(tickers)}")
     return ok

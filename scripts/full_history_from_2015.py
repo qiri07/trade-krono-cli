@@ -105,7 +105,8 @@ def _fetch_and_append(
                 from io import BytesIO
 
                 existing_df = pd.read_pickle(BytesIO(existing_data))
-            except Exception:
+            except Exception as e:
+                logger.warning(f"⚠️  读取 {ticker} 现有缓存失败: {e}")
                 existing_df = pd.DataFrame()
 
             # 只保留早于现有记录的行（补齐历史部分）

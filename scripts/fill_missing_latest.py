@@ -86,7 +86,8 @@ def fetch_and_append(
                 if result is not None and not result.is_empty:
                     used_provider = pname
                     break
-            except Exception:
+            except Exception as e:
+                logger.warning(f"⚠️  拉取 {ticker} 失败: {e}")
                 continue
 
         if result is None or result.is_empty:
@@ -113,7 +114,8 @@ def fetch_and_append(
                 from io import BytesIO
 
                 existing_df = pd.read_pickle(BytesIO(existing_data))
-            except Exception:
+            except Exception as e:
+                logger.warning(f"⚠️  读取 {ticker} 现有缓存失败: {e}")
                 existing_df = pd.DataFrame()
             # 只保留严格晚于现有最后日期的行（真正的增量）
             new_rows = df[ts > pd.Timestamp(existing_end)]

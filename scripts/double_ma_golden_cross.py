@@ -475,7 +475,8 @@ def process_ticker(
 
     try:
         df = pickle.loads(row[0])
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️  读取 {ticker} 缓存失败: {e}")
         return None
 
     if not isinstance(df, pd.DataFrame) or df.empty:
@@ -507,7 +508,8 @@ def process_ticker(
         if len(weekly_close) < MA_SLOW:
             return None
         weekly_ratio = calc_ma_ratio(weekly_close.to_frame("close"), MA_FAST, MA_SLOW)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️  计算周线均率失败（{ticker}）: {e}")
         weekly_ratio = None
 
     if weekly_ratio is None or weekly_ratio <= 1.0:

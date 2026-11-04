@@ -49,7 +49,8 @@ def _get_metadata_file() -> Path:
 
         settings = get_settings()
         return Path(settings.cache_dir) / "metadata.json"
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️  获取 metadata 路径失败: {e}，使用默认路径")
         return Path("outputs/cache/metadata.json")
 
 
@@ -176,9 +177,10 @@ def _fetch_metadata_one(factory, ticker: str, name_map: dict[str, str] | None = 
             },
             "ok",
         )
-    except Exception:
+    except Exception as e:
         key = normalize_ticker_key(ticker)
         bare = key.split(".")[-1] if "." in key else key
+        logger.warning(f"⚠️  获取 {ticker} 元数据失败: {e}")
         return (
             key,
             {

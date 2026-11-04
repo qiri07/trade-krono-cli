@@ -502,7 +502,7 @@ def fetch_missing_report() -> dict:
     tickers = cur.fetchone()[0]
     cur.execute("SELECT MAX(end) FROM kline_cache")
     latest = cur.fetchone()[0] or ""
-    cur.execute(f"SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE end >= '{today}'")
+    cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE end >= ?", (today,))
     has_today = cur.fetchone()[0]
     cur.execute(
         """
@@ -766,7 +766,7 @@ def main(
     cur.execute("SELECT MAX(end) FROM kline_cache")
     latest = cur.fetchone()[0]
     today = get_today_date()
-    cur.execute(f"SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE end >= '{today}'")
+    cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE end >= ?", (today,))
     has_today = cur.fetchone()[0]
     cur.execute("""
         SELECT COUNT(DISTINCT ticker) FROM kline_cache

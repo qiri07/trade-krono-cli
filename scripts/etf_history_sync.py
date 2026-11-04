@@ -79,7 +79,8 @@ def discover_etf_codes() -> list[str]:
         try:
             df = ak.fund_etf_hist_em(symbol="510300")  # 东财通道
             raise RuntimeError("东财通道无法拉取列表，请检查网络")
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ 东财备用获取 ETF 列表也失败: {e}")
             raise
 
 
@@ -142,7 +143,8 @@ def fetch_and_append(
             if row:
                 try:
                     existing_df = pd.read_pickle(BytesIO(row[0]))
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"⚠️  读取 {ticker} 现有缓存失败: {e}")
                     existing_df = pd.DataFrame()
 
                 if not existing_df.empty:

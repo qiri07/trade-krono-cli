@@ -59,7 +59,8 @@ def _get_cache_db() -> Path:
     try:
         settings = get_settings()
         return settings.cache_dir / "pipeline_cache.db"
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️  获取缓存路径失败: {e}，使用默认路径")
         return Path("outputs/cache/pipeline_cache.db")
 
 
@@ -68,8 +69,9 @@ def _get_whitelist() -> str:
     try:
         settings = get_settings()
         return settings.daily_analysis_whitelist.strip()
-    except Exception:
+    except Exception as e:
         # 配置加载失败时回退到默认值
+        logger.warning(f"⚠️  读取配置失败，使用默认白名单: {e}")
         return "000001,002027,601668,000932,601061,hk.00700,hk.09988,hk.00941,hk.00390,hk.01448,hk.09992"
 
 
@@ -86,7 +88,8 @@ def _get_dynamic_whitelist() -> list[str]:
             return []
         # 排除北交所股票（920 开头的裸代码或 bj. 前缀）
         return [c.strip() for c in content.split(",") if c.strip() and not is_bse_or_hk(c.strip())]
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️  读取动态白名单失败: {e}")
         return []
 
 
@@ -897,8 +900,8 @@ def _run_analysis(ticker: str, df: pd.DataFrame, end_date: str) -> dict[str, Any
                         current_pe = float(pe_values.iloc[-1])
                         count_below = int((pe_values < current_pe).sum())
                         pe_percentile = round((count_below / len(pe_values)) * 100.0, 1)
-            except Exception:
-                pass  # PE 分位获取失败不影响主流程
+            except Exception as e:
+                logger.warning(f"⚠️  PE 分位获取失败（{ticker}）: {e}，不影响主流程")
 
             val_result = evaluate_valuation(
                 ticker=thscode,

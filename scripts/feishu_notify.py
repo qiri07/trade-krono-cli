@@ -42,6 +42,8 @@ import json
 import sys
 from pathlib import Path
 
+from loguru import logger
+
 # 确保脚本所在目录的父目录（仓库根）在 sys.path 中，
 # 使 from scripts.xxx 模式在直接执行时也能正常工作
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -63,7 +65,8 @@ def _read_top3_from_results() -> str:
         return "（无报告生成）"
     try:
         data = json.loads(results_path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️  解析结果文件失败: {e}")
         return "（解析结果文件失败）"
     # 兼容新旧格式：新项目以 dict {project, results} 形式输出
     if isinstance(data, dict):

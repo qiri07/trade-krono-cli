@@ -40,7 +40,8 @@ def get_cache_latest_date() -> str | None:
         result = cursor.fetchone()[0]
         conn.close()
         return result
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️  获取缓存日期失败: {e}")
         return None
 
 

@@ -315,41 +315,41 @@ def check_status(*, verify: bool = False) -> int:
     backup_dir = cache_dir / "backups"
     missing = 0
 
-    print("📊 数据备份状态检查")
-    print("=" * 60)
+    logger.info("📊 数据备份状态检查")
+    logger.info("=" * 60)
     for filename in _FAMILIES.values():
         src = cache_dir / filename
         if src.exists():
             size_mb = src.stat().st_size / 1024 / 1024
             mtime = datetime.fromtimestamp(src.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-            print(f"  📁 {filename}: {size_mb:.1f} MB (最后修改: {mtime})")
+            logger.info(f"  📁 {filename}: {size_mb:.1f} MB (最后修改: {mtime})")
         else:
             missing += 1
-            print(f"  ❌ {filename}: 文件不存在")
+            logger.info(f"  ❌ {filename}: 文件不存在")
 
-    print()
+    logger.info("")
     entries: list[Path] = []
     for stem in _FAMILIES:
         entries.extend(list_backups(backup_dir, stem))
     entries.sort(key=lambda p: p.stat().st_mtime, reverse=True)
 
     if entries:
-        print(f"📦 备份文件（共 {len(entries)} 个）：")
+        logger.info(f"📦 备份文件（共 {len(entries)} 个）：")
         for path in entries[:20]:
             size_mb = path.stat().st_size / 1024 / 1024
-            print(f"  {path.name}: {size_mb:.1f} MB")
+            logger.info(f"  {path.name}: {size_mb:.1f} MB")
         if len(entries) > 20:
-            print(f"  ... 还有 {len(entries) - 20} 个备份文件")
+            logger.info(f"  ... 还有 {len(entries) - 20} 个备份文件")
     else:
-        print("  📦 无备份文件")
+        logger.info("  📦 无备份文件")
 
     if verify:
         latest_db = _latest_backup(backup_dir, "pipeline_cache")
         if latest_db is None:
-            print("  ⚠️  无 DB 备份可校验")
+            logger.info("  ⚠️  无 DB 备份可校验")
         else:
-            print()
-            print(f"🔍 校验最新备份: {latest_db.name}")
+            logger.info("")
+            logger.info(f"🔍 校验最新备份: {latest_db.name}")
             try:
                 conn = sqlite3.connect(f"file:{latest_db}?mode=ro", uri=True, timeout=10.0)
                 try:
@@ -357,13 +357,13 @@ def check_status(*, verify: bool = False) -> int:
                 finally:
                     conn.close()
                 if row and row[0] == "ok":
-                    print("  ✅ integrity_check: ok")
+                    logger.info("  ✅ integrity_check: ok")
                 else:
                     missing += 1
-                    print(f"  ❌ integrity_check: {row}")
+                    logger.info(f"  ❌ integrity_check: {row}")
             except sqlite3.Error as exc:
                 missing += 1
-                print(f"  ❌ integrity_check 执行失败: {exc}")
+                logger.info(f"  ❌ integrity_check 执行失败: {exc}")
 
     return 0 if missing == 0 else 1
 

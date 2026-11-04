@@ -25,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+from loguru import logger
 
 # ── 常量 ─────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -89,7 +90,8 @@ def get_latest_bar_date(ticker: str) -> str | None:
     try:
         df = pd.read_parquet(path, columns=["dt"])
         return str(df["dt"].max().date())
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️  读取 {path} 失败: {e}")
         return None
 
 
@@ -102,7 +104,8 @@ def get_db_latest_date(ticker: str) -> str | None:
         ).fetchone()
         con.close()
         return row[0] if row else None
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️  查询 {ticker} 最新日期失败: {e}")
         return None
 
 

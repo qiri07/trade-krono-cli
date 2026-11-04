@@ -9,6 +9,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
+from loguru import logger
 
 DB_PATH = Path("outputs/cache/pipeline_cache.db")
 BACKUP_DIR = Path("outputs/cache/backups")
@@ -31,20 +32,21 @@ def decode_data(raw: bytes) -> tuple[int, str, str]:
         else:
             first, last = "", ""
         return len(df), first, last
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️  解码缓存数据失败: {e}")
         return -1, "", ""
 
 
 def main(full_decode: bool = False) -> None:
     conn = sqlite3.connect(str(DB_PATH))
     cur = conn.cursor()
-    print("📊 数据完整性检查报告")
-    print(f"   检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 65)
-    print()
+    logger.info("📊 数据完整性检查报告")
+    logger.info(f"   检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("=" * 65)
+    logger.info("")
 
     # ── 1. 基础统计 ──────────────────────────────────────────
-    print("【1. 基础统计】")
+    logger.info("【1. 基础统计】")
     cur.execute("SELECT COUNT(*), COUNT(DISTINCT ticker) FROM kline_cache")
     total_records, total_tickers = cur.fetchone()
     cur.execute("SELECT MIN(start), MAX(end) FROM kline_cache")
@@ -54,45 +56,45 @@ def main(full_decode: bool = False) -> None:
         WHERE start <= '2020-12-31' AND end >= '2020-01-01'
     """)
     has_2020 = cur.fetchone()[0]
-    print(f"  总记录数:   {total_records}")
-    print(f"  股票数:     {total_tickers}")
-    print(f"  数据范围:   {min_start} ~ {max_end}")
-    print(f"  2020年数据: {has_2020} 只 ({has_2020 * 100 / total_tickers:.1f}%)")
-    print()
+    logger.info(f"  总记录数:   {total_records}")
+    logger.info(f"  股票数:     {total_tickers}")
+    logger.info(f"  数据范围:   {min_start} ~ {max_end}")
+    logger.info(f"  2020年数据: {has_2020} 只 ({has_2020 * 100 / total_tickers:.1f}%)")
+    logger.info("")
 
     # ── 2. 重复检查 ──────────────────────────────────────────
-    print("【2. 重复检查】")
+    logger.info("【2. 重复检查】")
     cur.execute("""
         SELECT ticker, COUNT(*) as cnt FROM kline_cache
         GROUP BY ticker HAVING cnt > 1
     """)
     dupes = cur.fetchall()
     if dupes:
-        print(f"  ❌ 发现 {len(dupes)} 只股票有重复:")
+        logger.info(f"  ❌ 发现 {len(dupes)} 只股票有重复:")
         for row in dupes[:5]:
-            print(f"     {row[0]}: {row[1]}条")
+            logger.info(f"     {row[0]}: {row[1]}条")
     else:
-        print("  ✅ 无重复记录（每只股票恰好1条）")
-    print()
+        logger.info("  ✅ 无重复记录（每只股票恰好1条）")
+    logger.info("")
 
     # ── 3. 空/小数据检查 ─────────────────────────────────────
-    print("【3. 空/小数据检查】")
+    logger.info("【3. 空/小数据检查】")
     cur.execute("SELECT COUNT(*) FROM kline_cache WHERE data IS NULL OR LENGTH(data)=0")
     empty = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM kline_cache WHERE LENGTH(data) < 500")
     tiny = cur.fetchone()[0]
-    print(f"  NULL/空数据:   {empty} 条")
-    print(f"  数据<500字节:  {tiny} 条", end="")
+    logger.info(f"  NULL/空数据:   {empty} 条")
+    logger.info(f"  数据<500字节:  {tiny} 条", end="")
     if tiny > 0:
         cur.execute("SELECT ticker, LENGTH(data) FROM kline_cache WHERE LENGTH(data) < 500 LIMIT 5")
         for t, sz in cur.fetchall():
-            print(f"\n     {t}: {sz} bytes")
+            logger.info(f"\n     {t}: {sz} bytes")
     else:
-        print()
-    print()
+        logger.info("")
+    logger.info("")
 
     # ── 4. 各年份覆盖率 ──────────────────────────────────────
-    print("【4. 各年份数据覆盖率】")
+    logger.info("【4. 各年份数据覆盖率】")
     for year in range(2020, 2027):
         cur.execute(
             """
@@ -104,11 +106,11 @@ def main(full_decode: bool = False) -> None:
         cnt = cur.fetchone()[0]
         pct = cnt * 100 / total_tickers
         bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
-        print(f"  {year}年: {cnt:5d}/{total_tickers} ({pct:5.1f}%) {bar}")
-    print()
+        logger.info(f"  {year}年: {cnt:5d}/{total_tickers} ({pct:5.1f}%) {bar}")
+    logger.info("")
 
     # ── 5. 股票类型分布 ──────────────────────────────────────
-    print("【5. 股票类型分布】")
+    logger.info("【5. 股票类型分布】")
     cur.execute("""
         SELECT
             CASE
@@ -127,11 +129,11 @@ def main(full_decode: bool = False) -> None:
         FROM kline_cache GROUP BY typ ORDER BY cnt DESC
     """)
     for row in cur.fetchall():
-        print(f"  {row[0]}: {row[1]} 只")
-    print()
+        logger.info(f"  {row[0]}: {row[1]} 只")
+    logger.info("")
 
     # ── 6. 记录数分布（估算数据质量） ────────────────────────
-    print("【6. K线记录数分布（通过数据大小估算）】")
+    logger.info("【6. K线记录数分布（通过数据大小估算）】")
     cur.execute("""
         SELECT
             CASE
@@ -144,11 +146,11 @@ def main(full_decode: bool = False) -> None:
         FROM kline_cache GROUP BY size_range ORDER BY size_range
     """)
     for row in cur.fetchall():
-        print(f"  {row[0]}: {row[1]} 只")
-    print()
+        logger.info(f"  {row[0]}: {row[1]} 只")
+    logger.info("")
 
     # ── 7. 短跨度/特殊状态股票 ───────────────────────────────
-    print("【7. 短跨度股票 TOP15】（新上市/停牌/退市/数据异常）")
+    logger.info("【7. 短跨度股票 TOP15】（新上市/停牌/退市/数据异常）")
     cur.execute("""
         SELECT ticker, start, end,
                CAST(julianday(end) - julianday(start) AS INTEGER) as span_days,
@@ -160,11 +162,11 @@ def main(full_decode: bool = False) -> None:
     short_rows = cur.fetchall()
     if short_rows:
         for row in short_rows:
-            print(f"  {row[0]}: {row[1]} ~ {row[2]} ({row[3]}天), data={row[4]}B")
-    print()
+            logger.info(f"  {row[0]}: {row[1]} ~ {row[2]} ({row[3]}天), data={row[4]}B")
+    logger.info("")
 
     # ── 8. 数据解码验证（随机20只） ──────────────────────────
-    print("【8. 数据解码验证（随机20只股票）】")
+    logger.info("【8. 数据解码验证（随机20只股票）】")
     cur.execute("SELECT ticker, start, end, data FROM kline_cache ORDER BY RANDOM() LIMIT 20")
     valid = 0
     invalid = 0
@@ -172,24 +174,24 @@ def main(full_decode: bool = False) -> None:
         ticker, db_start, db_end, raw = row
         n_records, first_date, last_date = decode_data(raw)
         if n_records > 0:
-            print(
+            logger.info(
                 f"  ✅ {ticker}: {db_start}~{db_end}, {n_records}条K线, 首:{first_date}, 末:{last_date}"
             )
             valid += 1
         else:
-            print(f"  ❌ {ticker}: 解码失败")
+            logger.info(f"  ❌ {ticker}: 解码失败")
             invalid += 1
-    print(f"  解码成功: {valid}/20, 失败: {invalid}/20")
-    print()
+    logger.info(f"  解码成功: {valid}/20, 失败: {invalid}/20")
+    logger.info("")
 
     # ── 9. 关键股票抽检 ──────────────────────────────────────
-    print("【9. 关键股票完整校验】")
+    logger.info("【9. 关键股票完整校验】")
     key_tickers = ["sh.600519", "sz.000858", "sh.601318", "sz.000001", "sh.600000", "sh.601398"]
     for ticker in key_tickers:
         cur.execute("SELECT ticker, start, end, data FROM kline_cache WHERE ticker=?", (ticker,))
         row = cur.fetchone()
         if not row:
-            print(f"  ❌ {ticker}: 无记录")
+            logger.info(f"  ❌ {ticker}: 无记录")
             continue
         _, start, end, raw = row
         n_records, first_date, last_date = decode_data(raw)
@@ -197,25 +199,25 @@ def main(full_decode: bool = False) -> None:
             # 检查数据是否跨越整个范围
             span_ok = (first_date <= start <= last_date) and (first_date <= end <= last_date)
             status = "✅" if span_ok else "⚠️"
-            print(
+            logger.info(
                 f"  {status} {ticker}: {start}~{end}, {n_records}条K线, 实际覆盖{first_date}~{last_date}"
             )
         else:
-            print(f"  ❌ {ticker}: 解码失败")
-    print()
+            logger.info(f"  ❌ {ticker}: 解码失败")
+    logger.info("")
 
     # ── 10. 备份状态 ─────────────────────────────────────────
-    print("【10. 备份文件状态】")
+    logger.info("【10. 备份文件状态】")
     backups = sorted(BACKUP_DIR.glob("pipeline_cache_*.db"))
     for bp in backups[-4:]:
         size_mb = bp.stat().st_size / 1024 / 1024
         mtime = datetime.fromtimestamp(bp.stat().st_mtime).strftime("%m-%d %H:%M")
-        print(f"  {bp.name}: {size_mb:.1f} MB ({mtime})")
-    print()
+        logger.info(f"  {bp.name}: {size_mb:.1f} MB ({mtime})")
+    logger.info("")
 
     # ── 11. 全量解码验证（可选）──────────────────────────────
     if full_decode:
-        print("【11. 全量解码验证（全部标的）】")
+        logger.info("【11. 全量解码验证（全部标的）】")
         cur.execute("SELECT ticker, data FROM kline_cache ORDER BY ticker")
         all_rows = cur.fetchall()
         valid_all = 0
@@ -230,14 +232,14 @@ def main(full_decode: bool = False) -> None:
                 if len(invalid_samples) < 10:
                     invalid_samples.append(ticker)
             if (i + 1) % 1000 == 0:
-                print(f"  已验证 {i + 1}/{len(all_rows)} …")
-        print(f"  解码成功: {valid_all}/{len(all_rows)}, 失败: {invalid_all}/{len(all_rows)}")
+                logger.info(f"  已验证 {i + 1}/{len(all_rows)} …")
+        logger.info(f"  解码成功: {valid_all}/{len(all_rows)}, 失败: {invalid_all}/{len(all_rows)}")
         if invalid_samples:
-            print(f"  失败样例: {', '.join(invalid_samples)}")
-        print()
+            logger.info(f"  失败样例: {', '.join(invalid_samples)}")
+        logger.info("")
     else:
         # ── 11. 数据解码验证（随机20只）──────────────────────────
-        print("【11. 数据解码验证（随机20只股票）】")
+        logger.info("【11. 数据解码验证（随机20只股票）】")
         cur.execute("SELECT ticker, start, end, data FROM kline_cache ORDER BY RANDOM() LIMIT 20")
         valid = 0
         invalid = 0
@@ -245,18 +247,18 @@ def main(full_decode: bool = False) -> None:
             ticker, db_start, db_end, raw = row
             n_records, first_date, last_date = decode_data(raw)
             if n_records > 0:
-                print(
+                logger.info(
                     f"  ✅ {ticker}: {db_start}~{db_end}, {n_records}条K线, 首:{first_date}, 末:{last_date}"
                 )
                 valid += 1
             else:
-                print(f"  ❌ {ticker}: 解码失败")
+                logger.info(f"  ❌ {ticker}: 解码失败")
                 invalid += 1
-        print(f"  解码成功: {valid}/20, 失败: {invalid}/20")
-        print()
+        logger.info(f"  解码成功: {valid}/20, 失败: {invalid}/20")
+        logger.info("")
 
     # ── 12. 总结 ─────────────────────────────────────────────
-    print("=" * 65)
+    logger.info("=" * 65)
     issues: list[str] = []
     warnings: list[str] = []
 
@@ -279,12 +281,12 @@ def main(full_decode: bool = False) -> None:
         warnings.append(f"{len(short_rows)} 只股票数据跨度<1天")
 
     if issues:
-        print(f"❌ 发现问题: {'; '.join(issues)}")
+        logger.info(f"❌ 发现问题: {'; '.join(issues)}")
     else:
-        print("✅ 数据完整性良好，无重大问题")
+        logger.info("✅ 数据完整性良好，无重大问题")
     if warnings:
-        print(f"⚠️  提示: {'; '.join(warnings)}")
-    print("=" * 65)
+        logger.info(f"⚠️  提示: {'; '.join(warnings)}")
+    logger.info("=" * 65)
 
     conn.close()
 
