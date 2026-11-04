@@ -35,11 +35,11 @@ from scripts._utils import get_all_tickers, normalize_ticker_key
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
-WORKERS = 8
-RETRY_WORKERS = 4
-BATCH_SIZE = 100
+WORKERS = 3
+RETRY_WORKERS = 2
+BATCH_SIZE = 50
 FETCH_TIMEOUT = 15
-FETCH_PER_TICKER_TIMEOUT = 180  # 单只元数据拉取超时（网络读挂起时兜底，避免批次阻塞）
+FETCH_PER_TICKER_TIMEOUT = 30  # 单只元数据拉取超时（网络读挂起时兜底，避免批次阻塞）
 
 
 def _get_metadata_file() -> Path:
@@ -272,6 +272,7 @@ def main(
     factory = get_data_factory()
     success = 0
     failed = 0
+    timeout_keys: set[str] = set()  # 记录硬超时的 ticker，第二轮不再重试
     start_time = time.time()
 
     total_batches = max(1, (len(tickers) + BATCH_SIZE - 1) // BATCH_SIZE)
@@ -298,28 +299,39 @@ def main(
                 except TimeoutError:
                     key = normalize_ticker_key(ticker)
                     results[key] = None
+                    timeout_keys.add(key)
                     failed += 1
                     logger.warning(f"⏱️  批次级超时跳过: {ticker}")
                     continue
                 results[key] = meta
                 if status == "ok":
                     success += 1
+                elif status == "timeout":
+                    timeout_keys.add(key)
+                    failed += 1
                 else:
                     failed += 1
 
-        # 每批完成后写 checkpoint（全量模式且启用 checkpoint 时）
+        # 每批完成后写 checkpoint 和 metadata.json，避免进程意外终止丢失已拉取进度
         if use_checkpoint and not partial:
             save_checkpoint(results)
+            _atomic_write_json(METADATA_FILE, results)
 
         time.sleep(1)
 
     # ── 第二轮：对第一轮失败/空的 ticker 再尝试一次（降并发，避免接口限流）──
+    # 跳过已知硬超时的 ticker（baostock 会话挂起等），避免重复浪费 30s/只
     retry_tickers = [
-        t for t in all_tickers
+        t
+        for t in all_tickers
         if results.get(normalize_ticker_key(t)) is None
+        and normalize_ticker_key(t) not in timeout_keys
     ]
     if retry_tickers:
-        logger.info(f"🔄 第二轮重试 {len(retry_tickers)} 只失败/空 ticker（workers={RETRY_WORKERS}）...")
+        logger.info(
+            f"🔄 第二轮重试 {len(retry_tickers)} 只失败/空 ticker（workers={RETRY_WORKERS}；"
+            f"已跳过 {len(timeout_keys)} 只硬超时 ticker）..."
+        )
         retry_success = 0
         retry_failed = 0
         with ThreadPoolExecutor(max_workers=RETRY_WORKERS) as pool:
