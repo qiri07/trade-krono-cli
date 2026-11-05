@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -57,7 +58,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="综合选股交集分析 + 飞书推送")
     parser.add_argument(
         "--date",
-        default=__import__("datetime").datetime.now().strftime("%Y-%m-%d"),
+        default=datetime.now().strftime("%Y-%m-%d"),
         help="分析日期 YYYY-MM-DD（默认今日）",
     )
     parser.add_argument(
@@ -130,7 +131,7 @@ def main() -> None:
         "各选股线命中数量：" + " ".join(f"{k}={len(v)}" for k, v in source_sets.items())
     )
 
-    # ── Step 2: 交集候选池（≥min_sources 条线）────────────────────
+    # ── Step 2: 交集候选池（≥N 条线）────────────────────────────
     cands = build_intersection(source_sets, args.min_sources)
     logger.info(
         f"命中 ≥{args.min_sources} 条选股线的股票：{len(cands)} 只"

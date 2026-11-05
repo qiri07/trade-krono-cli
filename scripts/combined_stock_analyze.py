@@ -23,22 +23,21 @@ from trade_krono_cli.research_db import ResearchDatabase
 
 
 def analyze_candidates(
-    cands: list[StockCandidate],
-    date_str: str,
-    max_analyze: int,
+    cands: list[StockCandidate], date_str: str, max_analyze: int
 ) -> list[StockCandidate]:
-    """对前 max_analyze 只候选做技术分析，填充 analysis 字段。
-
-    技术分析通过 scripts.daily_analysis.analyze_stock 获取 MA 排列、
-    趋势、量能等指标，结果写入 candidate.analysis。
-    """
+    """对候选做技术分析，仅保留有数据且评分较高的，按命中数+分数排序。"""
     analyzed: list[StockCandidate] = []
-    for i, cand in enumerate(cands[:max_analyze]):
-        logger.info(f"📈 技术分析 {i + 1}/{min(max_analyze, len(cands))}: {cand.code}")
-        ta = analyze_stock(cand.code, date_str)
-        if ta:
-            cand.analysis = ta
+    for cand in cands[:max_analyze]:
+        code = cand.code
+        ticker = normalize_ticker_key(code)
+        res = analyze_stock(ticker, end_date=date_str)
+        if res.get("status") != "ok":
+            logger.debug(f"  {code} 无数据，跳过")
+            continue
+        cand.analysis = res
         analyzed.append(cand)
+
+    analyzed.sort(key=lambda x: -x.rank_score)
     return analyzed
 
 
@@ -63,10 +62,10 @@ def attach_kronos(cands: list[StockCandidate], date_str: str) -> int:
             if res is not None and not res.error:
                 cand.kronos = res
                 n_ok += 1
-        logger.info(f"🧠 Kronos 预测完成:{n_ok}/{len(cands)} 只成功")
+        logger.info(f"🧠 Kronos 预测完成：{n_ok}/{len(cands)} 只成功")
         return n_ok
     except Exception as e:
-        logger.warning(f"Kronos 预测整体失败（不影响推送）:{type(e).__name__}: {e}")
+        logger.warning(f"Kronos 预测整体失败（不影响推送）: {type(e).__name__}: {e}")
         return 0
 
 
@@ -235,7 +234,7 @@ def attach_backtest(
             if has_signal_history:
                 n_ok += 1
         except Exception as e:
-            logger.warning(f"  {cand.code} 历史回测失败:{type(e).__name__}: {e}")
+            logger.warning(f"  {cand.code} 历史回测失败: {type(e).__name__}: {e}")
             cand.backtest = BacktestView(horizon_days=horizon, window_days=days, available=False)
-    logger.info(f"📈 历史回测完成:{n_ok}/{len(cands)} 只成功")
+    logger.info(f"📈 历史回测完成：{n_ok}/{len(cands)} 只成功")
     return n_ok

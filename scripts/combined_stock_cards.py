@@ -36,8 +36,8 @@ def _build_stock_card(cand: StockCandidate, date_str: str, ai_note: str = "") ->
     lines.append(f"命中来源：{label}（{cand.hit_count} 条线共振）")
     lines.append("")
     lines.append("── 技术面 ──")
-    lines.append(f"  技术分:{tv.score}  趋势:{tv.trend}")
-    lines.append(f"  均线信号:{tv.ma_signal}  量能:{tv.vol_signal}")
+    lines.append(f"  技术分: {tv.score}  趋势: {tv.trend}")
+    lines.append(f"  均线信号: {tv.ma_signal}  量能: {tv.vol_signal}")
     lines.append("")
     lines.append("── 基本面 ──")
     lines.append(f"  {fv.summary_line()}")
@@ -57,7 +57,7 @@ def _build_stock_card(cand: StockCandidate, date_str: str, ai_note: str = "") ->
 
 
 def _push_per_stock(cands: list[StockCandidate], date_str: str) -> None:
-    """逐只推送飞书卡片，间隔 1s 防 webhook 限流。"""
+    """逐只推送飞书卡片（每只含技术面 + 基本面），间隔 1s 防 webhook 限流。"""
     logger.info(f"📤 开始逐只推送 {len(cands)} 只股票...")
     for i, cand in enumerate(cands, 1):
         name = cand.tech.name or cand.code
@@ -79,14 +79,14 @@ def _build_combined_card(
     lines.append("各选股线命中数量：")
     for key, label in _SOURCE_LABELS.items():
         n = len(source_sets.get(key, set()))
-        lines.append(f"  · {label}:{n} 只")
+        lines.append(f"  · {label}：{n} 只")
     lines.append("")
 
     if not cands:
-        lines.append("⚠️ 无命中达标条数的股票。")
+        lines.append("⚠️ 无命中 ≥2 条选股线的股票。")
         return "\n".join(lines)
 
-    lines.append(f"📊 命中达标的股票（{len(cands)} 只，按共振度排序）：")
+    lines.append(f"📊 命中 ≥2 条选股线的股票（{len(cands)} 只，按共振度排序）：")
     lines.append("")
     for cand in cands:
         code = cand.code

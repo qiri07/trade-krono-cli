@@ -1474,7 +1474,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for full release history. | [中文版更新�
 2. 巴菲特筛选   → tests/buffett_screen_parallel.py（已过滤 ST / 北交所）
 3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股，仅汇总推送）
 4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股，仅汇总推送）
-5. 白名单分析   → scripts/daily_analysis.py（已过滤 ST / 北交所，仅汇总推送）
+5. 白名单分析   → python -m scripts.daily_analysis（已过滤 ST / 北交所，仅汇总推送）
 6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；已过滤 ST / 北交所）
 7. AI 核实      → Nemotron 3.5 Super VL 120B A12B（NVIDIA/OpenRouter API）
 8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）

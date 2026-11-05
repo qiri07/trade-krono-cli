@@ -7,34 +7,32 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 from scripts.combined_stock_models import StockCandidate
 
 
 def build_intersection(
-    source_sets: dict[str, set[str]],
-    min_sources: int,
+    source_sets: dict[str, set[str]], min_sources: int
 ) -> list[StockCandidate]:
     """按命中条数过滤并排序，返回交集候选池。
 
-    Args:
-        source_sets: {来源键: 6 位代码集合}，来自 collect_source_sets()。
-        min_sources: 最少命中条数（股票需命中 >= min_sources 条线才入选）。
-
-    Returns:
-        StockCandidate 列表，sources 记录命中的来源键，
-        按命中条数降序排序（同条数按代码升序保证确定性）。
+    排序规则：命中条数降序。
     """
-    hits: dict[str, list[str]] = {}
-    for key, codes in source_sets.items():
-        for code in codes:
-            hits.setdefault(code, []).append(key)
+    counter: Counter[str] = Counter()
+    for codes in source_sets.values():
+        for c in codes:
+            counter[c] += 1
 
-    cands: list[StockCandidate] = []
-    for code, sources in hits.items():
-        if len(sources) >= min_sources:
-            cands.append(
-                StockCandidate(code=code, hit_count=len(sources), sources=sorted(sources))
-            )
+    cands = [StockCandidate(code=c, hit_count=n) for c, n in counter.items() if n >= min_sources]
 
-    cands.sort(key=lambda c: (-c.hit_count, c.code))
+    # 标注每条命中来源（保留展示顺序）
+    src_by_code: dict[str, list[str]] = {}
+    for src, codes in source_sets.items():
+        for c in codes:
+            src_by_code.setdefault(c, []).append(src)
+    for cand in cands:
+        cand.sources = src_by_code.get(cand.code, [])
+
+    cands.sort(key=lambda x: -x.hit_count)
     return cands

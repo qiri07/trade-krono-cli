@@ -1474,7 +1474,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
 2. 巴菲特筛选   → tests/buffett_screen_parallel.py（已过滤 ST / 北交所）
 3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股，仅汇总推送）
 4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股，仅汇总推送）
-5. 白名单分析   → scripts/daily_analysis.py（已过滤 ST / 北交所，仅汇总推送）
+5. 白名单分析   → python -m scripts.daily_analysis（已过滤 ST / 北交所，仅汇总推送）
 6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；已过滤 ST / 北交所）
 7. AI 核实      → Nemotron 3.5 Super VL 120B A12B（NVIDIA/OpenRouter API）
 8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
@@ -1491,7 +1491,7 @@ InvestmentDecision(signal, confidence, expected_return, thesis, risks, ...)
  5. buffett — 巴菲特六闸门筛选（tests/buffett_screen_parallel.py）
  6. resonance — 三线共振（multi_line_resonance.py）
  7. multi_head — 多头排列（multi_scan.py）
- 8. whitelist — 白名单分析 + AI 核实 + 飞书推送（daily_analysis.py）
+ 8. whitelist — 白名单分析 + AI 核实 + 飞书推送（python -m scripts.daily_analysis）
  9. double_ma — 双均线金叉筛选（double_ma_golden_cross.py）
 10. macd_ma — MACD+均线筛选 + 推送（macd_ma_screener.py）
 11. combined — 综合交集汇总（combined_stock_analysis.py）

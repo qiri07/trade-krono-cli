@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 from scripts import combined_stock_analysis as csa
 from scripts.combined_stock_analyze import (
+    analyze_candidates,
     attach_backtest,
     attach_kronos,
 )
@@ -29,6 +30,7 @@ from scripts.combined_stock_cards import (
     _llm_view,
 )
 from scripts.combined_stock_collect import _codes_from_czsc_csv
+from scripts.combined_stock_intersect import build_intersection
 from scripts.combined_stock_models import BacktestView, KronosView, StockCandidate
 from trade_krono_cli.domain.kronos_result import KronosForecastResult
 
@@ -348,6 +350,53 @@ class TestCardBuilders:
         assert "kronos" not in view
 
 
+class TestAnalyzeCandidates:
+    """analyze_candidates 语义回归（拆分曾丢失 ticker 归一化与 status 过滤）。"""
+
+    def _cand(self, code: str = "600519") -> StockCandidate:
+        """构造 1 条来源命中的候选。"""
+        return StockCandidate(code=code, hit_count=1, sources=["whitelist"])
+
+    def test_normalizes_ticker_before_analyze(self) -> None:
+        """入场前必须归一化为 sh./sz. 前缀，否则缓存键查不到、PE 前缀判错。"""
+        cand = self._cand()
+        with patch(
+            "scripts.combined_stock_analyze.analyze_stock",
+            return_value={"status": "ok", "score": 70},
+        ) as mock_analyze:
+            analyzed = analyze_candidates([cand], "2026-11-05", max_analyze=10)
+        mock_analyze.assert_called_once_with("sh.600519", end_date="2026-11-05")
+        assert analyzed == [cand]
+        assert cand.analysis == {"status": "ok", "score": 70}
+
+    def test_skips_result_without_ok_status(self) -> None:
+        """status != "ok"（如 no_data）的候选不计入 analyzed，也不写 analysis。"""
+        cand = self._cand("000858")
+        with patch(
+            "scripts.combined_stock_analyze.analyze_stock",
+            return_value={"status": "no_data"},
+        ):
+            analyzed = analyze_candidates([cand], "2026-11-05", max_analyze=10)
+        assert analyzed == []
+        assert cand.analysis is None
+
+    def test_sorts_by_rank_score_descending(self) -> None:
+        """--sort-by score 依赖函数尾部按 rank_score 降序（hit_count*10 + 技术分）。"""
+        low, high = self._cand("000858"), self._cand("600519")
+        fake_results: dict[str, dict[str, object]] = {
+            "000858": {"status": "ok", "score": 30},
+            "600519": {"status": "ok", "score": 80},
+        }
+
+        def fake_analyze(ticker: str, **kwargs: object) -> dict[str, object]:
+            assert isinstance(ticker, str)
+            return fake_results[ticker.split(".", 1)[1]]
+
+        with patch("scripts.combined_stock_analyze.analyze_stock", side_effect=fake_analyze):
+            analyzed = analyze_candidates([low, high], "2026-11-05", max_analyze=10)
+        assert [c.code for c in analyzed] == ["600519", "000858"]
+
+
 class TestMainFlagWiring:
     """main() 默认不启用 kronos/backtest，避免重模型加载。"""
 
@@ -457,6 +506,28 @@ class TestMainFlagWiring:
                 csa.main()
                 assert mk.called is True
                 assert mb.called is True
+
+
+class TestBuildIntersection:
+    """build_intersection 语义回归（来源序为遍历序，同条数保持首现序稳定排序）。"""
+
+    def test_sources_follow_iteration_order_and_stable_sort(self) -> None:
+        """hit_count 降序；sources 保留来源集合的遍历序（原版展示顺序）。"""
+        source_sets = {
+            "whitelist": {"000858", "600519"},
+            "resonance": {"600519"},
+            "multi_head": {"600519", "000858"},
+        }
+        cands = build_intersection(source_sets, min_sources=2)
+        assert [c.code for c in cands] == ["600519", "000858"]
+        assert cands[0].sources == ["whitelist", "resonance", "multi_head"]
+        assert cands[1].sources == ["whitelist", "multi_head"]
+
+    def test_min_sources_filters_candidates(self) -> None:
+        """未达 min_sources 条数的股票不进入候选池。"""
+        source_sets = {"whitelist": {"600519"}, "resonance": {"600519", "000858"}}
+        cands = build_intersection(source_sets, min_sources=2)
+        assert [(c.code, c.hit_count) for c in cands] == [("600519", 2)]
 
 
 class TestCzscCodeParsing:

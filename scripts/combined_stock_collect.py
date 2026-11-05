@@ -50,9 +50,9 @@ _SOURCE_LABELS: dict[str, str] = {
     "intraday": "盘中共振",
 }
 
-# 结果目录（由 main 模块传入）
-_RESULTS: Path | None = None
-_CZSC_DIR: Path | None = None
+# 结果目录（collect_source_sets 的默认根；可用同名参数覆盖以支持测试隔离）
+_RESULTS = Path("outputs/results")
+_CZSC_DIR = Path("outputs/czsc_signal_scan")
 
 
 def _codes_from_buffett_screen(path: Path) -> set[str]:
@@ -209,9 +209,9 @@ def collect_source_sets(
     其余选股线独立计数。
     """
     if results_dir is None:
-        results_dir = Path("outputs/results")
+        results_dir = _RESULTS
     if czsc_dir is None:
-        czsc_dir = Path("outputs/czsc_signal_scan")
+        czsc_dir = _CZSC_DIR
 
     dc, dd = _date_tags(date_str)
     fmaps = {k: t.format(dc=dc, dd=dd) for k, t in _TEMPLATES.items()}
