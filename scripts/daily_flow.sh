@@ -9,6 +9,7 @@
 #   SKIP_ETF=1 bash scripts/daily_flow.sh       # 跳过 ETF 同步
 #   EXPORT=1 bash scripts/daily_flow.sh         # 额外执行共享数据导出
 #   RESUME=1 bash scripts/daily_flow.sh        # 断点续传：跳过已成功 step，从失败处继续
+#   FORCE=1 bash scripts/daily_flow.sh         # 强制执行所有步骤（即使今日增量数据 < 5000 也执行选股）
 #
 # 单独执行某个 step：
 #   uv run python scripts/flow_runner.py run --step check
@@ -25,11 +26,13 @@ export NO_SYNC="${NO_SYNC:-0}"
 export SKIP_ETF="${SKIP_ETF:-0}"
 export EXPORT="${EXPORT:-0}"
 export RESUME="${RESUME:-0}"
+export FORCE="${FORCE:-0}"
 
 # 默认 DRY_RUN=1 时走 dry-run；否则按 env 决定
 RUN_ARGS=(run --all)
 [ "$DRY_RUN" = "1" ] && RUN_ARGS+=(--dry-run)
 [ "$RESUME" = "1" ] && RUN_ARGS+=(--resume)
+[ "$FORCE" = "1" ] && RUN_ARGS+=(--force)
 
 uv run python scripts/flow_runner.py "${RUN_ARGS[@]}"
 

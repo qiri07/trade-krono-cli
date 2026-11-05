@@ -15,6 +15,7 @@ from threading import Thread
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
+from loguru import logger
 
 from scripts._utils import (
     FAILED_MIN_RECORDS,
@@ -673,36 +674,40 @@ def main(
     print(f"📌 第三步：同步今日（{get_today_date()}）增量数据")
     print("=" * 60)
 
-    if plan_path:
-        need_today = plan_need_today
-    else:
-        today = get_today_date()
-        conn = get_sqlite_conn(CACHE_DB)
-        cur = conn.cursor()
-        cur.execute(f"""
-            SELECT DISTINCT ticker FROM kline_cache
-            WHERE ticker NOT IN (
-                SELECT DISTINCT ticker FROM kline_cache
-                WHERE end >= '{today}'
-            )
-            AND ticker NOT LIKE 'bj.%'
-            ORDER BY ticker
-        """)
-        need_today = [r[0] for r in cur.fetchall() if not is_etf_ticker(r[0])]
-        conn.close()
-    # 增量跳过：非 plan 模式下跳过已有今日数据的 ticker；plan 模式下直接处理所有列表中的 ticker
     today = get_today_date()
+    # 动态查询数据库：找出所有缺少今日数据的非北交所股票
+    conn = get_sqlite_conn(CACHE_DB)
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT DISTINCT ticker FROM kline_cache
+        WHERE ticker NOT IN (
+            SELECT DISTINCT ticker FROM kline_cache
+            WHERE end >= '{today}'
+        )
+        AND ticker NOT LIKE 'bj.%'
+        ORDER BY ticker
+    """)
+    need_today_from_db = [r[0] for r in cur.fetchall() if not is_etf_ticker(r[0])]
+    conn.close()
+
+    # 合并计划中的 need_today 与数据库动态查询结果（取并集，避免计划缺失导致漏补）
+    need_today_set = set(need_today_from_db)
+    if plan_path:
+        need_today_set.update(plan_need_today)
+    need_today = sorted(need_today_set)
+
+    # 增量跳过：跳过已有今日数据的 ticker（双重保险，SQL 查询已排除但保留兜底）
     need_today_before = len(need_today)
-    if not plan_path:
-        need_today = [t for t in need_today if not _has_today_data(t, today)]
-    # 断点续传：跳过已在进度文件中标记完成的 ticker（仅非 plan 模式使用）
+    need_today = [t for t in need_today if not _has_today_data(t, today)]
+    # 断点续传：仅在非 plan 模式下跳过已在进度文件中标记完成的 ticker；
+    # plan 模式下 need_today 已是当前缺少今日数据的股票，不应用历史完成记录过滤
     if not plan_path:
         need_today = [t for t in need_today if t not in completed_tickers]
     if need_today_before > len(need_today):
         print(f"ℹ️  跳过 {need_today_before - len(need_today)} 只已完成的股票")
+    plan_src = f"（来自补拉计划 {len(plan_need_today)} 只 + 数据库查询 {len(need_today_from_db)} 只，合并去重 {len(need_today)} 只）" if plan_path else "（非北交所，数据库查询）"
     print(
-        f"需要补今日数据的股票: {len(need_today)} 只"
-        + ("（来自补拉计划）" if plan_path else "（非北交所）")
+        f"需要补今日数据的股票: {len(need_today)} 只 {plan_src}"
     )
     print()
 
@@ -781,6 +786,25 @@ def main(
     print(f"  2020年数据: {has_2020}/{tickers} ({has_2020 * 100 / tickers:.1f}%)")
     print("=" * 60)
     print("✅ 全部完成")
+
+    # ── 写入今日增量结果文件（供 flow_runner 判断是否启动后续选股步骤）─────
+    sync_result_file = Path("outputs/results/daily_sync_result.json")
+    sync_result_file.parent.mkdir(parents=True, exist_ok=True)
+    sync_result = {
+        "date": today,
+        "today_increment_count": success_today,
+        "total_processed": len(need_today),
+        "success_count": success_today,
+        "failed_count": len(failed_today),
+        "total_db_records": total,
+        "total_db_tickers": tickers,
+        "has_today_data": has_today,
+        "latest_date": latest,
+    }
+    sync_result_file.write_text(
+        json.dumps(sync_result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    logger.info(f"💾 今日增量同步结果已写入: {sync_result_file}")
 
 
 if __name__ == "__main__":

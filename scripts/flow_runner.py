@@ -423,6 +423,7 @@ def cmd_run(
     dry_run: bool = False,
     strict: bool = False,
     resume: bool = False,
+    force: bool = False,
 ) -> int:
     """run 子命令：单步或全量拓扑分层并行。
 
@@ -464,18 +465,45 @@ def cmd_run(
 
         failed_set: set[str] = set()
         first_failure_rc: int | None = None
+        # 今日增量数据不足时，跳过后续选股步骤（除非 --force）
+        skip_selection = False
+        SELECTION_STEP_NAMES = frozenset(
+            {
+                "buffett",
+                "resonance",
+                "multi_head",
+                "whitelist",
+                "double_ma",
+                "macd_ma",
+                "czsc",
+                "intraday",
+                "combined",
+            }
+        )
         for layer_idx, layer in enumerate(layers, 1):
-            # 过滤掉依赖已失败 step 的 step（避免用脏数据推导后续结论）
-            runnable = [
-                s for s in layer if not any(d in failed_set for d in s.depends_on)
-            ]
-            skipped_in_layer = [s for s in layer if s not in runnable]
-            for s in skipped_in_layer:
-                print(
-                    f"  ⏭️  跳过 [{s.name}]：前置 step 失败（{sorted(d for d in s.depends_on if d in failed_set)}）"
-                )
-            if not runnable:
-                continue
+            # 若今日增量数据不足，跳过本层的所有选股步骤
+            if skip_selection:
+                selection_in_layer = [s for s in layer if s.name in SELECTION_STEP_NAMES]
+                for s in selection_in_layer:
+                    print(
+                        f"  ⏭️  跳过 [{s.name}]：今日增量数据获取数量 < 5000，已跳过选股步骤（使用 --force 强制执行）"
+                    )
+                    statuses[s.name] = "skipped"
+                runnable = [s for s in layer if s.name not in SELECTION_STEP_NAMES]
+                if not runnable:
+                    continue
+            else:
+                # 过滤掉依赖已失败 step 的 step（避免用脏数据推导后续结论）
+                runnable = [
+                    s for s in layer if not any(d in failed_set for d in s.depends_on)
+                ]
+                skipped_in_layer = [s for s in layer if s not in runnable]
+                for s in skipped_in_layer:
+                    print(
+                        f"  ⏭️  跳过 [{s.name}]：前置 step 失败（{sorted(d for d in s.depends_on if d in failed_set)}）"
+                    )
+                if not runnable:
+                    continue
 
             print(
                 f"\n▶ 第 {layer_idx} 层并行执行 {len(runnable)} 个 step: "
@@ -498,6 +526,23 @@ def cmd_run(
                             first_failure_rc = rc
             if not dry_run:
                 save_checkpoint(statuses)
+
+            # 执行完当前层后，检查 sync 步骤的今日增量数据数量
+            if "sync" in layer_results and layer_results["sync"] == 0:
+                sync_result_file = Path("outputs/results/daily_sync_result.json")
+                if sync_result_file.exists():
+                    try:
+                        sync_data = json.loads(
+                            sync_result_file.read_text(encoding="utf-8")
+                        )
+                        today_count = sync_data.get("today_increment_count", 0)
+                        if today_count < 5000 and not force:
+                            print(
+                                f"  ⚠️  今日增量数据获取数量 {today_count} < 5000，将跳过后续选股步骤（使用 --force 强制执行）"
+                            )
+                            skip_selection = True
+                    except Exception:
+                        pass
 
             # 打印本层结果
             for s in runnable:
@@ -558,6 +603,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="断点续传：跳过当天已成功 step，从失败/未执行处继续",
     )
+    p_run.add_argument(
+        "--force",
+        action="store_true",
+        help="强制执行所有步骤（即使今日增量数据 < 5000 也执行选股步骤）",
+    )
 
     def _run(args: argparse.Namespace) -> int:
         enable_list = [x for x in args.enable.split(",") if x]
@@ -570,6 +620,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
             dry_run=args.dry_run,
             strict=args.strict,
             resume=args.resume,
+            force=args.force,
         )
 
     p_run.set_defaults(func=_run)
