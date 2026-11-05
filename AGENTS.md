@@ -34,7 +34,7 @@ uv run python scripts/intraday_scan.py --mode resonance --min-signals 2  # 指�
 uv run python scripts/cleanup_duplicates.py            # 清理重复记录（删除前自动备份）
 uv run python scripts/backup_cache.py                  # 备份 pipeline_cache.db + metadata.json（在线快照，未变化自动跳过）
 uv run python scripts/backup_cache.py --check-only --verify  # 查看备份状态并校验最新 DB 备份完整性
-uv run python scripts/daily_analysis.py                # 每日白名单分析 + AI 验证 + 飞书推送
+uv run python -m scripts.daily_analysis               # 每日白名单分析 + AI 验证 + 飞书推送
 uv run python scripts/fetch_reference_data.py          # 批量获取股票参考数据（PE/PB/行业等；TTL 24h 自动判断，过期才全量重拉）
 uv run python scripts/fetch_reference_data.py --tickers "600519,000858"  # 部分拉取（合并进现有 metadata.json，不覆盖全量）
 uv run python scripts/fetch_reference_data.py --force-refresh            # 忽略 TTL 强制全量刷新
@@ -179,7 +179,7 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 2. 巴菲特筛选   → tests/buffett_screen_parallel.py（已过滤 ST / 北交所）
 3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股；含 ETF 纯技术面）
 4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股；含 ETF 纯技术面）
-5. 白名单分析   → scripts/daily_analysis.py（已过滤 ST / 北交所）
+5. 白名单分析   → python -m scripts.daily_analysis（已过滤 ST / 北交所）
 6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；
                   已过滤 ST / 北交所；ETF 以纯技术面参与，豁免 PE/ROE/净利润门槛）
 7. AI 核实      → Nemotron 3.5 Super VL 120B A12B（NVIDIA/OpenRouter API）
@@ -536,7 +536,7 @@ Nemotron 3.5 Super VL 通过 NVIDIA API 或 OpenRouter 调用，建议配置适�
 
 | 调用点 | 文件:行 | 用途 |
 |---|---|---|
-| `ai_verify._call_one` | `scripts/daily_analysis.py:250` | 白名单/共振/多头/第9步 AI 核实 |
+| `ai_verify._call_one` | `scripts/daily_analysis/llm.py:_call_one` | 白名单/共振/多头/第9步 AI 核实 |
 | `run_ai_verification` | `tests/buffett_screening.py:1286` | 巴菲特筛选 AI 核实（单次调用） |
 | `_verify_pe_percentile` | `tests/buffett_screening.py:101` | PE 历史分位 LLM 辅助判断（Gate ⑥） |
 

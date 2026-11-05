@@ -1,4 +1,4 @@
-"""tests for scripts.daily_analysis."""
+"""tests for scripts.daily_analysis 包（names/whitelist/llm/kline/core/card/runner）。"""
 
 from __future__ import annotations
 
@@ -139,8 +139,8 @@ class TestAnalyzeStock:
     def test_no_data(self) -> None:
         """Mock sqlite3 and external fetch to avoid network calls in CI."""
         with (
-            patch("scripts.daily_analysis._fetch_and_save_kline", return_value=None),
-            patch("scripts.daily_analysis._get_stock_name", return_value="未知"),
+            patch("scripts.daily_analysis.core._fetch_and_save_kline", return_value=None),
+            patch("scripts.daily_analysis.core._get_stock_name", return_value="未知"),
             patch("sqlite3.connect") as mock_connect,
         ):
             mock_conn = mock_connect.return_value
@@ -187,8 +187,8 @@ class TestAnalyzeStock:
         tiny_df.to_pickle(buf)
         buf.seek(0)
         with (
-            patch("scripts.daily_analysis._fetch_and_save_kline", return_value=None),
-            patch("scripts.daily_analysis._get_stock_name", return_value="未知"),
+            patch("scripts.daily_analysis.core._fetch_and_save_kline", return_value=None),
+            patch("scripts.daily_analysis.core._get_stock_name", return_value="未知"),
             patch("sqlite3.connect") as mock_connect,
         ):
             mock_conn = mock_connect.return_value
@@ -225,7 +225,7 @@ class TestAiVerify:
 
     def test_no_llm_configured(self) -> None:
         """When LLM is unavailable, returns defaults."""
-        with patch("scripts.daily_analysis._ai_available", return_value=False):
+        with patch("scripts.daily_analysis.llm._ai_available", return_value=False):
             result = ai_verify([{"ticker": "sh.600519", "score": 50}], "2026-09-15")
             assert result["analysis_summary"] == "LLM 未配置，跳过 AI 核实"
             assert result["top_picks"] == "无"
@@ -242,7 +242,7 @@ class TestAiVerify:
                 "vol_signal": "放量🔥",
             }
         ]
-        with patch("scripts.daily_analysis._ai_available", return_value=False):
+        with patch("scripts.daily_analysis.llm._ai_available", return_value=False):
             result = ai_verify(results, "2026-09-15")
         assert "analysis_summary" in result
         assert "top_picks" in result
@@ -251,7 +251,7 @@ class TestAiVerify:
 
     def test_empty_results(self) -> None:
         """Empty stock list should not crash."""
-        with patch("scripts.daily_analysis._ai_available", return_value=False):
+        with patch("scripts.daily_analysis.llm._ai_available", return_value=False):
             result = ai_verify([], "2026-09-15")
         assert isinstance(result, dict)
 
@@ -272,8 +272,8 @@ class TestAiVerify:
 
         results = [{"ticker": f"sh.600{i:03d}", "score": 60} for i in range(5)]
         with (
-            patch("scripts.daily_analysis._ai_available", return_value=True),
-            patch("scripts.daily_analysis._get_llm_client", return_value=mock_client),
+            patch("scripts.daily_analysis.llm._ai_available", return_value=True),
+            patch("scripts.daily_analysis.llm._get_llm_client", return_value=mock_client),
         ):
             result = ai_verify(results, "2026-09-15")
 
@@ -300,10 +300,10 @@ class TestAiVerify:
 
         results = [{"ticker": f"sh.600{i:03d}", "score": 60} for i in range(70)]
         with (
-            patch("scripts.daily_analysis._ai_available", return_value=True),
-            patch("scripts.daily_analysis._get_llm_client", return_value=mock_client),
-            patch("scripts.daily_analysis.os.getenv", return_value="10"),
-            patch("scripts.daily_analysis.wait_for_rate_limit"),
+            patch("scripts.daily_analysis.llm._ai_available", return_value=True),
+            patch("scripts.daily_analysis.llm._get_llm_client", return_value=mock_client),
+            patch("scripts.daily_analysis.llm.os.getenv", return_value="10"),
+            patch("scripts.daily_analysis.llm.wait_for_rate_limit"),
         ):  # batch_size=10
             result = ai_verify(results, "2026-09-15")
 
@@ -324,9 +324,9 @@ class TestAiVerify:
 
         results = [{"ticker": "sh.600519", "score": 60}]
         with (
-            patch("scripts.daily_analysis._ai_available", return_value=True),
-            patch("scripts.daily_analysis._get_llm_client", return_value=mock_client),
-            patch("scripts.daily_analysis.wait_for_rate_limit"),
+            patch("scripts.daily_analysis.llm._ai_available", return_value=True),
+            patch("scripts.daily_analysis.llm._get_llm_client", return_value=mock_client),
+            patch("scripts.daily_analysis.llm.wait_for_rate_limit"),
         ):
             result = ai_verify(results, "2026-09-15")
 

@@ -180,8 +180,8 @@ STEPS: list[Step] = [
     ),
     Step(
         name="whitelist",
-        description="白名单分析 + AI 核实 + 飞书推送（daily_analysis.py）",
-        command=["uv", "run", "python", "scripts/daily_analysis.py"],
+        description="白名单分析 + AI 核实 + 飞书推送（scripts.daily_analysis）",
+        command=["uv", "run", "python", "-m", "scripts.daily_analysis"],
         enabled_by_default=True,
         depends_on=["sync"],
         timeout=3600,
