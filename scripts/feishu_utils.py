@@ -1,7 +1,7 @@
-"""scripts/feishu_utils.py — 飞书通知共享工具函数。
+"""scripts/feishu_utils.py — 飞书推送唯一库实现层。
 
-从 feishu_core.py 和 feishu_notify.py 中提取的公共实现，
-避免重复代码，降低圈复杂度。
+提供配置管理、卡片构建、WebSocket 发送、统一发送分发；
+所有上层调用（feishu_cli、各选股/分析脚本）均应仅依赖本模块。
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ import json
 import os
 import re
 import ssl
+import subprocess
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,6 +26,7 @@ from loguru import logger
 
 _CST = timezone(timedelta(hours=8))
 _FEISHU_CLI = Path(__file__).resolve().parent / "feishu_cli.py"
+_DEFAULT_CONFIG = Path("~/.config/feishu-notify/config.json").expanduser()
 
 
 def push_feishu(mode: str, **kwargs: object) -> bool:
@@ -43,8 +46,6 @@ def push_feishu(mode: str, **kwargs: object) -> bool:
     bool
         是否推送成功
     """
-    import subprocess
-    import sys
 
     try:
         args: list[str] = [sys.executable, str(_FEISHU_CLI), mode]
@@ -371,3 +372,185 @@ def send_feishu(url: str, payload: dict, secret: str | None = None) -> bool:
     except Exception as e:
         logger.opt(exception=True).error(f"飞书推送失败: {e}")
         return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 配置管理（原 feishu_core.py 独有，下沉至此，使 feishu_utils 成为唯一库层）
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def load_config(
+    config_path: str | Path = _DEFAULT_CONFIG,
+) -> dict:
+    """加载飞书推送配置。
+
+    Parameters
+    ----------
+    config_path : str | Path
+        配置文件路径，默认 ~/.config/feishu-notify/config.json
+
+    Returns
+    -------
+    dict
+        配置字典，包含 webhook_url、app_id、app_secret、channels 等
+
+    Raises
+    ------
+    FileNotFoundError
+        配置文件不存在
+    json.JSONDecodeError
+        配置文件 JSON 格式错误
+    ValueError
+        配置文件中既不包含 webhook_url 也不包含 channels
+    """
+    path = Path(config_path).expanduser()
+    if not path.exists():
+        raise FileNotFoundError(f"配置文件不存在: {path}")
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+
+    # 验证必需字段
+    if "webhook_url" not in data and not data.get("channels"):
+        raise ValueError("配置文件中必须包含 webhook_url 或 channels")
+
+    return data
+
+
+def get_webhook_url(config: dict, channel: str = "default") -> str:
+    """从配置中获取指定频道的 Webhook URL。
+
+    Parameters
+    ----------
+    config : dict
+        配置字典
+    channel : str
+        频道名称，默认为 "default"
+
+    Returns
+    -------
+    str
+        Webhook URL
+
+    Raises
+    ------
+    ValueError
+        未找到对应频道的 Webhook URL
+    """
+    # 优先从 channels 中查找
+    channels = config.get("channels", {})
+    if channel in channels:
+        return channels[channel]["webhook_url"]
+
+    # fallback 到根 webhook_url
+    url = config.get("webhook_url", "").strip()
+    if not url:
+        raise ValueError(f"未找到频道 '{channel}' 的 Webhook URL")
+
+    return url
+
+
+def build_text_card(content: str, title: str = "通知") -> dict:
+    """构建通用文本飞书卡片。
+
+    Parameters
+    ----------
+    content : str
+        消息内容（支持多行）
+    title : str
+        卡片标题，默认为 "通知"
+
+    Returns
+    -------
+    dict
+        飞书卡片结构
+    """
+    return {
+        "msg_type": "interactive",
+        "card": {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": f"📢 {title}",
+                },
+                "template": "blue",
+            },
+            "elements": [
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": content,
+                    },
+                },
+            ],
+        },
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 统一发送接口（原 feishu_core.py send_notification，下沉至此）
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def send_notification(
+    mode: str,
+    config: dict,
+    **kwargs: object,
+) -> bool:
+    """统一通知发送接口。
+
+    Parameters
+    ----------
+    mode : str
+        通知模式：ci / daily / buffett / text
+    config : dict
+        配置字典（来自 load_config）
+    **kwargs : object
+        各模式所需参数：
+        - ci: status, branch, commit, jobs, run_url
+        - daily: status, date, tickers, top3, run_url, content
+        - buffett: result_file
+        - text: content, title
+
+    Returns
+    -------
+    bool
+        是否发送成功
+    """
+    # 获取 Webhook URL
+    channel = str(kwargs.get("channel", "default"))
+    url = get_webhook_url(config, channel)
+
+    # 根据模式构建卡片
+    if mode == "ci":
+        payload = build_ci_card(
+            status=kwargs["status"],  # type: ignore[arg-type]
+            branch=str(kwargs["branch"]),
+            commit=str(kwargs["commit"]),
+            jobs=str(kwargs["jobs"]),
+            run_url=str(kwargs["run_url"]),
+        )
+    elif mode == "daily":
+        payload = build_daily_card(
+            status=kwargs["status"],  # type: ignore[arg-type]
+            date=str(kwargs["date"]),
+            tickers=str(kwargs.get("tickers", "")),
+            top3=str(kwargs.get("top3", "")),
+            run_url=str(kwargs["run_url"]),
+            content=str(kwargs.get("content", "")),
+        )
+    elif mode == "buffett":
+        payload = build_buffett_card(str(kwargs["result_file"]))
+    elif mode == "text":
+        payload = build_text_card(
+            content=str(kwargs["content"]),
+            title=str(kwargs.get("title", "通知")),
+        )
+    else:
+        logger.error(f"❌ 未知飞书通知模式: {mode}")
+        return False
+
+    secret = config.get("webhook_secret") or config.get("channels", {}).get(channel, {}).get(
+        "webhook_secret"
+    )
+    return send_feishu(url, payload, secret=secret)

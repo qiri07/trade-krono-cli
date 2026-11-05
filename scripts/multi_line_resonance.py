@@ -47,7 +47,7 @@ from scripts._utils import (
     ticker_to_thscode,
 )
 from scripts.daily_analysis import ai_verify
-from scripts.feishu_core import load_config, send_notification
+from scripts.feishu_utils import load_config, send_notification
 
 # ── 路径常量 ─────────────────────────────────────────────────────────────────
 

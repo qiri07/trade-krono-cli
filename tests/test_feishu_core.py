@@ -1,4 +1,4 @@
-"""测试飞书推送核心模块（feishu_core.py）。"""
+"""测试飞书推送库模块（feishu_utils.py，原 feishu_core 现为重导出兼容层）。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.feishu_core import (
+from scripts.feishu_utils import (
     build_buffett_card,
     build_ci_card,
     build_daily_card,
@@ -115,7 +115,7 @@ class TestSendNotification:
     def test_text_mode(self) -> None:
         """文本模式应调用 send_feishu。"""
         config = {"webhook_url": "https://test.webhook"}
-        with patch("scripts.feishu_core.send_feishu") as mock_send:
+        with patch("scripts.feishu_utils.send_feishu") as mock_send:
             mock_send.return_value = True
             ok = send_notification("text", config, content="测试")
             assert ok is True
@@ -124,7 +124,7 @@ class TestSendNotification:
     def test_unknown_mode(self) -> None:
         """未知模式应返回 False。"""
         config = {"webhook_url": "https://test.webhook"}
-        with patch("scripts.feishu_core.send_feishu") as mock_send:
+        with patch("scripts.feishu_utils.send_feishu") as mock_send:
             ok = send_notification("unknown", config, content="测试")
             assert ok is False
             mock_send.assert_not_called()
@@ -132,7 +132,7 @@ class TestSendNotification:
     def test_buffett_mode_with_missing_file(self) -> None:
         """Buffett 模式处理缺失文件。"""
         config = {"webhook_url": "https://test.webhook"}
-        with patch("scripts.feishu_core.send_feishu") as mock_send:
+        with patch("scripts.feishu_utils.send_feishu") as mock_send:
             mock_send.return_value = True
             ok = send_notification("buffett", config, result_file="nonexistent.txt")
             assert ok is True

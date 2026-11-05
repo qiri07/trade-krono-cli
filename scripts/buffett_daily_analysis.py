@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from loguru import logger
 
 from scripts.daily_analysis import analyze_stock
-from scripts.feishu_core import load_config, send_notification
+from scripts.feishu_utils import load_config, send_notification
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 常量

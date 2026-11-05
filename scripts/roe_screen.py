@@ -25,7 +25,7 @@ from loguru import logger
 
 from scripts._utils import check_data_freshness, ticker_to_thscode
 from scripts.daily_analysis import ai_verify
-from scripts.feishu_core import load_config, send_notification
+from scripts.feishu_utils import load_config, send_notification
 from trade_krono_cli.cli_commands.core import _load_env
 
 # ── 常量 ───────────────────────────────────────────────────────────────────────

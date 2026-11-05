@@ -1,4 +1,4 @@
-"""测试 scripts.feishu_notify — 飞书通知 CLI 入口和辅助函数。"""
+"""测试 scripts.feishu_notify（向后兼容重导出层，实际实现在 feishu_cli / feishu_utils）。"""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 
 class TestReadTop3FromResults:
-    """_read_top3_from_results 测试。"""
+    """_read_top3_from_results 测试（实际定义在 scripts.feishu_cli，feishu_notify 重导出）。"""
 
     def test_file_not_exists(self, tmp_path: Path) -> None:
         """文件不存在时返回默认文本。"""
-        with patch("scripts.feishu_notify.Path") as mock_path:
+        with patch("scripts.feishu_cli.Path") as mock_path:
             mock_path.return_value.exists.return_value = False
             from scripts.feishu_notify import _read_top3_from_results
 
@@ -26,7 +26,7 @@ class TestReadTop3FromResults:
         """JSON 解析失败时返回错误提示。"""
         results_file = tmp_path / "results.json"
         results_file.write_text("{invalid", encoding="utf-8")
-        with patch("scripts.feishu_notify.Path") as mock_path_cls:
+        with patch("scripts.feishu_cli.Path") as mock_path_cls:
             mock_path = mock_path_cls.return_value
             mock_path.exists.return_value = True
             mock_path.read_text.return_value = "{invalid"
@@ -39,7 +39,7 @@ class TestReadTop3FromResults:
         """结果为空 dict 时返回默认文本。"""
         results_file = tmp_path / "results.json"
         results_file.write_text(json.dumps({}), encoding="utf-8")
-        with patch("scripts.feishu_notify.Path") as mock_path_cls:
+        with patch("scripts.feishu_cli.Path") as mock_path_cls:
             mock_path = mock_path_cls.return_value
             mock_path.exists.return_value = True
             mock_path.read_text.return_value = "{}"
@@ -52,7 +52,7 @@ class TestReadTop3FromResults:
         """结果为空列表时返回默认文本。"""
         results_file = tmp_path / "results.json"
         results_file.write_text("[]", encoding="utf-8")
-        with patch("scripts.feishu_notify.Path") as mock_path_cls:
+        with patch("scripts.feishu_cli.Path") as mock_path_cls:
             mock_path = mock_path_cls.return_value
             mock_path.exists.return_value = True
             mock_path.read_text.return_value = "[]"
@@ -72,7 +72,7 @@ class TestReadTop3FromResults:
             ],
         }
         results_file.write_text(json.dumps(data), encoding="utf-8")
-        with patch("scripts.feishu_notify.Path") as mock_path_cls:
+        with patch("scripts.feishu_cli.Path") as mock_path_cls:
             mock_path = mock_path_cls.return_value
             mock_path.exists.return_value = True
             mock_path.read_text.return_value = json.dumps(data)
@@ -87,7 +87,7 @@ class TestReadTop3FromResults:
         """非 dict 非 list 的格式返回未知格式提示。"""
         results_file = tmp_path / "results.json"
         results_file.write_text('"just a string"', encoding="utf-8")
-        with patch("scripts.feishu_notify.Path") as mock_path_cls:
+        with patch("scripts.feishu_cli.Path") as mock_path_cls:
             mock_path = mock_path_cls.return_value
             mock_path.exists.return_value = True
             mock_path.read_text.return_value = '"just a string"'
@@ -98,14 +98,14 @@ class TestReadTop3FromResults:
 
 
 class TestFeishuNotifyCLI:
-    """feishu_notify 命令行解析测试。"""
+    """feishu_notify 命令行解析测试（向后兼容重导出）。"""
 
     def test_ci_subcommand_parser(self) -> None:
         """ci 子命令应能正常解析参数。"""
         # 通过重新导入来测试
         from scripts import feishu_notify
 
-        # 检查模块有 build_ci_card 函数
+        # 检查模块有 build_ci_card 函数（从 feishu_utils 重导出）
         assert hasattr(feishu_notify, "build_ci_card")
 
     def test_buffett_subcommand_parser(self) -> None:

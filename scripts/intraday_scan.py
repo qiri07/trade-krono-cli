@@ -53,7 +53,7 @@ from scripts._utils import (
     normalize_ticker_key,
 )
 from scripts.daily_analysis import _get_dynamic_whitelist, _get_whitelist
-from scripts.feishu_core import load_config, send_notification
+from scripts.feishu_utils import load_config, send_notification
 
 # 项目根目录（供结果目录使用）
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent

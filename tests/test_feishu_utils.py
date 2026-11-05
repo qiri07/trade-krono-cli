@@ -138,11 +138,11 @@ class TestBuildBuffettCard:
 
 
 class TestBuildTextCard:
-    """build_text_card 测试（在 feishu_core 中定义）。"""
+    """build_text_card 测试（现定义在 feishu_utils 中）。"""
 
-    def test_card_structure_in_feishu_core(self) -> None:
-        """验证 feishu_core 有 build_text_card。"""
-        from scripts.feishu_core import build_text_card
+    def test_card_structure_in_feishu_utils(self) -> None:
+        """验证 feishu_utils 有 build_text_card。"""
+        from scripts.feishu_utils import build_text_card
 
         card = build_text_card("这是一条测试消息")
         assert card["msg_type"] == "interactive"

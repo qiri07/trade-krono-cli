@@ -34,7 +34,7 @@ from scripts._utils import (
     ticker_to_thscode,
 )
 from scripts.daily_analysis import _load_env, ai_verify, analyze_stock
-from scripts.feishu_core import load_config, send_notification
+from scripts.feishu_utils import load_config, send_notification
 from scripts.valuation import _safe_float, evaluate_valuation
 from trade_krono_cli.config import get_settings
 
