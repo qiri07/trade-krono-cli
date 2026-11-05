@@ -17,14 +17,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts._utils import FAILED_MIN_RECORDS, _get_expected_date, get_cache_db_path
+from scripts._utils import (
+    FAILED_MIN_RECORDS,
+    _get_expected_date,
+    get_cache_db_path,
+    get_sqlite_conn,
+)
 from scripts.fetch_reference_data import (
     METADATA_FILE,
     metadata_age_hours,
@@ -36,7 +40,7 @@ RESULTS_DIR = Path("outputs/results")
 
 def _query_kline_status(today: str, expected_date: str) -> dict:
     """查询 K 线缓存现状，返回 kline 段数据。"""
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
 
     cur.execute("SELECT COUNT(*) FROM kline_cache")

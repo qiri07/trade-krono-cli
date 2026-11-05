@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
+from scripts._utils import get_sqlite_conn
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
@@ -36,9 +37,7 @@ _load_env()
 
 def get_missing_tickers() -> list[str]:
     """获取缺少今日数据的 ticker。"""
-    import sqlite3
-
-    conn = sqlite3.connect(str(CACHE_DB))
+    conn = get_sqlite_conn(CACHE_DB)
     rows = conn.execute(
         """
         SELECT ticker, MAX(end) as latest FROM kline_cache
@@ -68,9 +67,7 @@ def fetch_one(factory, ticker: str, provider_name: str) -> tuple[str, bool]:
         ts = pd.to_datetime(df[ts_col])
 
         # 从数据库读取现有完整记录
-        import sqlite3
-
-        conn = sqlite3.connect(str(CACHE_DB))
+        conn = get_sqlite_conn(CACHE_DB)
         row = conn.execute(
             "SELECT start, end, data FROM kline_cache WHERE ticker = ?", (ticker,)
         ).fetchone()

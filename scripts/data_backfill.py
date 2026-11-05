@@ -36,6 +36,7 @@ from scripts._utils import (
     _get_expected_date,
     get_cache_db_path,
     get_provider_chain,
+    get_sqlite_conn,
     normalize_ticker_key,
 )
 from trade_krono_cli.cache import get_cache
@@ -100,7 +101,7 @@ def find_stale_tickers(db_path: Path, end_date: str) -> list[tuple[str, str, str
     Returns:
         [(ticker, start, end), ...]，按 ticker 升序。
     """
-    conn = sqlite3.connect(str(db_path))
+    conn = get_sqlite_conn(db_path)
     try:
         rows = conn.execute(
             "SELECT ticker, start, end FROM kline_cache WHERE end < ? ORDER BY ticker",
@@ -246,7 +247,7 @@ def _set_kline_with_retry(ticker: str, start: str, end: str, df: pd.DataFrame) -
 
 def _load_existing(ticker: str) -> pd.DataFrame | None:
     """读取缓存中该 ticker 的日线数据（无则返回 None）。"""
-    conn = sqlite3.connect(str(get_cache_db_path()))
+    conn = get_sqlite_conn(get_cache_db_path())
     try:
         row = conn.execute(
             "SELECT data FROM kline_cache WHERE ticker = ? AND freq = 'd' "
