@@ -109,12 +109,15 @@ class AkShareProvider(DataProvider):
             # akshare 日期格式: 20250101
             start_fmt = start_date.replace("-", "")
             end_fmt = end_date.replace("-", "")
+            # baostock adjustflag: "1"=前复权, "2"=后复权；akshare adjust: ""=不复权, "qfq"=前复权, "hfq"=后复权
+            adjust_map = {"1": "qfq", "2": "hfq"}
+            adjust = adjust_map.get(adjustflag, "")
 
             df = self._ak.stock_zh_a_hist(
                 symbol=code,
                 start_date=start_fmt,
                 end_date=end_fmt,
-                adjust=adjustflag,
+                adjust=adjust,
             )
             if df is None or df.empty:
                 return None
