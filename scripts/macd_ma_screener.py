@@ -45,6 +45,8 @@ from scripts._utils import (
     normalize_ticker_key,
     ticker_to_thscode,
 )
+from scripts.indicators import calc_ma as _indicators_calc_ma
+from scripts.indicators import calc_macd_dif as _indicators_calc_macd_dif
 
 # ── 常量 ──────────────────────────────────────────────────────────────────────
 _RESULTS = Path("outputs/results")
@@ -104,18 +106,15 @@ class MacdMaResult:
         }
 
 
-# ── 技术面计算 ─────────────────────────────────────────────────────────────────
+# ── 技术面计算（calc_ma/calc_macd_dif 已下沉至 scripts.indicators，此处保留向后兼容包装）─────────────
 def calc_macd_dif(closes: pd.Series, fast: int = 12, slow: int = 26) -> float | None:
     """MACD DIF 值（>0 表示 0 轴之上）。数据不足返回 None。
 
-    slow+9 为 EMA 预热保守门槛（比 multi_line_resonance._macd 的 slow+2 更严格，
-    避免前 26 个样本 EMA 预热不足导致 DIF 偏差）。
+    下沉实现见 :func:`scripts.indicators.calc_macd_dif`；本函数为向后兼容包装，
+    将数据不足时的 float("nan") 规范化为 None，保持与原签名一致。
     """
-    if len(closes) < slow + 9:
-        return None
-    ema_fast = closes.ewm(span=fast, adjust=False).mean()
-    ema_slow = closes.ewm(span=slow, adjust=False).mean()
-    return float((ema_fast - ema_slow).iloc[-1])
+    val = _indicators_calc_macd_dif(closes, fast=fast, slow=slow)
+    return None if pd.isna(val) else val
 
 
 def _fetch_all_stock_names(date_str: str) -> dict[str, str]:
@@ -400,8 +399,8 @@ def _scan_all(
             continue
 
         # 1) 日 MA5 > MA13
-        ma5 = float(close.rolling(5).mean().iloc[-1])
-        ma13 = float(close.rolling(13).mean().iloc[-1])
+        ma5 = float(_indicators_calc_ma(close, 5).iloc[-1])
+        ma13 = float(_indicators_calc_ma(close, 13).iloc[-1])
         if not (ma5 > ma13):
             skipped["ma5_not_gt_ma13"] += 1
             continue

@@ -38,6 +38,8 @@ from scripts._utils import (
     normalize_ticker_key,
     ticker_to_thscode,
 )
+from scripts.indicators import calc_ma as _indicators_calc_ma
+from scripts.indicators import calc_macd_dif as _indicators_calc_macd_dif
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 API_KEY = (os.getenv("HITHINK_FINANCE_API_KEY", "") or os.getenv("FUYAO_API_KEY", "")).strip()
@@ -72,25 +74,30 @@ def get_st_tickers(metadata: dict) -> set[str]:
     return {t for t, info in metadata.items() if isinstance(info, dict) and info.get("is_st")}
 
 
+# ── 技术面计算（calc_ma/calc_macd_dif 已下沉至 scripts.indicators，此处保留向后兼容包装）───────────────
 def calc_ma_ratio(df: pd.DataFrame, fast: int = MA_FAST, slow: int = MA_SLOW) -> float | None:
-    """计算快速均线/慢速均线比值"""
+    """计算快速均线/慢速均线比值（>1 表示快线在慢线之上）。
+
+    下沉实现见 :func:`scripts.indicators.calc_ma`；本函数为向后兼容包装。
+    """
     if len(df) < slow:
         return None
-    ma_fast = df["close"].rolling(fast).mean().iloc[-1]
-    ma_slow = df["close"].rolling(slow).mean().iloc[-1]
-    if ma_slow == 0:
+    close = df["close"] if "close" in df.columns else df.iloc[:, 0]
+    ma_fast = float(_indicators_calc_ma(close, fast).iloc[-1])
+    ma_slow = float(_indicators_calc_ma(close, slow).iloc[-1])
+    if ma_slow == 0 or pd.isna(ma_fast) or pd.isna(ma_slow):
         return None
-    return float(ma_fast / ma_slow)
+    return ma_fast / ma_slow
 
 
 def calc_macd(closes: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> float | None:
-    """计算MACD线值（dif），MACD > 0 表示在0轴上方"""
-    if len(closes) < slow + signal:
-        return None
-    ema_fast = closes.ewm(span=fast, adjust=False).mean()
-    ema_slow = closes.ewm(span=slow, adjust=False).mean()
-    macd_line = ema_fast - ema_slow
-    return float(macd_line.iloc[-1])
+    """计算MACD线值（dif），MACD > 0 表示在0轴上方。
+
+    下沉实现见 :func:`scripts.indicators.calc_macd_dif`；本函数为向后兼容包装，
+    将数据不足时的 float("nan") 规范化为 None，保持与原签名一致。
+    """
+    val = _indicators_calc_macd_dif(closes, fast=fast, slow=slow)
+    return None if pd.isna(val) else val
 
 
 def fetch_roe_from_api(thscode: str) -> float | None:
@@ -552,11 +559,11 @@ def process_ticker(
         "latest_date": latest_date,
         "latest_close": round(latest_close, 2),
         "pe_ttm": round(pe, 2) if pe is not None else None,
-        "daily_ma5": round(float(df["close"].rolling(MA_FAST).mean().iloc[-1]), 2),
-        "daily_ma13": round(float(df["close"].rolling(MA_SLOW).mean().iloc[-1]), 2),
+        "daily_ma5": round(float(_indicators_calc_ma(df["close"], MA_FAST).iloc[-1]), 2),
+        "daily_ma13": round(float(_indicators_calc_ma(df["close"], MA_SLOW).iloc[-1]), 2),
         "daily_ratio": round(daily_ratio, 4),
-        "weekly_ma5": round(float(weekly_close.rolling(MA_FAST).mean().iloc[-1]), 2),
-        "weekly_ma13": round(float(weekly_close.rolling(MA_SLOW).mean().iloc[-1]), 2),
+        "weekly_ma5": round(float(_indicators_calc_ma(weekly_close, MA_FAST).iloc[-1]), 2),
+        "weekly_ma13": round(float(_indicators_calc_ma(weekly_close, MA_SLOW).iloc[-1]), 2),
         "weekly_ratio": round(weekly_ratio, 4),
         "macd": round(macd_val, 6),
         "roe": None,  # 待填充

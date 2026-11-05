@@ -184,6 +184,8 @@ def _macd(values: pd.Series, fast: int = 12, slow: int = 26) -> tuple[float, flo
 
     DIF = EMA(fast) - EMA(slow)。"向上"判定需比较 DIF 序列连续两期。
 
+    下沉实现见 :func:`scripts.indicators.calc_macd_dif_series`；本函数为向后兼容包装。
+
     Parameters
     ----------
     values : pd.Series
@@ -196,12 +198,15 @@ def _macd(values: pd.Series, fast: int = 12, slow: int = 26) -> tuple[float, flo
     tuple[float, float]
         (最新 DIF, 前一期 DIF)。数据不足时返回 (nan, nan)。
     """
+    from scripts.indicators import calc_macd_dif_series as _indicators_macd_series
+
     if len(values) < slow + 2:
         return float("nan"), float("nan")
-    ema_fast = values.ewm(span=fast, adjust=False).mean()
-    ema_slow = values.ewm(span=slow, adjust=False).mean()
-    dif = ema_fast - ema_slow
-    return float(dif.iloc[-1]), float(dif.iloc[-2])
+    dif = _indicators_macd_series(values, fast=fast, slow=slow)
+    try:
+        return float(dif.iloc[-1]), float(dif.iloc[-2])
+    except (IndexError, TypeError):
+        return float("nan"), float("nan")
 
 
 def _resample_close(df: pd.DataFrame, freq: str) -> pd.Series:
