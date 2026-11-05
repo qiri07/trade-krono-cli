@@ -1,4 +1,12 @@
-"""tests for scripts.combined_stock_analysis (Kronos 预测 + 历史回测 + 卡片)。"""
+"""tests for scripts.combined_stock_analysis (Kronos 预测 + 历史回测 + 卡片)。
+
+拆分后结构：
+- 模型/视图：scripts.combined_stock_models
+- 收集/交集：scripts.combined_stock_collect / combined_stock_intersect
+- 分析增强：scripts.combined_stock_analyze（attach_kronos / attach_backtest）
+- 卡片构建：scripts.combined_stock_cards
+- 主入口：scripts.combined_stock_analysis
+"""
 
 from __future__ import annotations
 
@@ -11,16 +19,17 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from scripts import combined_stock_analysis as csa
-from scripts.combined_stock_analysis import (
-    BacktestView,
-    KronosView,
-    StockCandidate,
-    _build_combined_card,
-    _build_stock_card,
-    _llm_view,
+from scripts.combined_stock_analyze import (
     attach_backtest,
     attach_kronos,
 )
+from scripts.combined_stock_cards import (
+    _build_combined_card,
+    _build_stock_card,
+    _llm_view,
+)
+from scripts.combined_stock_collect import _codes_from_czsc_csv
+from scripts.combined_stock_models import BacktestView, KronosView, StockCandidate
 from trade_krono_cli.domain.kronos_result import KronosForecastResult
 
 
@@ -229,7 +238,10 @@ class TestAttachBacktest:
         cand = self._cand()
         fake_records = [object(), object()]
         with (
-            patch.object(csa, "_build_eval_records", return_value=fake_records),
+            patch(
+                "scripts.combined_stock_analyze._build_eval_records",
+                return_value=fake_records,
+            ),
             patch(
                 "trade_krono_cli.prediction_eval_backtest.run_backtest",
                 return_value=self._fake_bt(),
@@ -246,7 +258,7 @@ class TestAttachBacktest:
     def test_no_records_marks_unavailable(self) -> None:
         """无历史信号时写回 available=False 的 BacktestView，不计入成功。"""
         cand = self._cand()
-        with patch.object(csa, "_build_eval_records", return_value=[]):
+        with patch("scripts.combined_stock_analyze._build_eval_records", return_value=[]):
             n = attach_backtest([cand], "2026-10-15")
         assert n == 0
         assert cand.backtest is not None
@@ -256,7 +268,7 @@ class TestAttachBacktest:
         """回测抛异常时降级为 available=False，不阻断。"""
         cand = self._cand()
         with (
-            patch.object(csa, "_build_eval_records", return_value=[object()]),
+            patch("scripts.combined_stock_analyze._build_eval_records", return_value=[object()]),
             patch(
                 "trade_krono_cli.prediction_eval_backtest.run_backtest",
                 side_effect=RuntimeError("boom"),
@@ -460,11 +472,11 @@ class TestCzscCodeParsing:
             'bj.920002,2026-11-02,30.0,{},"[]"\n',
             encoding="utf-8",
         )
-        assert csa._codes_from_czsc_csv(csv_path) == {"600519", "000858"}
+        assert _codes_from_czsc_csv(csv_path) == {"600519", "000858"}
 
     def test_missing_file_returns_empty(self, tmp_path: Path) -> None:
         """文件缺失时返回空集，不抛异常。"""
-        assert csa._codes_from_czsc_csv(tmp_path / "none.csv") == set()
+        assert _codes_from_czsc_csv(tmp_path / "none.csv") == set()
 
 
 if __name__ == "__main__":
