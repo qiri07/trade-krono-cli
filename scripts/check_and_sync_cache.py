@@ -1,9 +1,8 @@
-#!/usr/bin/env python3
-"""每日数据缓存检查与同步脚本。
+"""每日数据缓存检查与同步脚本（CLI 入口）。
 
 功能：
-  1. 检查 K 线缓存是否已更新至预期日期
-  2. 若未更新，自动执行增量同步
+  1. 检查 K 线缓存是否已更新至预期日期（复用 scripts._utils 检查逻辑）
+  2. 若未更新，自动执行增量同步（通过 trade-krono-cli sync-universe CLI）
 
 触发方式：
   - cron 定时任务（每天 10:00 和 15:30）
@@ -23,11 +22,27 @@ from pathlib import Path
 
 from loguru import logger
 
+# 确保脚本所在目录的父目录（仓库根）在 sys.path 中，
+# 使 from scripts.xxx 模式在直接执行时也能正常工作
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # noqa: E402
+
 # 项目根目录
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DB = PROJECT_ROOT / "outputs" / "cache" / "pipeline_cache.db"
 
 from scripts._utils import get_sqlite_conn  # noqa: E402
+
+
+# 公共别名（向后兼容，供 sync_stale.py 和测试使用）
+# 注意：以下为本地实现（非 _utils 别名），以便测试可 patch 模块级 datetime/CACHE_DB。
+def get_expected_date() -> str:
+    """获取期望的缓存日期（最近的交易日，优先昨天，周末则回退到周五）。"""
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    if today.weekday() >= 5:  # 5=周六, 6=周日
+        days_back = today.weekday() - 4  # 周六→1, 周日→2
+        yesterday = today - timedelta(days=days_back)
+    return yesterday.strftime("%Y-%m-%d")
 
 
 def get_cache_latest_date() -> str | None:
@@ -46,29 +61,16 @@ def get_cache_latest_date() -> str | None:
         return None
 
 
-def get_expected_date() -> str:
-    """获取期望的缓存日期（最近的交易日，优先昨天，周末则回退到周五）。"""
-    today = datetime.now()
-    yesterday = today - timedelta(days=1)
-    # 如果今天是周末，回退到周五
-    if today.weekday() >= 5:  # 5=周六, 6=周日
-        # 回退到本周五：周六减1天，周日减2天
-        days_back = today.weekday() - 4  # 周六→1, 周日→2
-        yesterday = today - timedelta(days=days_back)
-    return yesterday.strftime("%Y-%m-%d")
-
-
 def is_cache_up_to_date(expected_date: str) -> bool:
     """检查缓存是否已更新至预期日期。"""
     latest = get_cache_latest_date()
     if latest is None:
         return False
-    # 缓存日期应该 >= 预期日期
     return latest >= expected_date
 
 
 def run_sync(source: str = "tonghuashun", dry_run: bool = False) -> bool:
-    """执行缓存同步。"""
+    """执行缓存同步（调用 trade-krono-cli sync-universe CLI）。"""
     # uv 是独立二进制，不能通过 python -m uv 调用
     uv_cmd = subprocess.run(
         ["uv", "--version"],

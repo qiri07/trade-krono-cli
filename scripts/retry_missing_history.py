@@ -1,28 +1,32 @@
 #!/usr/bin/env python3
-"""重拉取全量同步失败的历史数据 — 动态检测缺失股票并重试。"""
+"""重拉取全量同步失败的历史数据（安全版，追加不覆盖）。
+
+本脚本已重构：原版使用 `cache.set_kline(...)` 直接写入（可能整行覆盖已有数据），
+现已改为基于 :mod:`scripts.fill_missing_latest` 的 `fetch_and_append`
+（严格增量，仅追加 end 之后的行），避免数据回退。
+
+用法：
+  uv run python scripts/retry_missing_history.py   # 重拉缺少 2026-11-04 数据的股票
+"""
 
 from __future__ import annotations
 
 import sys
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import pandas as pd
 
 from scripts._utils import _get_expected_date, get_sqlite_conn
-from trade_krono_cli.cache import get_cache
+from scripts.fill_missing_latest import fetch_and_append
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
 START_DATE = "2020-01-01"
-# 以最近已收盘交易日为上限，避免写入今日未收盘的部分 K 线
-END_DATE = _get_expected_date()
+END_DATE = _get_expected_date()  # 最近已收盘交易日
 WORKERS = 16
-FETCH_TIMEOUT = 30
+BATCH_SIZE = 64
 BATCH_DELAY = 2.0
 CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 
@@ -30,92 +34,22 @@ _load_env()
 
 
 def get_incomplete_tickers() -> list[str]:
-    """获取缺少今日数据的非北交所股票。"""
+    """获取缺少目标日期数据的股票（非北交所）。"""
     conn = get_sqlite_conn(CACHE_DB)
-    cur = conn.cursor()
-    # 真正缺今日数据的股票：不存在任何 start >= 今日 的记录
-    cur.execute(
-        """
-        SELECT DISTINCT k.ticker FROM kline_cache k
-        WHERE k.end < ?
-        ORDER BY k.ticker
-        """,
-        (END_DATE,),
-    )
-    tickers = [r[0] for r in cur.fetchall()]
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT DISTINCT k.ticker FROM kline_cache k
+            WHERE k.end < ?
+            ORDER BY k.ticker
+            """,
+            (END_DATE,),
+        )
+        tickers = [r[0] for r in cur.fetchall()]
+    finally:
+        conn.close()
     return tickers
-
-
-def get_provider_chain(ticker: str) -> list[str]:
-    """根据股票类型返回 provider 优先级链（与 factory 一致）。"""
-    from trade_krono_cli.data_providers.factory import get_data_factory
-
-    s = get_data_factory()
-    base_chain = [s.primary] + [f for f in s.fallbacks if f != s.primary]
-
-    if ticker.startswith("bj."):
-        if "tonghuashun" in base_chain:
-            base_chain.remove("tonghuashun")
-        base_chain.insert(0, "tonghuashun")
-    elif ticker.startswith("hk."):
-        if "akshare_hk" in base_chain:
-            base_chain.remove("akshare_hk")
-        base_chain.insert(0, "akshare_hk")
-
-    return base_chain
-
-
-def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[str, int, str]:
-    """带超时的全量历史数据拉取。"""
-    result_container: list[tuple[str, int, str]] = []
-    error_container: list[str] = []
-
-    def _fetch() -> None:
-        for provider_name in provider_chain:
-            try:
-                provider = factory.get_provider(provider_name)
-                if provider is None:
-                    continue
-                result = provider.fetch_kline(
-                    ticker, START_DATE, END_DATE, frequency="d", adjustflag="1"
-                )
-                if result is None or result.is_empty:
-                    continue
-                df = result.to_dataframe()
-                if len(df) == 0:
-                    continue
-                cache = get_cache()
-                ts = pd.to_datetime(df["timestamps"])
-                cache.set_kline(
-                    ticker,
-                    ts.min().strftime("%Y-%m-%d"),
-                    ts.max().strftime("%Y-%m-%d"),
-                    "d",
-                    df,
-                    ttl=0.0,
-                )
-                result_container.append(
-                    (
-                        provider_name,
-                        len(df),
-                        f"{ts.min().strftime('%Y-%m-%d')}~{ts.max().strftime('%Y-%m-%d')}",
-                    )
-                )
-                return
-            except Exception as e:
-                error_container.append(f"{provider_name}:{e}")
-                continue
-
-    thread = threading.Thread(target=_fetch, daemon=True)
-    thread.start()
-    thread.join(timeout=FETCH_TIMEOUT)
-
-    if thread.is_alive():
-        return ("timeout", 0, f"超时{FETCH_TIMEOUT}s")
-    if result_container:
-        return result_container[0]
-    return ("failed", 0, "; ".join(error_container) if error_container else "无结果")
 
 
 def main() -> None:
@@ -124,51 +58,33 @@ def main() -> None:
         print("✅ 没有需要重拉的股票")
         return
 
-    print(f"🚀 发现 {len(tickers)} 只缺少历史数据的股票，开始重试...")
+    print(f"🚀 发现 {len(tickers)} 只缺少历史数据的股票，开始重试（增量追加，不覆盖历史）...")
     print(f"   范围: {START_DATE} ~ {END_DATE}")
     print()
 
     factory = get_data_factory()
-    success = 0
-    failed = 0
+    success = failed = 0
     failed_list: list[tuple[str, str]] = []
     total = len(tickers)
 
-    batch_size = 64
-    for batch_start in range(0, total, batch_size):
-        batch = tickers[batch_start : batch_start + batch_size]
-        batch_num = batch_start // batch_size + 1
-        print(
-            f"  批次 {batch_num} ({batch_start + 1}~{min(batch_start + batch_size, total)}/{total})"
-        )
+    for batch_start in range(0, total, BATCH_SIZE):
+        batch = tickers[batch_start : batch_start + BATCH_SIZE]
+        batch_num = batch_start // BATCH_SIZE + 1
+        print(f"  批次 {batch_num} ({batch_start + 1}~{min(batch_start + BATCH_SIZE, total)}/{total})")
 
-        with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-            futures = {
-                executor.submit(fetch_full_range, factory, t, get_provider_chain(t)): t
-                for t in batch
-            }
-            for future in as_completed(futures):
-                ticker = futures[future]
-                try:
-                    provider, n_rows, detail = future.result(timeout=FETCH_TIMEOUT + 5)
-                    if provider == "timeout":
-                        failed += 1
-                        failed_list.append((ticker, f"超时 {FETCH_TIMEOUT}s"))
-                        print(f"    ⏱️  {ticker}")
-                    elif provider == "failed":
-                        failed += 1
-                        failed_list.append((ticker, detail))
-                        print(f"    ❌ {ticker} ({detail[:40]})")
-                    else:
-                        success += 1
-                        print(f"    ✅ {ticker}: {provider} {n_rows}条 {detail}")
-                except Exception as e:
-                    failed += 1
-                    failed_list.append((ticker, str(e)))
-                    print(f"    ❌ {ticker} ({e})")
+        # 串行处理批次内的每只股票（避免并发登录污染）
+        for ticker in batch:
+            _, succeeded, detail = fetch_and_append(factory, ticker, START_DATE, END_DATE)
+            if succeeded:
+                success += 1
+                print(f"    ✅ {ticker}: {detail}")
+            else:
+                failed += 1
+                failed_list.append((ticker, detail))
+                print(f"    ❌ {ticker}: {detail}")
 
         # 批次间短暂休息
-        if batch_start + batch_size < total:
+        if batch_start + BATCH_SIZE < total:
             time.sleep(BATCH_DELAY)
 
     print()

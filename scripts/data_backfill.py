@@ -19,6 +19,9 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import pickle
 import sqlite3
 import sys
 import threading
@@ -60,39 +63,17 @@ def _load_progress() -> dict[str, dict[str, str]]:
     if not PROGRESS_FILE.exists():
         return {}
     try:
-        data = json_load(PROGRESS_FILE)
-        return data if isinstance(data, dict) else {}
-    except (json_error(), OSError):
+        return json.loads(PROGRESS_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
         return {}
-
-
-def json_load(path: Path):
-    import json
-
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def json_error() -> type[Exception]:
-    import json
-
-    return json.JSONDecodeError
 
 
 def _save_progress(progress: dict[str, dict[str, str]]) -> None:
     """原子写入进度文件。"""
     PROGRESS_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = PROGRESS_FILE.with_suffix(".json.tmp")
-    tmp.write_text(
-        __import__("json").dumps(progress, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    os_replace(tmp, PROGRESS_FILE)
-
-
-def os_replace(src: Path, dst: Path) -> None:
-    import os
-
-    os.replace(src, dst)
+    tmp.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, PROGRESS_FILE)
 
 
 def find_stale_tickers(db_path: Path, end_date: str) -> list[tuple[str, str, str]]:
@@ -260,15 +241,9 @@ def _load_existing(ticker: str) -> pd.DataFrame | None:
         return None
     try:
         return pd.read_pickle(BytesIO(row[0]))
-    except (OSError, ValueError, pickle_error()):  # noqa: F821
-        logger.warning(f"缓存解码失败 {ticker}")
+    except (OSError, ValueError, pickle.UnpicklingError, AttributeError) as e:
+        logger.warning(f"缓存解码失败 {ticker}: {e}")
         return None
-
-
-def pickle_error() -> type[Exception]:
-    import pickle
-
-    return pickle.UnpicklingError
 
 
 def parse_args() -> argparse.Namespace:
