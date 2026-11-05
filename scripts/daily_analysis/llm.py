@@ -18,8 +18,15 @@ from openai import RateLimitError
 
 from trade_krono_cli.llm_config import resolve_llm_config
 
-# ── Nemotron API 限流（全局模块，线程安全）─────────────────────────────────────
-from trade_krono_cli.llm_rate_limiter import backoff_wait, is_quota_exhausted, wait_for_rate_limit
+# ── Nemotron API 限流（跨进程安全，P0 优化）─────────────────────────────────────
+from trade_krono_cli.llm_rate_limiter import (
+    backoff_wait,
+    is_quota_exhausted,
+    wait_for_rate_limit_cross_process,
+)
+
+# 向后兼容别名：供测试 patch scripts.daily_analysis.llm.wait_for_rate_limit
+wait_for_rate_limit = wait_for_rate_limit_cross_process
 
 try:
     from openai import OpenAI
@@ -151,7 +158,7 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
         )
 
     def _call_one(prompt: str) -> dict | None:
-        wait_for_rate_limit()
+        wait_for_rate_limit_cross_process()
         for attempt in range(1, 6):
             try:
                 response = client.chat.completions.create(

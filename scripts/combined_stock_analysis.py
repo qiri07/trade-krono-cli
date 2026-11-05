@@ -131,6 +131,41 @@ def main() -> None:
         "各选股线命中数量：" + " ".join(f"{k}={len(v)}" for k, v in source_sets.items())
     )
 
+    # ── Step 0.5: 前置校验（P2：确保依赖步骤的输出文件存在且非空）─────────
+    # 仅检查 source_sets 中实际存在的来源键；若某来源集合为空，检查对应文件是否存在。
+    # 未出现在 source_sets 中的来源（如测试中未 mock 的）不做校验，避免误报。
+    dc = args.date.replace("-", "")
+    dd = args.date
+    _source_file_map: dict[str, Path] = {
+        "buffett": Path(f"outputs/results/buffett_screen_{dc}.txt"),
+        "whitelist": Path("outputs/results/buffett_dynamic_whitelist.txt"),
+        "resonance": Path(f"outputs/results/macd_resonance_{dd}.json"),
+        "multi_head": Path(f"outputs/results/multi_head_{dc}.txt"),
+        "double_ma": Path(f"outputs/results/double_ma_golden_cross_{dd}.json"),
+        "macd_ma": Path(f"outputs/results/macd_ma_screener_{dc}.txt"),
+    }
+    _czsc_dir = Path("outputs/czsc_signal_scan")
+    _czsc_files = [
+        (_czsc_dir / f"matched_bi_ma_{dc}.csv", "czsc_bi_ma"),
+        (_czsc_dir / f"matched_third_buy_{dc}.csv", "czsc_third_buy"),
+    ]
+    _missing: list[str] = []
+    for src, path in _source_file_map.items():
+        codes = source_sets.get(src)
+        if codes is not None and not codes and (not path.exists() or path.stat().st_size == 0):
+            _missing.append(f"{src}: {path}")
+    for path, src_key in _czsc_files:
+        codes = source_sets.get(src_key)
+        if codes is not None and not codes and (not path.exists() or path.stat().st_size == 0):
+            _missing.append(f"czsc: {path}")
+    if _missing:
+        logger.error("❌ 综合选股前置校验失败，以下依赖文件缺失或为空：")
+        for m in _missing:
+            logger.error(f"   - {m}")
+        logger.error("   请先运行相应选股步骤（buffett/resonance/multi_head/double_ma/macd_ma/czsc）")
+        sys.exit(1)
+    logger.info("✅ 前置校验通过：所有依赖选股线输出文件存在且非空")
+
     # ── Step 2: 交集候选池（≥N 条线）────────────────────────────
     cands = build_intersection(source_sets, args.min_sources)
     logger.info(

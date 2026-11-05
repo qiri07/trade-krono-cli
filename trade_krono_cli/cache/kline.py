@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
+import os
 import pickle
 import sqlite3
 import time
 from datetime import datetime, timedelta
 from io import BytesIO
+from pathlib import Path
 
 import pandas as pd
 from loguru import logger
@@ -19,6 +22,41 @@ from trade_krono_cli.cache.base import (
 
 # 数据完整性协议版本前缀（写入时拼接到数据头部，读取时验证）
 _CACHE_FMT_VERSION = b"TKC1"
+
+# ═════════════════════════════════════════════════════════════════════
+# 跨进程 SQLite 写入锁（P0 优化）
+#
+# pipeline_cache.db 由多个独立子进程并发访问（sync/sync_etf/whitelist 等）。
+# SQLite WAL 模式允许并发读，但写入是串行的。原有的指数退避重试
+# 只能缓解，不能根除 "database is locked"。本节提供基于 fcntl 文件锁的
+# 跨进程写入串行化，确保同一时刻只有一个进程在写入 DB。
+# ═════════════════════════════════════════════════════════════════════
+
+_SQLITE_WRITE_LOCK_FILE = Path("outputs/cache/sqlite_write.lock")
+
+
+def _ensure_sqlite_lock_dir() -> None:
+    """确保 SQLite 写入锁文件所在目录存在。"""
+    _SQLITE_WRITE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+
+class sqlite_write_lock:
+    """跨进程 SQLite 写入互斥锁（上下文管理器）。
+
+    使用 fcntl 文件锁，确保同一时刻只有一个进程持有锁并写入 DB。
+    """
+
+    def __enter__(self) -> int:
+        _ensure_sqlite_lock_dir()
+        self._fd = os.open(str(_SQLITE_WRITE_LOCK_FILE), os.O_RDWR | os.O_CREAT, 0o644)
+        fcntl.flock(self._fd, fcntl.LOCK_EX)
+        return self._fd
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        try:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
+        finally:
+            os.close(self._fd)
 
 
 def _compute_data_hash(data: bytes) -> str:
@@ -123,25 +161,26 @@ class KlineCache:
         buf.seek(0)
         data_hash = _compute_data_hash(raw_bytes)
 
-        # 多线程环境下 SQLite 可能出现 "database is locked" 错误，
-        # 通过指数退避重试处理并发写冲突。
+        # 多线程/多进程环境下 SQLite 可能出现 "database is locked" 错误，
+        # 通过跨进程文件锁串行化写入 + 指数退避重试处理并发写冲突。
         delay = 0.2
         last_err: Exception | None = None
         for attempt in range(8):
             try:
-                self._cache._transaction(
-                    lambda conn: self._set_kline(
-                        conn,
-                        ticker,
-                        start,
-                        end,
-                        freq,
-                        raw_bytes,
-                        data_hash,
-                        ttl,
-                        adjustflag,
+                with sqlite_write_lock():
+                    self._cache._transaction(
+                        lambda conn: self._set_kline(
+                            conn,
+                            ticker,
+                            start,
+                            end,
+                            freq,
+                            raw_bytes,
+                            data_hash,
+                            ttl,
+                            adjustflag,
+                        )
                     )
-                )
                 return
             except sqlite3.OperationalError as e:
                 last_err = e

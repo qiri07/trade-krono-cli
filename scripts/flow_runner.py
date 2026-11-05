@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""统一 step 注册表 + 单步/全量串行执行器。
+"""统一 step 注册表 + 基于 depends_on 的拓扑分层并行执行器。
 
 设计目标：
   · 每个步骤注册为 dataclass，统一调度
-  · `run --step X` 单独执行；`run --all` 串行执行全部默认开启 step
+  · `run --step X` 单独执行；`run --all` 按 depends_on 拓扑分层并行执行
+    （同层互不依赖，可并行；层间串行）
   · `--enable/--disable` 临时开关；`--dry-run` 只打印
   · 兼容旧 `daily_flow.sh` 的 env flag（NO_PUSH/NO_SYNC/SKIP_ETF/EXPORT）
 
@@ -20,6 +21,15 @@
 备份策略：`--all` 时由首个 `backup` step 统一做一次前置备份，`sync` / `sync_etf`
 会自动追加 `--no-backup`，避免一轮流程重复拷贝 ~1.1 GB 的 pipeline_cache.db；
 单独执行 `--step sync` 或 `--disable backup` 时，各 step 仍会自行备份。
+
+并发与限流说明：
+  · `sync`（K 线增量补拉）会写入 pipeline_cache.db，与 `sync_etf`、`whitelist`
+    的缓存写入可能并发冲突。kline.py 的 set_kline 已通过 fcntl 文件锁
+    实现跨进程写入串行化（见 trade_krono_cli/cache/kline.py sqlite_write_lock）。
+  · Nemotron AI API 调用（buffett/whitelist/combined）跨进程共享限流器，
+    见 trade_krono_cli/llm_rate_limiter.py wait_for_rate_limit_cross_process()。
+  · 同一层内并发数由 max_workers 控制（默认 8），DB 写入密集型 step 建议
+    单独或低并发执行。
 """
 
 from __future__ import annotations
@@ -414,11 +424,12 @@ def cmd_run(
     strict: bool = False,
     resume: bool = False,
 ) -> int:
-    """run 子命令：单步或全量串行。
+    """run 子命令：单步或全量拓扑分层并行。
 
     断点续传（resume）语义：
-      - 默认（resume=False）：全量串行执行所有启用 step；前置依赖失败时跳过下游 step，
-        避免用脏数据推导后续结论；单个 step 失败继续执行其余独立 step
+      - 默认（resume=False）：执行所有启用 step，按 depends_on 拓扑分层并行；
+        前置依赖失败时跳过下游 step，避免用脏数据推导后续结论；
+        单个 step 失败继续执行其余独立 step
       - resume=True：跳过当天 checkpoint 中标记为 success 的 step，从首个未成功
         的 step 开始执行；任一 step 失败时立即停止（断点），等待下次 resume 重试
 
