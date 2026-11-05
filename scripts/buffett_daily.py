@@ -27,7 +27,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import sys
 import time
@@ -43,11 +42,9 @@ from scripts.feishu_utils import push_feishu as _push_via_feishu_cli
 from tests.buffett_cache import cache_clean, init_cache, load_all_cache, save_cache_to_db
 from tests.buffett_screening import (
     _CONCURRENCY,
-    AiVerificationResult,
     StockMetrics,
     batch_valuations,
     get_all_stocks,
-    run_ai_verification,
     run_screening,
     write_result_file,
 )
@@ -82,36 +79,6 @@ def _write_dynamic_whitelist(results_pass: list[StockMetrics]) -> None:
     ]
     _DYNAMIC_WHITELIST_PATH.write_text(",".join(codes), encoding="utf-8")
     logger.info(f"动态白名单已更新：{len(codes)} 只 → {_DYNAMIC_WHITELIST_PATH}")
-
-
-def _save_ai_result(ai_result: AiVerificationResult, result_txt_path: str) -> None:
-    """将 AI 核实结果写入 JSON 文件，并追加摘要到文本结果文件末尾。
-
-    Parameters
-    ----------
-    ai_result : AiVerificationResult
-        run_ai_verification 返回的分析结果
-    result_txt_path : str
-        原始文本结果文件路径，AI 摘要将追加在此文件末尾
-    """
-    results_dir = Path(result_txt_path).parent
-    results_dir.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    json_path = results_dir / f"buffett_screen_{date_str}_ai.json"
-
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(ai_result.__dict__, f, ensure_ascii=False, indent=2)
-    logger.info(f"AI 核实结果已保存：{json_path}")
-
-    summary = ai_result.full_summary_text.strip()
-    if summary:
-        with open(result_txt_path, "a", encoding="utf-8") as f:
-            f.write(f"\n{'=' * 60}\n")
-            f.write(f"🤖 AI 核实分析（Nemotron 3.5 Super VL 120B）— {ai_result.date}\n")
-            f.write(f"{'=' * 60}\n\n")
-            f.write(summary)
-            f.write("\n")
-        logger.info(f"AI 摘要已追加至：{result_txt_path}")
 
 
 def _ticker_to_code(ticker: str) -> str:
@@ -240,7 +207,7 @@ def run(
     elif skip_screen:
         logger.info("📋 步骤 1/4：跳过筛选，使用今日结果文件...")
     else:
-        # 运行完整筛选流程（含 AI 核实），复用结果供后续步骤
+        # 运行完整筛选流程，复用结果供后续步骤
         logger.info("📋 步骤 1/4：运行巴菲特六闸门并行筛选...")
         results_pass, results_fail, skipped_no_val, total_filtered, elapsed = _run_full_screen(
             result_file, today
@@ -257,20 +224,12 @@ def run(
         pass_codes = [p[0] for p in passing]
         _write_dynamic_whitelist_from_codes(pass_codes)
 
-    # AI 核实（从已运行的筛选结果中提取，无需重新筛选）
-    logger.info("📋 步骤 2/4：AI 核实...")
-    ai_summary = _run_ai_check(results_pass, results_fail, total_filtered, today)
-    if ai_summary:
-        logger.info(f"  AI 核实完成：{ai_summary}")
-    else:
-        logger.info("  AI 核实：未执行（LLM 未配置或调用失败）")
-
-    # ── Step 3: 推送筛选汇总至飞书 ─────────────────────────────────────────
-    logger.info("📋 步骤 3/4：推送飞书筛选汇总...")
+    # ── Step 2: 推送筛选汇总至飞书 ─────────────────────────────────────────
+    logger.info("📋 步骤 2/3：推送飞书筛选汇总...")
     _push_via_feishu_cli(
         "buffett",
         result_file=result_file,
-        ai_summary=ai_summary or "",
+        ai_summary="",
     )
 
     # ── Step 4: 逐只技术分析 + 实时推送 ────────────────────────────────────
@@ -323,7 +282,7 @@ def _write_dynamic_whitelist_from_codes(codes: list[str]) -> None:
 def _run_full_screen(
     result_file: str, date_str: str
 ) -> tuple[list[StockMetrics], list[StockMetrics], list[str], int, float]:
-    """运行完整的巴菲特并行筛选流程（含 AI 核实）。
+    """运行完整的巴菲特并行筛选流程。
 
     Parameters
     ----------
@@ -390,54 +349,13 @@ def _run_full_screen(
         # 4. 写入结果文件
         write_result_file(result_file, results_pass, results_fail)
 
-        # 5. AI 核实
-        logger.info("  AI 核实...")
-        ai_result = run_ai_verification(results_pass, results_fail, len(filtered), date_str)
-        _save_ai_result(ai_result, result_file)
-        if ai_result.full_summary_text:
-            logger.info(f"  AI 核实摘要：{ai_result.analysis_summary}")
-
-        # 6. 保存缓存
+        # 5. 保存缓存
         saved = save_cache_to_db(conn, cache)
         logger.info(f"  缓存已保存：{saved} 条新记录")
 
         return results_pass, results_fail, skipped_no_val, len(filtered), elapsed_screen
     finally:
         conn.close()
-
-
-def _run_ai_check(
-    results_pass: list[StockMetrics],
-    results_fail: list[StockMetrics],
-    total_screened: int,
-    date_str: str,
-) -> str:
-    """基于已运行的筛选结果调用 AI 核实，返回摘要文本。
-
-    Parameters
-    ----------
-    results_pass : list[StockMetrics]
-        通过筛选的股票列表
-    results_fail : list[StockMetrics]
-        未通过筛选的股票列表
-    total_screened : int
-        总样本数量
-    date_str : str
-        日期字符串 YYYY-MM-DD
-
-    Returns
-    -------
-    str
-        AI 核实摘要文本，失败时返回空字符串
-    """
-    if not results_pass:
-        return ""
-    try:
-        ai_result = run_ai_verification(results_pass, results_fail, total_screened, date_str)
-        return ai_result.full_summary_text or ""
-    except Exception as e:
-        logger.opt(exception=True).warning(f"AI 核实失败: {e}")
-        return ""
 
 
 def _push_stock_analysis(

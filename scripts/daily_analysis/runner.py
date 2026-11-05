@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""daily_analysis 主流程模块：白名单分析 + AI 核实 + 飞书推送。"""
+"""daily_analysis 主流程模块：白名单分析 + 飞书推送。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from loguru import logger
 
 from scripts._utils import check_data_freshness
 from scripts.daily_analysis.core import analyze_stock
-from scripts.daily_analysis.llm import ai_verify
 from scripts.daily_analysis.whitelist import (
     _filter_bse_st,
     _get_merged_whitelist,
@@ -20,7 +19,7 @@ from trade_krono_cli.cli_commands._core_helpers import _load_env
 
 
 def run_analysis(date: str, tickers_str: str) -> None:
-    """执行白名单技术分析 + AI核实 + 汇总飞书推送。"""
+    """执行白名单技术分析 + 汇总飞书推送。"""
     _load_env()
 
     # 前置：检查缓存数据新鲜度
@@ -52,11 +51,7 @@ def run_analysis(date: str, tickers_str: str) -> None:
             f"分数={result['score']} 趋势={result['trend']} 均线={result['ma_signal']}"
         )
 
-    # ── Step 3: AI 核实 ──────────────────────────────────────────────────
-    logger.info("🤖 启动 AI 核实...")
-    ai_result = ai_verify(results, date)
-
-    # ── Step 4: 汇总推送 ────────────────────────────────────────────────
+    # ── Step 3: 汇总推送 ────────────────────────────────────────────────
     ok_results = [r for r in results if r["status"] == "ok"]
     no_data_results = [r for r in results if r["status"] != "ok"]
     buy_signals = [r for r in ok_results if r["score"] >= 65]
@@ -113,12 +108,6 @@ def run_analysis(date: str, tickers_str: str) -> None:
         summary_lines.append(f"\n⚠️ 无数据：{', '.join(r['ticker'] for r in no_data_results)}")
 
     summary_lines.append("\n")
-    summary_lines.append(f"**🤖 AI 核实摘要：** {ai_result.get('analysis_summary', '')}\n")
-    if ai_result.get("top_picks"):
-        summary_lines.append(f"**🏆 Top 推荐：** {ai_result['top_picks']}\n")
-    if ai_result.get("risk_alerts") and ai_result["risk_alerts"] != "无明显异常风险":
-        summary_lines.append(f"**⚠️ 风险提示：** {ai_result['risk_alerts']}\n")
-    summary_lines.append(f"**📝 结论：** {ai_result.get('conclusion', '')}")
 
     summary_content = "\n".join(summary_lines)
 
@@ -138,10 +127,10 @@ def run_analysis(date: str, tickers_str: str) -> None:
 
 
 def main() -> None:
-    """命令行入口：解析参数并执行白名单分析 + AI 核实 + 飞书推送。"""
+    """命令行入口：解析参数并执行白名单分析 + 飞书推送。"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="白名单股票综合分析 + AI核实 + 飞书推送")
+    parser = argparse.ArgumentParser(description="白名单股票综合分析 + 飞书推送")
     parser.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"), help="分析日期")
     parser.add_argument(
         "--tickers",
