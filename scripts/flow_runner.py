@@ -180,6 +180,7 @@ STEPS: list[Step] = [
         command=["uv", "run", "python", "scripts/multi_line_resonance.py"],
         enabled_by_default=True,
         depends_on=["sync"],
+        timeout=7200,
     ),
     Step(
         name="multi_head",
@@ -187,6 +188,7 @@ STEPS: list[Step] = [
         command=["uv", "run", "python", "scripts/multi_scan.py"],
         enabled_by_default=True,
         depends_on=["sync"],
+        timeout=7200,
     ),
     Step(
         name="whitelist",
