@@ -215,7 +215,7 @@ class TestCmdRun:
             "resolve_enabled_steps",
             lambda **k: [s for s in fr.STEPS if s.enabled_by_default],
         )
-        rc = fr.cmd_run(step=None, all_steps=True, strict=False)
+        rc = fr.cmd_run(step=None, all_steps=True, strict=False, force=True)
         # 非 strict：全部 step 都被调用，整体返回 1（有失败）
         assert "buffett" in calls
         assert rc == 1
@@ -400,7 +400,7 @@ class TestUnifiedBackup:
         monkeypatch.setattr(fr, "run_step", _fake_run_step)
         monkeypatch.setattr(fr, "save_checkpoint", lambda s: None)
 
-        assert fr.cmd_run(step=None, all_steps=True) == 0
+        assert fr.cmd_run(step=None, all_steps=True, force=True) == 0
         assert seen["sync"][-1] == "--no-backup"
         assert seen["sync_etf"][-1] == "--no-backup"
         assert "--no-backup" not in seen["buffett"]
@@ -420,7 +420,7 @@ class TestUnifiedBackup:
             lambda **k: [s for s in fr.STEPS if s.name in ("sync", "sync_etf")],
         )
 
-        assert fr.cmd_run(step=None, all_steps=True) == 0
+        assert fr.cmd_run(step=None, all_steps=True, force=True) == 0
         assert "--no-backup" not in seen["sync"]
         assert "--no-backup" not in seen["sync_etf"]
 
