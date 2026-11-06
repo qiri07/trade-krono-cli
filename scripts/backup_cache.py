@@ -31,6 +31,9 @@ from pathlib import Path
 
 from loguru import logger
 
+# 确保仓库根在 sys.path 中（供直接 python scripts/backup_cache.py 使用）
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from scripts._utils import get_sqlite_conn
 
 DEFAULT_KEEP = 10

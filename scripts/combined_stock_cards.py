@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 
 from loguru import logger
 
@@ -18,6 +20,46 @@ from scripts._utils import normalize_ticker_key
 from scripts.combined_stock_collect import _SOURCE_LABELS
 from scripts.combined_stock_models import StockCandidate
 from scripts.feishu_utils import push_feishu
+
+_META_NAMES: dict[str, str] | None = None
+
+
+def _load_meta_names() -> dict[str, str]:
+    """一次性加载 metadata.json 中所有股票名称，作为 analyze_stock 返回 name 为空时的兜底。
+
+    metadata.json 的 key 为带前缀 ticker（如 sh.600519 / sz.002832 / hk.00700），
+    value 包含 name 字段。同时也索引不带前缀的裸代码（如 002832），
+    避免每次查找都重复读取磁盘文件。
+    """
+    global _META_NAMES
+    if _META_NAMES is not None:
+        return _META_NAMES
+
+    names: dict[str, str] = {}
+    meta_path = Path("outputs/cache/metadata.json")
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            for k, v in meta.items():
+                if isinstance(v, dict) and v.get("name"):
+                    names[k] = v["name"]
+                    # 同时索引裸代码（如 002832），便于 analyze_stock 返回的无前缀代码查找
+                    bare = k.split(".", 1)[-1] if "." in k else k
+                    names.setdefault(bare, v["name"])
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            logger.debug(f"读取 metadata.json 失败: {e}")
+
+    _META_NAMES = names
+    return names
+
+
+def _get_stock_name_from_metadata(ticker: str) -> str:
+    """从 metadata.json 中查找股票名称，作为 analyze_stock 返回 name 为空时的兜底。
+
+    metadata.json 的 key 为带前缀 ticker（如 sh.600519 / sz.002832 / hk.00700），
+    value 包含 name 字段。
+    """
+    return _load_meta_names().get(ticker, "")
 
 
 def _build_stock_card(cand: StockCandidate, date_str: str, ai_note: str = "") -> str:
@@ -27,7 +69,7 @@ def _build_stock_card(cand: StockCandidate, date_str: str, ai_note: str = "") ->
     kv = cand.kronos_view
     bv = cand.backtest
     code = cand.code
-    name = tv.name or code
+    name = tv.name or _get_stock_name_from_metadata(code) or code
     label = "+".join(_SOURCE_LABELS.get(s, s) for s in cand.sources)
 
     lines: list[str] = []
@@ -60,7 +102,7 @@ def _push_per_stock(cands: list[StockCandidate], date_str: str) -> None:
     """逐只推送飞书卡片（每只含技术面 + 基本面），间隔 1s 防 webhook 限流。"""
     logger.info(f"📤 开始逐只推送 {len(cands)} 只股票...")
     for i, cand in enumerate(cands, 1):
-        name = cand.tech.name or cand.code
+        name = cand.tech.name or _get_stock_name_from_metadata(cand.code) or cand.code
         stock_card = _build_stock_card(cand, date_str)
         title = f"🔗 {date_str} 综合选股 {i}/{len(cands)} {cand.code} {name}"
         ok = push_feishu("text", content=stock_card, title=title)
@@ -83,16 +125,16 @@ def _build_combined_card(
     lines.append("")
 
     if not cands:
-        lines.append("⚠️ 无命中 ≥2 条选股线的股票。")
+        lines.append("⚠️ 无命中 ≥3 条选股线的股票。")
         return "\n".join(lines)
 
-    lines.append(f"📊 命中 ≥2 条选股线的股票（{len(cands)} 只，按共振度排序）：")
+    lines.append(f"📊 命中 ≥3 条选股线的股票（{len(cands)} 只，按共振度排序）：")
     lines.append("")
     for cand in cands:
         code = cand.code
         tv = cand.tech
         fv = cand.fund
-        name = tv.name
+        name = tv.name or _get_stock_name_from_metadata(code) or code
         label = "+".join(_SOURCE_LABELS.get(s, s) for s in cand.sources)
         if cand.analysis:
             lines.append(f"  🔗 **{code} {name}**（{label}）")
