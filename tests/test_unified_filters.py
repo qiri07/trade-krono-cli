@@ -324,3 +324,82 @@ class TestPePercentileCache:
         # 600519 来自缓存，000001 缺失会尝试拉取（返回 None → 不入结果）
         assert result == {"600519": 24.5}
         assert calls == ["000001"]
+
+
+class TestFilterByPe:
+    """multi_scan._filter_by_pe：统一口径 PE∈(0,30)。"""
+
+    def test_pe_in_range_kept(self) -> None:
+        from scripts.multi_scan import _filter_by_pe
+
+        results = [
+            {"ticker": "sh.600519"},
+            {"ticker": "sz.000001"},
+        ]
+        pe_map = {
+            "600519": {"pe": 24.5, "name": "贵州茅台"},
+            "000001": {"pe": 6.8, "name": "平安银行"},
+        }
+        filtered, removed = _filter_by_pe(results, pe_map)
+        assert removed == 0
+        assert len(filtered) == 2
+
+    def test_pe_below_zero_removed(self) -> None:
+        from scripts.multi_scan import _filter_by_pe
+
+        results = [{"ticker": "sh.600001"}]
+        pe_map = {"600001": {"pe": -3.2, "name": "亏损股"}}
+        filtered, removed = _filter_by_pe(results, pe_map)
+        assert removed == 1
+        assert filtered == []
+
+    def test_pe_zero_removed(self) -> None:
+        from scripts.multi_scan import _filter_by_pe
+
+        results = [{"ticker": "sh.600001"}]
+        pe_map = {"600001": {"pe": 0, "name": "零PE"}}
+        filtered, removed = _filter_by_pe(results, pe_map)
+        assert removed == 1
+        assert filtered == []
+
+    def test_pe_at_max_removed(self) -> None:
+        from scripts.multi_scan import _filter_by_pe
+
+        results = [{"ticker": "sh.600519"}]
+        pe_map = {"600519": {"pe": PE_MAX_TECH, "name": "边界股"}}
+        filtered, removed = _filter_by_pe(results, pe_map)
+        assert removed == 1
+        assert filtered == []
+
+    def test_pe_above_max_removed(self) -> None:
+        from scripts.multi_scan import _filter_by_pe
+
+        results = [{"ticker": "sh.600519"}]
+        pe_map = {"600519": {"pe": PE_MAX_TECH + 0.1, "name": "高PE股"}}
+        filtered, removed = _filter_by_pe(results, pe_map)
+        assert removed == 1
+        assert filtered == []
+
+    def test_pe_missing_removed(self) -> None:
+        from scripts.multi_scan import _filter_by_pe
+
+        results = [{"ticker": "sh.600519"}]
+        filtered, removed = _filter_by_pe(results, {})
+        assert removed == 1
+        assert filtered == []
+
+    def test_name_filled_when_empty(self) -> None:
+        from scripts.multi_scan import _filter_by_pe
+
+        results = [{"ticker": "sh.600519"}]
+        pe_map = {"600519": {"pe": 24.5, "name": "贵州茅台"}}
+        filtered, _ = _filter_by_pe(results, pe_map)
+        assert filtered[0]["name"] == "贵州茅台"
+
+    def test_name_not_overwritten(self) -> None:
+        from scripts.multi_scan import _filter_by_pe
+
+        results = [{"ticker": "sh.600519", "name": "自定义名称"}]
+        pe_map = {"600519": {"pe": 24.5, "name": "贵州茅台"}}
+        filtered, _ = _filter_by_pe(results, pe_map)
+        assert filtered[0]["name"] == "自定义名称"

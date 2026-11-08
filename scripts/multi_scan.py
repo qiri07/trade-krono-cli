@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from loguru import logger
 
 from scripts._utils import (
+    PE_MAX_TECH,
     check_data_freshness,
     get_astock_tickers,
     get_cache_db_path,
@@ -138,7 +139,10 @@ def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, di
 def _filter_by_pe(
     results: list[dict[str, Any]], pe_map: dict[str, dict]
 ) -> tuple[list[dict[str, Any]], int]:
-    """根据 PE 过滤结果，剔除亏损（PE<0）、PE≥40 及 PE 缺失的股票。
+    """根据 PE 过滤结果，统一口径 PE∈(0,30)。
+
+    剔除 PE<=0（亏损/无效）、PE>=30（过高）及 PE 缺失的股票，
+    与双均线 / MACD+均线 / 综合交集等技术面选股线保持一致。
 
     Parameters
     ----------
@@ -158,14 +162,16 @@ def _filter_by_pe(
         code = strip_ticker_prefix(r.get("ticker", ""))
         entry = pe_map.get(code)
         if entry is None:
-            # PE 数据缺失，剔除
+            # PE 数据缺失，剔除（与技术线 PE∈(0,30) 口径一致）
             removed += 1
             logger.debug(f"  剔除 {r.get('ticker')} PE=缺失")
             continue
         pe = entry["pe"]
-        if pe < 0 or pe >= 40:
+        if pe <= 0 or pe >= PE_MAX_TECH:
             removed += 1
-            logger.debug(f"  剔除 {r.get('ticker')} PE={pe:.1f}（{'亏损' if pe < 0 else '过高'}）")
+            logger.debug(
+                f"  剔除 {r.get('ticker')} PE={pe:.1f}（{'亏损/无效' if pe <= 0 else 'PE过高'}）"
+            )
             continue
         # 填充股票名称（如果当前结果为空）
         if not r.get("name"):
@@ -467,7 +473,7 @@ def main() -> None:
     # 扫描多头排列股票
     results = scan_multi_head_stocks(tickers, max_workers=args.workers, top_n=args.top)
 
-    # PE 过滤：剔除亏损（PE<0）、PE≥40、PE 缺失的股票（ETF 无 PE，纯技术面豁免）
+    # PE 过滤：统一口径 PE∈(0,30)，剔除亏损/无效、PE过高及 PE 缺失的股票（ETF 无 PE，纯技术面豁免）
     pe_map: dict[str, dict] = {}
     if results:
         etf_results = [r for r in results if is_etf_ticker(r["ticker"])]
@@ -479,7 +485,7 @@ def main() -> None:
             logger.info(f"  PE API 返回 {len(pe_map)} 只有效数据")
         stock_results, pe_removed = _filter_by_pe(stock_results, pe_map)
         logger.info(
-            f"PE 过滤：剔除 {pe_removed} 只（亏损/PE≥40/缺失），"
+            f"PE 过滤：剔除 {pe_removed} 只（亏损/PE≥{PE_MAX_TECH:g}/缺失），"
             f"剩余 {len(stock_results)} 只 + ETF {len(etf_results)} 只（纯技术面）"
         )
         results = stock_results + etf_results
