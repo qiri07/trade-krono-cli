@@ -545,7 +545,10 @@ def main() -> None:
         if pe is None or pe <= 0 or pe >= PE_MAX_TECH:
             removed_pe += 1
             logger.debug(
-                f"  剔除 {r.get('ticker')} PE={pe if pe is not None else '缺失'}（{'亏损/无效' if pe is not None and pe <= 0 else ('PE过高' if pe is not None else '缺失')}）"
+                "  剔除 {} PE={}（{}）",
+                r.get("ticker"),
+                pe if pe is not None else "缺失",
+                "亏损/无效" if pe is not None and pe <= 0 else ("PE过高" if pe is not None else "缺失"),
             )
             continue
         if r["score"] < 50:
