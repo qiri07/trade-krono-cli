@@ -255,3 +255,72 @@ class TestIntradayNormalizeTickers:
         with patch("scripts.intraday_scan.logger"):
             got = _normalize_tickers(["600519", "sh.600519", "920001", "000858"])
         assert got == ["sh.600519", "sz.000858"]
+
+
+class TestPePercentileCache:
+    """PE 分位文件缓存（multi_scan._load/_save_pe_percentile_cache）。"""
+
+    def _patch_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        import scripts.multi_scan as ms
+
+        cache_file = tmp_path / "pe_percentile_cache.json"
+        monkeypatch.setattr(ms, "_pe_percentile_cache_path", lambda: cache_file)
+
+    def test_save_and_load_roundtrip(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import scripts.multi_scan as ms
+
+        self._patch_path(monkeypatch, tmp_path)
+        ms._save_pe_percentile_cache({"600519": 24.5, "000001": 12.0})
+        loaded = ms._load_pe_percentile_cache(ttl_days=7)
+        assert loaded == {"600519": 24.5, "000001": 12.0}
+
+    def test_missing_file_returns_empty(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import scripts.multi_scan as ms
+
+        self._patch_path(monkeypatch, tmp_path)
+        assert ms._load_pe_percentile_cache(ttl_days=7) == {}
+
+    def test_expired_cache_returns_empty(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from datetime import datetime, timedelta
+
+        import scripts.multi_scan as ms
+
+        self._patch_path(monkeypatch, tmp_path)
+        (tmp_path / "pe_percentile_cache.json").write_text(
+            json.dumps(
+                {
+                    "date": (datetime.now().date() - timedelta(days=8)).isoformat(),
+                    "data": {"600519": 24.5},
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert ms._load_pe_percentile_cache(ttl_days=7) == {}
+
+    def test_fetch_pe_percentiles_uses_cache(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import scripts.multi_scan as ms
+
+        self._patch_path(monkeypatch, tmp_path)
+        ms._save_pe_percentile_cache({"600519": 24.5})
+        calls: list[str] = []
+
+        def _fake_stock_value_em(symbol: str):
+            calls.append(symbol)
+            return None
+
+        fake_ak = type(
+            "_A", (), {"stock_value_em": staticmethod(_fake_stock_value_em)}
+        )()
+        monkeypatch.setattr(ms, "_AK", fake_ak)
+        result = ms._fetch_pe_percentiles(["600519", "000001"], use_cache=True)
+        # 600519 来自缓存，000001 缺失会尝试拉取（返回 None → 不入结果）
+        assert result == {"600519": 24.5}
+        assert calls == ["000001"]

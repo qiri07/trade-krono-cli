@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
+from scripts._utils import is_st_name
 from scripts.daily_analysis import analyze_stock
 from scripts.feishu_utils import push_feishu as _push_via_feishu_cli
 from tests.buffett_cache import cache_clean, init_cache, load_all_cache, save_cache_to_db
@@ -318,7 +319,7 @@ def _run_full_screen(
         for s in stocks:
             name = s.get("name", "")
             code = s.get("ticker", "")
-            if any(kw in name for kw in ("ST", "*ST", "N", "C")):
+            if is_st_name(name):
                 continue
             if code.startswith(("000", "399")):
                 continue

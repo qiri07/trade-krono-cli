@@ -62,6 +62,9 @@ _FUYAO_API_KEY = (
     os.getenv("HITHINK_FINANCE_API_KEY", "").strip() or os.getenv("FUYAO_API_KEY", "").strip()
 )
 
+# akshare 惰性持有器：仅在需要 PE 分位时首次导入，便于测试替换
+_AK: Any = None
+
 
 def _fetch_pe_snapshot(tickers: list[str], batch_size: int = 50) -> dict[str, dict]:
     """批量获取股票的 PE_TTM 和名称（通过同花顺 Fuyao API）。
@@ -171,10 +174,14 @@ def _filter_by_pe(
     return filtered, removed
 
 
-def _fetch_pe_percentiles(tickers: list[str], batch_size: int = 10) -> dict[str, float]:
+def _fetch_pe_percentiles(
+    tickers: list[str], batch_size: int = 10, use_cache: bool = True, ttl_days: int = 7
+) -> dict[str, float]:
     """批量获取股票的 PE 历史分位（0-100）。
 
     使用 akshare 的 stock_value_em 接口获取每只股票的历史 PE 序列并计算分位。
+    支持按天缓存：PE_TTM 日更而分位相对稳定，缺省 7 天内复用已缓存结果，
+    仅对缓存中缺失的代码重新拉取，避免重复调用 akshare 触发限流。
 
     Parameters
     ----------
@@ -182,26 +189,45 @@ def _fetch_pe_percentiles(tickers: list[str], batch_size: int = 10) -> dict[str,
         6位纯数字股票代码列表
     batch_size : int
         每批处理数量，默认 10
+    use_cache : bool
+        是否启用文件缓存，缺省 True。
+    ttl_days : int
+        缓存过期天数，缺省 7 天。
 
     Returns
     -------
     dict[str, float]
         {code: pe_percentile}，获取失败则不出现在结果中
     """
-    try:
-        import akshare as _ak
-    except ImportError:
-        logger.warning("akshare 未安装，跳过 PE 历史分位获取")
-        return {}
+    cached: dict[str, float] = {}
+    if use_cache:
+        cached = _load_pe_percentile_cache(ttl_days=ttl_days)
 
-    result: dict[str, float] = {}
-    total = len(tickers)
+    missing = [c for c in tickers if c not in cached]
+    result: dict[str, float] = dict(cached)
+
+    if not missing:
+        logger.info(f"PE分位缓存命中 {len(cached)} 只，跳过 akshare 拉取")
+        return result
+
+    global _AK
+    if _AK is None:
+        try:
+            import akshare as _AK  # noqa: PLC0415
+        except ImportError:
+            logger.warning("akshare 未安装，跳过 PE 历史分位获取")
+            return result
+
+    logger.info(
+        f"PE分位：缓存命中 {len(cached)} 只，需拉取 {len(missing)} 只（批次 {batch_size}）..."
+    )
+    total = len(missing)
     for i in range(0, total, batch_size):
-        batch = tickers[i : i + batch_size]
+        batch = missing[i : i + batch_size]
         logger.info(f"  PE分位批次 [{i + 1}~{i + len(batch)}/{total}]...")
         for code in batch:
             try:
-                df = _ak.stock_value_em(symbol=code)
+                df = _AK.stock_value_em(symbol=code)
                 if df is None or len(df) == 0:
                     continue
                 pe_col = "PE(TTM)"
@@ -216,7 +242,61 @@ def _fetch_pe_percentiles(tickers: list[str], batch_size: int = 10) -> dict[str,
             except Exception as e:
                 logger.debug(f"{code} PE分位获取失败: {e}")
         time.sleep(0.5)  # 避免限流
+
+    if use_cache:
+        _save_pe_percentile_cache(result)
     return result
+
+
+def _PE_CACHE_DIR() -> Path:
+    """PE 分位缓存目录（复用 outputs/cache）。"""
+    return Path("outputs/cache")
+
+
+def _pe_percentile_cache_path() -> Path:
+    return _PE_CACHE_DIR() / "pe_percentile_cache.json"
+
+
+def _load_pe_percentile_cache(ttl_days: int = 7) -> dict[str, float]:
+    """从文件加载 PE 分位缓存；过期或损坏时返回空字典。
+
+    缓存文件格式：{"date": "YYYY-MM-DD", "data": {"600519": 24.5, ...}}
+    """
+    import json
+
+    path = _pe_percentile_cache_path()
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        cache_date = payload.get("date")
+        data = payload.get("data", {})
+        if not cache_date or not isinstance(data, dict):
+            return {}
+        from datetime import datetime
+
+        d = datetime.strptime(cache_date, "%Y-%m-%d").date()
+        if (datetime.now().date() - d).days > ttl_days:
+            logger.debug(f"PE分位缓存已过期（{cache_date}，TTL {ttl_days}天），将重算")
+            return {}
+        return {str(k): float(v) for k, v in data.items() if isinstance(v, (int, float))}
+    except (OSError, json.JSONDecodeError, ValueError, KeyError) as e:
+        logger.debug(f"PE分位缓存读取失败，将重算: {e}")
+        return {}
+
+
+def _save_pe_percentile_cache(data: dict[str, float]) -> None:
+    """将 PE 分位结果持久化到文件，供后续运行复用。"""
+    import json
+    from datetime import datetime
+
+    path = _pe_percentile_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"date": datetime.now().strftime("%Y-%m-%d"), "data": data}
+    try:
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except OSError as e:
+        logger.debug(f"PE分位缓存写入失败: {e}")
 
 
 def scan_multi_head_stocks(
