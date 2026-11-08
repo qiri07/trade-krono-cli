@@ -37,6 +37,7 @@ import pandas as pd
 from loguru import logger
 
 from scripts._utils import (
+    PE_MAX_TECH,
     check_data_freshness,
     get_astock_tickers,
     get_cache_db_path,
@@ -523,7 +524,7 @@ def main() -> None:
             r["name"] = entry.get("name", "")
             r["pe"] = entry.get("pe")
 
-    # ── 过滤：ST 股、PE≤0（ETF 豁免）、评分<50 ──
+    # ── 过滤：ST 股、PE∈(0,30)（ETF 豁免）、评分<50 ──
     removed_st = 0
     removed_pe = 0
     removed_score = 0
@@ -541,8 +542,11 @@ def main() -> None:
             removed_st += 1
             continue
         pe = r.get("pe")
-        if pe is None or pe <= 0:
+        if pe is None or pe <= 0 or pe >= PE_MAX_TECH:
             removed_pe += 1
+            logger.debug(
+                f"  剔除 {r.get('ticker')} PE={pe if pe is not None else '缺失'}（{'亏损/无效' if pe is not None and pe <= 0 else ('PE过高' if pe is not None else '缺失')}）"
+            )
             continue
         if r["score"] < 50:
             removed_score += 1
@@ -552,7 +556,7 @@ def main() -> None:
     etf_passed = sum(1 for r in filtered if r.get("is_etf"))
     logger.info(
         f"📊 过滤完成：共振 {len(results)} 只 → "
-        f"剔除 ST {removed_st} 只、PE≤0/缺失 {removed_pe} 只、评分<50 {removed_score} 只 → "
+        f"剔除 ST {removed_st} 只、PE∉(0,{PE_MAX_TECH:g})/缺失 {removed_pe} 只、评分<50 {removed_score} 只 → "
         f"有效 {len(filtered)} 只（含ETF {etf_passed} 只纯技术面）"
     )
     results = filtered
