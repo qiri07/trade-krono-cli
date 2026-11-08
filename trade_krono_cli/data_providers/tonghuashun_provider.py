@@ -15,6 +15,9 @@ API 文档：https://fuyao.aicubes.cn/llms-full.txt
 from __future__ import annotations
 
 import os
+import threading
+import time
+from collections import deque
 from datetime import datetime
 from typing import Any
 
@@ -31,6 +34,100 @@ from trade_krono_cli.data_providers.base import (
 from trade_krono_cli.utils import safe_float
 
 _BASE_URL = "https://fuyao.aicubes.cn"
+
+# ═════════════════════════════════════════════════════════════════════
+# 同花顺 API 限流器（P0 优化）
+#
+# 同花顺 API 对短时间内高频请求会返回 429 限流。本限流器使用滑动窗口
+# 算法，确保所有调用方（无论多少个线程/脚本）共享同一请求计数器，
+# 避免触发服务端限流。
+#
+# 限流参数：
+#   - 每秒最多 2 次请求（保守值，避免触发 429）
+#   - 相邻请求最小间隔 0.5 秒
+# ═════════════════════════════════════════════════════════════════════
+
+_THS_REQUEST_LOCK = threading.Lock()
+_THS_REQUEST_LOG: deque[float] = deque()
+_THS_MAX_PER_SECOND = 2
+_THS_MIN_INTERVAL = 0.5
+
+# 环境变量覆盖（测试 / 特殊场景可置 0 关闭等待）
+_ENV_MAX_PER_SECOND = "TKC_THS_MAX_PER_SECOND"
+_ENV_MIN_INTERVAL = "TKC_THS_MIN_INTERVAL"
+
+
+def _ths_limits() -> tuple[int, float]:
+    """读取限流参数，支持环境变量覆盖。
+
+    Returns:
+        ``(每秒最大请求数, 相邻请求最小间隔秒数)``；均为 0 时表示不限流。
+    """
+    max_per_second = _THS_MAX_PER_SECOND
+    min_interval = _THS_MIN_INTERVAL
+
+    raw_max = os.getenv(_ENV_MAX_PER_SECOND)
+    if raw_max:
+        try:
+            max_per_second = int(raw_max)
+        except ValueError:
+            max_per_second = _THS_MAX_PER_SECOND
+
+    raw_interval = os.getenv(_ENV_MIN_INTERVAL)
+    if raw_interval:
+        try:
+            min_interval = float(raw_interval)
+        except ValueError:
+            min_interval = _THS_MIN_INTERVAL
+
+    return max(0, max_per_second), max(0.0, min_interval)
+
+
+def reset_ths_rate_limiter() -> None:
+    """清空限流窗口（测试隔离用）。"""
+    with _THS_REQUEST_LOCK:
+        _THS_REQUEST_LOG.clear()
+
+
+def _ths_wait_for_rate_limit() -> None:
+    """跨线程安全的同花顺 API 限流等待。
+
+    使用模块级锁 + 滑动窗口，确保所有调用方共享同一请求计数器，
+    避免短时间内大量请求触发服务端 429 限流。限流参数可由
+    ``TKC_THS_MAX_PER_SECOND`` / ``TKC_THS_MIN_INTERVAL`` 覆盖（0 表示关闭）。
+    """
+    max_per_second, min_interval = _ths_limits()
+    if max_per_second == 0 and min_interval == 0.0:
+        return
+
+    with _THS_REQUEST_LOCK:
+        now = time.monotonic()
+
+        # 清理窗口外的记录（1 秒窗口）
+        cutoff = now - 1.0
+        while _THS_REQUEST_LOG and _THS_REQUEST_LOG[0] <= cutoff:
+            _THS_REQUEST_LOG.popleft()
+
+        # 规则1：每秒最多 max_per_second 次请求
+        if max_per_second > 0 and len(_THS_REQUEST_LOG) >= max_per_second:
+            oldest = _THS_REQUEST_LOG[0]
+            wait_time = oldest + 1.0 - now
+            if wait_time > 0:
+                time.sleep(wait_time)
+                now = time.monotonic()
+                cutoff = now - 1.0
+                while _THS_REQUEST_LOG and _THS_REQUEST_LOG[0] <= cutoff:
+                    _THS_REQUEST_LOG.popleft()
+
+        # 规则2：相邻请求最小间隔 min_interval 秒
+        if min_interval > 0 and _THS_REQUEST_LOG:
+            elapsed = now - _THS_REQUEST_LOG[-1]
+            if elapsed < min_interval:
+                time.sleep(min_interval - elapsed)
+                now = time.monotonic()
+
+        # 记录本次请求
+        _THS_REQUEST_LOG.append(now)
 
 
 class TongHuaShunProvider(DataProvider):
@@ -74,6 +171,7 @@ class TongHuaShunProvider(DataProvider):
     @staticmethod
     def _get(path: str, params: dict[str, Any] | None = None) -> dict | None:
         """发送 GET 请求，返回 ApiResponse.data 或 None。"""
+        _ths_wait_for_rate_limit()
         try:
             url = f"{_BASE_URL}{path}"
             resp = requests.get(
@@ -285,8 +383,8 @@ class TongHuaShunProvider(DataProvider):
                     pb = safe_float(parts[46])  # 市净率
                     industry_raw = parts[29]  # 行业（可能为空）
                     industry = industry_raw.strip() if industry_raw else None
-            except Exception:
-                pass
+            except (requests.RequestException, ValueError, TypeError, AttributeError, IndexError) as e:
+                logger.debug(f"{self.name} 腾讯行情解析失败 {ticker}: {str(e)[:120]}")
 
             # ── Step 4: akshare 降级 → 行业补充（腾讯不提供行业时）──────
             if not industry:
@@ -298,8 +396,8 @@ class TongHuaShunProvider(DataProvider):
                     if not row.empty:
                         ind = row.iloc[0].get("行业")
                         industry = str(ind) if pd.notna(ind) else None
-                except (ImportError, Exception):
-                    pass
+                except (ImportError, ValueError, KeyError, TypeError, AttributeError, OSError) as e:
+                    logger.debug(f"{self.name} akshare 行业补充失败 {ticker}: {str(e)[:120]}")
 
             return StockMetadata(
                 ticker=ticker,

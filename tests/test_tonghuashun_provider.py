@@ -206,9 +206,23 @@ def test_fetch_metadata_success(provider: TongHuaShunProvider, api_key: str) -> 
             ],
         },
     }
+    # 腾讯行情文本：字段 29=行业、39=PE、46=PB（避免 Step 4 触发 akshare 真实网络请求）
+    tencent_fields = [""] * 50
+    tencent_fields[29] = "白酒"
+    tencent_fields[39] = "24.50"
+    tencent_fields[46] = "8.10"
+    tencent_text = "v_sh600519=\"" + "~".join(tencent_fields) + "\""
+
+    def _fake_get(url: str, **_kwargs: object) -> object:
+        resp = mock_get.return_value
+        if "qt.gtimg.cn" in url:
+            resp.text = tencent_text
+        return resp
+
     with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
         mock_get.return_value.raise_for_status.return_value = None
+        mock_get.side_effect = _fake_get
         result = provider.fetch_metadata("sh.600519")
 
     assert result is not None
@@ -266,3 +280,66 @@ def test_safe_float_valid() -> None:
 def test_safe_float_invalid() -> None:
     assert safe_float("abc") is None
     assert safe_float(float("nan")) is None
+
+
+# ═══════════════════════════════════════════════════════
+# 限流器（滑动窗口）
+# ═══════════════════════════════════════════════════════
+
+
+class TestThsRateLimiter:
+    """同花顺 API 限流等待逻辑。"""
+
+    def test_disabled_when_params_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from trade_krono_cli.data_providers import tonghuashun_provider as mod
+
+        monkeypatch.setenv("TKC_THS_MAX_PER_SECOND", "0")
+        monkeypatch.setenv("TKC_THS_MIN_INTERVAL", "0")
+        mod.reset_ths_rate_limiter()
+        with patch.object(mod.time, "sleep") as sleep:
+            for _ in range(5):
+                mod._ths_wait_for_rate_limit()
+        sleep.assert_not_called()
+
+    def test_min_interval_enforced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from trade_krono_cli.data_providers import tonghuashun_provider as mod
+
+        monkeypatch.setenv("TKC_THS_MAX_PER_SECOND", "100")
+        monkeypatch.setenv("TKC_THS_MIN_INTERVAL", "0.5")
+        mod.reset_ths_rate_limiter()
+        with patch.object(mod.time, "sleep") as sleep:
+            mod._ths_wait_for_rate_limit()
+            mod._ths_wait_for_rate_limit()
+        sleep.assert_called_once()
+        assert sleep.call_args.args[0] == pytest.approx(0.5, abs=0.05)
+
+    def test_window_cap_enforced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from trade_krono_cli.data_providers import tonghuashun_provider as mod
+
+        monkeypatch.setenv("TKC_THS_MAX_PER_SECOND", "2")
+        monkeypatch.setenv("TKC_THS_MIN_INTERVAL", "0")
+        mod.reset_ths_rate_limiter()
+        with patch.object(mod.time, "sleep") as sleep:
+            for _ in range(3):
+                mod._ths_wait_for_rate_limit()
+        assert sleep.call_count == 1
+
+    def test_invalid_env_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from trade_krono_cli.data_providers import tonghuashun_provider as mod
+
+        monkeypatch.setenv("TKC_THS_MAX_PER_SECOND", "not-a-number")
+        monkeypatch.setenv("TKC_THS_MIN_INTERVAL", "oops")
+        assert mod._ths_limits() == (mod._THS_MAX_PER_SECOND, mod._THS_MIN_INTERVAL)
+
+    def test_reset_clears_window(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from trade_krono_cli.data_providers import tonghuashun_provider as mod
+
+        monkeypatch.setenv("TKC_THS_MAX_PER_SECOND", "100")
+        monkeypatch.setenv("TKC_THS_MIN_INTERVAL", "0")
+        mod.reset_ths_rate_limiter()
+        mod._ths_wait_for_rate_limit()
+        assert len(mod._THS_REQUEST_LOG) == 1
+        mod.reset_ths_rate_limiter()
+        assert len(mod._THS_REQUEST_LOG) == 0

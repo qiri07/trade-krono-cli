@@ -85,6 +85,10 @@ def pytest_configure(config: object) -> None:
     os.environ["TRADING_KRONO_CACHE_DIR"] = str(test_cache)
     os.environ["TRADING_KRONO_RESULTS_DIR"] = str(test_results)
     os.environ["RESEARCH_DB_PATH"] = str(test_research_db)
+    # 关闭同花顺 Provider 的限流等待，避免单元测试被无谓 sleep 拖慢
+    # （限流逻辑本身由 tests/test_tonghuashun_provider.py 显式测试）
+    os.environ["TKC_THS_MAX_PER_SECOND"] = "0"
+    os.environ["TKC_THS_MIN_INTERVAL"] = "0"
     # 立即清除已有全局单例，确保新 settings 在首次调用时生效
     clear_all_globals()
 
