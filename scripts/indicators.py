@@ -10,12 +10,7 @@ from __future__ import annotations
 
 import pandas as pd  # noqa: TC002  (pandas 用于运行时计算，非仅类型注解)
 
-from scripts._utils import (
-    ST_NAME_KEYWORDS_MINIMAL,
-    is_bse_or_hk,
-    is_etf_ticker,
-    normalize_ticker_key,
-)
+from scripts._utils import is_bse_or_hk, is_etf_ticker
 
 # 默认均线周期（与 double_ma_golden_cross / macd_ma_screener 保持一致）
 MA_FAST: int = 5
@@ -183,30 +178,23 @@ def is_macd_rising(
 
 
 def exclude_st_bse_hk(tickers: list[str]) -> list[str]:
-    """过滤掉 ST 股、北交所、港股，返回剩余 A 股 ticker 列表。
+    """过滤掉北交所、港股 ticker（前缀过滤）。
 
-    复用 :func:`scripts._utils.is_bse_or_hk` 与 :data:`scripts._utils.ST_NAME_KEYWORDS_MINIMAL`。
+    注意：本函数仅按交易所前缀（``bj.``/``hk.``）过滤，**不**做 ST 名称判断。
+    ST 过滤应由调用方通过名称映射（如 ``metadata.json`` 的 ``name`` 字段）在
+    调用前完成，或使用 :func:`filter_stock_universe` 一体化处理。
 
     Parameters
     ----------
     tickers : list[str]
-        带前缀 ticker 列表，如 ["sh.600519", "hk.00700", "bj.920001"]。
+        带前缀 ticker 列表，如 ``["sh.600519", "hk.00700", "bj.920001"]``。
 
     Returns
     -------
     list[str]
-        过滤后的 A 股 ticker 列表（不含 ST/北交所/港股）。
+        过滤后的 A 股 ticker 列表（不含北交所/港股前缀）。
     """
-    result: list[str] = []
-    for ticker in tickers:
-        if is_bse_or_hk(ticker):
-            continue
-        # 获取名称判断 ST（需通过元数据或名称映射，此处仅按 ticker 前缀兜底）
-        bare = normalize_ticker_key(ticker).split(".", 1)[-1]
-        if any(kw in bare for kw in ST_NAME_KEYWORDS_MINIMAL):
-            continue
-        result.append(ticker)
-    return result
+    return [t for t in tickers if not is_bse_or_hk(t)]
 
 
 def filter_etf(tickers: list[str]) -> list[str]:

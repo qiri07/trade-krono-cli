@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import subprocess
 from collections.abc import Callable
@@ -145,6 +146,14 @@ BSE_TICKER_PREFIXES: tuple[str, ...] = ("bj.",)
 
 # 历史 K 线记录数低于此值视为同步失败（历史数据严重不足），用于全量回补判定
 FAILED_MIN_RECORDS: int = 100
+
+# ── 选股阈值（各筛选脚本统一引用，禁止在脚本内重复硬编码）──────────────────
+# 技术面选股线（双均线 / MACD+均线 / 综合交集）的 PE 上限与盈利口径
+PE_MAX_TECH: float = 30.0
+# 价值线（巴菲特六闸门）的 PE 上限
+PE_MAX_VALUE: float = 16.0
+# 技术面选股线的最小总市值（亿元）
+MIN_MARKET_CAP_YI: float = 50.0
 
 
 def is_bse_code(code: str) -> bool:
@@ -342,6 +351,175 @@ def is_st_name(name: str, keywords: tuple[str, ...] | None = None) -> bool:
     """
     kws = ST_NAME_KEYWORDS if keywords is None else keywords
     return any(kw in name for kw in kws)
+
+
+def load_metadata_index(
+    cache_dir: Path | None = None, *, include_bare_keys: bool = True
+) -> dict[str, dict[str, object]]:
+    """加载 ``metadata.json`` 并归一化键格式。
+
+    返回的字典默认同时包含带前缀键（``sh.600519``）与 6 位裸代码键（``600519``），
+    两种写法指向同一份元数据，便于各脚本用任意格式查询，避免键不匹配丢数据。
+
+    Args:
+        cache_dir: 缓存目录；缺省用 ``get_settings().cache_dir``，回退 ``outputs/cache``。
+        include_bare_keys: 是否额外写入 6 位裸代码键。关闭时仅保留带前缀键，
+            与历史 ``load_metadata`` 行为一致（条数统计不会翻倍）。
+
+    Returns:
+        元数据字典；文件缺失或解析失败时返回空字典。
+    """
+    if cache_dir is None:
+        cache_dir = get_cache_db_path().parent
+    meta_path = Path(cache_dir) / "metadata.json"
+    try:
+        with meta_path.open(encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+
+    index: dict[str, dict[str, object]] = {}
+    for key, value in raw.items():
+        if not isinstance(value, dict):
+            continue
+        normalized = normalize_ticker_key(str(key))
+        index.setdefault(normalized, value)
+        if include_bare_keys:
+            index.setdefault(strip_ticker_prefix(normalized), value)
+    return index
+
+
+def _lookup_meta(
+    metadata: dict[str, dict[str, object]] | None, ticker: str
+) -> dict[str, object]:
+    """在元数据索引中查单只票，兼容带前缀与裸代码两种键。"""
+    if metadata is None:
+        return {}
+    normalized = normalize_ticker_key(ticker)
+    bare = strip_ticker_prefix(normalized)
+    for key in (ticker, normalized, bare):
+        value = metadata.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def exclusion_reason(
+    ticker: str,
+    metadata: dict[str, dict[str, object]] | None = None,
+    *,
+    exclude_st: bool = True,
+    exclude_bse: bool = True,
+    exclude_hk: bool = True,
+    exclude_etf: bool = False,
+) -> str | None:
+    """返回单只票被剔除的结构性原因（不含估值判断）。
+
+    供需要按原因分类统计的脚本使用（如 ``macd_ma_screener`` 的 skipped 计数器），
+    其余场景直接用 :func:`filter_stock_universe` 即可。
+
+    Args:
+        ticker: 带前缀或 6 位裸代码。
+        metadata: :func:`load_metadata_index` 返回的元数据索引，可为 ``None``。
+        exclude_st: 是否剔除 ST 股（优先读 ``is_st`` 标记，否则按名称关键词判断）。
+        exclude_bse: 是否剔除北交所。
+        exclude_hk: 是否剔除港股。
+        exclude_etf: 是否剔除 ETF。
+
+    Returns:
+        命中的原因键（``"hk"`` / ``"bse"`` / ``"etf"`` / ``"st"``），未命中返回 ``None``。
+    """
+    if exclude_hk and ticker.startswith("hk."):
+        return "hk"
+    if exclude_bse and (ticker.startswith("bj.") or is_bse_code(strip_ticker_prefix(ticker))):
+        return "bse"
+    if exclude_etf and is_etf_ticker(ticker):
+        return "etf"
+    if exclude_st and metadata is not None:
+        meta = _lookup_meta(metadata, ticker)
+        if bool(meta.get("is_st")):
+            return "st"
+        name = meta.get("name")
+        if isinstance(name, str) and is_st_name(name, ST_NAME_KEYWORDS_MINIMAL):
+            return "st"
+    return None
+
+
+def filter_stock_universe(
+    tickers: list[str],
+    metadata: dict[str, dict[str, object]] | None = None,
+    *,
+    exclude_st: bool = True,
+    exclude_bse: bool = True,
+    exclude_hk: bool = True,
+    exclude_etf: bool = False,
+    max_pe: float | None = None,
+    min_pb: float | None = None,
+    min_market_cap: float | None = None,
+) -> list[str]:
+    """统一股票池过滤引擎。
+
+    各选股/扫描脚本在扫描全市场前应统一调用本函数，避免重复实现
+    ST / 北交所 / 港股 / ETF / PE / PB / 市值过滤逻辑，保证口径一致。
+
+    Args:
+        tickers: 带前缀 ticker 列表，如 ``["sh.600519", "hk.00700", "bj.920001"]``。
+        metadata: :func:`load_metadata_index` 返回的元数据索引。为 ``None`` 时
+            只做代码/前缀层面的过滤，不做 ST / 估值 / 市值过滤。
+        exclude_st: 是否剔除 ST 股（优先读 ``is_st`` 标记，否则按名称关键词判断）。
+        exclude_bse: 是否剔除北交所（``bj.`` 前缀或 920 开头裸代码）。
+        exclude_hk: 是否剔除港股（``hk.`` 前缀）。
+        exclude_etf: 是否剔除 ETF（``sh.5x`` / ``sh.58x`` / ``sz.15x`` 等前缀）。
+        max_pe: PE 上限。``pe >= max_pe`` 或 ``pe <= 0``（亏损/无效）时剔除。
+        min_pb: PB 下限，``pb < min_pb`` 时剔除（用于资不抵债过滤）。
+        min_market_cap: 最小市值（亿元），低于此值时剔除。
+
+    Returns:
+        过滤后的 ticker 列表，保持原始顺序。
+    """
+    result: list[str] = []
+
+    for ticker in tickers:
+        if (
+            exclusion_reason(
+                ticker,
+                metadata,
+                exclude_st=exclude_st,
+                exclude_bse=exclude_bse,
+                exclude_hk=exclude_hk,
+                exclude_etf=exclude_etf,
+            )
+            is not None
+        ):
+            continue
+
+        if metadata is None:
+            result.append(ticker)
+            continue
+
+        meta = _lookup_meta(metadata, ticker)
+
+        # PE 过滤（<=0 视为亏损/无效，与既有 PE∈(0,max) 口径一致）
+        if max_pe is not None:
+            pe = meta.get("pe_ttm")
+            if isinstance(pe, (int, float)) and (pe <= 0 or pe >= max_pe):
+                continue
+
+        if min_pb is not None:
+            pb = meta.get("pb")
+            if isinstance(pb, (int, float)) and pb < min_pb:
+                continue
+
+        if min_market_cap is not None:
+            cap = meta.get("market_cap")
+            if isinstance(cap, (int, float)) and cap < min_market_cap:
+                continue
+
+        result.append(ticker)
+
+    return result
 
 
 def get_provider_chain(ticker: str) -> list[str]:

@@ -38,10 +38,13 @@ import pandas as pd
 from loguru import logger
 
 from scripts._utils import (
+    MIN_MARKET_CAP_YI,
+    PE_MAX_TECH,
     ST_NAME_KEYWORDS_MINIMAL,
     get_cache_db_path,
     get_sqlite_conn,
     is_etf_ticker,
+    is_st_name,
     normalize_ticker_key,
     ticker_to_thscode,
 )
@@ -416,7 +419,7 @@ def _scan_all(
             skipped["st"] += 1
             continue
         name = name_map.get(bare, "")
-        if any(kw in name for kw in ST_NAME_KEYWORDS_MINIMAL):
+        if is_st_name(name, ST_NAME_KEYWORDS_MINIMAL):
             skipped["st"] += 1
             continue
 
@@ -505,11 +508,11 @@ def run(
     removed_pe = 0
     for r in candidates:
         pe = r.get("pe_ttm")
-        if not isinstance(pe, (int, float)) or pe <= 0 or pe >= 30:
+        if not isinstance(pe, (int, float)) or pe <= 0 or pe >= PE_MAX_TECH:
             removed_pe += 1
             continue
         pe_kept.append(r)
-    logger.info(f"📊 PE 过滤(0,30)：剔除 {removed_pe} 只，剩余 {len(pe_kept)} 只")
+    logger.info(f"📊 PE 过滤(0,{PE_MAX_TECH:g})：剔除 {removed_pe} 只，剩余 {len(pe_kept)} 只")
 
     # 市值估算 + <50亿 剔除
     if pe_kept:
@@ -580,7 +583,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="MACD+均线 A 股筛选器（第 10 步）")
     parser.add_argument("--date", default=None, help="分析日期 YYYY-MM-DD（默认今天）")
     parser.add_argument("--push", type=int, default=1, help="是否飞书推送（1=是 0=否）")
-    parser.add_argument("--min-cap", type=float, default=50.0, help="最小市值（亿元，默认50）")
+    parser.add_argument(
+        "--min-cap",
+        type=float,
+        default=MIN_MARKET_CAP_YI,
+        help=f"最小市值（亿元，默认 {MIN_MARKET_CAP_YI:g}）",
+    )
     parser.add_argument("--top", type=int, default=0, help="只输出前N只（0=全部）")
     args = parser.parse_args()
 

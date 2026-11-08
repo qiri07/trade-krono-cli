@@ -14,7 +14,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from scripts._utils import normalize_ticker_key
+from scripts._utils import is_bse_code, normalize_ticker_key
 
 
 def _date_tags(date_str: str) -> tuple[str, str]:
@@ -79,7 +79,7 @@ def _codes_from_buffett_screen(path: Path) -> set[str]:
         raw = m.group(1)
         code6 = raw.split(".")[0]
         # 排除北交所（920 开头或 .BJ 后缀）
-        if code6.startswith("920") or raw.upper().endswith(".BJ"):
+        if is_bse_code(code6) or raw.upper().endswith(".BJ"):
             continue
         codes.add(code6)
     return codes
@@ -96,7 +96,7 @@ def _codes_from_buffett_whitelist(path: Path) -> set[str]:
         if not c:
             continue
         code6 = c.split(".")[0]
-        if code6.startswith("920") or c.upper().endswith(".BJ"):
+        if is_bse_code(code6) or c.upper().endswith(".BJ"):
             continue
         codes.add(code6)
     return codes
@@ -174,7 +174,7 @@ def _codes_from_czsc_csv(path: Path) -> set[str]:
                 if len(code6) != 6 or not code6.isdigit():
                     continue
                 # 排除北交所（920 开头）
-                if code6.startswith("920"):
+                if is_bse_code(code6):
                     continue
                 codes.add(code6)
     except (OSError, csv.Error):

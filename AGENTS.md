@@ -475,6 +475,10 @@ uv run python scripts/export_vnpy_data.py
 | `check_data_freshness(logger_fn)` | 检查 K 线缓存是否已更新至预期日期 |
 | `is_bse_code(code)` | 判断 6 位裸代码是否为北交所（920 开头） |
 | `is_bse_or_hk(ticker)` | 判断带前缀 ticker 或裸代码是否为需排除的北交所/港股 |
+| `is_st_name(name, keywords=None)` | 判断股票名称是否含 ST/退市 关键词 |
+| `load_metadata_index(cache_dir=None, include_bare_keys=True)` | 加载 `metadata.json` 并归一化键（带前缀 + 裸代码双索引） |
+| `exclusion_reason(ticker, metadata, ...)` | 返回单只票被剔除的原因键 `hk/bse/etf/st`（供分类计数） |
+| `filter_stock_universe(tickers, metadata=None, ...)` | **统一股票池过滤入口**（ST/BSE/HK/ETF/PE/PB/市值） |
 
 共享常量（亦定义于此，各脚本统一引用，禁止在脚本内重复定义）：
 
@@ -483,8 +487,25 @@ uv run python scripts/export_vnpy_data.py
 | `ST_NAME_KEYWORDS` / `ST_NAME_KEYWORDS_MINIMAL` | ST 名称关键词（全市场扫描用完整版，白名单分析用精简版） |
 | `BSE_CODE_PREFIXES` / `BSE_TICKER_PREFIXES` | 北交所代码/前缀 |
 | `STOCK_NAMES` | 白名单常用股票的 6 位代码 → 名称映射（`daily_analysis` 会动态补充） |
+| `PE_MAX_TECH` (30) | 技术面选股线 PE 上限（双均线 / MACD+均线 / 综合交集） |
+| `PE_MAX_VALUE` (16) | 价值线（巴菲特六闸门）PE 上限 |
+| `MIN_MARKET_CAP_YI` (50) | 技术面选股线最小总市值（亿元） |
 
-**禁止**：在新脚本中重新定义上述函数与常量。
+**过滤层用法约定**（2026-11 起）：
+
+```python
+from scripts._utils import filter_stock_universe, load_metadata_index, exclusion_reason
+
+meta = load_metadata_index()                      # 键含 sh.600519 与 600519 两种写法
+candidates = filter_stock_universe(
+    all_tickers, meta, exclude_etf=True, max_pe=PE_MAX_TECH, min_market_cap=MIN_MARKET_CAP_YI
+)
+# 需要按原因分类统计时用单只票谓词：
+reason = exclusion_reason(ticker, meta, exclude_etf=True)   # "hk"/"bse"/"etf"/"st"/None
+```
+
+**禁止**：在新脚本中重新定义上述函数与常量，或另写一套 ST/北交所/港股/ETF/PE 过滤逻辑。
+
 
 ## 已知限制与架构备注
 

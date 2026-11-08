@@ -48,12 +48,14 @@ from rich.console import Console
 from rich.table import Table
 
 from scripts._utils import (
+    filter_stock_universe,
     is_bse_or_hk,
     is_etf_ticker,
     normalize_ticker_key,
 )
 from scripts.daily_analysis import _get_dynamic_whitelist, _get_whitelist
 from scripts.feishu_utils import load_config, send_notification
+from scripts.indicators import calc_ma, calc_macd_dif_series
 
 # 项目根目录（供结果目录使用）
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -194,36 +196,26 @@ def _coerce_floats(values: list[Any]) -> list[float]:
 
 
 def _calc_ma(closes: list[float], window: int) -> list[float]:
-    """简单移动平均，返回与 closes 等长的列表（前 window-1 个为 NaN）。"""
+    """简单移动平均，返回与 closes 等长的列表（前 window-1 个为 NaN）。
+
+    委托 :func:`scripts.indicators.calc_ma`，与日线筛选脚本共用同一实现。
+    """
     closes = _coerce_floats(closes)
-    n = len(closes)
-    if n < window:
-        return [float("nan")] * n
-    result: list[float] = [float("nan")] * (window - 1)
-    rolling = sum(closes[:window])
-    result.append(rolling / window)
-    for i in range(window, n):
-        rolling += closes[i] - closes[i - window]
-        result.append(rolling / window)
-    return result
+    if not closes:
+        return []
+    return calc_ma(pd.Series(closes, dtype="float64"), window).tolist()
 
 
 def _calc_macd_dif(closes: list[float], fast: int = 12, slow: int = 26) -> list[float]:
-    """MACD DIF 线（EMA_fast - EMA_slow），与 closes 等长。"""
+    """MACD DIF 线（EMA_fast - EMA_slow），与 closes 等长。
+
+    委托 :func:`scripts.indicators.calc_macd_dif_series`，与日线筛选脚本共用同一实现。
+    """
     closes = _coerce_floats(closes)
     if len(closes) < slow:
         return [float("nan")] * len(closes)
-
-    def _ema(values: list[float], span: int) -> list[float]:
-        k = 2 / (span + 1)
-        ema: list[float] = [values[0]]
-        for v in values[1:]:
-            ema.append(v * k + ema[-1] * (1 - k))
-        return ema
-
-    ema_fast = _ema(closes, fast)
-    ema_slow = _ema(closes, slow)
-    return [f - s for f, s in zip(ema_fast, ema_slow, strict=True)]
+    series = pd.Series(closes, dtype="float64")
+    return calc_macd_dif_series(series, fast, slow).tolist()
 
 
 def _check_golden_cross(closes: list[float], ref_idx: int = -2) -> bool:
@@ -311,22 +303,29 @@ def _load_whitelist() -> list[str]:
 
 
 def _normalize_tickers(raw: list[str]) -> list[str]:
-    """将裸代码或带前缀代码统一归一化为 sh./sz. 前缀格式，排除北交所/港股。"""
-    out: list[str] = []
+    """将裸代码或带前缀代码统一归一化为 sh./sz. 前缀格式，排除北交所/港股。
+
+    前缀过滤统一走 :func:`scripts._utils.filter_stock_universe`（默认剔除
+    北交所/港股，保留 A 股与 ETF），避免与其它脚本口径分叉。
+    """
     seen: set[str] = set()
+    uniq: list[str] = []
     for t in raw:
         t = t.strip()
         if not t:
             continue
         normed = normalize_ticker_key(t)
-        if is_bse_or_hk(normed):
-            logger.debug(f"跳过北交所/港股: {normed}")
-            continue
         if normed in seen:
             continue
         seen.add(normed)
-        out.append(normed)
-    return out
+        uniq.append(normed)
+
+    kept = filter_stock_universe(uniq)
+    kept_set = set(kept)
+    skipped = [t for t in uniq if t not in kept_set]
+    if skipped:
+        logger.debug(f"跳过北交所/港股 {len(skipped)} 只: {skipped}")
+    return kept
 
 
 # ── 扫描核心 ─────────────────────────────────────────────────────────────────

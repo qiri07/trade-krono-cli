@@ -10,7 +10,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from scripts._utils import ST_NAME_KEYWORDS_MINIMAL, is_bse_or_hk
+from scripts._utils import ST_NAME_KEYWORDS_MINIMAL, is_bse_or_hk, is_st_name
 from scripts.daily_analysis.names import _get_stock_name
 from trade_krono_cli.config import get_settings  # type: ignore[import-not-found]
 
@@ -91,7 +91,7 @@ def _filter_bse_st(tickers: list[str]) -> list[str]:
             logger.debug(f"  跳过北交所股票: {t}")
             continue
         name = _get_stock_name(t)
-        if any(kw in name for kw in ST_NAME_KEYWORDS_MINIMAL):
+        if is_st_name(name, ST_NAME_KEYWORDS_MINIMAL):
             st_skipped.append(t)
             logger.info(f"  剔除 ST 股: {t} {name}")
             continue

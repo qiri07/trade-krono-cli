@@ -31,11 +31,12 @@ from loguru import logger
 sys.path.insert(0, "/run/media/onai/MyDisk/Work/trade-krono-cli")
 
 from scripts._utils import (
+    PE_MAX_TECH,
     get_all_tickers,
     get_cache_db_path,
     get_sqlite_conn,
     is_etf_ticker,
-    normalize_ticker_key,
+    load_metadata_index,
     ticker_to_thscode,
 )
 from scripts.indicators import calc_ma as _indicators_calc_ma
@@ -48,7 +49,8 @@ BASE = "https://fuyao.aicubes.cn"
 
 # 筛选阈值
 MA_FAST, MA_SLOW = 5, 13
-PE_MIN, PE_MAX = 0, 30
+# PE 区间统一由 scripts._utils 提供，避免各脚本各自硬编码
+PE_MIN, PE_MAX = 0, PE_MAX_TECH
 ROE_THRESHOLD = 10.0
 
 
@@ -56,17 +58,12 @@ ROE_THRESHOLD = 10.0
 
 
 def load_metadata(cache_dir: Path) -> dict:
-    """加载PE/行业/ST元数据，统一键格式为标准前缀（sh.600xxx / sz.000xxx）。
+    """加载 PE/行业/ST 元数据（键统一为带前缀格式）。
 
-    metadata.json 中可能同时存在 "sh.600519" 和 "600519" 两种键格式，
-    此函数将所有键归一化，避免查询时因格式不匹配导致数据丢失。
+    实现见 :func:`scripts._utils.load_metadata_index`（``include_bare_keys=False``
+    保持仅带前缀键，避免条数统计翻倍）。
     """
-    meta_path = cache_dir / "metadata.json"
-    if meta_path.exists():
-        with open(meta_path, encoding="utf-8") as f:
-            raw = json.load(f)
-        return {normalize_ticker_key(k): v for k, v in raw.items()}
-    return {}
+    return load_metadata_index(cache_dir, include_bare_keys=False)
 
 
 def get_st_tickers(metadata: dict) -> set[str]:
