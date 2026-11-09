@@ -42,6 +42,11 @@ from scripts._utils import (
 from scripts.indicators import calc_ma as _indicators_calc_ma
 from scripts.indicators import calc_macd_dif as _indicators_calc_macd_dif
 
+
+def _limit_pct(bare_code: str) -> float:
+    """涨停幅度（%）：创业板(30)/科创板(68) 20%，主板 10%。"""
+    return 20.0 if bare_code[:2] in ("30", "68") else 10.0
+
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 API_KEY = (os.getenv("HITHINK_FINANCE_API_KEY", "") or os.getenv("FUYAO_API_KEY", "")).strip()
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
@@ -499,6 +504,15 @@ def process_ticker(
 
     # 排除ST
     if ticker in st_set:
+        return None
+
+    # 排除涨跌停
+    latest_close = float(df["close"].iloc[-1])
+    prev_close = float(df["close"].iloc[-2])
+    chg_pct = (latest_close / prev_close - 1) * 100
+    bare = ticker.split(".", 1)[-1] if "." in ticker else ticker
+    limit_pct = _limit_pct(bare)
+    if chg_pct >= limit_pct - 0.05 or chg_pct <= -limit_pct + 0.05:
         return None
 
     # 日K线 MA5 > MA13
