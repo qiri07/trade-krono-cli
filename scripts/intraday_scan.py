@@ -49,6 +49,8 @@ from rich.table import Table
 
 from scripts._utils import (
     filter_stock_universe,
+    get_astock_tickers,
+    get_cache_db_path,
     is_bse_or_hk,
     is_etf_ticker,
     normalize_ticker_key,
@@ -397,7 +399,7 @@ def _scan_one(ticker: str, signals: list[str]) -> IntradayResult:
 def scan(
     tickers: list[str],
     signals: list[str] | None = None,
-    max_workers: int = 16,
+    max_workers: int = 4,
     min_signals: int = 1,
     verbose: bool = True,
 ) -> list[IntradayResult]:
@@ -538,6 +540,12 @@ def main() -> None:
     )
     parser.add_argument("--push", type=int, default=0, help="飞书推送：1=汇总推送")
     parser.add_argument("--verbose", type=int, default=1, help="0=安静模式")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        help="扫描全市场 A 股（缓存数据库内所有 A 股，排除北交所/港股，保留 ETF），默认只扫白名单",
+    )
     args = parser.parse_args()
 
     if not is_trading_day():
@@ -545,7 +553,14 @@ def main() -> None:
         return
 
     console = Console()
-    tickers = _normalize_tickers(args.tickers.split(",")) if args.tickers else _load_whitelist()
+    if args.tickers:
+        tickers = _normalize_tickers(args.tickers.split(","))
+    elif args.all:
+        db_path = get_cache_db_path()
+        tickers = get_astock_tickers(db_path, logger.info)
+        logger.info(f"全市场 A 股：{len(tickers)} 只（已排除北交所/港股）")
+    else:
+        tickers = _load_whitelist()
 
     if not tickers:
         console.print(
