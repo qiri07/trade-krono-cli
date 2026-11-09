@@ -34,7 +34,7 @@ from scripts._utils import (
     strip_ticker_prefix,
     ticker_to_thscode,
 )
-from scripts.daily_analysis import _load_env, ai_verify, analyze_stock
+from scripts.daily_analysis import _load_env, analyze_stock
 from scripts.feishu_utils import load_config, send_notification
 from scripts.valuation import _safe_float, evaluate_valuation
 from trade_krono_cli.config import get_settings
@@ -535,24 +535,16 @@ def main() -> None:
         results.sort(key=lambda x: x.get("score", 0), reverse=True)
         logger.info(f"✅ 估值评估完成：{len(val_results)} 只股票 + ETF {len(etf_kept)} 只")
 
-    # AI 核实
-    logger.info("🤖 启动 AI 核实...")
-    ai_result = ai_verify(results, args.date)
-    if ai_result.get("analysis_summary", "").startswith("LLM"):
-        logger.info("AI 核实跳过：LLM 未配置")
-    else:
-        logger.info(f"AI 核实完成：{ai_result.get('analysis_summary', '')}")
-
     # 保存结果
     date_str = args.date.replace("-", "")
     result_file = _RESULTS_DIR / f"multi_head_{date_str}.txt"
-    result_file.write_text(_build_summary_card(results, args.date, ai_result), encoding="utf-8")
+    result_file.write_text(_build_summary_card(results, args.date, None), encoding="utf-8")
     logger.info(f"💾 结果已保存: {result_file}")
 
     # 飞书推送（仅汇总推送，不逐只推送）
     if results:
         config = load_config()
-        summary = _build_summary_card(results, args.date, ai_result)
+        summary = _build_summary_card(results, args.date, None)
 
         ok = send_notification(
             mode="text",

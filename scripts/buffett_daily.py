@@ -197,7 +197,7 @@ def run(
 
     logger.info(f"🎯 开始巴菲特筛选 + 技术面逐只分析  日期={today}")
 
-    # 用于存放筛选结果，供 AI 核实复用
+    # 用于存放筛选结果，供 combined 汇总复用
     results_pass: list[StockMetrics] = []
     results_fail: list[StockMetrics] = []
 

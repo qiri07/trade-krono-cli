@@ -142,7 +142,7 @@ def main() -> None:
         "resonance": Path(f"outputs/results/macd_resonance_{dd}.json"),
         "multi_head": Path(f"outputs/results/multi_head_{dc}.txt"),
         "double_ma": Path(f"outputs/results/double_ma_golden_cross_{dd}.json"),
-        "macd_ma": Path(f"outputs/results/macd_ma_screener_{dc}.txt"),
+        "macd_ma": Path(f"outputs/results/macd_ma_screener_{dc}.json"),
     }
     _czsc_dir = Path("outputs/czsc_signal_scan")
     _czsc_files = [
