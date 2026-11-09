@@ -256,13 +256,13 @@ def load_market_cap(
 def apply_market_cap_filter(
     results: list[dict[str, object]], min_cap_yi: float = 50.0
 ) -> tuple[list[dict[str, object]], int]:
-    """剔除总市值 < min_cap_yi 亿元的股票。市值缺失（None）同样剔除。"""
+    """剔除总市值 < min_cap_yi 亿元的股票。市值缺失（baostock 不可达时）不剔除。"""
     kept: list[dict[str, object]] = []
     removed = 0
     for r in results:
         cap = r.get("market_cap")
         cap_num = float(cap) if isinstance(cap, (int, float)) else None
-        if cap_num is None or cap_num < min_cap_yi:
+        if cap_num is not None and cap_num < min_cap_yi:
             removed += 1
             continue
         kept.append(r)
@@ -503,12 +503,12 @@ def run(
         ticker_str = str(r.get("ticker", ""))
         r["pe_ttm"] = pe_local.get(ticker_str, pe_extra.get(ticker_str.split(".")[-1]))
 
-    # PE ∈ (0, 30)
+    # PE ∈ (0, 30)：PE 缺失时不剔除（与 double_ma_golden_cross 一致，避免 metadata 缺失导致全军覆没）
     pe_kept: list[dict[str, object]] = []
     removed_pe = 0
     for r in candidates:
         pe = r.get("pe_ttm")
-        if not isinstance(pe, (int, float)) or pe <= 0 or pe >= PE_MAX_TECH:
+        if isinstance(pe, (int, float)) and (pe <= 0 or pe >= PE_MAX_TECH):
             removed_pe += 1
             continue
         pe_kept.append(r)
