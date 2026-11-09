@@ -15,6 +15,7 @@ import os
 import threading
 import time
 from collections import deque
+from contextlib import suppress
 from pathlib import Path
 
 # 限流参数 (Nemotron 3.5 Super VL: 60秒内 ≤40 次请求)
@@ -184,38 +185,39 @@ def wait_for_rate_limit_cross_process() -> None:
     _ensure_rate_state_dir()
     lock_fd = os.open(str(_RATE_LOCK_FILE), os.O_RDWR | os.O_CREAT, 0o644)
     try:
-        fcntl.flock(lock_fd, fcntl.LOCK_EX)
-        try:
-            now = time.monotonic()
+        while True:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            try:
+                now = time.time()
 
-            # 加载并清理窗口外的记录
-            timestamps = _load_rate_state()
-            cutoff = now - WINDOW_SECONDS
-            timestamps = [t for t in timestamps if t > cutoff]
+                # 加载并清理窗口外的记录
+                timestamps = _load_rate_state()
+                cutoff = now - WINDOW_SECONDS
+                timestamps = [t for t in timestamps if t > cutoff]
 
-            # 规则1：检查窗口内请求数
-            if len(timestamps) >= MAX_REQUESTS_PER_WINDOW:
-                oldest = timestamps[0]
-                wait_time = oldest + WINDOW_SECONDS - now
+                # 计算需要等待的时间
+                wait_time = 0.0
+                if len(timestamps) >= MAX_REQUESTS_PER_WINDOW:
+                    oldest = timestamps[0]
+                    wait_time = oldest + WINDOW_SECONDS - now
+                elif timestamps:
+                    elapsed = now - timestamps[-1]
+                    if elapsed < MIN_REQUEST_DELAY:
+                        wait_time = MIN_REQUEST_DELAY - elapsed
+
                 if wait_time > 0:
-                    # 在锁保护下休眠，避免其他进程抢占
+                    # 先释放锁再睡眠，避免在持有锁时阻塞其他进程
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
                     time.sleep(wait_time)
-                    now = time.monotonic()
-                    cutoff = now - WINDOW_SECONDS
-                    timestamps = [t for t in timestamps if t > cutoff]
-
-            # 规则2：检查最小间隔
-            if timestamps:
-                elapsed = now - timestamps[-1]
-                if elapsed < MIN_REQUEST_DELAY:
-                    time.sleep(MIN_REQUEST_DELAY - elapsed)
-                    now = time.monotonic()
-
-            # 记录本次请求
-            timestamps.append(now)
-            _save_rate_state(timestamps)
-        finally:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    continue
+                else:
+                    # 记录本次请求
+                    timestamps.append(now)
+                    _save_rate_state(timestamps)
+                    return
+            finally:
+                with suppress(OSError):
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
     finally:
         os.close(lock_fd)
 
@@ -224,7 +226,7 @@ def get_cross_process_rate_stats() -> dict[str, object]:
     """返回跨进程限流器的当前统计信息（用于调试）。"""
     try:
         timestamps = _load_rate_state()
-        now = time.monotonic()
+        now = time.time()
         cutoff = now - WINDOW_SECONDS
         recent = [t for t in timestamps if t > cutoff]
         return {

@@ -56,7 +56,7 @@ def _get_llm_client() -> Any | None:
         f"🔌 LLM 配置: provider={cfg.provider} base_url={cfg.base_url} "
         f"key={cfg.key_env} model={cfg.model}"
     )
-    return OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
+    return OpenAI(api_key=cfg.api_key, base_url=cfg.base_url, timeout=10.0)
 
 
 def _extract_json(text: str) -> dict | None:
@@ -105,7 +105,17 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
 
     股票数量超过 AI_VERIFY_BATCH_SIZE（默认 30，env 可覆盖）时自动分批
     调用，结果聚合后返回；全部批次失败时返回失败占位 dict。
+
+    设 SKIP_AI_VERIFY=1 可跳过 AI 核实（用于 LLM 端点不可达的环境）。
     """
+    if os.getenv("SKIP_AI_VERIFY") == "1":
+        logger.warning("AI 核实跳过：SKIP_AI_VERIFY=1")
+        return {
+            "analysis_summary": "AI 核实已跳过（SKIP_AI_VERIFY=1）",
+            "top_picks": "无",
+            "risk_alerts": "无",
+            "conclusion": "无",
+        }
     if not _ai_available():
         logger.warning("AI 核实跳过：LLM 未配置")
         return {
@@ -119,6 +129,25 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
     if client is None:
         return {
             "analysis_summary": "LLM 不可用",
+            "top_picks": "无",
+            "risk_alerts": "无",
+            "conclusion": "无",
+        }
+
+    # 快速失败：若 LLM 端点不可达，直接跳过 AI 核实，避免无限等待
+    cfg = resolve_llm_config()
+    import socket
+    try:
+        host = cfg.base_url.replace("https://", "").replace("http://", "").split("/")[0]
+        port = 443 if cfg.base_url.startswith("https") else 80
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5.0)
+        sock.connect((host, port))
+        sock.close()
+    except (TimeoutError, OSError, socket.gaierror) as e:
+        logger.warning(f"AI 核实跳过：无法连接 LLM 端点 {cfg.base_url} ({e})")
+        return {
+            "analysis_summary": "LLM 端点不可达，跳过 AI 核实",
             "top_picks": "无",
             "risk_alerts": "无",
             "conclusion": "无",
@@ -159,17 +188,15 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
 
     def _call_one(prompt: str) -> dict | None:
         wait_for_rate_limit_cross_process()
-        for attempt in range(1, 6):
+        for attempt in range(1, 3):
             try:
                 response = client.chat.completions.create(
                     model=llm_model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
-                    # 推理型模型（Nemotron 等）会先消耗 token 产出 reasoning_content，
-                    # 批量（20 只）时 800 会在 JSON 输出中途被截断（finish_reason=length），
-                    # 故需留足预算。
                     max_tokens=4096,
-                    timeout=90,
+                    timeout=15,
+                    max_retries=0,
                 )
                 raw = (response.choices[0].message.content or "").strip()
                 result = _extract_json(raw)
@@ -180,22 +207,22 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
                 )
                 break
             except RateLimitError as e:
-                # 账户额度耗尽/付费墙类型：短暂等待无法恢复，快速失败并明确提示
                 if is_quota_exhausted(e):
                     logger.error(
                         "AI 核实触发 LLM 免费账户额度限制，等待无法恢复："
                         f" {str(e)[:120]}。请升级 Token Plan 或更换 API Key 后重试。"
                     )
                     break
-                # 普通频率限流（429）：指数退避，最多重试 5 次
-                if attempt >= 5:
-                    logger.warning(f"AI 核实限流（5次退避重试后仍失败）: {e}")
+                if attempt >= 2:
+                    logger.warning(f"AI 核实限流（2次退避重试后仍失败）: {e}")
                     break
                 wait = backoff_wait(attempt)
-                logger.warning(f"AI 核实触发频率限流，{wait:.1f}s 后重试 ({attempt}/5)...")
+                logger.warning(f"AI 核实触发频率限流，{wait:.1f}s 后重试 ({attempt}/2)...")
                 time.sleep(wait)
             except Exception as e:
                 logger.warning(f"AI 核实调用失败（attempt {attempt}）: {type(e).__name__}: {e}")
+                if attempt >= 2:
+                    break
         return None
 
     # 分批调用并聚合
