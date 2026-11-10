@@ -220,6 +220,35 @@ class TestAnalyzeStock:
             assert result["score"] >= 0
 
 
+class TestEndpointReachable:
+    """LLM 端点连通性探测（不可达时快速失败，避免拖住流水线）。"""
+
+    def test_returns_true_when_connect_succeeds(self) -> None:
+        from unittest.mock import MagicMock
+
+        with patch("socket.create_connection", return_value=MagicMock()):
+            from scripts.daily_analysis.llm import _endpoint_reachable
+
+            assert _endpoint_reachable("https://integrate.api.nvidia.com/v1") is True
+
+    def test_returns_false_on_oserror(self) -> None:
+        from scripts.daily_analysis.llm import _endpoint_reachable
+
+        with patch("socket.create_connection", side_effect=OSError("unreachable")):
+            assert _endpoint_reachable("https://integrate.api.nvidia.com/v1") is False
+
+    def test_uses_https_port_443(self) -> None:
+        """https 端点探测 443，http 端点探测 80。"""
+        from scripts.daily_analysis.llm import _endpoint_reachable
+
+        with patch("socket.create_connection") as mock_conn:
+            mock_conn.side_effect = OSError("boom")
+            _endpoint_reachable("https://example.com/v1")
+            assert mock_conn.call_args.args[0][1] == 443
+            _endpoint_reachable("http://example.com/v1")
+            assert mock_conn.call_args.args[0][1] == 80
+
+
 class TestAiVerify:
     """AI verification logic tests."""
 
@@ -302,6 +331,7 @@ class TestAiVerify:
         with (
             patch("scripts.daily_analysis.llm._ai_available", return_value=True),
             patch("scripts.daily_analysis.llm._get_llm_client", return_value=mock_client),
+            patch("scripts.daily_analysis.llm._endpoint_reachable", return_value=True),
             patch("scripts.daily_analysis.llm.os.getenv", return_value="10"),
             patch("scripts.daily_analysis.llm.wait_for_rate_limit"),
         ):  # batch_size=10

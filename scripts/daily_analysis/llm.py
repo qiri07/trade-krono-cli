@@ -33,6 +33,33 @@ try:
 except ImportError:
     OpenAI = None  # type: ignore[misc,assignment]
 
+# 单次 LLM 请求超时（秒）：20 只/批的 prompt 实测需 20s 左右，15s 会频繁超时
+LLM_REQUEST_TIMEOUT = 30.0
+# 端点连通性探测超时（秒）：不可达时快速失败，避免拖住整条流水线
+LLM_PROBE_TIMEOUT = 5.0
+
+
+def _endpoint_reachable(base_url: str, timeout: float = LLM_PROBE_TIMEOUT) -> bool:
+    """快速探测 LLM 端点的 TCP 可达性。
+
+    Args:
+        base_url: OpenAI 兼容端点地址，如 ``https://integrate.api.nvidia.com/v1``。
+        timeout: 连接超时秒数。
+
+    Returns:
+        True 表示可以建立 TCP 连接；False 表示域名解析/连接失败。
+    """
+    import socket
+
+    host = base_url.replace("https://", "").replace("http://", "").split("/")[0]
+    port = 443 if base_url.startswith("https") else 80
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            pass
+    except OSError:
+        return False
+    return True
+
 
 def _ai_available() -> bool:
     """检查 LLM 是否可用（必须在 _load_env() 之后调用）。"""
@@ -56,7 +83,9 @@ def _get_llm_client() -> Any | None:
         f"🔌 LLM 配置: provider={cfg.provider} base_url={cfg.base_url} "
         f"key={cfg.key_env} model={cfg.model}"
     )
-    return OpenAI(api_key=cfg.api_key, base_url=cfg.base_url, timeout=10.0)
+    # max_retries 属于客户端级参数（OpenAI SDK 的 create() 不接受该关键字），
+    # 关闭 SDK 内建重试，重试策略由 _call_one 统一控制。
+    return OpenAI(api_key=cfg.api_key, base_url=cfg.base_url, timeout=10.0, max_retries=0)
 
 
 def _extract_json(text: str) -> dict | None:
@@ -136,16 +165,8 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
 
     # 快速失败：若 LLM 端点不可达，直接跳过 AI 核实，避免无限等待
     cfg = resolve_llm_config()
-    import socket
-    try:
-        host = cfg.base_url.replace("https://", "").replace("http://", "").split("/")[0]
-        port = 443 if cfg.base_url.startswith("https") else 80
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(5.0)
-        sock.connect((host, port))
-        sock.close()
-    except (TimeoutError, OSError, socket.gaierror) as e:
-        logger.warning(f"AI 核实跳过：无法连接 LLM 端点 {cfg.base_url} ({e})")
+    if not _endpoint_reachable(cfg.base_url):
+        logger.warning(f"AI 核实跳过：无法连接 LLM 端点 {cfg.base_url}")
         return {
             "analysis_summary": "LLM 端点不可达，跳过 AI 核实",
             "top_picks": "无",
@@ -195,8 +216,7 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     max_tokens=4096,
-                    timeout=15,
-                    max_retries=0,
+                    timeout=LLM_REQUEST_TIMEOUT,
                 )
                 raw = (response.choices[0].message.content or "").strip()
                 result = _extract_json(raw)
