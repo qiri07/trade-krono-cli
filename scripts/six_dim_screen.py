@@ -834,7 +834,7 @@ def screen(
     min_cap: float = MIN_MARKET_CAP_YI,
     fetch: bool = True,
     max_candidates: int = 800,
-) -> list[StockScore]:
+) -> tuple[list[StockScore], dict[str, int]]:
     """执行六维筛选与排序。
 
     Args:
@@ -844,7 +844,8 @@ def screen(
         max_candidates: 进入技术面计算的最大候选数（按逻辑分排序截断）。
 
     Returns:
-        按综合分排序的 :class:`StockScore` 列表（全部通过门槛的股票，由调用方截断）。
+        ``(按综合分排序的候选列表, 各关卡人数统计)``；列表包含全部通过门槛的股票，
+        由调用方按 ``--top`` 截断。
     """
     date_str = date_str or date.today().isoformat()
     cache_dir = get_cache_db_path().parent
@@ -914,7 +915,13 @@ def screen(
 
     if not val_pass:
         logger.warning("无股票通过逻辑+估值门槛")
-        return []
+        return [], {
+            "universe": len(universe),
+            "logic_pass": len(passed),
+            "abs_val_pass": 0,
+            "val_pass": 0,
+            "trend_pass": 0,
+        }
 
     # ── 技术面（位置/趋势/量价）──
     tickers = {x[0].code: normalize_ticker_key(x[0].code) for x in val_pass}
@@ -991,7 +998,14 @@ def screen(
 
     logger.info(f"技术面通过（未处于下跌趋势）：{len(results)} 只")
     results.sort(key=lambda s: (s.composite, s.priority_key), reverse=True)
-    return results
+    funnel = {
+        "universe": len(universe),
+        "logic_pass": len(passed),
+        "abs_val_pass": len(abs_pass),
+        "val_pass": len(val_pass),
+        "trend_pass": len(results),
+    }
+    return results, funnel
 
 
 def _load_pe_pb(buffett_db: Path) -> dict[str, tuple[float | None, float | None]]:
@@ -1026,6 +1040,66 @@ def _load_pe_pb(buffett_db: Path) -> dict[str, tuple[float | None, float | None]
             float(pb) if isinstance(pb, (int, float)) else None,
         )
     return out
+
+
+def build_feishu_card(results: list[StockScore], date_str: str, funnel: dict[str, int]) -> str:
+    """构建六维选股飞书汇总卡片。
+
+    Args:
+        results: 排序后的推荐列表（通常为前 10 只）。
+        date_str: 日期字符串（YYYY-MM-DD）。
+        funnel: :func:`screen` 返回的各关卡人数统计。
+
+    Returns:
+        飞书文本卡片正文。
+    """
+    lines: list[str] = []
+    lines.append(f"📊 **{date_str} 六维选股**")
+    lines.append("优先级：逻辑 > 估值 > 位置 > 趋势 > 股东人数 > 量价")
+    lines.append("")
+    if funnel:
+        lines.append(
+            f"候选漏斗：A股 {funnel.get('universe', 0)} → "
+            f"逻辑 {funnel.get('logic_pass', 0)} → "
+            f"绝对估值 {funnel.get('abs_val_pass', 0)} → "
+            f"分位/PEG {funnel.get('val_pass', 0)} → "
+            f"趋势 {funnel.get('trend_pass', 0)} → 精选 {len(results)}"
+        )
+        lines.append("")
+    for i, r in enumerate(results, 1):
+        m = r.metrics
+        lines.append(f"{i}. {r.name}（{r.code}）-{r.composite:.1f}分")
+        lines.append(
+            f"   逻辑{r.logic:.0f} 估值{r.valuation:.0f} 位置{r.position:.0f} "
+            f"趋势{r.trend:.0f} 股东{r.holder:.0f} 量价{r.vol_price:.0f}"
+        )
+        pe_pct = m.get("pe_pct")
+        pe_txt = (
+            f"PE{m.get('pe')}({pe_pct:.0f}%分位)"
+            if isinstance(pe_pct, (int, float))
+            else f"PE{m.get('pe')}"
+        )
+        lines.append(
+            f"   {pe_txt} PB{m.get('pb')} ROE{m.get('roe_avg')}% "
+            f"净利CAGR{m.get('profit_cagr')}% 市值{m.get('market_cap_yi')}亿"
+        )
+        pos = m.get("pct_pos_3y")
+        slope = m.get("ma60_slope")
+        amount_ratio = m.get("amount_ratio")
+        holder = m.get("holder_chg_pct")
+        pos_txt = f"{pos}" if isinstance(pos, (int, float)) else "-"
+        slope_txt = f"{slope:+.1f}" if isinstance(slope, (int, float)) else "-"
+        ratio_txt = f"{amount_ratio}" if isinstance(amount_ratio, (int, float)) else "-"
+        holder_txt = (
+            f"股东户数{holder:+.1f}%" if isinstance(holder, (int, float)) else "股东户数缺失"
+        )
+        lines.append(
+            f"   位置3年{pos_txt}% | MA60斜率{slope_txt}% | "
+            f"成交额{ratio_txt}× | {holder_txt}"
+        )
+        lines.append("")
+    lines.append("⚠️ 量化筛选结果，不含个股深度尽调，不构成投资建议。")
+    return "\n".join(lines)
 
 
 def write_report(results: list[StockScore], date_str: str, out_dir: Path) -> tuple[Path, Path]:
@@ -1101,10 +1175,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--max-candidates", type=int, default=800, help="进入技术面计算的最大候选数"
     )
+    parser.add_argument("--push", type=int, default=0, help="是否飞书推送（1=是，0=否，默认 0）")
     args = parser.parse_args(argv)
 
     t0 = time.time()
-    ranked = screen(
+    ranked, funnel = screen(
         date_str=args.date,
         min_cap=args.min_cap,
         fetch=not args.no_fetch,
@@ -1117,6 +1192,13 @@ def main(argv: list[str] | None = None) -> int:
 
     json_path, md_path = write_report(results, args.date, Path("outputs/results"))
     logger.info(f"结果已写入 {json_path} 与 {md_path}（耗时 {time.time() - t0:.0f}s）")
+
+    if args.push:
+        from scripts.feishu_utils import push_feishu
+
+        card = build_feishu_card(results, args.date, funnel)
+        ok = push_feishu("text", content=card, title=f"📊 {args.date} 六维选股")
+        logger.info(f"{'✅' if ok else '❌'} 飞书推送{'成功' if ok else '失败'}")
 
     header = "排名  代码    名称        综合  逻辑  估值  位置  趋势  股东  量价"
     logger.info("=" * 84)

@@ -289,6 +289,7 @@ uv run python -m scripts.six_dim_screen --top 20        # 推荐 20 只
 uv run python -m scripts.six_dim_screen --top 0         # 输出全部通过门槛的股票
 uv run python -m scripts.six_dim_screen --no-fetch      # 仅用本地缓存（不查估值分位/股东户数）
 uv run python -m scripts.six_dim_screen --min-cap 100   # 最小总市值 100 亿
+uv run python -m scripts.six_dim_screen --push 1        # 结果（前 10 只 + 候选漏斗）推送到飞书
 ```
 
 结果写入 `outputs/results/six_dim_screen_YYYYMMDD.json` 与 `.md`（含每只票六维分数与依据）。

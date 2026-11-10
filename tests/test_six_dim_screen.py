@@ -19,6 +19,7 @@ from scripts.six_dim_screen import (
     _parse_thscode,
     _pct_rank,
     _recent_quarters,
+    build_feishu_card,
     score_holder,
     score_logic,
     score_position,
@@ -255,6 +256,40 @@ class TestTechnicals:
         assert metrics["close"] > metrics["ma20"] > metrics["ma60"]
         assert metrics["pct_pos_3y"] > 90  # 单调上涨，收在区间高点
         assert metrics["last_bar_ts"] > 0
+
+
+class TestFeishuCard:
+    """飞书汇总卡片。"""
+
+    def test_card_contains_funnel_and_ranking(self) -> None:
+        item = StockScore(code="600519", name="贵州茅台", ticker="sh.600519", logic=80.0)
+        item.composite = 78.5
+        item.metrics = {
+            "pe": 20.0,
+            "pb": 6.6,
+            "pe_pct": 15.0,
+            "roe_avg": 30.0,
+            "profit_cagr": 18.0,
+            "market_cap_yi": 18000.0,
+            "pct_pos_3y": 42.0,
+            "ma60_slope": 1.2,
+            "amount_ratio": 1.1,
+            "holder_chg_pct": -5.0,
+        }
+        funnel = {"universe": 5038, "logic_pass": 345, "abs_val_pass": 240, "val_pass": 142,
+                  "trend_pass": 64}
+        card = build_feishu_card([item], "2026-11-10", funnel)
+        assert "2026-11-10 六维选股" in card
+        assert "A股 5038 → 逻辑 345" in card
+        assert "1. 贵州茅台（600519）-78.5分" in card
+        assert "PE20.0(15%分位)" in card
+        assert "不构成投资建议" in card
+
+    def test_card_without_funnel(self) -> None:
+        item = StockScore(code="000001", name="平安银行", ticker="sz.000001")
+        item.metrics = {"pe": 5.0, "pb": 0.5}
+        card = build_feishu_card([item], "2026-11-10", {})
+        assert "1. 平安银行（000001）" in card
 
 
 class TestReport:
