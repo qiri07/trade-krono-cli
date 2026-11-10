@@ -31,6 +31,7 @@ uv run python scripts/etf_history_sync.py --codes "510300,159915"  # 指定ETF�
 uv run python scripts/check_data_integrity.py          # 数据完整性检查
 uv run python scripts/intraday_scan.py                 # 盘中技术信号扫描（白名单，全 4 类信号）
 uv run python scripts/intraday_scan.py --mode resonance --min-signals 2  # 指定信号类型 + 命中阈值
+uv run python -m scripts.six_dim_screen                # 六维选股（逻辑>估值>位置>趋势>股东人数>量价），推荐 10 只
 uv run python scripts/cleanup_duplicates.py            # 清理重复记录（删除前自动备份）
 uv run python scripts/backup_cache.py                  # 备份 pipeline_cache.db + metadata.json（在线快照，未变化自动跳过）
 uv run python scripts/backup_cache.py --check-only --verify  # 查看备份状态并校验最新 DB 备份完整性
@@ -268,6 +269,30 @@ uv run python scripts/intraday_scan.py --min-signals 2       # 至少命中 2 �
 uv run python scripts/intraday_scan.py --tickers "600519,000858,510300" --push 1
 ```
 
+### 六维选股（`scripts/six_dim_screen.py`）
+
+按「逻辑 > 估值 > 位置 > 趋势 > 股东人数 > 量价」的优先级排序选股：前两维为硬门槛，
+后四维按递减权重参与综合打分与字典序 tie-break。
+
+| 维度 | 权重 | 数据来源 | 门槛 |
+|------|------|----------|------|
+| 逻辑 | 30% | `buffett_cache.db`（ROE/扣非ROE/毛利率/负债率/净利CAGR/现金流） | ROE≥12%、扣非≥10%、净利CAGR>0、现金流>0、负债<65%（金融豁免）、近 4 年全盈利、净利≥1 亿 |
+| 估值 | 23% | `akshare.stock_zh_valuation_baidu` 近五年 PE/PB 序列 | PE∈(0,30)、PB∈(0,6)、PE 五年分位≤60%、PEG≤2.5 |
+| 位置 | 15% | 本地日线，股价 3 年区间分位 | 3 年分位接近 35% 最优，>85% 历史高位扣分 |
+| 趋势 | 13% | MA5/10/20/60/120 + MACD | 价格跌破 MA60/MA120 且 MA60 向下 → 淘汰 |
+| 股东人数 | 10% | `akshare.stock_zh_a_gdhs`（最近披露季度） | 户数环比减少（筹码集中）加分 |
+| 量价关系 | 9% | 本地日线成交额（不用 volume，规避单位混用） | 5日/60日成交额 1.0~1.8 倍健康，放量下跌扣分 |
+
+```bash
+uv run python -m scripts.six_dim_screen                 # 推荐 10 只（约 70 秒）
+uv run python -m scripts.six_dim_screen --top 20        # 推荐 20 只
+uv run python -m scripts.six_dim_screen --top 0         # 输出全部通过门槛的股票
+uv run python -m scripts.six_dim_screen --no-fetch      # 仅用本地缓存（不查估值分位/股东户数）
+uv run python -m scripts.six_dim_screen --min-cap 100   # 最小总市值 100 亿
+```
+
+结果写入 `outputs/results/six_dim_screen_YYYYMMDD.json` 与 `.md`（含每只票六维分数与依据）。
+
 ### 一键全流程（`scripts/daily_flow.sh`）
 
 ```bash
@@ -370,6 +395,7 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `fill_missing_latest.py` | 补齐缺少最新日期的股票增量数据（tonghuashun 主，baostock 降级） |
 | `etf_history_sync.py` | ETF K 线同步（akshare 同花顺发现全市场 ~1409 只，baostock 拉取；`--full` 全量 / `--codes` 指定） |
 | `intraday_scan.py` | 盘中技术信号扫描（akshare 分钟 K 线 + 腾讯实时价；金叉/多头/MACD/三线共振，`--mode` 选类型，`--min-signals` 过滤，`--push` 飞书） |
+| `six_dim_screen.py` | 六维选股（逻辑>估值>位置>趋势>股东人数>量价；前两维硬门槛，后四维递减权重打分，输出前 N 只 + JSON/MD 报告） |
 
 ### 数据质量指标（截至 2026-09-15）
 - 总记录数：5,288（无重复）
