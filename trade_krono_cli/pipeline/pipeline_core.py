@@ -36,6 +36,8 @@ from trade_krono_cli.stock_filter import StockFilter, StockMeta
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from trade_krono_cli.backtest_position_manager import DynamicPositionManager
+    from trade_krono_cli.backtest_risk_control import MaxDrawdownControl
     from trade_krono_cli.constraints_config import ConstraintConfig
     from trade_krono_cli.kronos_runner import KronosForecastResult
     from trade_krono_cli.ta_runner import StockAnalysisResult
@@ -76,6 +78,10 @@ class QuantPipeline:
         max_workers: int = 2,
         task_timeout: float | None = None,
         deadline: float | None = None,
+        # 风险控制（可选：注入 MaxDrawdownControl 用于实盘风控）
+        risk_control: MaxDrawdownControl | None = None,
+        # 动态仓位管理（可选：基于得分的仓位分配）
+        position_manager: DynamicPositionManager | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._config = config or PipelineConfig.default()
@@ -88,6 +94,20 @@ class QuantPipeline:
         self.allowed_signals = signals
         self.no_cache = no_cache
         self._universe_engine = universe_engine
+        if risk_control is not None:
+            self.risk_control = risk_control
+        else:
+            from trade_krono_cli.backtest_risk_control import (  # noqa: PLC0415
+                MaxDrawdownControl,
+            )
+            self.risk_control = MaxDrawdownControl()
+        if position_manager is not None:
+            self.position_manager = position_manager
+        else:
+            from trade_krono_cli.backtest_position_manager import (  # noqa: PLC0415
+                DynamicPositionManager,
+            )
+            self.position_manager = DynamicPositionManager()
 
         # 兼容旧的 ta_runner / kronos_runner 参数
         if ta_runner is not None and ta_session is None:
@@ -527,6 +547,35 @@ class QuantPipeline:
             config=self._config,
             abnormal_flags_map=abnormal_flags_map,
         )
+
+        # ── 风险控制：根据 MaxDrawdownControl 调整敞口（在落盘前截断）──────────────────
+        exposure = 1.0
+        if self.risk_control is not None:
+            exposure = self.risk_control.get_exposure()
+            if exposure < 1.0 - 1e-9:
+                # 按敞口比例截断：只保留前 exposure 比例的股票（按排名顺序）
+                keep_count = max(1, int(len(merged) * exposure))
+                merged = merged[:keep_count]
+                logger.info(
+                    f"🛡️  风控生效: exposure={exposure:.2%}, "
+                    f"保留 {keep_count} 只股票"
+                )
+
+        # ── 动态仓位分配：根据 DynamicPositionManager 计算每只股票的仓位权重 ──
+        if self.position_manager is not None and merged:
+            stock_scores = {
+                item["ticker"]: item.get("expected_value")
+                or item.get("ranking_score")
+                or 0.0
+                for item in merged
+            }
+            allocations = self.position_manager.compute_allocations(
+                stocks=[item["ticker"] for item in merged],
+                scores=stock_scores,
+                exposure=exposure,
+            )
+            for item in merged:
+                item["position_size"] = allocations.get(item["ticker"], 0.0)
 
         # ── 落盘 + DB 写入 + 委员会审议 ──────────────────────
         raw_paths = self.ta.save_raw_reports(ta_results, date)

@@ -241,14 +241,24 @@ STEPS: list[Step] = [
     ),
     Step(
         name="combined",
-        description="综合选股交集汇总（combined_stock_analysis.py，需其他选股步骤产出文件）",
+        description="综合选股交集汇总（combined_stock_analysis.py，含回测 + 飞书推送）",
         command=[
             "uv",
             "run",
             "python",
             "scripts/combined_stock_analysis.py",
+            "--min-sources",
+            "3",
             "--push",
             str(PUSH_FLAG),
+            "--per-stock-push",
+            "1",
+            "--backtest",
+            "1",
+            "--backtest-days",
+            "90",
+            "--backtest-horizon",
+            "5",
         ],
         enabled_by_default=True,
         depends_on=[
@@ -262,6 +272,7 @@ STEPS: list[Step] = [
             "czsc",
             "intraday",
         ],
+        timeout=10800,
     ),
     Step(
         name="export",

@@ -76,7 +76,12 @@ def _symbol_to_ticker(symbol: str) -> str:
 
 
 def export_parquet(db_path: Path, dest: Path) -> dict:
-    """导出为 MultiIndex Parquet（RD-Agent / qlib 格式）"""
+    """导出为 MultiIndex Parquet（与 RD-Agent daily_pv_full.parquet 格式对齐）。
+
+    输出格式：
+      - 索引：[date, instrument]，instrument 如 SH600519
+      - 列：$open, $close, $high, $low, $volume, $factor（均 float64）
+    """
     conn = get_sqlite_conn(db_path)
     cur = conn.cursor()
 
@@ -87,7 +92,27 @@ def export_parquet(db_path: Path, dest: Path) -> dict:
             df = pd.read_pickle(pd.io.common.BytesIO(blob))
             df = df.rename(columns={"timestamps": "date"})
             df["date"] = pd.to_datetime(df["date"])
-            df["ticker"] = _ticker_to_symbol(ticker)
+            df["instrument"] = _ticker_to_symbol(ticker)
+            # 重命名列以匹配 RD-Agent 格式
+            col_map = {}
+            for col in df.columns:
+                cl = col.lower()
+                if cl == "open":
+                    col_map[col] = "$open"
+                elif cl == "close":
+                    col_map[col] = "$close"
+                elif cl == "high":
+                    col_map[col] = "$high"
+                elif cl == "low":
+                    col_map[col] = "$low"
+                elif cl == "volume":
+                    col_map[col] = "$volume"
+                elif cl == "amount":
+                    col_map[col] = "$amount"
+            df = df.rename(columns=col_map)
+            # 添加 $factor 列（RD-Agent 要求），默认 1.0
+            if "$factor" not in df.columns:
+                df["$factor"] = 1.0
             rows.append(df)
         except Exception as e:
             logger.warning(f"  Parquet 跳过 {ticker}: {e}")
@@ -98,14 +123,17 @@ def export_parquet(db_path: Path, dest: Path) -> dict:
         return {"success": 0}
 
     panel = pd.concat(rows, ignore_index=True)
-    panel = panel.set_index(["date", "ticker"]).sort_index()
-    # 移除多余的 amount 列如果不存在
+    # 只保留目标列（保留 date 和 instrument 用于设置索引）
+    target_cols = ["date", "instrument", "$open", "$high", "$low", "$close", "$volume", "$factor"]
+    existing = [c for c in target_cols if c in panel.columns]
+    panel = panel[existing]
+    panel = panel.set_index(["date", "instrument"]).sort_index()
     dest.parent.mkdir(parents=True, exist_ok=True)
     panel.to_parquet(dest, engine="pyarrow", compression="snappy")
     logger.info(
         f"  ✅ Parquet 导出完成: {panel.shape} ({dest.stat().st_size / 1024 / 1024:.1f} MB)"
     )
-    return {"success": len(panel.index.get_level_values("ticker").unique()), "shape": panel.shape}
+    return {"success": len(panel.index.get_level_values("instrument").unique()), "shape": panel.shape}
 
 
 # ── 导出：HDF5（panel，RD-Agent 兼容） ────────────────────────────────────

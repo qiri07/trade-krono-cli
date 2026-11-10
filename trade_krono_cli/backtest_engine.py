@@ -11,16 +11,22 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pandas as pd
 
+from trade_krono_cli.backtest_position_manager import DynamicPositionManager  # noqa: TC001
+from trade_krono_cli.backtest_risk_control import MaxDrawdownControl  # noqa: TC001
 from trade_krono_cli.configs.trading import ConstraintConfig
 from trade_krono_cli.eval_data import BacktestResult
 from trade_krono_cli.trading_constraints import compute_limit_prices
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from trade_krono_cli.backtest_benchmarks import BacktestRecord
@@ -155,6 +161,11 @@ class BacktestEngine:
         fixed_horizon: int = 5,
         order_type: OrderType = OrderType.MARKET,
         config: ConstraintConfig | None = None,
+        risk_control: MaxDrawdownControl | None = None,
+        position_manager: DynamicPositionManager | None = None,
+        enable_split_detection: bool = True,
+        split_ratio_threshold: float = 3.0,
+        enable_period_analysis: bool = True,
     ) -> None:
         self.initial_capital = initial_capital
         self.max_position_pct = max_position_pct
@@ -163,6 +174,11 @@ class BacktestEngine:
         self.fixed_horizon = fixed_horizon
         self.default_order_type = order_type
         self.cfg = config or ConstraintConfig()
+        self.risk_control = risk_control
+        self.position_manager = position_manager
+        self.enable_split_detection = enable_split_detection
+        self.split_ratio_threshold = split_ratio_threshold
+        self.enable_period_analysis = enable_period_analysis
 
     # ── 主入口 ──────────────────────────────────────────────────────────────
 
@@ -246,6 +262,9 @@ class BacktestEngine:
                     for pos in positions.values()
                 )
                 daily_equity.append((day, equity))
+                # 更新风险控制（即使不调仓，也需要更新每日净值）
+                if self.risk_control is not None:
+                    self.risk_control.update(equity)
                 continue
 
             # 按 ticker 去重（同一天同一股票只处理第一条信号）
@@ -272,8 +291,33 @@ class BacktestEngine:
                 if not self._can_buy_on_day(sig.ticker, day, positions):
                     continue
 
-                # 计算可买股数
-                alloc = cash * self.max_position_pct
+                # 计算可买股数：优先使用动态仓位管理器，否则使用固定比例
+                current_value = cash + sum(
+                    pos.shares * (self._get_exit_price(pos.ticker, day, prev_close_map) or 0)
+                    for pos in positions.values()
+                )
+
+                # 更新风险控制并获取当前敞口比例
+                exposure = 1.0
+                if self.risk_control is not None:
+                    self.risk_control.update(current_value)
+                    exposure = self.risk_control.get_exposure()
+
+                if self.position_manager is not None:
+                    # 基于得分的动态仓位分配
+                    stock_scores = {sig.ticker: getattr(sig, "score", 0.0)}
+                    allocs = self.position_manager.compute_allocations(
+                        stocks=[sig.ticker],
+                        scores=stock_scores,
+                        exposure=exposure,
+                    )
+                    alloc = current_value * allocs.get(sig.ticker, 0.0)
+                else:
+                    # 等权分配，乘以回撤暴露系数
+                    alloc = current_value * exposure / self.max_position_pct * self.max_position_pct
+                    # 保持原有逻辑：每只股票分配 exposure * max_position_pct
+                    alloc = current_value * exposure
+
                 shares = int(alloc / entry_price / self.min_trade_size) * self.min_trade_size
                 if shares < self.min_trade_size:
                     continue  # 资金不足最小一手
@@ -526,6 +570,11 @@ class BacktestEngine:
         best_day = float(np.max(daily_returns) * 100) if len(daily_returns) > 0 else 0.0
         worst_day = float(np.min(daily_returns) * 100) if len(daily_returns) > 0 else 0.0
 
+        # ── 分期收益分析 ──────────────────────────────────────────────────
+        period_analysis: dict[str, dict] = {}
+        if self.enable_period_analysis and len(equity_curve) >= 2:
+            period_analysis = self._analyze_periods(equity_curve)
+
         return {
             "total_return_pct": round(total_return, 2),
             "annualized_return_pct": round(annual_return, 2),
@@ -550,4 +599,190 @@ class BacktestEngine:
             "n_taker_trades": len(taker_trades),
             "avg_maker_cost_bps": round(maker_cost_bps, 2),
             "avg_taker_cost_bps": round(taker_cost_bps, 2),
+            # ── 分期分析 ──────────────────────────────────────────────────
+            "period_analysis": period_analysis,
         }
+
+    # ── 拆分检测 ──────────────────────────────────────────────────────────
+
+    def _detect_splits(
+        self,
+        prices: dict[str, float],
+        prev_close_map: dict[str, float],
+    ) -> dict[str, float]:
+        """检测股票拆分（Split）。
+
+        通过检查相邻交易日的价格比率异常变化，识别可能的股票拆分事件。
+        当价格比率超过阈值（默认3.0）或低于其倒数时，判定为可能发生拆分。
+
+        Parameters
+        ----------
+        prices : dict[str, float]
+            {股票代码: 当前收盘价}
+        prev_close_map : dict[str, float]
+            {股票代码: 前收盘价}
+
+        Returns
+        -------
+        dict[str, float]
+            {股票代码: 调整因子}，调整因子为 1.0 表示未发生拆分，
+            否则为调整比例（如 0.5 表示2拆1）。
+        """
+        if not self.enable_split_detection:
+            return {}
+
+        split_adjustments: dict[str, float] = {}
+        for ticker, price in prices.items():
+            prev_close = prev_close_map.get(ticker)
+            if prev_close is None or prev_close <= 0 or price <= 0:
+                continue
+            ratio = price / prev_close
+            # 检查是否发生拆分：价格异常上涨或下跌
+            if ratio >= self.split_ratio_threshold:
+                # 上涨过多，可能是反向拆分（合并股份）
+                split_adjustments[ticker] = 1.0 / ratio
+            elif ratio <= 1.0 / self.split_ratio_threshold:
+                # 下跌过多，可能是正向拆分（如2拆1）
+                split_adjustments[ticker] = ratio
+        return split_adjustments
+
+    def _apply_split_adjustment(
+        self,
+        price: float,
+        adjustment_factor: float,
+    ) -> float:
+        """应用拆分调整因子到价格。
+
+        Parameters
+        ----------
+        price : float
+            原始价格。
+        adjustment_factor : float
+            调整因子（1.0 表示无调整）。
+
+        Returns
+        -------
+        float
+            调整后的价格。
+        """
+        if adjustment_factor == 1.0:
+            return price
+        return price * adjustment_factor
+
+    # ── 分期分析 ──────────────────────────────────────────────────────────
+
+    def _analyze_periods(
+        self,
+        daily_equity: list[tuple[str, float]],
+    ) -> dict[str, dict]:
+        """按时间段分析收益表现。
+
+        Parameters
+        ----------
+        daily_equity : list[tuple[str, float]]
+            [(日期, 净值), ...] 列表。
+
+        Returns
+        -------
+        dict[str, dict]
+            {时期标签: {return_pct, days}} 字典。
+        """
+        if len(daily_equity) < 2:
+            return {}
+
+        df = pd.DataFrame(daily_equity, columns=["date", "value"])
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date").sort_index()
+        values = df["value"]
+
+        periods: dict[str, dict] = {}
+        start_date = values.index[0]
+        end_date = values.index[-1]
+
+        # 定义分析区间（沿用 configs 中的常见区间）
+        period_ranges: list[tuple[str, str, str]] = [
+            ("Y1", "2025-01-01", "2025-12-31"),
+            ("Y2", "2026-01-01", "2026-12-31"),
+            ("H1_2026", "2026-01-01", "2026-06-30"),
+            ("H2_2026", "2026-07-01", "2026-12-31"),
+        ]
+
+        for label, start_str, end_str in period_ranges:
+            try:
+                start = pd.Timestamp(start_str)
+                end = pd.Timestamp(end_str)
+            except Exception as e:
+                logger.debug("解析日期失败 %s-%s: %s", start_str, end_str, str(e)[:100])
+                continue
+
+            # 检查区间是否与回测区间重叠
+            if start > end_date or end < start_date:
+                continue
+
+            mask = (values.index >= start) & (values.index <= end)
+            subset = values[mask]
+            if len(subset) < 2:
+                continue
+
+            ret = (subset.iloc[-1] / subset.iloc[0] - 1) * 100
+            periods[label] = {
+                "return_pct": round(ret, 2),
+                "days": len(subset),
+                "start_date": str(subset.index[0].date()),
+                "end_date": str(subset.index[-1].date()),
+            }
+
+        return periods
+
+    # ── 辅助：检测单只股票是否发生拆分 ───────────────────────────────
+
+    def detect_split_for_ticker(
+        self,
+        ticker: str,
+        price_history: list[tuple[str, float]],
+    ) -> list[dict]:
+        """检测单只股票的拆分事件。
+
+        Parameters
+        ----------
+        ticker : str
+            股票代码。
+        price_history : list[tuple[str, float]]
+            [(日期, 收盘价), ...] 按日期排序的价格序列。
+
+        Returns
+        -------
+        list[dict]
+            拆分事件列表，每项包含 date, ratio, adjustment_factor。
+        """
+        if not self.enable_split_detection or len(price_history) < 2:
+            return []
+
+        events: list[dict] = []
+        for i in range(1, len(price_history)):
+            prev_date, prev_price = price_history[i - 1]
+            curr_date, curr_price = price_history[i]
+            if prev_price <= 0 or curr_price <= 0:
+                continue
+            ratio = curr_price / prev_price
+            if ratio >= self.split_ratio_threshold:
+                events.append(
+                    {
+                        "date": curr_date,
+                        "ticker": ticker,
+                        "ratio": round(ratio, 4),
+                        "type": "reverse_split",  # 反向拆分
+                        "adjustment_factor": round(1.0 / ratio, 4),
+                    }
+                )
+            elif ratio <= 1.0 / self.split_ratio_threshold:
+                events.append(
+                    {
+                        "date": curr_date,
+                        "ticker": ticker,
+                        "ratio": round(ratio, 4),
+                        "type": "forward_split",  # 正向拆分
+                        "adjustment_factor": round(ratio, 4),
+                    }
+                )
+        return events
