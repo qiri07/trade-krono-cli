@@ -128,29 +128,39 @@ def _build_combined_card(
         lines.append("⚠️ 无命中 ≥3 条选股线的股票。")
         return "\n".join(lines)
 
-    lines.append(f"📊 命中 ≥3 条选股线的股票（{len(cands)} 只，按共振度排序）：")
+    lines.append(f"📊 命中 ≥3 条选股线的股票（共 {len(cands)} 只，按命中条数降序）：")
     lines.append("")
-    for cand in cands:
+    # 按命中条数降序排序
+    # 按命中条数降序排列
+    sorted_cands = sorted(cands, key=lambda c: c.hit_count, reverse=True)
+    for i, cand in enumerate(sorted_cands, 1):
         code = cand.code
         tv = cand.tech
         fv = cand.fund
         name = tv.name or _get_stock_name_from_metadata(code) or code
         label = "+".join(_SOURCE_LABELS.get(s, s) for s in cand.sources)
-        if cand.analysis:
-            lines.append(f"  🔗 **{code} {name}**（{label}）")
+        lines.append(f"  {i:3d}. {name}（{code}）-{cand.hit_count}次交集")
+        lines.append(
+            f"     技术面: {tv.score}分 趋势={tv.trend} 均线={tv.ma_signal} 量能={tv.vol_signal}"
+        )
+        lines.append(f"     基本面: {fv.summary_line()}")
+        kv = cand.kronos_view
+        if kv.available:
             lines.append(
-                f"     技术分={tv.score}  趋势={tv.trend}  "
-                f"均线={tv.ma_signal}  量能={tv.vol_signal}"
+                f"     预测: {kv.direction} {kv.expected_change_pct:+.1f}% "
+                f"({kv.confidence_low:+.1f}%~{kv.confidence_high:+.1f}%)"
             )
-            lines.append(f"     基本面: {fv.summary_line()}")
-            kv = cand.kronos_view
-            if kv.available:
-                lines.append(f"     预测: {kv.summary_line()}")
-            bv = cand.backtest
-            if bv is not None:
-                lines.append(f"     回测: {bv.summary_line()}")
-        else:
-            lines.append(f"  🔗 **{code} {name}**（{label}，无技术数据）")
+        if cand.backtest and cand.backtest.available:
+            bt = cand.backtest
+            lines.append(
+                f"     回测: 收益={bt.total_return_pct:+.1f}% 夏普={bt.sharpe_ratio:.2f} "
+                f"最大回撤={bt.max_drawdown_pct:+.1f}% 胜率={bt.win_rate_pct:.1f}%"
+                if all(
+                    v is not None
+                    for v in (bt.total_return_pct, bt.sharpe_ratio, bt.max_drawdown_pct, bt.win_rate_pct)
+                )
+                else "     回测: 数据不完整"
+            )
     return "\n".join(lines)
 
 

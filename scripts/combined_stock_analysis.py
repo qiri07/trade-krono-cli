@@ -47,6 +47,7 @@ from scripts.combined_stock_intersect import build_intersection
 from scripts.daily_analysis import ai_verify
 from scripts.feishu_utils import push_feishu
 from trade_krono_cli.cli_commands.core import _load_env
+from trade_krono_cli.research_db import get_research  # noqa: PLC0415
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 主流程
@@ -270,6 +271,57 @@ def main() -> None:
             _push_per_stock(analyzed, args.date)
     else:
         logger.info("已跳过飞书推送（--push 0）")
+
+    # ── Step 7: 写入研究数据库（jobs + signals 表），供回测等后续步骤读取 ──
+    try:
+        research = get_research()
+        job_id = research.create_job(
+            date=args.date,
+            tickers=[c.code for c in analyzed],
+            settings=None,
+            notes=f"combined_stock_analysis min_sources={args.min_sources}, analyzed={len(analyzed)}",
+        )
+        research.insert_signals(
+            job_id=job_id,
+            merged_items=[
+                {
+                    "ticker": c.code,
+                    "rank": idx + 1,
+                    "composite_score": c.hit_count,
+                    "ranking_score": c.tech.score if c.tech else 0,
+                    "ta_signal": c.tech.ma_signal if c.tech else None,
+                    "ta_confidence": c.tech.score if c.tech else None,
+                    "ta_reasoning": (
+                        (c.tech.ma_signal or "")[:200] if c.tech else ""
+                    ),
+                    "kronos_direction": c.kronos.direction if c.kronos else None,
+                    "kronos_change_pct": c.kronos.expected_change_pct
+                    if c.kronos and c.kronos.expected_change_pct is not None
+                    else None,
+                    "kronos_prediction_uncertainty": (
+                        c.kronos.prediction_uncertainty if c.kronos else None
+                    ),
+                    "ta_error": None,
+                    "kronos_error": None,
+                    "signal_assessment_json": json.dumps(
+                        {
+                            "command_score": c.tech.score if c.tech else 0,
+                            "sources": c.sources,
+                            "hit_count": c.hit_count,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "expected_value": None,
+                    "conflict": "",
+                }
+                for idx, c in enumerate(analyzed)
+            ],
+        )
+        logger.info(
+            f"📊 已写入 research_db：job_id={job_id}，{len(analyzed)} 条信号"
+        )
+    except Exception as e:
+        logger.warning(f"写入 research_db 失败（不影响结果输出）：{e}")
 
     logger.info("=" * 60)
     per_push_info = (
