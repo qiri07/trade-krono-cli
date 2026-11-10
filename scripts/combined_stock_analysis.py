@@ -93,6 +93,12 @@ def main() -> None:
         help="是否逐只推送飞书（1=是，0=否，默认 1；需 --push=1 同时开启）",
     )
     parser.add_argument(
+        "--per-stock-limit",
+        type=int,
+        default=50,
+        help="逐只推送最多前 N 只（默认 50；<=0 表示不限）",
+    )
+    parser.add_argument(
         "--kronos",
         type=int,
         default=0,
@@ -258,7 +264,13 @@ def main() -> None:
     # ── Step 6: 飞书推送（汇总 + 逐只）───────────────────────────
     if args.push:
         # 6a. 汇总卡片推送
-        card = _build_combined_card(analyzed, args.date, source_sets)
+        card = _build_combined_card(
+            analyzed,
+            args.date,
+            source_sets,
+            total=len(cands),
+            min_sources=args.min_sources,
+        )
         if ai_summary:
             card += f"\n\n---\n🤖 **AI 核实（多线共振视角）**\n{ai_summary}"
         ok = push_feishu("text", content=card, title=f"🔗 {args.date} 多线共振综合选股")
@@ -268,7 +280,7 @@ def main() -> None:
 
         # 6b. 逐只推送（每只单独一张卡片，含技术面+基本面）
         if args.per_stock_push and analyzed:
-            _push_per_stock(analyzed, args.date)
+            _push_per_stock(analyzed, args.date, limit=args.per_stock_limit)
     else:
         logger.info("已跳过飞书推送（--push 0）")
 

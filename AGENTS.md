@@ -238,6 +238,7 @@ uv run python scripts/combined_stock_analysis.py --date 2026-10-16       # 交�
 uv run python scripts/combined_stock_analysis.py --min-sources 3         # 仅 3 条线以上共振
 uv run python scripts/combined_stock_analysis.py --push 0                # 跳过飞书推送
 uv run python scripts/combined_stock_analysis.py --per-stock-push 0      # 跳过逐只推送
+uv run python scripts/combined_stock_analysis.py --per-stock-limit 50   # 逐只只推前 50 只（默认 50，0=不限）
 uv run python scripts/combined_stock_analysis.py --kronos 1 --backtest 1  # 卡片含 Kronos 预测 + 历史回测
 ```
 

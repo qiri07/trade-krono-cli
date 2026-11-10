@@ -550,5 +550,50 @@ class TestCzscCodeParsing:
         assert _codes_from_czsc_csv(tmp_path / "none.csv") == set()
 
 
+class TestCombinedCardHeaderAndPushLimit:
+    """汇总卡片标题统计（交集总数 / 展示数）与逐只推送上限。"""
+
+    def test_card_header_shows_intersection_total_and_shown_count(self) -> None:
+        """标题应写交集池总数，并标注只展示前 N 只。"""
+        cand = StockCandidate(
+            code="600519",
+            hit_count=4,
+            sources=["whitelist", "macd_ma", "double_ma", "czsc_bi_ma"],
+        )
+        cand.analysis = {"name": "贵州茅台"}
+        card = _build_combined_card(
+            [cand], "2026-11-10", {"whitelist": {"600519"}}, total=101, min_sources=3
+        )
+        assert "命中 ≥3 条线共 101 只" in card
+        assert "展示前 1" in card
+        assert "1. 贵州茅台（600519）-4次交集" in card
+
+    def test_per_stock_push_defaults_to_first_50(self) -> None:
+        """默认只推送交集排序前 50 只，标题分母同步为 50。"""
+        from scripts import combined_stock_cards as cards_mod
+
+        cands = [StockCandidate(code=f"{600000 + i}", hit_count=3) for i in range(60)]
+        with (
+            patch.object(cards_mod, "push_feishu", return_value=True) as mock_push,
+            patch.object(cards_mod, "time"),
+        ):
+            cards_mod._push_per_stock(cands, "2026-11-10")
+        assert mock_push.call_count == 50
+        assert "1/50" in mock_push.call_args_list[0].kwargs["title"]
+        assert "50/50" in mock_push.call_args_list[-1].kwargs["title"]
+
+    def test_per_stock_push_limit_zero_means_unlimited(self) -> None:
+        """limit<=0 时不截断，全部推送。"""
+        from scripts import combined_stock_cards as cards_mod
+
+        cands = [StockCandidate(code=f"{600000 + i}", hit_count=3) for i in range(7)]
+        with (
+            patch.object(cards_mod, "push_feishu", return_value=True) as mock_push,
+            patch.object(cards_mod, "time"),
+        ):
+            cards_mod._push_per_stock(cands, "2026-11-10", limit=0)
+        assert mock_push.call_count == 7
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

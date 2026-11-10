@@ -98,23 +98,48 @@ def _build_stock_card(cand: StockCandidate, date_str: str, ai_note: str = "") ->
     return "\n".join(lines)
 
 
-def _push_per_stock(cands: list[StockCandidate], date_str: str) -> None:
-    """逐只推送飞书卡片（每只含技术面 + 基本面），间隔 1s 防 webhook 限流。"""
-    logger.info(f"📤 开始逐只推送 {len(cands)} 只股票...")
-    for i, cand in enumerate(cands, 1):
+def _push_per_stock(cands: list[StockCandidate], date_str: str, limit: int = 50) -> None:
+    """逐只推送飞书卡片（每只含技术面 + 基本面），间隔 1s 防 webhook 限流。
+
+    Args:
+        cands: 候选列表（已按交集次数降序）。
+        date_str: 日期字符串（YYYY-MM-DD）。
+        limit: 最多推送前 N 只；<=0 表示不限。
+    """
+    targets = cands if limit <= 0 else cands[:limit]
+    logger.info(
+        f"📤 逐只推送：交集候选 {len(cands)} 只，"
+        f"按交集次数只推前 {len(targets)} 只..."
+    )
+    for i, cand in enumerate(targets, 1):
         name = cand.tech.name or _get_stock_name_from_metadata(cand.code) or cand.code
         stock_card = _build_stock_card(cand, date_str)
-        title = f"🔗 {date_str} 综合选股 {i}/{len(cands)} {cand.code} {name}"
+        title = f"🔗 {date_str} 综合选股 {i}/{len(targets)} {cand.code} {name}"
         ok = push_feishu("text", content=stock_card, title=title)
-        logger.info(f"  {'✅' if ok else '❌'} [{i}/{len(cands)}] {cand.code} {name}")
+        logger.info(f"  {'✅' if ok else '❌'} [{i}/{len(targets)}] {cand.code} {name}")
         if i < len(cands):
             time.sleep(1)
 
 
 def _build_combined_card(
-    cands: list[StockCandidate], date_str: str, source_sets: dict[str, set[str]]
+    cands: list[StockCandidate],
+    date_str: str,
+    source_sets: dict[str, set[str]],
+    total: int | None = None,
+    min_sources: int = 3,
 ) -> str:
-    """构建飞书汇总卡片文本（含技术面 + 基本面 + AI 核实）。"""
+    """构建飞书汇总卡片文本（含技术面 + 基本面 + AI 核实）。
+
+    Args:
+        cands: 已做技术分析、用于展示的候选列表。
+        date_str: 日期字符串（YYYY-MM-DD）。
+        source_sets: 各选股线命中的股票集合，用于统计每条线命中数。
+        total: 交集池股票总数（≥min_sources 条线）；缺省时取 ``len(cands)``。
+        min_sources: 进入交集池的最少命中条数，用于标题表述。
+
+    Returns:
+        飞书卡片正文（纯文本）。
+    """
     lines: list[str] = []
     lines.append(f"🔗 **{date_str} 综合选股 · 多线共振汇总**")
     lines.append("")
@@ -128,10 +153,14 @@ def _build_combined_card(
         lines.append("⚠️ 无命中 ≥3 条选股线的股票。")
         return "\n".join(lines)
 
-    lines.append(f"📊 命中 ≥3 条选股线的股票（共 {len(cands)} 只，按命中条数降序）：")
+    total_n = total if total is not None else len(cands)
+    header = (
+        f"📊 命中 ≥{min_sources} 条线共 {total_n} 只，"
+        f"按交集次数降序（展示前 {len(cands)}）"
+    )
+    lines.append(header)
     lines.append("")
-    # 按命中条数降序排序
-    # 按命中条数降序排列
+    # 按交集次数降序排列
     sorted_cands = sorted(cands, key=lambda c: c.hit_count, reverse=True)
     for i, cand in enumerate(sorted_cands, 1):
         code = cand.code
