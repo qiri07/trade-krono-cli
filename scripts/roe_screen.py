@@ -23,7 +23,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import check_data_freshness, ticker_to_thscode
+from scripts._utils import (
+    check_data_freshness,
+    get_cache_db_path,
+    get_sqlite_conn,
+    ticker_to_thscode,
+)
 from scripts.daily_analysis import ai_verify
 from scripts.feishu_utils import load_config, send_notification
 from trade_krono_cli.cli_commands.core import _load_env
@@ -127,39 +132,77 @@ def _batch_fetch_roe(tickers: list[str], year: str) -> dict[str, dict[str, Any]]
 
 
 def _fetch_stock_names(tickers: list[str]) -> dict[str, str]:
-    """从 Baostock 批量获取股票中文名称。
+    """获取股票中文名称，优先本地 SQLite 缓存，缺失补漏。
+
+    先一次性从 ``stock_name_cache`` 批量读取已缓存名称（命中不联网），
+    对缺失的 ticker 逐只 baostock 查询并写回缓存，实现「每日仅补漏」。
 
     Returns
     -------
     dict[ticker, str]
-        ticker → 中文名称映射，获取失败的股票名称为空字符串。
+        ticker → 中文名称映射（仅返回有名称的 ticker，缺失的不出现在结果中）。
     """
+    from scripts.stock_name_cache import (
+        batch_write_stock_name_cache,
+        resolve_stock_names,
+    )
+
+    if not tickers:
+        return {}
+
+    db_path = get_cache_db_path()
+    # 1. 先批量从本地缓存读（命中不联网）
+    cached: dict[str, str] = {}
     try:
-        import baostock as bs  # type: ignore
-    except ImportError:
-        logger.warning("baostock 未安装，跳过股票名称获取")
-        return dict.fromkeys(tickers, "")
+        _conn = get_sqlite_conn(db_path)
+        try:
+            cached = resolve_stock_names(_conn, list(tickers))
+        finally:
+            _conn.close()
+    except Exception as e:
+        logger.debug(f"名称缓存批量读取失败，将全量走 baostock: {e}")
 
-    names: dict[str, str] = {}
-    lg = bs.login()
-    if lg.error_code != "0":
-        logger.warning(f"baostock 登录失败: {lg.error_msg}，跳过股票名称获取")
-        return dict.fromkeys(tickers, "")
+    # 2. 找出缺失的 ticker，逐只 baostock 查询并写回
+    missing = [t for t in tickers if t not in cached]
+    if missing:
+        try:
+            import baostock as bs  # type: ignore
 
-    try:
-        for ticker in tickers:
-            rs = bs.query_stock_basic(code=ticker)
-            if rs.error_code != "0":
-                names[ticker] = ""
-                continue
-            while rs.next():
-                row = rs.get_row_data()
-                # row: [code, code_name, ipoDate, outDate, stockType, area]
-                names[ticker] = row[1] if len(row) > 1 else ""
-    finally:
-        bs.logout()  # type: ignore
+            lg = bs.login()
+            if lg.error_code != "0":
+                logger.warning(
+                    f"baostock 登录失败: {lg.error_msg}，名称补漏跳过"
+                )
+            else:
+                try:
+                    newly: list[tuple[str, str]] = []
+                    for ticker in missing:
+                        try:
+                            rs = bs.query_stock_basic(code=ticker)
+                            if rs.error_code != "0":
+                                continue
+                            row = rs.get_row_data()
+                            name = row[1] if len(row) > 1 else ""
+                            if name:
+                                cached[ticker] = name.strip()
+                                newly.append((ticker, name.strip()))
+                        except Exception as exc:  # noqa: BLE001
+                            logger.debug(f"{ticker} baostock 名称查询异常: {exc}")
+                    if newly:
+                        _conn = get_sqlite_conn(db_path)
+                        try:
+                            batch_write_stock_name_cache(_conn, newly)
+                        finally:
+                            _conn.close()
+                        logger.info(
+                            f"✅ 名称补漏：新增 {len(newly)} 条 → stock_name_cache"
+                        )
+                finally:
+                    bs.logout()  # type: ignore
+        except ImportError:
+            logger.warning("baostock 未安装，名称补漏跳过")
 
-    return names
+    return {t: cached[t] for t in tickers if t in cached and cached[t]}
 
 
 def _load_whitelist() -> list[str]:

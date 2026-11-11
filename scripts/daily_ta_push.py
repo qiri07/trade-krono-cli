@@ -26,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import STOCK_NAMES, normalize_ticker_key
+from scripts._utils import normalize_ticker_key
+from scripts.daily_analysis.names import _get_stock_name as _da_get_stock_name
 from scripts.feishu_utils import push_feishu
 from trade_krono_cli.cli_commands._core_helpers import _load_env
 from trade_krono_cli.pipeline import QuantPipeline
@@ -82,9 +83,8 @@ def _load_whitelist(a_share_only: bool = False) -> list[str]:
 
 
 def _get_stock_name(ticker: str) -> str:
-    """获取股票名称。"""
-    code = ticker.split(".", 1)[1] if "." in ticker else ticker
-    return STOCK_NAMES.get(code, "")
+    """获取股票名称，优先本地 SQLite 缓存，缺失补漏。"""
+    return _da_get_stock_name(ticker)
 
 
 def _build_feishu_card(result: Any, date: str) -> str:

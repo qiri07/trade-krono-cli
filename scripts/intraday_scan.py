@@ -48,16 +48,20 @@ from rich.console import Console
 from rich.table import Table
 
 from scripts._utils import (
+    CACHE_DB,
     filter_stock_universe,
     get_astock_tickers,
     get_cache_db_path,
+    get_sqlite_conn,
     is_bse_or_hk,
     is_etf_ticker,
     normalize_ticker_key,
 )
 from scripts.daily_analysis import _get_dynamic_whitelist, _get_whitelist
+from scripts.daily_analysis.names import _get_stock_name as _da_get_stock_name
 from scripts.feishu_utils import load_config, send_notification
 from scripts.indicators import calc_ma, calc_macd_dif_series
+from scripts.stock_name_cache import resolve_stock_names
 
 # 项目根目录（供结果目录使用）
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -333,18 +337,16 @@ def _normalize_tickers(raw: list[str]) -> list[str]:
 # ── 扫描核心 ─────────────────────────────────────────────────────────────────
 
 
-def _resolve_name(ticker: str) -> str:
-    """解析股票名称（来自 _utils.STOCK_NAMES 映射，未收录返回空字符串）。"""
-    try:
-        from scripts._utils import STOCK_NAMES
+def _resolve_name(ticker: str, name_map: dict[str, str]) -> str:
+    """从已解析的名称映射中读取股票名称，未收录返回空字符串。
 
-        code = ticker.split(".")[-1]
-        return STOCK_NAMES.get(code, "")
-    except Exception:
-        return ""
+    名称映射由 :func:`scan` 在进入并发前统一批量解析（优先本地 SQLite
+    缓存，缺失补漏），此处仅做只读查表，并发安全。
+    """
+    return name_map.get(ticker, "")
 
 
-def _scan_one(ticker: str, signals: list[str]) -> IntradayResult:
+def _scan_one(ticker: str, signals: list[str], name_map: dict[str, str]) -> IntradayResult:
     """扫描单只股票，返回命中结果。
 
     主周期（15min）拉一次；三线共振模式会额外拉 5min/60min。
@@ -353,7 +355,7 @@ def _scan_one(ticker: str, signals: list[str]) -> IntradayResult:
     """
     result = IntradayResult(
         ticker=ticker,
-        name=_resolve_name(ticker),
+        name=_resolve_name(ticker, name_map) or _da_get_stock_name(ticker),
         is_etf=is_etf_ticker(ticker),
     )
 
@@ -410,11 +412,30 @@ def scan(
             f"🔍 盘中扫描：{len(tickers)} 只 | 信号: {target_signals} | 并发: {max_workers}"
         )
 
+    # ── 批量预解析股票名称（优先本地 SQLite 缓存，命中不联网；缺失在并发中
+    #     由 _scan_one 逐只兜底查询并写回缓存）───────────────────────────
+    name_map: dict[str, str] = {}
+    try:
+        _conn = get_sqlite_conn(CACHE_DB)
+        try:
+            name_map = resolve_stock_names(_conn, tickers)
+        finally:
+            _conn.close()
+        if verbose:
+            logger.info(
+                f"📛 股票名称缓存命中 {len(name_map)}/{len(tickers)} 只，"
+                f"其余在扫描中逐只补漏"
+            )
+    except Exception as e:
+        logger.debug(f"批量读取股票名称缓存失败，将逐只兜底查询: {e}")
+
     t0 = time.time()
     hits: list[IntradayResult] = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(_scan_one, t, target_signals): t for t in tickers}
+        futures = {
+            pool.submit(_scan_one, t, target_signals, name_map): t for t in tickers
+        }
         for future in as_completed(futures):
             ticker = futures[future]
             try:

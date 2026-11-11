@@ -16,10 +16,14 @@ from pathlib import Path
 
 from loguru import logger
 
-from scripts._utils import normalize_ticker_key
+from scripts._utils import get_cache_db_path, get_sqlite_conn, normalize_ticker_key
 from scripts.combined_stock_collect import _SOURCE_LABELS
 from scripts.combined_stock_models import StockCandidate
 from scripts.feishu_utils import push_feishu
+from scripts.stock_name_cache import (
+    ensure_stock_name_table,
+    get_cached_stock_name,
+)
 
 _META_NAMES: dict[str, str] | None = None
 
@@ -54,11 +58,23 @@ def _load_meta_names() -> dict[str, str]:
 
 
 def _get_stock_name_from_metadata(ticker: str) -> str:
-    """从 metadata.json 中查找股票名称，作为 analyze_stock 返回 name 为空时的兜底。
+    """获取股票名称，优先本地 SQLite 缓存，缺失再从 metadata.json 兜底。
 
-    metadata.json 的 key 为带前缀 ticker（如 sh.600519 / sz.002832 / hk.00700），
-    value 包含 name 字段。
+    作为 analyze_stock 返回 name 为空时的兜底。
     """
+    # 1. 优先本地 SQLite 名称缓存（命中不联网，实现「每日仅补漏」）
+    try:
+        _conn = get_sqlite_conn(get_cache_db_path())
+        try:
+            ensure_stock_name_table(_conn)
+            name = get_cached_stock_name(_conn, ticker)
+            if isinstance(name, str) and name:
+                return name
+        finally:
+            _conn.close()
+    except Exception as e:
+        logger.debug(f"{ticker} 从本地名称缓存读取失败: {e}")
+    # 2. 从 metadata.json 兜底
     return _load_meta_names().get(ticker, "")
 
 

@@ -41,6 +41,7 @@ from scripts._utils import (
     MIN_MARKET_CAP_YI,
     PE_MAX_TECH,
     ST_NAME_KEYWORDS_MINIMAL,
+    get_astock_tickers,
     get_cache_db_path,
     get_sqlite_conn,
     is_etf_ticker,
@@ -50,6 +51,7 @@ from scripts._utils import (
 )
 from scripts.indicators import calc_ma as _indicators_calc_ma
 from scripts.indicators import calc_macd_dif as _indicators_calc_macd_dif
+from scripts.stock_name_cache import resolve_stock_names
 
 # ── 常量 ──────────────────────────────────────────────────────────────────────
 _RESULTS = Path("outputs/results")
@@ -121,24 +123,41 @@ def calc_macd_dif(closes: pd.Series, fast: int = 12, slow: int = 26) -> float | 
 
 
 def _fetch_all_stock_names(date_str: str) -> dict[str, str]:
-    """baostock query_all_stock 一次性拉全市场名称（失败降级为空映射）。"""
-    names: dict[str, str] = {}
-    try:
-        import baostock as bs
+    """批量解析全市场股票名称，优先本地 SQLite 缓存，缺失补漏。
 
-        bs.login()
+    从 kline_cache 读取所有 A 股/ETF ticker（已排除北交所/港股），
+    先一次性从 ``stock_name_cache`` 批量读取已缓存名称（命中不联网），
+    对缺失的 ticker 逐只 baostock 查询并写回缓存，实现「每日仅补漏」。
+
+    返回 {6位裸代码: 名称} 映射，与原 baostock 全表拉取接口兼容。
+    """
+    from scripts.daily_analysis.names import _get_stock_name as _da_get_stock_name
+
+    all_tickers = get_astock_tickers(get_cache_db_path())
+    if not all_tickers:
+        logger.warning("⚠️ kline_cache 无 ticker，名称映射为空")
+        return {}
+
+    try:
+        _conn = get_sqlite_conn(get_cache_db_path())
         try:
-            rs = bs.query_all_stock(date_str)
-            while rs.next():
-                row = rs.get_row_data()
-                code, _status, code_name = row[0], row[1], row[2]
-                bare = code.split(".")[-1] if "." in code else code
-                if code_name:
-                    names[bare] = code_name.strip()
+            prefixed_map = resolve_stock_names(
+                _conn, all_tickers, query_name=_da_get_stock_name
+            )
         finally:
-            bs.logout()
+            _conn.close()
     except Exception as e:
-        logger.warning(f"⚠️ baostock 名称查询失败，降级使用元数据名称: {str(e)[:80]}")
+        logger.warning(f"⚠️ 名称缓存批量读取失败，降级为空映射: {str(e)[:80]}")
+        return {}
+
+    # 转为 {6位裸代码: 名称}，保持与原接口兼容
+    names: dict[str, str] = {}
+    for ticker, name in prefixed_map.items():
+        bare = ticker.split(".", 1)[-1] if "." in ticker else ticker
+        names[bare] = name
+    logger.info(
+        f"✅ 名称映射解析完成：{len(names)} 只（缓存命中 + 本次补漏）"
+    )
     return names
 
 

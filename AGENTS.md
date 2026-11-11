@@ -549,6 +549,30 @@ reason = exclusion_reason(ticker, meta, exclude_etf=True)   # "hk"/"bse"/"etf"/"
 
 **禁止**：在新脚本中重新定义上述函数与常量，或另写一套 ST/北交所/港股/ETF/PE 过滤逻辑。
 
+### 股票名称本地缓存（scripts/stock_name_cache.py）
+
+股票名称↔代码映射持久化到 `pipeline_cache.db` 的 `stock_name_cache` 表，实现「命中即本地使用，每日仅补漏」：
+
+| 函数 | 用途 |
+|------|------|
+| `ensure_stock_name_table(conn)` | 幂等建表（可重复调用） |
+| `get_cached_stock_name(conn, ticker)` | 从本地缓存读取名称，命中不联网 |
+| `batch_get_cached_stock_names(conn, tickers)` | 批量读，仅返回命中项 |
+| `batch_write_stock_name_cache(conn, rows)` | 幂等 upsert 写入/更新名称 |
+| `get_missing_name_tickers(conn, tickers)` | 返回尚未缓存的 ticker（每日补漏判定） |
+| `refresh_missing_stock_names(conn, tickers, query_name)` | 对缺失项逐只查名称并写回 DB |
+| `seed_stock_name_cache_from_map(conn, name_map)` | 把 akshare 批量快照种入缓存（首次全量种子） |
+| `resolve_stock_names(conn, tickers, query_name=None)` | **批量解析入口**：优先缓存，缺失补漏，返回 {ticker: name} |
+| `open_name_cache()` | 打开并建好表的 SQLite 连接 |
+
+**调用链**：
+- `scripts/fetch_reference_data.py`：akshare 批量获取名称后，调用 `seed_stock_name_cache_from_map` 种入本地缓存；主流程结束后对 kline_cache 中名称仍缺失的 ticker 做 `refresh_missing_stock_names` 补漏（每日仅补缺失）。
+- `scripts/daily_analysis/names.py`：`_preload_stock_names` 预加载全表并种入缓存；`_get_stock_name` 优先 DB 缓存，缺失走 baostock 逐只查询并写回。
+- 各选股/扫描脚本（`intraday_scan.py`、`macd_ma_screener.py`、`roe_screen.py`、`daily_ta_push.py`、`combined_stock_cards.py`）：统一调用上述入口，名称查询不再直连 baostock/akshare，已缓存的 ticker 零延迟、不联网。
+
+**禁止**：在新脚本中另写一套“从 baostock/akshare 逐只查名称”的逻辑，应统一走 `stock_name_cache` / `daily_analysis/names`。
+
+
 
 ## 已知限制与架构备注
 

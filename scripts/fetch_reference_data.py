@@ -33,7 +33,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import get_all_tickers, is_etf_ticker, normalize_ticker_key
+from scripts._utils import (
+    CACHE_DB,
+    get_all_tickers,
+    get_sqlite_conn,
+    is_etf_ticker,
+    normalize_ticker_key,
+)
+from scripts.stock_name_cache import (
+    get_missing_name_tickers,
+    refresh_missing_stock_names,
+    seed_stock_name_cache_from_map,
+)
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import (
     get_data_factory,  # noqa: F401  # 测试通过 monkeypatch 使用
@@ -323,25 +334,79 @@ def refresh_metadata_if_stale(max_age_hours: float = 24.0) -> bool:
     return True
 
 
+def _query_name_baostock(ticker: str) -> str | None:
+    """用 baostock 逐只查询股票名称（单只兜底，带 8s 硬超时）。
+
+    仅在本地名称缓存缺失时调用；查询失败/超时返回 None，调用方不写入，
+    下次每日流程继续补漏。
+
+    Args:
+        ticker: 带交易所前缀的 ticker，如 ``sh.600519``。
+
+    Returns:
+        股票名称，查不到时返回 None。
+    """
+    import threading
+
+    try:
+        from trade_krono_cli.data_providers.factory import get_data_factory
+
+        factory = get_data_factory()
+        provider = factory.get_provider("baostock")
+        if provider is None:
+            return None
+
+        holder: dict[str, str | None] = {}
+
+        def _run() -> None:
+            try:
+                rows = provider._query_stock_basic(  # type: ignore[attr-defined]
+                    ticker
+                )
+                if rows and len(rows[0]) > 1:
+                    holder["name"] = rows[0][1].strip()
+                else:
+                    holder["name"] = None
+            except Exception as exc:  # noqa: BLE001
+                holder["name"] = None
+                logger.debug(f"{ticker} baostock 名称查询异常: {exc}")
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        t.join(timeout=FETCH_PER_TICKER_TIMEOUT)
+        if t.is_alive():
+            logger.debug(f"{ticker} baostock 名称查询超时({FETCH_PER_TICKER_TIMEOUT}s)，跳过")
+            return None
+        return holder.get("name")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"{ticker} baostock 名称查询失败: {exc}")
+        return None
+
+
 def main(
     tickers_input: list[str] | None = None,
     resume: bool = False,
     use_checkpoint: bool = True,
 ) -> None:
-    """批量拉取股票元数据（参考数据）并保存到 JSON 文件。
-
-    部分模式（指定 --tickers）合并进现有 metadata.json，不覆盖全量；
-    全量模式（默认）重建整个文件，支持断点续传（checkpoint）。
-
-    Args:
-        tickers_input: 指定股票代码列表，为 None 时拉取全量。
-        resume: 为 True 时从 checkpoint 续拉（跳过已成功，重试失败/None）。
-        use_checkpoint: 为 True 时每批完成后写 checkpoint，支持中断后续拉。
-    """
     logger.info("📊 启动参考数据（元数据）拉取")
 
     # ── 第一步：用 akshare 批量获取所有 A 股名称、PE/PB（快速，单次请求）─────
     name_map = _fetch_akshare_all_metadata()
+
+    # 将 akshare 批量获取的名称种入本地 SQLite 名称缓存（幂等 upsert），
+    # 作为后续每日查询的本地种子；命中即本地使用，不联网。
+    try:
+        _conn = get_sqlite_conn(CACHE_DB)
+        try:
+            name_only: dict[str, str] = {}
+            for t, m in name_map.items():
+                if isinstance(m, dict) and m.get("name"):
+                    name_only[t] = str(m["name"])
+            seed_stock_name_cache_from_map(_conn, name_only)
+        finally:
+            _conn.close()
+    except Exception as e:
+        logger.debug(f"种入名称缓存失败（不影响元数据主流程）: {e}")
 
     tickers = tickers_input or get_all_tickers()
     # 北交所元数据拉取会硬超时（baostock/tonghuashun 对 bj. 会话挂起），且选股流程已过滤北交所，
@@ -406,6 +471,33 @@ def main(
     if use_checkpoint:
         clear_checkpoint()
         logger.info("  🧹 checkpoint 已清除")
+
+    # ── 每日仅补漏：对 kline_cache 中名称缓存尚缺失的 ticker 做逐只名称补漏 ──
+    # akshare 批量已种入 A 股名称种子，此处只补 DB 中仍缺失的（新股/复牌/ETF 等）。
+    # 已命中缓存的 ticker 不联网，符合「命中即本地使用、仅补缺失」的原则。
+    try:
+        _all_tickers = get_all_tickers()
+        # 北交所/港股名称查询易硬超时，选股流程已过滤，此处不补
+        _candidates = [
+            t for t in _all_tickers if not t.startswith(("bj.", "hk."))
+        ]
+        _conn = get_sqlite_conn(CACHE_DB)
+        try:
+            _missing = get_missing_name_tickers(_conn, _candidates)
+            if _missing:
+                logger.info(
+                    f"🔍 本地名称缓存缺失 {len(_missing)} 只，开始逐只补漏（每日仅补缺失）"
+                )
+                refresh_missing_stock_names(
+                    _conn, _missing, _query_name_baostock
+                )
+            else:
+                logger.debug("📛 股票名称缓存已完整，无需补漏")
+        finally:
+            _conn.close()
+    except Exception as e:
+        logger.debug(f"名称缓存补漏失败（不影响元数据主流程）: {e}")
+
     logger.info(f"{'=' * 60}")
 
 
