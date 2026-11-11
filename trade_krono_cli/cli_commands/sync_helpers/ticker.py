@@ -46,10 +46,10 @@ def _resolve_tickers(raw: str) -> list[str]:
             # 长度错误的纯数字：跳过（既不是 A 股也不是期货）
             logger.warning(f"⚠️  白名单代码格式错误，已跳过: {code}")
             continue
-        if code.isdigit() and (code[:2] in ("51", "58") or code[:3] in ("159", "156", "158")):
-            # ETF 代码：51xxxx/58xxxx(沪)、159xxx/156xxx/158xxx(深)
+        if code.isdigit() and (code.startswith("5") or code[:3] in ("159", "156", "158")):
+            # ETF 代码：5x（沪市 ETF 全段，含 50x/51x/52x/53x/55x/56x/57x/58x）或 15x/16x/18x（深市 ETF）
             # 归一化为带交易所前缀格式，使 baostock 能直接识别
-            ticker = f"sh.{code}" if code[:2] in ("51", "58") else f"sz.{code}"
+            ticker = f"sh.{code}" if code.startswith("5") else f"sz.{code}"
         elif code.isdigit():
             prefix = _EXCHANGE_PREFIX.get(code[0])
             if prefix is None:

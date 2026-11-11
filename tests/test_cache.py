@@ -313,3 +313,17 @@ def test_get_cached_date_range_all_expired(tmp_path) -> None:
     _time.sleep(0.01)
     result = c.get_cached_date_range("sh.600519", freq="d")
     assert result is None
+
+
+def test_set_kline_dedups_same_timestamp(tmp_path) -> None:
+    """写入前按 timestamps 去重（同日期重复行只保留最后一条）。"""
+    c = Cache(db_path=tmp_path / "cache.db")
+    df = _make_kline_df(5)
+    dup = pd.concat([df, df], ignore_index=True)
+    dup.loc[dup.index[-1], "close"] = 99.0  # 后写入的那份覆盖前一份
+    c.set_kline("sh.600519", "2026-01-01", "2026-01-05", "d", dup, ttl=0)
+    result = c.get_kline("sh.600519", "2026-01-01", "2026-01-05", "d")
+    assert result is not None
+    assert len(result) == 5
+    assert result["timestamps"].is_unique
+    assert result["close"].iloc[-1] == 99.0

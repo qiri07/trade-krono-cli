@@ -186,6 +186,20 @@ def get_today_date() -> str:
     return _today
 
 
+def get_expected_date() -> str:
+    """获取此刻「应已落库」的最近交易日（收盘后为当日，盘中为上一交易日）。
+
+    与 :func:`get_today_date` 的区别：开盘前/盘中调用时，当日 K 线尚不存在，
+    若按当日判断会把全库标的误判为「缺今日数据」。
+
+    Returns:
+        日期字符串，如 ``2026-11-10``。
+    """
+    from scripts._utils import expected_trading_day
+
+    return expected_trading_day()
+
+
 def load_sync_plan(plan_path: str | Path) -> tuple[list[str], list[str]]:
     """读取 check_data_status.py 产出的补拉计划 JSON，返回 (failed, need_today)。
 
@@ -461,16 +475,16 @@ def fetch_missing_report() -> dict:
     Returns:
         dict with keys:
             failed: list[str] — 记录数 < FAILED_MIN_RECORDS 的非北交所 ticker
-            need_today: list[str] — 缺少今日 K 线的非北交所 ticker
+            need_today: list[str] — 缺少今日 K 线的 ticker（含北交所）
             total: int — 总记录数
             tickers: int — 总股票数
             latest: str — 最新数据日期
             has_today: int — 已有今日数据的股票数
             has_2020: int — 已有 2020 年数据的股票数
-            today: str — 今日日期
+            today: str — 期望交易日（收盘后为当日，盘中为上一交易日）
     """
 
-    today = get_today_date()
+    today = get_expected_date()
     conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
 
@@ -491,7 +505,6 @@ def fetch_missing_report() -> dict:
             SELECT DISTINCT ticker FROM kline_cache
             WHERE end >= '{today}'
         )
-        AND ticker NOT LIKE 'bj.%'
         ORDER BY ticker
     """
     )
@@ -626,7 +639,9 @@ def main(
     # 断点续传：跳过已在进度文件中标记完成的 ticker
     failed_tickers = [t for t in failed_tickers if t not in completed_tickers]
     # 将之前标记失败的 ticker 加入重试列表（去重）
-    retry_failed = [t for t in failed_tickers_cache if t not in completed_tickers and t not in failed_tickers]
+    retry_failed = [
+        t for t in failed_tickers_cache if t not in completed_tickers and t not in failed_tickers
+    ]
     if retry_failed:
         failed_tickers.extend(retry_failed)
         print(f"ℹ️  加入 {len(retry_failed)} 只之前失败的股票进行重试")
@@ -671,11 +686,11 @@ def main(
 
     # ── 第三步：检查哪些股票缺少今日数据 ───────────────────────
     print("=" * 60)
-    print(f"📌 第三步：同步今日（{get_today_date()}）增量数据")
+    print(f"📌 第三步：同步今日（{get_expected_date()}）增量数据")
     print("=" * 60)
 
-    today = get_today_date()
-    # 动态查询数据库：找出所有缺少今日数据的非北交所股票
+    today = get_expected_date()
+    # 动态查询数据库：找出所有缺少今日数据的股票（含北交所，ETF 单独脚本处理）
     conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
     cur.execute(f"""
@@ -684,7 +699,6 @@ def main(
             SELECT DISTINCT ticker FROM kline_cache
             WHERE end >= '{today}'
         )
-        AND ticker NOT LIKE 'bj.%'
         ORDER BY ticker
     """)
     need_today_from_db = [r[0] for r in cur.fetchall() if not is_etf_ticker(r[0])]
@@ -705,10 +719,12 @@ def main(
         need_today = [t for t in need_today if t not in completed_tickers]
     if need_today_before > len(need_today):
         print(f"ℹ️  跳过 {need_today_before - len(need_today)} 只已完成的股票")
-    plan_src = f"（来自补拉计划 {len(plan_need_today)} 只 + 数据库查询 {len(need_today_from_db)} 只，合并去重 {len(need_today)} 只）" if plan_path else "（非北交所，数据库查询）"
-    print(
-        f"需要补今日数据的股票: {len(need_today)} 只 {plan_src}"
+    plan_src = (
+        f"（来自补拉计划 {len(plan_need_today)} 只 + 数据库查询 {len(need_today_from_db)} 只，合并去重 {len(need_today)} 只）"
+        if plan_path
+        else "（含北交所，数据库查询）"
     )
+    print(f"需要补今日数据的股票: {len(need_today)} 只 {plan_src}")
     print()
 
     # 分批同步今日增量
@@ -769,7 +785,7 @@ def main(
     tickers = cur.fetchone()[0]
     cur.execute("SELECT MAX(end) FROM kline_cache")
     latest = cur.fetchone()[0]
-    today = get_today_date()
+    today = get_expected_date()
     cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE end >= ?", (today,))
     has_today = cur.fetchone()[0]
     cur.execute("""
@@ -810,9 +826,7 @@ def main(
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="补齐失败股票历史数据 + 今日增量同步"
-    )
+    parser = argparse.ArgumentParser(description="补齐失败股票历史数据 + 今日增量同步")
     parser.add_argument(
         "--plan",
         default=None,

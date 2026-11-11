@@ -227,6 +227,17 @@ class TestResolveTickers:
             "sh.513650",
         ]
 
+    def test_etf_codes_5x_segment_normalized(self) -> None:
+        """沪市 ETF 5x 段（50x/51x/52x/53x/55x/56x/57x/58x）统一归 ``sh.``。"""
+        from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers
+
+        assert _resolve_tickers("501030,552000,570001,510310") == [
+            "sh.501030",
+            "sh.552000",
+            "sh.570001",
+            "sh.510310",
+        ]
+
     def test_futures_pass_through(self) -> None:
         """期货合约代码（非 6 位数字）原样保留。"""
         from trade_krono_cli.cli_commands._sync_helpers import _resolve_tickers

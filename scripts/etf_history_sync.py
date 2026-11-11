@@ -2,10 +2,11 @@
 """ETF K 线数据同步脚本 — 发现全市场 ETF 并拉取 K 线入库。
 
 功能：
-  1. 用 akshare.fund_etf_category_ths() 发现全市场 ETF 列表（约 1770 只）
-  2. 归一化代码为 sh./sz. 前缀（51/58 开头 → sh.，159/156/158 开头 → sz.）
+  1. 用 akshare.fund_etf_category_ths() 发现全市场 ETF 列表（约 1780 只）
+  2. 归一化代码为 sh./sz. 前缀（51/52/53/56/58 开头 → sh.，159/156/158 开头 → sz.）
   3. 通过 baostock 拉取 K 线（baostock 原生支持 ETF K 线），增量合并写入缓存
   4. 支持全量历史（--full）和今日增量（默认）两种模式
+  5. 主供应商数据未到目标日时自动降级到下一供应商（避免误判「已最新」）
 
 用法：
   uv run python scripts/etf_history_sync.py              # 今日增量同步
@@ -33,16 +34,18 @@ import re
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import get_provider_chain, get_sqlite_conn
+from scripts._utils import (
+    ETF_SH_PREFIXES,
+    ETF_SZ_PREFIXES,
+    expected_trading_day,
+    get_provider_chain,
+    get_sqlite_conn,
+)
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
 CACHE_DB = Path("outputs/cache/pipeline_cache.db")
-
-# ETF 代码段：沪市 51xxxx/58xxxx，深市 159xxx/156xxx/158xxx
-ETF_SH_PREFIXES = ("51", "58")
-ETF_SZ_PREFIXES = ("159", "156", "158")
 
 FULL_START_DATE = "2020-01-01"
 WORKERS = 8
@@ -57,9 +60,12 @@ def etf_code_to_ticker(code: str) -> str | None:
     51xxxx/58xxxx → sh.<code>，159xxx/156xxx/158xxx → sz.<code>，其他返回 None。
     """
     code = code.zfill(6)
-    if code[:2] in ETF_SH_PREFIXES:
+    if code.startswith("5") or code[:2] in ETF_SH_PREFIXES:
+        # 51xxxx/52xxxx/53xxxx/55xxxx/56xxxx/57xxxx/58xxxx → sh.<code>（沪市 ETF）
+        # 5x 开头全部为沪市 ETF，一视同仁，避免 50x/51x/52x 之类落入深市
         return f"sh.{code}"
     if code[:3] in ETF_SZ_PREFIXES:
+        # 159xxx/156xxx/158xxx → sz.<code>（深市 ETF）
         return f"sz.{code}"
     return None
 
@@ -115,6 +121,9 @@ def fetch_and_append(
     """
     from io import BytesIO
 
+    target_date = pd.Timestamp(expected_trading_day())
+    stale_providers: list[str] = []
+
     for provider_name in get_provider_chain(ticker):
         try:
             provider = factory.get_provider(provider_name)
@@ -150,8 +159,14 @@ def fetch_and_append(
                     cutoff = pd.Timestamp(existing_df["timestamps"].max())
                     new_rows = df[ts > cutoff]
                     if len(new_rows) == 0:
+                        # 供应商返回的数据本身没到目标日（收盘后尚未更新），
+                        # 不能就此认定「已最新」，继续尝试下一个供应商。
+                        if cutoff < target_date:
+                            stale_providers.append(provider_name)
+                            continue
                         return ticker, 0, "up_to_date"
                     combined = pd.concat([existing_df, new_rows], ignore_index=True)
+                    combined = combined.drop_duplicates(subset="timestamps", keep="last")
                     combined = combined.sort_values("timestamps").reset_index(drop=True)
                 else:
                     combined = df
@@ -173,6 +188,10 @@ def fetch_and_append(
             logger.debug(f"  {provider_name} 失败 {ticker}: {e}")
             continue
 
+    if stale_providers:
+        # 所有可用供应商都没提供目标日数据：记录为滞后（非失败），便于次日重试
+        logger.debug(f"  {ticker} 供应商数据滞后（{','.join(stale_providers)}）")
+        return ticker, 0, "up_to_date"
     return ticker, 0, "FAIL"
 
 
@@ -233,7 +252,9 @@ def main() -> None:
             logger.warning(f"  ⚠️  无法识别的 ETF 代码，跳过: {c}")
         else:
             tickers.append(t)
-    logger.info(f"📋 {source_label} {len(tickers)} 只 ETF（跳过 {skipped} 只无法识别）: {tickers[:10]}...")
+    logger.info(
+        f"📋 {source_label} {len(tickers)} 只 ETF（跳过 {skipped} 只无法识别）: {tickers[:10]}..."
+    )
     if not tickers:
         logger.warning("无 ETF 可同步，退出")
         return
@@ -252,15 +273,12 @@ def main() -> None:
     else:
         # 今日增量：拉最近 30 天（含节假日缓冲）
         from datetime import timedelta
-        start_date = (
-            pd.Timestamp(today) - timedelta(days=30)
-        ).strftime("%Y-%m-%d")
+
+        start_date = (pd.Timestamp(today) - timedelta(days=30)).strftime("%Y-%m-%d")
         logger.info(f"🚀 今日增量同步（{start_date} ~ {today}）")
 
     factory = get_data_factory()
-    all_batches = [
-        tickers[i : i + BATCH_SIZE] for i in range(0, len(tickers), BATCH_SIZE)
-    ]
+    all_batches = [tickers[i : i + BATCH_SIZE] for i in range(0, len(tickers), BATCH_SIZE)]
 
     total_ok = 0
     total_fail = 0
@@ -278,8 +296,7 @@ def main() -> None:
 
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
             futures = {
-                executor.submit(fetch_and_append, factory, t, start_date, today): t
-                for t in batch
+                executor.submit(fetch_and_append, factory, t, start_date, today): t for t in batch
             }
             try:
                 for future in as_completed(
@@ -298,9 +315,7 @@ def main() -> None:
             except TimeoutError:
                 # 单只拉取挂起（baostock 会话失效重登录卡住）时整批兜底，
                 # 未完成 future 标记 batch_timeout，避免 as_completed 无限等待
-                timed_out = [
-                    t for f, t in futures.items() if not f.done()
-                ]
+                timed_out = [t for f, t in futures.items() if not f.done()]
                 for t in timed_out:
                     batch_failed.append((t, "batch_timeout"))
                 fail += len(timed_out)
@@ -323,8 +338,7 @@ def main() -> None:
 
     logger.info("\n" + "=" * 60)
     logger.info(
-        f"完成！成功 {total_ok}，已最新 {total_up_to_date}，"
-        f"失败 {total_fail}，总计 {len(tickers)}"
+        f"完成！成功 {total_ok}，已最新 {total_up_to_date}，失败 {total_fail}，总计 {len(tickers)}"
     )
     if failed_list:
         sample = ", ".join(t for t, _ in failed_list[:20])

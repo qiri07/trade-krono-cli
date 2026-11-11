@@ -33,7 +33,16 @@ def _reset():
 class TestProviderChain:
     def test_default_chain(self) -> None:
         factory = DataProviderFactory()
-        assert factory.provider_chain == ["baostock", "akshare", "mootdx", "tushare", "tonghuashun", "efinance", "easyquotation"]
+        assert factory.provider_chain == [
+            "baostock",
+            "akshare",
+            "tencent",
+            "mootdx",
+            "tushare",
+            "tonghuashun",
+            "efinance",
+            "easyquotation",
+        ]
 
     def test_custom_primary(self) -> None:
         factory = DataProviderFactory(primary="akshare")

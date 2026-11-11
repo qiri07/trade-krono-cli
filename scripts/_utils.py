@@ -135,9 +135,17 @@ def load_provider_config(force_reload: bool = False) -> dict:
 
 # ── 共享常量 ────────────────────────────────────────────────────────────────
 # ST / 异常股名称关键词（各脚本统一使用，避免多处重复定义）
-# 全市场扫描脚本用完整列表（含 N/C 新股标识），白名单分析用精简版（仅 ST 类）
-ST_NAME_KEYWORDS: tuple[str, ...] = ("ST", "*ST", "退市", "N", "C")
+# 全市场扫描脚本用完整列表（含前缀识别的新股标识），白名单分析用精简版（仅 ST 类）。
+# 注意：ST/*ST/退市 按子串匹配；N/C（新股/次新）只按名称首个字符匹配，
+# 否则 "TCL科技"、"MSCI中国A股ETF" 等含字母 N/C 的正常名称会被误杀。
+ST_NAME_KEYWORDS: tuple[str, ...] = ("ST", "*ST", "退市")
 ST_NAME_KEYWORDS_MINIMAL: tuple[str, ...] = ("ST", "*ST", "退市")
+# 新股（N）/次新（C）名称前缀，仅用于完整规则（keywords 缺省时）
+ST_NAME_PREFIXES: tuple[str, ...] = ("N", "C")
+
+# ETF 代码段：沪市 51/52/53/55/56/58 开头，深市 159/156/158 开头
+ETF_SH_PREFIXES: tuple[str, ...] = ("51", "52", "53", "55", "56", "58")
+ETF_SZ_PREFIXES: tuple[str, ...] = ("159", "156", "158")
 
 # 北交所股票代码前缀（6 位裸代码以 920 开头，或带交易所前缀 bj.）
 # 注意：用 "920" 而非 "92"，避免误杀 92 开头的其他代码段（如 920xxx 北交所新股）
@@ -146,6 +154,37 @@ BSE_TICKER_PREFIXES: tuple[str, ...] = ("bj.",)
 
 # 历史 K 线记录数低于此值视为同步失败（历史数据严重不足），用于全量回补判定
 FAILED_MIN_RECORDS: int = 100
+
+# 收盘 + 落库缓冲：此刻之后当日 K 线应可获取
+MARKET_CLOSE_HOUR: int = 15
+MARKET_CLOSE_MINUTE: int = 30
+
+
+def expected_trading_day(now: datetime | None = None) -> str:
+    """返回此刻应已落库的最近交易日（YYYY-MM-DD）。
+
+    收盘后（>= 15:30）返回当日；盘中返回上一交易日；周末回退到周五。
+
+    Args:
+        now: 用于测试注入的时间，缺省取 ``datetime.now()``。
+
+    Returns:
+        日期字符串，如 ``2026-11-10``。
+    """
+    current = now or datetime.now()
+    day = current.date()
+    after_close = (current.hour, current.minute) >= (
+        MARKET_CLOSE_HOUR,
+        MARKET_CLOSE_MINUTE,
+    )
+    if day.weekday() >= 5:  # 周六/周日 → 回退到周五
+        day -= timedelta(days=day.weekday() - 4)
+    elif not after_close:
+        day -= timedelta(days=1)
+        while day.weekday() >= 5:
+            day -= timedelta(days=1)
+    return day.strftime("%Y-%m-%d")
+
 
 # ── 选股阈值（各筛选脚本统一引用，禁止在脚本内重复硬编码）──────────────────
 # 技术面选股线（双均线 / MACD+均线 / 综合交集）的 PE 上限与盈利口径
@@ -254,11 +293,13 @@ def normalize_ticker_key(ticker: str) -> str:
     code = ticker.strip()
     if not code.isdigit():
         return ticker
-    if code[:2] in ("51", "58") or code[:3] in ("159", "156", "158"):
-        # ETF 代码：51xxxx/58xxxx(沪)、159xxx/156xxx/158xxx(深)
+    if code[:2] in ETF_SH_PREFIXES or code[:3] in ETF_SZ_PREFIXES or code.startswith("5"):
+        # ETF 代码：5x 开头（沪市 ETF 全段）或 159/156/158 开头（深市 ETF）
         # 归一化为带交易所前缀格式，使 baostock 能直接识别
-        if code[:2] in ("51", "58"):
+        if code.startswith("5") or code[:2] in ETF_SH_PREFIXES:
+            # 沪市 ETF（5x 段含 50x/51x/52x/53x/55x/56x/57x/58x）→ sh.<code>
             return f"sh.{code}"
+        # 深市 ETF（15x/16x/18x 段）→ sz.<code>
         return f"sz.{code}"
     # 纯数字：根据代码范围推断交易所前缀，保持原始字符串以保留前导零
     # A股代码范围：000xxx~002xxx(深主板) 003xxx~399xxx(深创业板) 600xxx~688xxx(沪主板/科创) 8xxxxx(北交所/新三板) 9xxxxx(北交所)
@@ -278,7 +319,9 @@ def normalize_ticker_key(ticker: str) -> str:
 
 
 def is_etf_ticker(ticker: str) -> bool:
-    """判断 ticker 是否为 ETF 基金（sh.51x/sh.58x/sz.159/sz.156/sz.158）。
+    """判断 ticker 是否为 ETF 基金。
+
+    沪市 51/52/53/56/58 开头、深市 159/156/158 开头视为 ETF。
 
     Args:
         ticker: 带交易所前缀的 ticker，如 "sh.510300"、"sz.159915"。
@@ -289,9 +332,12 @@ def is_etf_ticker(ticker: str) -> bool:
     if "." not in ticker:
         return False
     prefix, code = ticker.split(".", 1)
-    if prefix not in ("sh", "sz"):
-        return False
-    return code[:2] in ("51", "58") or code[:3] in ("159", "156", "158")
+    if prefix == "sh":
+        # 沪市 ETF 统一以 5x 开头（51/52/53/55/56/57/58 + 50x 等），一视同仁
+        return code.startswith("5") or code[:2] in ETF_SH_PREFIXES
+    if prefix == "sz":
+        return code[:3] in ETF_SZ_PREFIXES
+    return False
 
 
 def get_all_tickers() -> list[str]:
@@ -340,17 +386,26 @@ def strip_ticker_prefix(ticker: str) -> str:
 
 
 def is_st_name(name: str, keywords: tuple[str, ...] | None = None) -> bool:
-    """判断股票名称是否含 ST 类标识。
+    """判断股票名称是否命中 ST / 异常股规则。
+
+    ``keywords`` 为 None 时使用完整规则：关键词按子串匹配（ST/*ST/退市），
+    并对名称首字符做 N/C 前缀匹配（新股/次新）。传入自定义 ``keywords``
+    时只做子串匹配，不做前缀匹配。
 
     Args:
-        name: 股票名称（如 ``*ST 金钰``）。
+        name: 股票名称（如 ``*ST 金钰``、``N 新股``）。
         keywords: 自定义关键词元组；缺省用完整版 :data:`ST_NAME_KEYWORDS`。
 
     Returns:
-        名称命中任一关键词时返回 True。
+        名称命中任一规则时返回 True。
     """
     kws = ST_NAME_KEYWORDS if keywords is None else keywords
-    return any(kw in name for kw in kws)
+    if any(kw in name for kw in kws):
+        return True
+    if keywords is not None:
+        return False
+    head = name.lstrip()
+    return any(head.startswith(p) for p in ST_NAME_PREFIXES)
 
 
 def load_metadata_index(
@@ -391,9 +446,7 @@ def load_metadata_index(
     return index
 
 
-def _lookup_meta(
-    metadata: dict[str, dict[str, object]] | None, ticker: str
-) -> dict[str, object]:
+def _lookup_meta(metadata: dict[str, dict[str, object]] | None, ticker: str) -> dict[str, object]:
     """在元数据索引中查单只票，兼容带前缀与裸代码两种键。"""
     if metadata is None:
         return {}

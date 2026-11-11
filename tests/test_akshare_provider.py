@@ -21,7 +21,53 @@ class TestAkShareProvider:
         assert provider.name == "akshare"
         assert provider.supports_kline is True
         assert provider.supports_quote is True
-        assert provider.supports_metadata is False
+        assert provider.supports_metadata is True  # akshare stock_zh_a_spot_em 提供基本面元数据
+
+    def test_fetch_metadata_maps_fields(self, provider) -> None:
+        """fetch_metadata 应从全市场快照中提取 PE/PB/行业。"""
+        mock_df = pd.DataFrame(
+            {
+                "代码": ["600519", "000001"],
+                "名称": ["贵州茅台", "平安银行"],
+                "行业": ["饮料制造", "银行"],
+                "市盈率-动态": ["24.5", "5.2"],
+                "市净率": ["6.8", "0.8"],
+                "总市值": ["1800000", "800000"],
+                "换手率": ["0.5", "1.2"],
+            }
+        )
+        with patch.object(
+            provider.__class__,
+            "_get_full_market_cache",
+            return_value=mock_df,
+        ):
+            meta = provider.fetch_metadata("sh.600519")
+
+        assert meta is not None
+        assert meta.ticker == "sh.600519"
+        assert meta.source == "akshare"
+        assert meta.industry == "饮料制造"
+        assert meta.pe_ttm == 24.5
+        assert meta.pb == 6.8
+
+    def test_fetch_metadata_returns_none_when_missing(self, provider) -> None:
+        """代码不在快照中时应返回 None。"""
+        mock_df = pd.DataFrame({"代码": ["000001"], "名称": ["平安银行"]})
+        with patch.object(
+            provider.__class__,
+            "_get_full_market_cache",
+            return_value=mock_df,
+        ):
+            assert provider.fetch_metadata("sh.999999") is None
+
+    def test_fetch_metadata_returns_none_when_cache_empty(self, provider) -> None:
+        """全市场快照为空时应返回 None。"""
+        with patch.object(
+            provider.__class__,
+            "_get_full_market_cache",
+            return_value=None,
+        ):
+            assert provider.fetch_metadata("sh.600519") is None
 
     def test_ticker_conversion(self, provider) -> None:
         assert provider._ticker_to_ak("sh.600519") == "600519"
@@ -223,8 +269,12 @@ class TestAkShareProvider:
         assert provider._ak_to_ticker("510050") == "sh.510050"
         assert provider._ak_to_ticker("999999") == "sh.999999"
 
-    def test_fetch_metadata_returns_none(self, provider) -> None:
-        assert provider.fetch_metadata("sh.600519") is None
+    def test_fetch_metadata_returns_metadata(self, provider) -> None:
+        """akshare 现已支持元数据，fetch_metadata 应返回 StockMetadata（非 None）。"""
+        meta = provider.fetch_metadata("sh.600519")
+        assert meta is not None
+        assert meta.ticker == "sh.600519"
+        assert meta.source == "akshare"
 
     def test_health_check_success(self, provider) -> None:
         import pandas as pd

@@ -226,7 +226,8 @@ def run(buffett_result_file: str | None = None, date_str: str | None = None) -> 
         # 统一 ticker 前缀：sh. / sz. / bj.
         if "." in ticker_code:
             ticker = ticker_code  # 已带前缀（如 bj.920208）
-        elif ticker_code.startswith("6"):
+        elif ticker_code.startswith(("6", "5")):
+            # 6xx/5xx → sh.（5x 为沪市 ETF，如 588000 → sh.588000）
             ticker = f"sh.{ticker_code}"
         elif ticker_code.startswith("9"):
             ticker = f"bj.{ticker_code}"

@@ -85,7 +85,9 @@ trade_krono_cli/
 ├── security.py           # 敏感信息脱敏（sanitize_for_log）
 ├── domain/               # 领域层（无外部依赖）：types / decision / signal / risk / prediction
 ├── data_providers/       # 多数据源抽象层（DataProvider ABC + KlineData/RealtimeQuote/StockMetadata）
-│   ├── base.py / factory.py / baostock_provider.py / akshare_provider.py / mootdx_provider.py / tushare_provider.py / tonghuashun_provider.py
+│   ├── base.py / factory.py / baostock_provider.py / akshare_provider.py / mootdx_provider.py
+│   ├── tushare_provider.py / tonghuashun_provider.py / tencent_provider.py / efinance_provider.py
+│   ├── easyquotation_provider.py / akshare_hk_provider.py / benchmark.py
 ├── pipeline/             # 流水线编排：orchestrator（QuantPipeline + PipelineFactory）/ merge / reporter / stream_pipeline
 ├── models/               # Session 封装：ta_session.py / kronos_session.py
 ├── adapters/             # 外部项目适配器：kronos.py / tradingagents.py
@@ -194,14 +196,22 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 > **注意**：各筛选脚本均已内置 ST / 北交所（BSE）/ 港股过滤，逐只飞书推送逻辑已移除，
 > 仅保留汇总推送 + AI 核实。ST / BSE 关键词与代码前缀统一维护在 `scripts/_utils.py`。
 
-### ETF 数据支持（2026-10-21 起）
+### ETF 数据支持（2026-10-21 起，ETF 前缀规则已修 2026-11-11）
 
-- **归一化**：ETF 代码（`51`/`58`→`sh.`，`159`/`156`/`158`→`sz.`）与普通股票统一前缀，
-  由 `scripts/_utils.py::is_etf_ticker()` 识别；`get_provider_chain()` 对 ETF 路由 baostock 优先
-  （baostock 原生支持 ETF K 线，实测 510300/159915/518880/588000/159949 全部成功）。
+- **归一化**：ETF 代码（沪市 `5x` 段 → `sh.<code>`，深市 `159/156/158` → `sz.<code>`）与普通股票统一前缀，
+  由 `scripts/_utils.py::is_etf_ticker()` / `normalize_ticker_key()` 识别；
+  `get_provider_chain()` 对 ETF 路由 baostock 优先（baostock 原生支持 ETF K 线，实测 510300/159915/518880/588000/159949 全部成功）。
+  **根因修法**：沪市 ETF 统一按 `code.startswith("5")` → `sh.` 处理（覆盖 50x/51x/52x/53x/55x/56x/57x/58x），
+  禁止 `5x` 落入深市 `sz.`（此前 `scripts/buffett_daily.py::_normalize_ticker`、`scripts/daily_analysis/runner.py`、
+  `scripts/buffett_daily_analysis.py` 的内联逻辑均用 `startswith("6")` 判断，导致 5x ETF 被误归 `sz.`）。
 - **数据同步**：`scripts/etf_history_sync.py` 通过 akshare `fund_etf_category_ths` 发现全市场 ETF
   （约 1400+ 只），baostock→tonghuashun→mootdx 降级拉取；默认增量（补最新），`--full` 拉 2020 起全量
   （约 2 小时，建议每周一次）。K 线统一按 `adjustflag='1'` 入库（ETF 无复权概念，各 provider 返回一致）。
+  ETF 滞后（`get_stale_tickers` 分类含 ETF）由 `scripts/check_and_sync_cache.py --force-sync` 定向补拉
+  （ETF 由 `scripts/etf_history_sync.py` 补，A股/北交所由 `fill_missing_and_today.py` 补）。
+- **数据修复（2026-11-11）**：清洗 `pipeline_cache.db` 中错前缀 ETF 行
+  （`sz.510310/511360/513650/588000` 与 `sz.501030` → 修正为 `sh.*` 规范键），
+  避免同一 ETF 以 `sh.`/`sz.` 双前缀重复/错配进入筛选链路。
 - **参与范围**：ETF 仅在**纯技术面**脚本中参与（三线共振 / 多头排列 / 双均线金叉的 MA+MACD 部分），
   无 PE/PB/ROE/净利润/现金流，基本面筛选（巴菲特六闸门、ROE/净利润门槛）自然豁免，
   结果带 `is_etf: true` 标记并在日志中单独统计。
@@ -501,6 +511,8 @@ uv run python scripts/export_vnpy_data.py
 | `get_all_tickers()` | 从缓存数据库读取所有不重复 ticker |
 | `get_provider_chain(ticker)` | 根据股票类型返回 Provider 优先级链 |
 | `check_data_freshness(logger_fn)` | 检查 K 线缓存是否已更新至预期日期 |
+| `expected_trading_day(now=None)` | 期望交易日（收盘后>=15:30 当日；盘中/凌晨前一天；周末回退周五） |
+| `get_stale_tickers(expected_date)` | 按类别（A股/ETF/北交所/港股）返回未更新至预期日的滞后 ticker 清单 |
 | `is_bse_code(code)` | 判断 6 位裸代码是否为北交所（920 开头） |
 | `is_bse_or_hk(ticker)` | 判断带前缀 ticker 或裸代码是否为需排除的北交所/港股 |
 | `is_st_name(name, keywords=None)` | 判断股票名称是否含 ST/退市 关键词 |
@@ -513,7 +525,10 @@ uv run python scripts/export_vnpy_data.py
 | 常量 | 用途 |
 |------|------|
 | `ST_NAME_KEYWORDS` / `ST_NAME_KEYWORDS_MINIMAL` | ST 名称关键词（全市场扫描用完整版，白名单分析用精简版） |
+| `ST_NAME_PREFIXES` | 新股（N）/次新（C）名称首字符前缀，仅完整规则用 |
 | `BSE_CODE_PREFIXES` / `BSE_TICKER_PREFIXES` | 北交所代码/前缀 |
+| `ETF_SH_PREFIXES` / `ETF_SZ_PREFIXES` | ETF 沪市段（5x，如 51/52/53/55/56/57/58 + 50x）/ 深市段（159/156/158） |
+| `MARKET_CLOSE_HOUR` / `MARKET_CLOSE_MINUTE` | 收盘时间（15:30），用于期望交易日判定 |
 | `STOCK_NAMES` | 白名单常用股票的 6 位代码 → 名称映射（`daily_analysis` 会动态补充） |
 | `PE_MAX_TECH` (30) | 技术面选股线 PE 上限（双均线 / MACD+均线 / 综合交集） |
 | `PE_MAX_VALUE` (16) | 价值线（巴菲特六闸门）PE 上限 |
@@ -539,9 +554,37 @@ reason = exclusion_reason(ticker, meta, exclude_etf=True)   # "hk"/"bse"/"etf"/"
 
 ### DataProvider 配置
 - 实际配置的 primary provider 是 `tonghuashun`（非 baostock），由 `get_data_factory()` 读取 Settings
-- 北交所股票特殊处理：provider 链为 `["tonghuashun", "baostock"]`
+- Provider 默认降级链（`DataProviderFactory._default_fallbacks()`）：`akshare → tencent → mootdx → tushare → tonghuashun → efinance → easyquotation`；
+  `tencent`（腾讯财经）已作为第二梯队纳入（不封 IP、覆盖沪深 A 股 / ETF / 沪深指数且带 PE/PB/市值/换手字段）。
+- 北交所股票特殊处理：provider 链为 `["tonghuashun", "baostock"]`；港股由 `akshare_hk` 专属提供。
+- K 线来源异常统一由 Provider 抛 `RuntimeError`（来源格式变 / 网络错误），由 Factory 的降级循环捕获并切换备用源。
 
 ### 待接入生产的实验子系统（2026-11-01 清理盘点）
+
+### 数据源对标与补充计划（与 a-stock-data V3.10.4 对齐）
+
+本项目的 `data_providers/` 目前实现：baostock / akshare / mootdx / tushare / tonghuashun / tencent /
+efinance / easyquotation / akshare_hk，主备降级由 `DataProviderFactory` 统一调度。
+与 `https://github.com/simonlin1212/a-stock-data`（A股全栈数据工具包 V3.10.4，15层/87端点/34源）
+对标后，现状与差距如下：
+
+| 能力类别 | a-stock-data（V3.10.4）端点 | 本项目现有覆盖 | 缺口 / 下一步 |
+|---|---|---|---|
+| 行情 / K 线 | 腾讯日周月复权 + 分钟、通达信盘后包、腾讯逐笔、百度 K 线、新浪复权因子 | baostock / akshare / mootdx / tushare / tonghuashun / tencent K 线+行情 | 腾讯 K 线（tencent_provider）已接入为兜底源；建议后续接入 通达信盘后包（全市场日线）与 腾讯逐笔（分钟分笔），作为 ETF/北交所 K 线备胎 |
+| 研报 | 东财个股+行业研报+PDF、同花顺一致预期、新浪研报列表、iwencai NL语义搜索 | 未接入 | 建议在 `research/` 新增研报端点，供 AI 核实与投研报告引用 |
+| 信号 | 龙虎榜、北向资金、热点题材、板块资金流、解禁日历、行业排名 | 未接入 | 建议接入同花顺/东财 龙虎榜与板块资金流，作为选股共振的附加信号 |
+| 资金面 | 融资融券、大宗交易、股东户数、分红送转、个股资金流120日、ETF份额、筹码分布CYQ | 未接入 | ETF份额、筹码分布可用于六维选股的量价维度补充 |
+| 新闻 | 东财个股新闻、财联社电报、华尔街见闻、新闻联播 | 未接入 | 建议接入财联社电报（零key不封IP）作为事件驱动信号 |
+| 基础数据 / 元数据 | 行业/股本/市值/上市日期、新浪财报三表、baostock 估值历史+ST名单、申万行业变迁史 | baostock 股票基本信息（上市/退市/ST）；akshare 现已开放 `fetch_metadata`（行业/PE/PB/市值） | metadata.json 此前 PE/PB/industry/is_st 字段大量为空，现由 akshare 批量快照补充，建议每日定时刷新 |
+| 公告 | 巨潮公告检索+下载 | 未接入 | 建议接入 cninfo 巨潮公告，支持重大事项事件驱动 |
+| 打板/ETF期权/舆情/宏观/指数/期货/事件驱动/可转债 | 涨停池、ETF期权希腊字母、互动易、社融/PMI/中债收益率、中证指数成分、期货日K等 | 未接入 | 按需逐层接入，优先级：指数成分/权重 > 宏观（社融/PMI） > 打板池 |
+
+**已落地的本次补充**：
+1. 新增 `trade_krono_cli/data_providers/tencent_provider.py`（腾讯财经 K 线 + 实时行情），注册进 `DataProviderFactory` 默认降级链，作为 baostock/akshare 不可达时的兜底源。
+2. `AkShareProvider.supports_metadata` 由 `False` 改为 `True`，`fetch_metadata` 现可从 `stock_zh_a_spot_em` 全市场快照提取 行业 / PE(PB)/市值，填补 `metadata.json` 的空值。
+3. `scripts/_utils.py` 补全 ETF 前缀段（沪市 `5x` 全段 → `sh.`，深市 `159/156/158` → `sz.`）并新增 `expected_trading_day()` / `get_stale_tickers()` 用于滞后判定与定向补拉。
+4. 清洗 `pipeline_cache.db` 与 `metadata.json` 中错前缀 ETF（`sz.510310/511360/513650/588000/501030` → `sh.*`）。
+
 以下 8 个模块已建成、测试全绿，但**生产代码零调用**（仅测试引用）。它们构成
 「实验追踪 + 评估」子系统，接入流水线前不要误判为死代码删除，也不要重复造轮子：
 

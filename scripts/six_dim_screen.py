@@ -292,9 +292,7 @@ def load_fundamentals(buffett_db: Path) -> dict[str, LogicMetrics]:
         if not latest or prev is None or latest.get("roe") is None or prev.get("roe") is None:
             continue
         roe_pairs = [latest["roe"], prev["roe"]]
-        excl_pairs = [
-            v for v in (latest.get("roe_excl"), prev.get("roe_excl")) if v is not None
-        ]
+        excl_pairs = [v for v in (latest.get("roe_excl"), prev.get("roe_excl")) if v is not None]
         roe_avg = sum(roe_pairs) / len(roe_pairs)
         roe_excl_avg = sum(excl_pairs) / len(excl_pairs) if excl_pairs else roe_avg
 
@@ -315,9 +313,7 @@ def load_fundamentals(buffett_db: Path) -> dict[str, LogicMetrics]:
 
         prev_profit = float(items[-2].get("parent_holder_net_profit") or 0)
         profit_yoy = ((np1 / prev_profit) - 1) * 100 if prev_profit > 0 else -100.0
-        positive_years = sum(
-            1 for i in items if float(i.get("parent_holder_net_profit") or 0) > 0
-        )
+        positive_years = sum(1 for i in items if float(i.get("parent_holder_net_profit") or 0) > 0)
 
         cfo = cfos.get(code)
         cfo_ratio = (cfo / np1) if cfo and np1 > 0 else None
@@ -376,10 +372,10 @@ def score_logic(m: LogicMetrics) -> tuple[bool, float, str]:
     growth_score = _clamp(m.profit_cagr / 25 * 100)
     revenue_score = _clamp((m.revenue_cagr + 5) / 25 * 100)
     cfo_score = _clamp((m.cfo_ratio or 0) / 1.2 * 100)
-    stability_score = _clamp(
-        60 + (m.roe_min - m.roe_avg) * 2 + min(m.latest_profit_yoy, 30) * 0.8
+    stability_score = _clamp(60 + (m.roe_min - m.roe_avg) * 2 + min(m.latest_profit_yoy, 30) * 0.8)
+    debt_score = (
+        60.0 if m.is_financial else _clamp((MAX_DEBT_RATIO - (m.debt_ratio or 0)) / 45 * 100)
     )
-    debt_score = 60.0 if m.is_financial else _clamp((MAX_DEBT_RATIO - (m.debt_ratio or 0)) / 45 * 100)
     gross_score = 55.0 if m.gross_margin is None else _clamp((m.gross_margin - 20) / 50 * 100)
 
     score = (
@@ -521,14 +517,10 @@ def _compute_technicals(df: pd.DataFrame) -> dict[str, float] | None:
     pct_pos_1y = (last_close - low1y) / (high1y - low1y) * 100 if high1y > low1y else 50.0
 
     ma60_slope = (
-        (ma[60].iloc[-1] / ma[60].iloc[-21] - 1) * 100
-        if len(ma[60].dropna()) > 21
-        else 0.0
+        (ma[60].iloc[-1] / ma[60].iloc[-21] - 1) * 100 if len(ma[60].dropna()) > 21 else 0.0
     )
     ma20_slope = (
-        (ma[20].iloc[-1] / ma[20].iloc[-11] - 1) * 100
-        if len(ma[20].dropna()) > 11
-        else 0.0
+        (ma[20].iloc[-1] / ma[20].iloc[-11] - 1) * 100 if len(ma[20].dropna()) > 11 else 0.0
     )
 
     amt5 = float(amount.iloc[-5:].mean())
@@ -652,10 +644,15 @@ def trend_gate_and_score(tech: dict[str, float]) -> tuple[bool, float, str]:
     macd_score += 45 if tech["dif"] > 0 else 0
     macd_score += 35 if tech["dif"] > tech["dea"] else 0
     macd_score += 20 if tech["ret20"] > 0 else 0
-    score = align * 0.35 + slope_score * 0.25 + macd_score * 0.25 + (
-        100 if close > ma120 else 40
-    ) * 0.15
-    trend_txt = "多头排列" if align >= 75 else "偏多" if align >= 50 else "震荡" if align >= 25 else "偏弱"
+    score = (
+        align * 0.35
+        + slope_score * 0.25
+        + macd_score * 0.25
+        + (100 if close > ma120 else 40) * 0.15
+    )
+    trend_txt = (
+        "多头排列" if align >= 75 else "偏多" if align >= 50 else "震荡" if align >= 25 else "偏弱"
+    )
     detail = (
         f"{trend_txt}，MA60 20日斜率 {tech['ma60_slope']:+.1f}%，"
         f"MACD DIF {tech['dif']:+.2f}，20日涨幅 {tech['ret20']:+.1f}%"
@@ -748,8 +745,12 @@ def score_holder(info: dict[str, float] | None) -> tuple[float, str]:
         return 50.0, "无股东户数数据（中性 50 分）"
     chg = info["chg_pct"]
     score = _clamp(50 - chg * 2.5)
-    trend = "明显集中" if chg < -10 else "小幅集中" if chg < -3 else (
-        "基本持平" if chg <= 3 else "有所分散"
+    trend = (
+        "明显集中"
+        if chg < -10
+        else "小幅集中"
+        if chg < -3
+        else ("基本持平" if chg <= 3 else "有所分散")
     )
     return score, f"股东户数环比 {chg:+.1f}%（{trend}），户均市值 {info['avg_value'] / 1e4:.1f} 万"
 
@@ -817,14 +818,15 @@ def _load_universe(meta: dict[str, dict[str, object]]) -> dict[str, str]:
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         tickers = [
-            r[0]
-            for r in conn.execute("SELECT DISTINCT ticker FROM kline_cache WHERE freq='d'")
+            r[0] for r in conn.execute("SELECT DISTINCT ticker FROM kline_cache WHERE freq='d'")
         ]
     finally:
         conn.close()
     tickers = [t for t in tickers if not t.startswith(BSE_TICKER_PREFIXES)]
     filtered = filter_stock_universe(tickers, meta, exclude_etf=True)
-    logger.info(f"股票池：K 线缓存 {len(tickers)} 只 → 过滤后 {len(filtered)} 只（去 ST/北交所/港股/ETF）")
+    logger.info(
+        f"股票池：K 线缓存 {len(tickers)} 只 → 过滤后 {len(filtered)} 只（去 ST/北交所/港股/ETF）"
+    )
     return {t.split(".")[-1]: t for t in filtered}
 
 
@@ -890,7 +892,9 @@ def screen(
             reject_abs["PE/PB 缺失或越界"] = reject_abs.get("PE/PB 缺失或越界", 0) + 1
             continue
         abs_pass.append((m, logic_score, pe, pb))
-    logger.info(f"第 2 关（绝对估值 PE∈(0,{MAX_PE:.0f})、PB∈(0,{MAX_PB:.0f}))：通过 {len(abs_pass)} 只")
+    logger.info(
+        f"第 2 关（绝对估值 PE∈(0,{MAX_PE:.0f})、PB∈(0,{MAX_PB:.0f}))：通过 {len(abs_pass)} 只"
+    )
     logger.info(f"    · 淘汰 {sum(reject_abs.values())} 只（PE/PB 缺失或越界）")
 
     # 五年分位（联网）
@@ -900,7 +904,9 @@ def screen(
     if fetch and abs_pass:
         hist = fetch_valuation_history([x[0].code for x in abs_pass])
 
-    val_pass: list[tuple[LogicMetrics, float, float, float, dict[str, float] | None, float, str]] = []
+    val_pass: list[
+        tuple[LogicMetrics, float, float, float, dict[str, float] | None, float, str]
+    ] = []
     for m, logic_score, pe, pb in abs_pass:
         h = hist.get(m.code)
         ok, v_score, detail = score_valuation(pe, pb, h, m.profit_cagr)
@@ -1042,13 +1048,22 @@ def _load_pe_pb(buffett_db: Path) -> dict[str, tuple[float | None, float | None]
     return out
 
 
-def build_feishu_card(results: list[StockScore], date_str: str, funnel: dict[str, int]) -> str:
+def build_feishu_card(
+    results: list[StockScore],
+    date_str: str,
+    funnel: dict[str, int],
+    rest: list[StockScore] | None = None,
+) -> str:
     """构建六维选股飞书汇总卡片。
 
+    top 10 只展开完整明细（含各维度分 + 核心指标）；其余候选只列出
+    股票名称与代码，不展开明细。
+
     Args:
-        results: 排序后的推荐列表（通常为前 10 只）。
+        results: 排序后的推荐列表（前 10 只，含完整明细）。
         date_str: 日期字符串（YYYY-MM-DD）。
         funnel: :func:`screen` 返回的各关卡人数统计。
+        rest: 其余候选（未进入 top 10 的筛选中），只列名称 + 代码。
 
     Returns:
         飞书文本卡片正文。
@@ -1094,9 +1109,14 @@ def build_feishu_card(results: list[StockScore], date_str: str, funnel: dict[str
             f"股东户数{holder:+.1f}%" if isinstance(holder, (int, float)) else "股东户数缺失"
         )
         lines.append(
-            f"   位置3年{pos_txt}% | MA60斜率{slope_txt}% | "
-            f"成交额{ratio_txt}× | {holder_txt}"
+            f"   位置3年{pos_txt}% | MA60斜率{slope_txt}% | 成交额{ratio_txt}× | {holder_txt}"
         )
+        lines.append("")
+    if rest:
+        lines.append("🆕 **其余候选（仅列出名称，不展开明细）**")
+        lines.append("")
+        for i, r in enumerate(rest, start=len(results) + 1):
+            lines.append(f"{i}. {r.name}（{r.code}）")
         lines.append("")
     lines.append("⚠️ 量化筛选结果，不含个股深度尽调，不构成投资建议。")
     return "\n".join(lines)
@@ -1170,7 +1190,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="六维选股：逻辑>估值>位置>趋势>股东人数>量价")
     parser.add_argument("--top", type=int, default=10, help="推荐股票数量（默认 10）")
     parser.add_argument("--date", default=date.today().isoformat(), help="分析日期 YYYY-MM-DD")
-    parser.add_argument("--min-cap", type=float, default=MIN_MARKET_CAP_YI, help="最小总市值（亿元）")
+    parser.add_argument(
+        "--min-cap", type=float, default=MIN_MARKET_CAP_YI, help="最小总市值（亿元）"
+    )
     parser.add_argument("--no-fetch", action="store_true", help="跳过联网接口（仅本地缓存）")
     parser.add_argument(
         "--max-candidates", type=int, default=800, help="进入技术面计算的最大候选数"
@@ -1196,10 +1218,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.push:
         from scripts.feishu_utils import push_feishu
 
-        card = build_feishu_card(results, args.date, funnel)
+        # top 10 展开完整明细；其余候选（排行第 11 名起）只列名称（+代码），不展开明细
+        push_pool = ranked
+        detailed_results = push_pool[:10] if push_pool else []
+        rest_results = [] if not push_pool or len(push_pool) <= 10 else push_pool[10:]
+        card = build_feishu_card(detailed_results, args.date, funnel, rest=rest_results)
         ok = push_feishu("text", content=card, title=f"📊 {args.date} 六维选股")
         logger.info(f"{'✅' if ok else '❌'} 飞书推送{'成功' if ok else '失败'}")
-
+        if rest_results:
+            logger.info(
+                f"📤 飞书卡片：top {len(detailed_results)} 只完整明细 + "
+                f"{len(rest_results)} 只候选仅列名称"
+            )
     header = "排名  代码    名称        综合  逻辑  估值  位置  趋势  股东  量价"
     logger.info("=" * 84)
     logger.info(header)
@@ -1214,6 +1244,10 @@ def main(argv: list[str] | None = None) -> int:
         logger.info(f"#{i} {r.name}（{r.code}）")
         for key, label in DIM_LABELS.items():
             logger.info(f"    {label:<5} {getattr(r, key):5.1f}  {r.notes.get(key, '')}")
+    # top 10 之外的候选只列名称（+代码），不展开明细
+    rest_display = [] if len(results) <= 10 else results[10:]
+    for r in rest_display:
+        logger.info(f"  🆕 其余候选: {r.name}（{r.code}）")
     return 0
 
 

@@ -38,7 +38,7 @@ class AkShareProvider(DataProvider):
     name = "akshare"
     supports_kline = True
     supports_quote = True
-    supports_metadata = False  # akshare 不提供完整的基本面元数据
+    supports_metadata = True  # akshare stock_zh_a_spot_em 提供 PE/PB/市值/行业/换手率
 
     # ── 懒加载 ────────────────────────────────────────────────
 
@@ -167,8 +167,42 @@ class AkShareProvider(DataProvider):
             return None
 
     def fetch_metadata(self, ticker: str) -> StockMetadata | None:
-        """Akshare 不提供完整的 ST/退市/行业元数据，返回 None。"""
-        return None
+        """从 akshare 全市场行情快照中提取单只股票的基本面元数据。
+
+        字段来源：akshare ``stock_zh_a_spot_em()`` 的「代码/名称/行业/市盈率-动态/
+        市净率/总市值/换手率」列。行业字段在 akshare 快照中可能为空，此时返回 None。
+
+        Args:
+            ticker: 股票代码（如 ``sh.600519``）。
+
+        Returns:
+            StockMetadata 或 None（代码未在快照中找到时）。
+        """
+        try:
+            self._ensure_import()
+            df = self._get_full_market_cache()
+            if df is None or df.empty:
+                return None
+
+            code = self._ticker_to_ak(ticker)
+            row = df[df["代码"] == code]
+            if row.empty:
+                return None
+
+            r = row.iloc[0]
+            industry = str(r.get("行业") or "").strip() or None
+            return StockMetadata(
+                ticker=ticker,
+                industry=industry,
+                pe_ttm=safe_float(r.get("市盈率-动态")),
+                pb=safe_float(r.get("市净率")),
+                source=self.name,
+            )
+        except ImportError:
+            raise
+        except Exception as e:  # noqa: BLE001 — 数据源异常由工厂降级处理
+            logger.debug(f"{self.name} 元数据拉取异常 {ticker}: {str(e)[:100]}")
+            return None
 
     def health_check(self) -> bool:
         try:

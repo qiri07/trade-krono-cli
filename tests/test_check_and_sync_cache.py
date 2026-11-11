@@ -218,3 +218,93 @@ class TestMain:
             parser.add_argument("--source", default="tonghuashun", choices=valid_sources)
             args = parser.parse_args(["--source", source])
             assert args.source == source
+
+
+class TestGetStaleTickers:
+    """测试逐票滞后检测 get_stale_tickers。"""
+
+    @staticmethod
+    def _build_db(path: Path) -> None:
+        conn = sqlite3.connect(str(path))
+        conn.execute(
+            "CREATE TABLE kline_cache (ticker TEXT, start TEXT, end TEXT, data BLOB)"
+        )
+        rows = [
+            ("sh.600519", "2026-11-10"),
+            ("sz.000001", "2026-11-09"),   # A 股滞后
+            ("sh.510300", "2026-11-09"),   # ETF 滞后
+            ("bj.920080", "2026-11-06"),   # 北交所滞后
+            ("hk.00700", "2026-11-09"),    # 港股滞后
+        ]
+        conn.executemany(
+            "INSERT INTO kline_cache VALUES (?, '2020-01-01', ?, NULL)", rows
+        )
+        conn.commit()
+        conn.close()
+
+    def test_groups_stale_by_category(self, tmp_path: Path) -> None:
+        from check_and_sync_cache import get_stale_tickers
+
+        db = tmp_path / "cache.db"
+        self._build_db(db)
+        with patch("check_and_sync_cache.CACHE_DB", db):
+            stale = get_stale_tickers("2026-11-10")
+        assert stale["A股"] == ["sz.000001"]
+        assert stale["ETF"] == ["sh.510300"]
+        assert stale["北交所"] == ["bj.920080"]
+        assert stale["港股"] == ["hk.00700"]
+        assert "sh.600519" not in sum(stale.values(), [])
+
+    def test_returns_empty_when_all_fresh(self, tmp_path: Path) -> None:
+        from check_and_sync_cache import get_stale_tickers
+
+        db = tmp_path / "cache.db"
+        self._build_db(db)
+        with patch("check_and_sync_cache.CACHE_DB", db):
+            stale = get_stale_tickers("2026-11-01")
+        assert stale == {}
+
+    def test_missing_db_returns_empty(self, tmp_path: Path) -> None:
+        from check_and_sync_cache import get_stale_tickers
+
+        with patch("check_and_sync_cache.CACHE_DB", tmp_path / "none.db"):
+            assert get_stale_tickers("2026-11-10") == {}
+
+
+class TestMainStaleGate:
+    """全局最新但存在滞后标的时，main 不再直接返回「无需同步」。"""
+
+    def test_logs_warning_when_stale_exists(self) -> None:
+        with (
+            patch("sys.argv", ["check_and_sync_cache.py"]),
+            patch("check_and_sync_cache.get_expected_date", return_value="2026-11-10"),
+            patch("check_and_sync_cache.get_cache_latest_date", return_value="2026-11-10"),
+            patch(
+                "check_and_sync_cache.get_stale_tickers",
+                return_value={"ETF": ["sh.510300"], "北交所": ["bj.920080"]},
+            ),
+            patch("check_and_sync_cache.run_sync_with_fallback") as mock_sync,
+            patch("check_and_sync_cache.logger") as mock_logger,
+        ):
+            assert main() == 0
+        mock_sync.assert_not_called()
+        assert any(
+            "未更新至" in str(call.args[0]) for call in mock_logger.warning.call_args_list
+        )
+
+    def test_force_sync_triggers_targeted_repair(self) -> None:
+        with (
+            patch("sys.argv", ["check_and_sync_cache.py", "--force-sync"]),
+            patch("check_and_sync_cache.get_expected_date", return_value="2026-11-10"),
+            patch("check_and_sync_cache.get_cache_latest_date", return_value="2026-11-10"),
+            patch(
+                "check_and_sync_cache.get_stale_tickers",
+                return_value={"A股": ["sz.000001"]},
+            ),
+            patch(
+                "check_and_sync_cache.run_targeted_repair", return_value=True
+            ) as mock_repair,
+        ):
+            assert main() == 0
+        mock_repair.assert_called_once()
+        assert mock_repair.call_args.args[0] == ["sz.000001"]

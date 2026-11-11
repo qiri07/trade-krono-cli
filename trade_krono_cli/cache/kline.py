@@ -154,6 +154,17 @@ class KlineCache:
         ttl: float = 86400,
         adjustflag: str = "1",
     ) -> None:
+        # 写入口径统一：同一交易日只保留一条记录（后写覆盖先写）。
+        # 多源/多次合并曾出现同日期重复行（复权口径或成交量单位不同），
+        # 会放大均线与量价指标，必须在此拦截。
+        if "timestamps" in df.columns and df["timestamps"].duplicated().any():
+            before = len(df)
+            df = (
+                df.drop_duplicates(subset="timestamps", keep="last")
+                .sort_values("timestamps")
+                .reset_index(drop=True)
+            )
+            logger.warning(f"⚠️  {ticker} 写入前去重：{before} → {len(df)} 行（同日期重复记录）")
         buf = BytesIO()
         df.to_pickle(buf)
         buf.seek(0)

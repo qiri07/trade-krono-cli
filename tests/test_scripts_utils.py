@@ -203,6 +203,12 @@ class TestNormalizeTickerKey:
         assert normalize_ticker_key("510300") == "sh.510300"
         assert normalize_ticker_key("588000") == "sh.588000"
 
+    def test_sh_etf_code_5x_segment(self) -> None:
+        """沪市 ETF 5x 段（含 50x/51x/52x/53x/55x/56x/57x/58x）一律归 ``sh.``。"""
+        assert normalize_ticker_key("501030") == "sh.501030"
+        assert normalize_ticker_key("510310") == "sh.510310"
+        assert normalize_ticker_key("551000") == "sh.551000"
+
     def test_sz_etf_code(self) -> None:
         assert normalize_ticker_key("159915") == "sz.159915"
         assert normalize_ticker_key("156001") == "sz.156001"

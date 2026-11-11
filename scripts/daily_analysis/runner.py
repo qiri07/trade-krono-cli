@@ -31,7 +31,8 @@ def run_analysis(date: str, tickers_str: str) -> None:
     for code in raw_codes:
         if "." in code:
             tickers_with_prefix.append(code)
-        elif code.startswith("6"):
+        elif code.startswith(("6", "5")):
+            # 6xx/5xx → sh.（5x 为沪市 ETF，如 510310 → sh.510310）
             tickers_with_prefix.append(f"sh.{code}")
         else:
             tickers_with_prefix.append(f"sz.{code}")

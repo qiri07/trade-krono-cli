@@ -83,12 +83,20 @@ class DataProviderFactory:
 
     @staticmethod
     def _default_fallbacks() -> list[str]:
-        """默认降级顺序：baostock → akshare → mootdx → tushare → tonghuashun → efinance → easyquotation。
+        """默认降级顺序：baostock → akshare → tencent → mootdx → tushare → tonghuashun → efinance → easyquotation。
 
-        efinance（免费，K线+行情+基本面）和 easyquotation（免费实时行情）
-        作为补充源，提升数据可用性。
+        tencent（腾讯财经）作为兜底补充源：不封 IP、覆盖沪深 A 股 / ETF / 沪深指数且带估值 / 市值 / 换手
+        字段，主源不可达或缺少估值字段时自动降级使用。北交所由 tonghuashun 提供。
         """
-        return ["akshare", "mootdx", "tushare", "tonghuashun", "efinance", "easyquotation"]
+        return [
+            "akshare",
+            "tencent",
+            "mootdx",
+            "tushare",
+            "tonghuashun",
+            "efinance",
+            "easyquotation",
+        ]
 
     @property
     def provider_chain(self) -> list[str]:
@@ -489,6 +497,10 @@ class DataProviderFactory:
                 )
 
                 registry[name] = EasyQuotationProvider
+            elif name == "tencent":
+                from trade_krono_cli.data_providers.tencent_provider import TencentProvider
+
+                registry[name] = TencentProvider
             else:
                 logger.warning(f"未知的 Provider 名称: {name}")
                 return None

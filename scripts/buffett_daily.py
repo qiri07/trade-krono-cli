@@ -105,7 +105,9 @@ def _normalize_ticker(ticker_code: str) -> str:
     if "." in ticker_code:
         return ticker_code  # 已带前缀
     code = ticker_code
-    if code.startswith("6"):
+    if code.startswith(("6", "5")):
+        # 6xx / 5xx（沪市主板 + 科创板 + 沪市 ETF）→ sh.
+        # 5x 开头全部为沪市 ETF，不能落入 sz（如 510310 → sh.510310，而非 sz.510310）
         return f"sh.{code}"
     if code.startswith("9"):
         return f"bj.{code}"

@@ -129,9 +129,7 @@ class TestValuationFilters:
             "sz.000001": _meta(name="平安银行", pe_ttm=5.0, pb=0.6, market_cap=3000.0),
             "sh.600002": _meta(name="小盘股", pe_ttm=12.0, pb=2.0, market_cap=20.0),
         }
-        kept = filter_stock_universe(
-            list(meta), meta, max_pe=30, min_pb=1.0, min_market_cap=50.0
-        )
+        kept = filter_stock_universe(list(meta), meta, max_pe=30, min_pb=1.0, min_market_cap=50.0)
         assert kept == ["sh.600519"]
 
 
@@ -201,6 +199,19 @@ class TestIsStName:
 
         assert is_st_name("N 新股", ST_NAME_KEYWORDS_MINIMAL) is False
 
+    def test_detects_real_st_names(self) -> None:
+        assert is_st_name("*ST金钰") is True
+        assert is_st_name("ST中珠") is True
+        assert is_st_name("退市海润") is True
+
+    def test_latin_letters_inside_name_not_treated_as_st(self) -> None:
+        """含字母 N/C 的正常名称（TCL、MSCI 等）不得误判为 ST。"""
+        assert is_st_name("TCL科技") is False
+        assert is_st_name("TCL中环") is False
+        assert is_st_name("易方达MSCI中国A股国际通ETF") is False
+        assert is_st_name("国泰CES芯片ETF") is False
+        assert is_st_name("纳斯达克100ETF") is False
+
 
 class TestIntradayIndicatorDelegation:
     """intraday_scan 的指标包装与 scripts.indicators 数值一致。"""
@@ -266,9 +277,7 @@ class TestPePercentileCache:
         cache_file = tmp_path / "pe_percentile_cache.json"
         monkeypatch.setattr(ms, "_pe_percentile_cache_path", lambda: cache_file)
 
-    def test_save_and_load_roundtrip(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_save_and_load_roundtrip(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         import scripts.multi_scan as ms
 
         self._patch_path(monkeypatch, tmp_path)
@@ -316,9 +325,7 @@ class TestPePercentileCache:
             calls.append(symbol)
             return None
 
-        fake_ak = type(
-            "_A", (), {"stock_value_em": staticmethod(_fake_stock_value_em)}
-        )()
+        fake_ak = type("_A", (), {"stock_value_em": staticmethod(_fake_stock_value_em)})()
         monkeypatch.setattr(ms, "_AK", fake_ak)
         result = ms._fetch_pe_percentiles(["600519", "000001"], use_cache=True)
         # 600519 来自缓存，000001 缺失会尝试拉取（返回 None → 不入结果）
@@ -403,3 +410,91 @@ class TestFilterByPe:
         pe_map = {"600519": {"pe": 24.5, "name": "贵州茅台"}}
         filtered, _ = _filter_by_pe(results, pe_map)
         assert filtered[0]["name"] == "自定义名称"
+
+
+class TestEtfTickDetection:
+    """ETF 代码段识别（含 52/53/55/56 沪市新段）。"""
+
+    def test_sh_etf_segments(self) -> None:
+        from scripts._utils import is_etf_ticker
+
+        for ticker in (
+            "sh.510300",
+            "sh.520700",
+            "sh.530880",
+            "sh.551000",
+            "sh.562730",
+            "sh.588000",
+        ):
+            assert is_etf_ticker(ticker) is True, ticker
+
+    def test_sh_etf_segments_50x(self) -> None:
+        """沪市 ETF 50x/51x/52x/53x/55x/56x/57x/58x 段均识别为沪市 ETF（sh.）。"""
+        from scripts._utils import is_etf_ticker
+
+        for ticker in (
+            "sh.501030",
+            "sh.510310",
+            "sh.520700",
+            "sh.530880",
+            "sh.551000",
+            "sh.562730",
+        ):
+            assert is_etf_ticker(ticker) is True, ticker
+
+    def test_sz_etf_segments(self) -> None:
+        from scripts._utils import is_etf_ticker
+
+        for ticker in ("sz.159915", "sz.156100", "sz.158016"):
+            assert is_etf_ticker(ticker) is True, ticker
+
+    def test_stock_not_etf(self) -> None:
+        from scripts._utils import is_etf_ticker
+
+        assert is_etf_ticker("sh.600519") is False
+        assert is_etf_ticker("sz.000001") is False
+        assert is_etf_ticker("bj.920080") is False
+        assert is_etf_ticker("600519") is False
+
+    def test_normalize_ticker_key_etf_prefix(self) -> None:
+        from scripts._utils import normalize_ticker_key
+
+        assert normalize_ticker_key("510310") == "sh.510310"
+        assert normalize_ticker_key("520700") == "sh.520700"
+        assert normalize_ticker_key("551000") == "sh.551000"
+        assert normalize_ticker_key("159915") == "sz.159915"
+
+
+class TestExpectedTradingDay:
+    """期望交易日计算（盘中 / 收盘后 / 周末）。"""
+
+    def test_before_close_returns_previous_weekday(self) -> None:
+        from datetime import datetime
+
+        from scripts._utils import expected_trading_day
+
+        # 2026-11-10 是周二，08:30 尚未开盘
+        assert expected_trading_day(datetime(2026, 11, 10, 8, 30)) == "2026-11-09"
+
+    def test_after_close_returns_same_day(self) -> None:
+        from datetime import datetime
+
+        from scripts._utils import expected_trading_day
+
+        assert expected_trading_day(datetime(2026, 11, 10, 16, 0)) == "2026-11-10"
+
+    def test_monday_before_close_returns_friday(self) -> None:
+        from datetime import datetime
+
+        from scripts._utils import expected_trading_day
+
+        # 2026-11-09 是周一
+        assert expected_trading_day(datetime(2026, 11, 9, 9, 0)) == "2026-11-06"
+
+    def test_weekend_returns_friday(self) -> None:
+        from datetime import datetime
+
+        from scripts._utils import expected_trading_day
+
+        assert expected_trading_day(datetime(2026, 11, 7, 18, 0)) == "2026-11-06"
+        assert expected_trading_day(datetime(2026, 11, 8, 9, 0)) == "2026-11-06"
