@@ -142,7 +142,8 @@ def _cmd_sixdim(args: argparse.Namespace) -> int:
         "uv",
         "run",
         "python",
-        "scripts/six_dim_screen.py",
+        "-m",
+        "scripts.six_dim_screen",
         "--top",
         str(args.top),
     ]
@@ -166,7 +167,8 @@ def _cmd_cross(args: argparse.Namespace) -> int:
         "uv",
         "run",
         "python",
-        "scripts/cross_screen_report.py",
+        "-m",
+        "scripts.cross_screen_report",
         "--min-sources",
         str(args.min_sources),
     ]
