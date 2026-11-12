@@ -271,6 +271,21 @@ uv run python scripts/combined_stock_report.py --detail-json p.json   # 指定�
 `outputs/results/combined_intersection_YYYYMMDD.json` 的 `analyzed`，
 文件缺失时降级为「名称 + 交集次数」。czsc CSV 若因 BOM/字段异常读取失败会被跳过（记 0 只），不阻塞其他选股线。
 
+#### 交叉验证（`scripts/cross_screen_report.py`）
+
+计算「当日流程交集（combined，命中 ≥N 条线）」∩「当日六维选股 Top N」，
+逐只输出流程命中线、六维评分、估值/位置/趋势/筹码/量价，并叠加 combined 技术面，可选飞书推送：
+
+```bash
+uv run python scripts/cross_screen_report.py --date 2026-11-11      # 计算并推送
+uv run python scripts/cross_screen_report.py --min-sources 3        # 调整流程交集门槛
+uv run python scripts/cross_screen_report.py --no-push              # 只落盘不推送
+```
+
+卡片落盘 `outputs/results/cross_flow_sixdim_YYYYMMDD.txt`；六维结果文件缺失时以退出码 1 结束。
+交集通常只有个位数（流程线看趋势共振，六维线看逻辑+估值+位置，重合度天然低），
+属**交叉验证**而非高确信共识，需人工复核。
+
 ### 盘中扫描（可选，`scripts/intraday_scan.py`）
 
 盘中（9:30–15:00）实盘研判用，**分钟 K 线上检测「当日已触发」的技术信号**，与日级筛选（1–9 步）互补：
@@ -426,6 +441,7 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `intraday_scan.py` | 盘中技术信号扫描（akshare 分钟 K 线 + 腾讯实时价；金叉/多头/MACD/三线共振，`--mode` 选类型，`--min-signals` 过滤，`--push` 飞书） |
 | `six_dim_screen.py` | 六维选股（逻辑>估值>位置>趋势>股东人数>量价；前两维硬门槛，后四维递减权重打分，输出前 N 只 + JSON/MD 报告） |
 | `combined_stock_report.py` | 综合选股交集重放（复用 collect/intersect/cards，按日期重算交集并生成/推送汇总卡片，`--no-push` 仅落盘） |
+| `cross_screen_report.py` | 流程交集 ∩ 六维选股 交叉验证（`--date/--min-sources/--no-push`，输出逐只六维+估值+位置+筹码+量价并推送） |
 
 ### 数据质量指标（截至 2026-09-15）
 - 总记录数：5,288（无重复）
