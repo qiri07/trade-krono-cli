@@ -1,7 +1,12 @@
 """六维选股筛选：逻辑 → 估值 → 位置 → 趋势 → 股东人数 → 量价关系。
 
 按用户指定的优先级设计，权重严格递减，前两维为**硬门槛**（不满足直接淘汰），
-后四维参与排序：
+后四维参与排序。
+
+**排序口径为分档字典序**（不是加权综合分）：六维各按 5 分一档，
+先比「逻辑」所在档，档相同再比「估值」档，依次到「量价」；
+六维全部同档时才用加权综合分兜底（见 :func:`sort_scores`）。
+综合分权重仅用于最后的同档排序，不再主导名次。
 
 | 维度 | 权重 | 内涵 | 作用 |
 |------|------|------|------|
@@ -54,7 +59,7 @@ from scripts._utils import (
     ticker_to_thscode,
 )
 
-# ── 权重（严格按「逻辑 > 估值 > 位置 > 趋势 > 股东人数 > 量价」递减）──────────
+# ── 权重（仅用于「六维同档」时的综合分兜底，严格按优先级递减）──────────────
 DIM_WEIGHTS: tuple[tuple[str, float], ...] = (
     ("logic", 0.30),
     ("valuation", 0.23),
@@ -84,6 +89,10 @@ MAX_PE_PCT = 60.0  # PE 五年分位上限（%）
 MAX_PEG = 2.5  # PEG 上限
 MIN_MARKET_CAP_YI = 50.0  # 最小总市值（亿元）
 POSITION_WINDOW_DAYS = 750  # 位置分位窗口（约 3 年交易日）
+
+# 排序口径：分档字典序（逻辑 → 估值 → 位置 → 趋势 → 股东 → 量价）
+# 每一维先按 TIER_WIDTH 分档比较，档内再比下一维，六维同档才用综合分兜底。
+TIER_WIDTH = 5.0
 
 # 金融股识别（毛利率缺失 + 高负债 = 银行/保险/券商，负债率门槛豁免）
 FIN_INDUSTRY_HINTS = ("银行", "保险", "证券", "信托", "多元金融")
@@ -162,17 +171,30 @@ class StockScore:
         return payload
 
     @property
-    def priority_key(self) -> tuple[float, ...]:
-        """按优先级字典序排序的键（逻辑 → 估值 → 位置 → 趋势 → 股东 → 量价）。"""
+    def tiered_key(self) -> tuple[float, ...]:
+        """分档字典序排序键：六维各按 ``TIER_WIDTH`` 分一档，逐维比较。
+
+        先比逻辑所在档，档相同再比估值档，依次到量价；六维全同档时用综合分兜底。
+        这样「逻辑 80-85 分」始终排在「逻辑 75-80 分」之前，同档内再看估值，
+        避免综合分加权把小维度的高分放大成主排序依据。
+        """
         return (
-            self.logic,
-            self.valuation,
-            self.position,
-            self.trend,
-            self.holder,
-            self.vol_price,
+            *(float(int(getattr(self, dim) // TIER_WIDTH)) for dim, _ in DIM_WEIGHTS),
             self.composite,
         )
+
+
+def sort_scores(results: list[StockScore]) -> list[StockScore]:
+    """按分档字典序就地排序（逻辑 > 估值 > 位置 > 趋势 > 股东 > 量价）。
+
+    Args:
+        results: 待排序候选列表。
+
+    Returns:
+        排序后的同一列表对象（便于链式调用 / 测试断言）。
+    """
+    results.sort(key=lambda s: s.tiered_key, reverse=True)
+    return results
 
 
 # ── 工具函数 ───────────────────────────────────────────────────────────────────
@@ -846,7 +868,7 @@ def screen(
         max_candidates: 进入技术面计算的最大候选数（按逻辑分排序截断）。
 
     Returns:
-        ``(按综合分排序的候选列表, 各关卡人数统计)``；列表包含全部通过门槛的股票，
+        ``(按分档字典序排序的候选列表, 各关卡人数统计)``；列表包含全部通过门槛的股票，
         由调用方按 ``--top`` 截断。
     """
     date_str = date_str or date.today().isoformat()
@@ -1003,7 +1025,7 @@ def screen(
         results.append(item)
 
     logger.info(f"技术面通过（未处于下跌趋势）：{len(results)} 只")
-    results.sort(key=lambda s: (s.composite, s.priority_key), reverse=True)
+    sort_scores(results)
     funnel = {
         "universe": len(universe),
         "logic_pass": len(passed),
@@ -1138,6 +1160,8 @@ def write_report(results: list[StockScore], date_str: str, out_dir: Path) -> tup
     payload = {
         "date": date_str,
         "weights": dict(DIM_WEIGHTS),
+        "rank_basis": "tiered_lexicographic",
+        "tier_width": TIER_WIDTH,
         "gates": {
             "min_roe_avg": MIN_ROE_AVG,
             "min_roe_excl_avg": MIN_ROE_EXCL_AVG,
@@ -1159,7 +1183,9 @@ def write_report(results: list[StockScore], date_str: str, out_dir: Path) -> tup
     lines = [
         f"# 六维选股结果 — {date_str}",
         "",
-        "优先级：逻辑(30%) > 估值(23%) > 位置(15%) > 趋势(13%) > 股东人数(10%) > 量价(9%)",
+        "排序：分档字典序（每维 5 分一档，逻辑 > 估值 > 位置 > 趋势 > 股东人数 > 量价；"
+        "六维同档才用综合分兜底）",
+        "综合分权重：逻辑 30% > 估值 23% > 位置 15% > 趋势 13% > 股东 10% > 量价 9%",
         "",
         "| # | 股票 | 综合 | 逻辑 | 估值 | 位置 | 趋势 | 股东 | 量价 | PE | PE分位 | ROE | 净利CAGR |",
         "|---|------|------|------|------|------|------|------|------|----|--------|-----|----------|",

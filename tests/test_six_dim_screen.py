@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from scripts.six_dim_screen import (
+    DIM_WEIGHTS,
+    TIER_WIDTH,
     LogicMetrics,
     StockScore,
     _clamp,
@@ -25,6 +27,7 @@ from scripts.six_dim_screen import (
     score_position,
     score_valuation,
     score_vol_price,
+    sort_scores,
     trend_gate_and_score,
     write_report,
 )
@@ -304,6 +307,148 @@ class TestReport:
         assert json_path.exists() and md_path.exists()
         assert "贵州茅台" in md_path.read_text(encoding="utf-8")
         assert "2026-11-10" in json_path.read_text(encoding="utf-8")
+
+
+class TestTieredSort:
+    """排序口径：分档字典序（逻辑 > 估值 > 位置 > 趋势 > 股东 > 量价）。"""
+
+    @staticmethod
+    def _mk(
+        code: str,
+        *,
+        logic: float,
+        valuation: float = 0.0,
+        position: float = 0.0,
+        trend: float = 0.0,
+        holder: float = 0.0,
+        vol_price: float = 0.0,
+    ) -> StockScore:
+        """构造带显式六维分与综合分的候选。"""
+        item = StockScore(
+            code=code,
+            name=code,
+            ticker=f"sh.{code}",
+            logic=logic,
+            valuation=valuation,
+            position=position,
+            trend=trend,
+            holder=holder,
+            vol_price=vol_price,
+        )
+        item.composite = sum(getattr(item, k) * w for k, w in DIM_WEIGHTS)
+        return item
+
+    def test_tier_width_is_five_points(self) -> None:
+        """档位宽度 5 分：80→16 档、85→17 档。"""
+        assert pytest.approx(5.0) == TIER_WIDTH
+        assert self._mk("600000", logic=80.0).tiered_key[0] == pytest.approx(16.0)
+        assert self._mk("600001", logic=85.0).tiered_key[0] == pytest.approx(17.0)
+
+    def test_key_follows_dimension_priority_order(self) -> None:
+        """键的前六位顺序与 DIM_WEIGHTS 一致，最后一位是综合分。"""
+        item = self._mk(
+            "600000",
+            logic=90.0,
+            valuation=80.0,
+            position=70.0,
+            trend=60.0,
+            holder=50.0,
+            vol_price=40.0,
+        )
+        assert item.tiered_key[:6] == (18.0, 16.0, 14.0, 12.0, 10.0, 8.0)
+        assert item.tiered_key[-1] == pytest.approx(item.composite)
+
+    def test_logic_tier_beats_all_other_dims(self) -> None:
+        """逻辑高一个档即排前，即使其余五维全面落后（旧加权口径会反转）。"""
+        weak_logic = self._mk("600000", logic=85.0)
+        strong_others = self._mk(
+            "600001",
+            logic=84.9,
+            valuation=100.0,
+            position=100.0,
+            trend=100.0,
+            holder=100.0,
+            vol_price=100.0,
+        )
+        assert strong_others.composite > weak_logic.composite
+        assert [s.code for s in sort_scores([strong_others, weak_logic])] == [
+            "600000",
+            "600001",
+        ]
+
+    def test_same_logic_tier_falls_back_to_valuation(self) -> None:
+        """逻辑同档时由估值档决定，位置/趋势/量价再高也不越级。"""
+        better_val = self._mk("600000", logic=81.0, valuation=90.0)
+        better_rest = self._mk(
+            "600001",
+            logic=81.0,
+            valuation=86.0,
+            position=100.0,
+            trend=100.0,
+            holder=100.0,
+            vol_price=100.0,
+        )
+        assert [s.code for s in sort_scores([better_rest, better_val])] == [
+            "600000",
+            "600001",
+        ]
+
+    def test_all_tiers_equal_uses_composite(self) -> None:
+        """六维全部同档时才用综合分兜底。"""
+        higher = self._mk(
+            "600000",
+            logic=82.0,
+            valuation=72.0,
+            position=62.0,
+            trend=52.0,
+            holder=42.0,
+            vol_price=32.0,
+        )
+        lower = self._mk(
+            "600001",
+            logic=81.0,
+            valuation=71.0,
+            position=61.0,
+            trend=51.0,
+            holder=41.0,
+            vol_price=31.0,
+        )
+        assert higher.tiered_key[:6] == lower.tiered_key[:6]
+        assert [s.code for s in sort_scores([lower, higher])] == ["600000", "600001"]
+
+    def test_returns_same_list_object(self) -> None:
+        """就地排序并返回同一列表对象。"""
+        items = [self._mk("600000", logic=70.0), self._mk("600001", logic=90.0)]
+        result = sort_scores(items)
+        assert result is items
+        assert items[0].code == "600001"
+
+    def test_full_order_matches_priority(self) -> None:
+        """名次完全由优先级决定，与综合分高低无关。"""
+        items = [
+            self._mk(
+                "600000",
+                logic=70.0,
+                valuation=100.0,
+                position=100.0,
+                vol_price=100.0,
+            ),
+            self._mk(
+                "600001",
+                logic=95.0,
+                valuation=10.0,
+                position=10.0,
+                vol_price=10.0,
+            ),
+            self._mk("600002", logic=85.0, valuation=10.0),
+            self._mk("600003", logic=85.0, valuation=50.0),
+        ]
+        assert [s.code for s in sort_scores(items)] == [
+            "600001",
+            "600003",
+            "600002",
+            "600000",
+        ]
 
 
 if __name__ == "__main__":
