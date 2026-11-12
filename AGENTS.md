@@ -253,6 +253,24 @@ uv run python scripts/combined_stock_analysis.py --per-stock-limit 50   # 逐只
 uv run python scripts/combined_stock_analysis.py --kronos 1 --backtest 1  # 卡片含 Kronos 预测 + 历史回测
 ```
 
+#### 交集重放（`scripts/combined_stock_report.py`）
+
+只做「交集计算 + 汇总卡片 + 飞书推送」，**不重跑**技术分析 / AI 核实 / Kronos 预测，
+用于按日期补算、核查或重推卡片（复用 `combined_stock_collect` / `combined_stock_intersect` /
+`combined_stock_cards`，代码空间统一为 `sh./sz.` 前缀，北交所剔除）：
+
+```bash
+uv run python scripts/combined_stock_report.py                        # 最近交易日，默认推送
+uv run python scripts/combined_stock_report.py --date 2026-11-11      # 指定日期重放
+uv run python scripts/combined_stock_report.py --min-sources 2        # 降低交集门槛
+uv run python scripts/combined_stock_report.py --no-push              # 只生成卡片文件
+uv run python scripts/combined_stock_report.py --detail-json p.json   # 指定前 10 名明细来源
+```
+
+卡片落盘 `outputs/results/combined_report_YYYYMMDD.txt`；前 10 名明细默认读取
+`outputs/results/combined_intersection_YYYYMMDD.json` 的 `analyzed`，
+文件缺失时降级为「名称 + 交集次数」。czsc CSV 若因 BOM/字段异常读取失败会被跳过（记 0 只），不阻塞其他选股线。
+
 ### 盘中扫描（可选，`scripts/intraday_scan.py`）
 
 盘中（9:30–15:00）实盘研判用，**分钟 K 线上检测「当日已触发」的技术信号**，与日级筛选（1–9 步）互补：
@@ -407,6 +425,7 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `etf_history_sync.py` | ETF K 线同步（akshare 同花顺发现全市场 ~1409 只，baostock 拉取；`--full` 全量 / `--codes` 指定） |
 | `intraday_scan.py` | 盘中技术信号扫描（akshare 分钟 K 线 + 腾讯实时价；金叉/多头/MACD/三线共振，`--mode` 选类型，`--min-signals` 过滤，`--push` 飞书） |
 | `six_dim_screen.py` | 六维选股（逻辑>估值>位置>趋势>股东人数>量价；前两维硬门槛，后四维递减权重打分，输出前 N 只 + JSON/MD 报告） |
+| `combined_stock_report.py` | 综合选股交集重放（复用 collect/intersect/cards，按日期重算交集并生成/推送汇总卡片，`--no-push` 仅落盘） |
 
 ### 数据质量指标（截至 2026-09-15）
 - 总记录数：5,288（无重复）
