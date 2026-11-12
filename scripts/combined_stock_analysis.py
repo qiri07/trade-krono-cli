@@ -40,7 +40,6 @@ from scripts.combined_stock_analyze import analyze_candidates, attach_backtest, 
 from scripts.combined_stock_cards import (
     _build_combined_card,
     _llm_view,
-    _push_per_stock,
 )
 from scripts.combined_stock_collect import collect_source_sets
 from scripts.combined_stock_intersect import build_intersection
@@ -263,13 +262,14 @@ def main() -> None:
 
     # ── Step 6: 飞书推送（汇总 + 逐只）───────────────────────────
     if args.push:
-        # 6a. 汇总卡片推送
+        # 6a. 汇总卡片推送（cands 是全量 89 只，analyzed 只有前 60 只做了技术分析）
         card = _build_combined_card(
-            analyzed,
+            cands,
             args.date,
             source_sets,
             total=len(cands),
             min_sources=args.min_sources,
+            analyzed_map={c.code: c for c in analyzed},
         )
         if ai_summary:
             card += f"\n\n---\n🤖 **AI 核实（多线共振视角）**\n{ai_summary}"
@@ -278,9 +278,9 @@ def main() -> None:
             f"{'✅' if ok else '❌'} 飞书汇总推送{'成功' if ok else '失败'}"
         )
 
-        # 6b. 逐只推送（每只单独一张卡片，含技术面+基本面）
-        if args.per_stock_push and analyzed:
-            _push_per_stock(analyzed, args.date, limit=args.per_stock_limit)
+        # 6b. 逐只推送（已禁用：仅推送汇总卡片用于验证）
+        # if args.per_stock_push and analyzed:
+        #     _push_per_stock(analyzed, args.date, limit=args.per_stock_limit)
     else:
         logger.info("已跳过飞书推送（--push 0）")
 
