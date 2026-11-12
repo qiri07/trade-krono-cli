@@ -46,6 +46,9 @@ uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/
 uv run python scripts/export_vnpy_data.py              # 导出 vnpy 格式
 bash scripts/post_sync_export.sh                       # 同步后一键导出所有格式
 bash scripts/daily_flow.sh                             # 一键执行今日投研流程（调度 scripts/flow_runner.py run --all：check→sync→sync_etf→metadata→buffett→resonance→multi_head→whitelist→double_ma→macd_ma→combined→intraday；不含数据导出；支持 RESUME=1 断点续传）
+uv run python scripts/pipeline_entry.py daily          # 等价，统一入口（支持 --no-push/--no-sync/--skip-etf/--export/--resume/--force/--dry-run）
+uv run python scripts/pipeline_entry.py sixdim         # 六维选股（--date/--top/--push 1/--no-push）
+uv run python scripts/pipeline_entry.py cross          # 流程交集 ∩ 六维选股（--date/--min-sources/--push 1/--no-push）
 uv run ruff check .                  # Lint 检查
 uv run ruff check --fix .            # Lint + 自动修复
 uv run mypy .                        # 类型检查
@@ -447,6 +450,7 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `six_dim_screen.py` | 六维选股（逻辑>估值>位置>趋势>股东人数>量价；前两维硬门槛，后四维递减权重打分，输出前 N 只 + JSON/MD 报告） |
 | `combined_stock_report.py` | 综合选股交集重放（复用 collect/intersect/cards，按日期重算交集并生成/推送汇总卡片，`--no-push` 仅落盘） |
 | `cross_screen_report.py` | 流程交集 ∩ 六维选股 交叉验证（`--date/--min-sources/--no-push`，输出逐只六维+估值+位置+筹码+量价并推送） |
+| `pipeline_entry.py` | 统一投研流程编排入口（`daily` 每日全流程 / `sixdim` 六维选股 / `cross` 流程∩六维交集，参数透传、退出码透传） |
 
 ### 数据质量指标（截至 2026-09-15）
 - 总记录数：5,288（无重复）
