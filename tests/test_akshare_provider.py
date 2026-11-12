@@ -271,10 +271,28 @@ class TestAkShareProvider:
 
     def test_fetch_metadata_returns_metadata(self, provider) -> None:
         """akshare 现已支持元数据，fetch_metadata 应返回 StockMetadata（非 None）。"""
-        meta = provider.fetch_metadata("sh.600519")
+        import pandas as pd
+
+        import trade_krono_cli.data_providers.akshare_provider as akmod
+
+        df = pd.DataFrame(
+            {
+                "代码": ["600519"],
+                "名称": ["贵州茅台"],
+                "行业": ["酿酒行业"],
+                "市盈率-动态": [21.3],
+                "市净率": [6.5],
+            }
+        )
+        # 固定全市场快照，避免单元测试发起真实网络请求
+        with patch.object(
+            akmod.AkShareProvider, "_get_full_market_cache", return_value=df
+        ):
+            meta = provider.fetch_metadata("sh.600519")
         assert meta is not None
         assert meta.ticker == "sh.600519"
         assert meta.source == "akshare"
+        assert meta.industry == "酿酒行业"
 
     def test_health_check_success(self, provider) -> None:
         import pandas as pd
