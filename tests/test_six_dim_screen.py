@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from scripts.six_dim_screen import (
+    DIM_PRIORITY,
     DIM_WEIGHTS,
     TIER_WIDTH,
     LogicMetrics,
@@ -228,7 +230,10 @@ class TestHolderAndVolumePrice:
         assert score > 70
 
     def test_heavy_volume_price_drop_penalised(self) -> None:
-        score, _, = score_vol_price(_mk_tech(amt_ratio=2.5, ret5=-6.0))
+        (
+            score,
+            _,
+        ) = score_vol_price(_mk_tech(amt_ratio=2.5, ret5=-6.0))
         healthy, _ = score_vol_price(_mk_tech())
         assert score < healthy
 
@@ -279,12 +284,18 @@ class TestFeishuCard:
             "amount_ratio": 1.1,
             "holder_chg_pct": -5.0,
         }
-        funnel = {"universe": 5038, "logic_pass": 345, "abs_val_pass": 240, "val_pass": 142,
-                  "trend_pass": 64}
+        funnel = {
+            "universe": 5038,
+            "logic_pass": 345,
+            "abs_val_pass": 240,
+            "val_pass": 142,
+            "trend_pass": 64,
+        }
         card = build_feishu_card([item], "2026-11-10", funnel)
         assert "2026-11-10 六维选股" in card
         assert "A股 5038 → 逻辑 345" in card
-        assert "1. 贵州茅台（600519）-78.5分" in card
+        assert "分档字典序" in card
+        assert "1. 贵州茅台（600519）- 逻辑80.0分 综合78.5分" in card
         assert "PE20.0(15%分位)" in card
         assert "不构成投资建议" in card
 
@@ -307,6 +318,35 @@ class TestReport:
         assert json_path.exists() and md_path.exists()
         assert "贵州茅台" in md_path.read_text(encoding="utf-8")
         assert "2026-11-10" in json_path.read_text(encoding="utf-8")
+
+    def test_json_records_rank_basis_and_pre_truncation_totals(self, tmp_path: Path) -> None:
+        """JSON 记录排序口径、截断前通过数、漏斗与优先级，便于事后审计。"""
+        item = StockScore(code="600519", name="贵州茅台", ticker="sh.600519", logic=80.0)
+        funnel = {"universe": 5000, "logic_pass": 300, "val_pass": 100, "trend_pass": 40}
+        json_path, _ = write_report([item], "2026-11-10", tmp_path, funnel=funnel, total_passed=40)
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        assert payload["rank_basis"] == "tiered_lexicographic"
+        assert payload["tier_width"] == pytest.approx(TIER_WIDTH)
+        assert payload["dim_priority"] == list(DIM_PRIORITY)
+        assert payload["count"] == 1
+        assert payload["total_passed"] == 40
+        assert payload["funnel"] == funnel
+
+    def test_json_defaults_total_passed_to_result_count(self, tmp_path: Path) -> None:
+        """未传漏斗/总数时，total_passed 记为结果条数、funnel 为空字典。"""
+        item = StockScore(code="600519", name="贵州茅台", ticker="sh.600519", logic=80.0)
+        json_path, _ = write_report([item], "2026-11-10", tmp_path)
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        assert payload["total_passed"] == 1
+        assert payload["funnel"] == {}
+
+    def test_markdown_explains_composite_column_is_not_ranking_key(self, tmp_path: Path) -> None:
+        """MD 说明「综合」列不一定单调递减。"""
+        item = StockScore(code="600519", name="贵州茅台", ticker="sh.600519", logic=80.0)
+        item.composite = 70.0
+        item.metrics = {"pe": 20.0, "pe_pct": 15.0}
+        _, md_path = write_report([item], "2026-11-10", tmp_path)
+        assert "不一定单调递减" in md_path.read_text(encoding="utf-8")
 
 
 class TestTieredSort:
@@ -338,6 +378,12 @@ class TestTieredSort:
         item.composite = sum(getattr(item, k) * w for k, w in DIM_WEIGHTS)
         return item
 
+    def test_weight_table_follows_priority_order(self) -> None:
+        """权重表顺序必须与 DIM_PRIORITY 一致（调权重不得改变排序优先级）。"""
+        assert [dim for dim, _ in DIM_WEIGHTS] == list(DIM_PRIORITY)
+        weights = [w for _, w in DIM_WEIGHTS]
+        assert weights == sorted(weights, reverse=True)
+
     def test_tier_width_is_five_points(self) -> None:
         """档位宽度 5 分：80→16 档、85→17 档。"""
         assert pytest.approx(5.0) == TIER_WIDTH
@@ -345,7 +391,7 @@ class TestTieredSort:
         assert self._mk("600001", logic=85.0).tiered_key[0] == pytest.approx(17.0)
 
     def test_key_follows_dimension_priority_order(self) -> None:
-        """键的前六位顺序与 DIM_WEIGHTS 一致，最后一位是综合分。"""
+        """键的前六位顺序与 DIM_PRIORITY 一致，最后一位是综合分。"""
         item = self._mk(
             "600000",
             logic=90.0,

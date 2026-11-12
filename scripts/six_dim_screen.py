@@ -59,14 +59,29 @@ from scripts._utils import (
     ticker_to_thscode,
 )
 
-# ── 权重（仅用于「六维同档」时的综合分兜底，严格按优先级递减）──────────────
-DIM_WEIGHTS: tuple[tuple[str, float], ...] = (
-    ("logic", 0.30),
-    ("valuation", 0.23),
-    ("position", 0.15),
-    ("trend", 0.13),
-    ("holder", 0.10),
-    ("vol_price", 0.09),
+# ── 排序优先级（唯一权威顺序）──────────────────────────────────────────────────
+# tiered_key / 报告列顺序 / 权重表均以此为序；调整权重不会改变排序优先级。
+DIM_PRIORITY: tuple[str, ...] = (
+    "logic",
+    "valuation",
+    "position",
+    "trend",
+    "holder",
+    "vol_price",
+)
+
+# ── 权重（仅用于「六维同档」时的综合分兜底，按 DIM_PRIORITY 顺序递减）──────────
+_DIM_WEIGHT_TABLE: dict[str, float] = {
+    "logic": 0.30,
+    "valuation": 0.23,
+    "position": 0.15,
+    "trend": 0.13,
+    "holder": 0.10,
+    "vol_price": 0.09,
+}
+# 由 DIM_PRIORITY 派生，保证权重表与优先级表顺序永远一致（缺键则导入即报错）
+DIM_WEIGHTS: tuple[tuple[str, float], ...] = tuple(
+    (dim, _DIM_WEIGHT_TABLE[dim]) for dim in DIM_PRIORITY
 )
 DIM_LABELS: dict[str, str] = {
     "logic": "逻辑",
@@ -179,7 +194,7 @@ class StockScore:
         避免综合分加权把小维度的高分放大成主排序依据。
         """
         return (
-            *(float(int(getattr(self, dim) // TIER_WIDTH)) for dim, _ in DIM_WEIGHTS),
+            *(float(int(getattr(self, dim) // TIER_WIDTH)) for dim in DIM_PRIORITY),
             self.composite,
         )
 
@@ -1092,7 +1107,10 @@ def build_feishu_card(
     """
     lines: list[str] = []
     lines.append(f"📊 **{date_str} 六维选股**")
-    lines.append("优先级：逻辑 > 估值 > 位置 > 趋势 > 股东人数 > 量价")
+    lines.append(
+        f"排序：分档字典序（每维 {TIER_WIDTH:.0f} 分一档，"
+        "逻辑 > 估值 > 位置 > 趋势 > 股东人数 > 量价；综合分仅同档兜底，非排名依据）"
+    )
     lines.append("")
     if funnel:
         lines.append(
@@ -1105,7 +1123,7 @@ def build_feishu_card(
         lines.append("")
     for i, r in enumerate(results, 1):
         m = r.metrics
-        lines.append(f"{i}. {r.name}（{r.code}）-{r.composite:.1f}分")
+        lines.append(f"{i}. {r.name}（{r.code}）- 逻辑{r.logic:.1f}分 综合{r.composite:.1f}分")
         lines.append(
             f"   逻辑{r.logic:.0f} 估值{r.valuation:.0f} 位置{r.position:.0f} "
             f"趋势{r.trend:.0f} 股东{r.holder:.0f} 量价{r.vol_price:.0f}"
@@ -1144,13 +1162,21 @@ def build_feishu_card(
     return "\n".join(lines)
 
 
-def write_report(results: list[StockScore], date_str: str, out_dir: Path) -> tuple[Path, Path]:
+def write_report(
+    results: list[StockScore],
+    date_str: str,
+    out_dir: Path,
+    funnel: dict[str, int] | None = None,
+    total_passed: int | None = None,
+) -> tuple[Path, Path]:
     """把结果写出 JSON + Markdown 报告。
 
     Args:
-        results: 排序后的打分结果。
+        results: 排序后的打分结果（可能已被 ``--top`` 截断）。
         date_str: 日期字符串（YYYY-MM-DD）。
         out_dir: 输出目录（``outputs/results``）。
+        funnel: 各关卡人数统计，写入 JSON 便于事后审计排序口径与淘汰分布。
+        total_passed: 通过全部门槛的股票总数（截断前），缺省记为 ``len(results)``。
 
     Returns:
         ``(json 路径, markdown 路径)``。
@@ -1162,6 +1188,7 @@ def write_report(results: list[StockScore], date_str: str, out_dir: Path) -> tup
         "weights": dict(DIM_WEIGHTS),
         "rank_basis": "tiered_lexicographic",
         "tier_width": TIER_WIDTH,
+        "dim_priority": list(DIM_PRIORITY),
         "gates": {
             "min_roe_avg": MIN_ROE_AVG,
             "min_roe_excl_avg": MIN_ROE_EXCL_AVG,
@@ -1175,6 +1202,8 @@ def write_report(results: list[StockScore], date_str: str, out_dir: Path) -> tup
             "min_market_cap_yi": MIN_MARKET_CAP_YI,
         },
         "count": len(results),
+        "total_passed": len(results) if total_passed is None else total_passed,
+        "funnel": dict(funnel or {}),
         "results": [r.to_payload() for r in results],
     }
     json_path = out_dir / f"six_dim_screen_{dc}.json"
@@ -1186,6 +1215,9 @@ def write_report(results: list[StockScore], date_str: str, out_dir: Path) -> tup
         "排序：分档字典序（每维 5 分一档，逻辑 > 估值 > 位置 > 趋势 > 股东人数 > 量价；"
         "六维同档才用综合分兜底）",
         "综合分权重：逻辑 30% > 估值 23% > 位置 15% > 趋势 13% > 股东 10% > 量价 9%",
+        "",
+        "注：`综合` 列为六维加权分，仅在六维同档时决定名次，"
+        "因此该列在表中不一定单调递减，排名依据是各维度分档后的字典序。",
         "",
         "| # | 股票 | 综合 | 逻辑 | 估值 | 位置 | 趋势 | 股东 | 量价 | PE | PE分位 | ROE | 净利CAGR |",
         "|---|------|------|------|------|------|------|------|------|----|--------|-----|----------|",
@@ -1238,7 +1270,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     results = ranked[: args.top] if args.top > 0 else ranked
 
-    json_path, md_path = write_report(results, args.date, Path("outputs/results"))
+    json_path, md_path = write_report(
+        results,
+        args.date,
+        Path("outputs/results"),
+        funnel=funnel,
+        total_passed=len(ranked),
+    )
     logger.info(f"结果已写入 {json_path} 与 {md_path}（耗时 {time.time() - t0:.0f}s）")
 
     if args.push:

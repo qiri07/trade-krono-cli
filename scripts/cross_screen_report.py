@@ -6,7 +6,7 @@
 
   1. ``collect_source_sets`` + ``build_intersection`` → 流程交集池
   2. ``scripts/six_dim_screen.py`` 产出的 ``six_dim_screen_<YYYYMMDD>.json`` → 六维 Top N
-  3. 两者取交集，卡片按六维综合分降序
+  3. 两者取交集，卡片按六维**分档字典序**（逻辑 > 估值 > 位置 > 趋势 > 股东 > 量价）排序
   4. ``push_feishu`` 推送（``--no-push`` 可跳过）
 
 用途：流程线偏「趋势/共振」，六维线偏「逻辑+估值+位置」，两者交集股票属于
@@ -37,6 +37,7 @@ from scripts.combined_stock_intersect import build_intersection
 from scripts.combined_stock_models import StockCandidate
 from scripts.combined_stock_report import load_analyzed_details, normalize_source_sets
 from scripts.feishu_utils import push_feishu
+from scripts.six_dim_screen import DIM_PRIORITY, TIER_WIDTH
 
 _SIX_DIM_DIMS: tuple[str, ...] = (
     "logic",
@@ -121,11 +122,7 @@ def load_six_dim(path: Path) -> list[SixDimRow]:
                 composite=_as_float(item, "composite"),
                 dims={d: _as_float(item, d) for d in _SIX_DIM_DIMS},
                 metrics={k: v for k, v in metrics.items() if isinstance(k, str)},
-                notes={
-                    k: v
-                    for k, v in notes.items()
-                    if isinstance(k, str) and isinstance(v, str)
-                },
+                notes={k: v for k, v in notes.items() if isinstance(k, str) and isinstance(v, str)},
             )
         )
     logger.info(f"📄 六维选股结果：{len(rows)} 只（{path.name}）")
@@ -140,9 +137,7 @@ def _fmt_float(metrics: dict[str, object], key: str) -> float | None:
     return float(value)
 
 
-def _candidate_for(
-    pool: dict[str, StockCandidate], row: SixDimRow
-) -> StockCandidate | None:
+def _candidate_for(pool: dict[str, StockCandidate], row: SixDimRow) -> StockCandidate | None:
     """在流程池中查找六维行对应候选（兼容带前缀 / 裸代码两种写法）。"""
     for key in (row.ticker, row.code, f"sh.{row.code}", f"sz.{row.code}"):
         cand = pool.get(key)
@@ -151,12 +146,22 @@ def _candidate_for(
     return None
 
 
-def select_hits(
-    pool: dict[str, StockCandidate], rows: list[SixDimRow]
-) -> list[SixDimRow]:
-    """返回与流程池有交集的六维行，按综合分降序。"""
+def tiered_key(row: SixDimRow) -> tuple[float, ...]:
+    """六维分档字典序键，与 :mod:`scripts.six_dim_screen` 的排序口径保持一致。
+
+    六维各按 ``TIER_WIDTH`` 分一档依次比较（逻辑 → 估值 → 位置 → 趋势 → 股东 → 量价），
+    六维全同档时才用综合分兜底。
+    """
+    return (
+        *(float(int(row.dims.get(dim, 0.0) // TIER_WIDTH)) for dim in DIM_PRIORITY),
+        row.composite,
+    )
+
+
+def select_hits(pool: dict[str, StockCandidate], rows: list[SixDimRow]) -> list[SixDimRow]:
+    """返回与流程池有交集的六维行，按六维分档字典序（逻辑优先）排序。"""
     hits = [r for r in rows if _candidate_for(pool, r) is not None]
-    hits.sort(key=lambda r: r.composite, reverse=True)
+    hits.sort(key=tiered_key, reverse=True)
     return hits
 
 
@@ -186,11 +191,12 @@ def build_cross_card(
     lines.append(f"🎯 {date_str} 流程结果 ∩ 六维选股 交集")
     lines.append("")
     lines.append("口径：")
+    lines.append(f"  · 流程结果：当日多线共振交集（命中 ≥{min_sources} 条选股线）{len(pool)} 只")
     lines.append(
-        f"  · 流程结果：当日多线共振交集（命中 ≥{min_sources} 条选股线）{len(pool)} 只"
+        f"  · 六维选股：分档字典序 Top {len(rows)}（每维 {TIER_WIDTH:.0f} 分一档，"
+        "逻辑 > 估值 > 位置 > 趋势 > 股东 > 量价）"
     )
-    lines.append(f"  · 六维选股：逻辑>估值>位置>趋势>股东人数>量价，综合评分 Top {len(rows)}")
-    lines.append(f"  · 交集：{len(hits)} 只")
+    lines.append(f"  · 交集：{len(hits)} 只（按六维分档字典序排序）")
     lines.append("")
 
     if not hits:
@@ -269,9 +275,7 @@ def build_cross_card(
 
 def build_parser() -> argparse.ArgumentParser:
     """构造 CLI 参数解析器。"""
-    parser = argparse.ArgumentParser(
-        description="流程交集 ∩ 六维选股 交叉验证（卡片 + 飞书推送）"
-    )
+    parser = argparse.ArgumentParser(description="流程交集 ∩ 六维选股 交叉验证（卡片 + 飞书推送）")
     parser.add_argument(
         "--date",
         default=expected_trading_day(),
@@ -302,9 +306,7 @@ def main() -> None:
     date_str = str(args.date)
     dc = date_str.replace("-", "")
     logger.info("=" * 60)
-    logger.info(
-        f"🎯 流程交集 ∩ 六维选股  日期={date_str}  min_sources={args.min_sources}"
-    )
+    logger.info(f"🎯 流程交集 ∩ 六维选股  日期={date_str}  min_sources={args.min_sources}")
     logger.info("=" * 60)
 
     source_sets = normalize_source_sets(collect_source_sets(date_str))
@@ -333,9 +335,7 @@ def main() -> None:
         logger.info("已跳过飞书推送（--no-push）")
         return
 
-    ok = push_feishu(
-        "text", content=card, title=f"🎯 {date_str} 流程交集 ∩ 六维选股"
-    )
+    ok = push_feishu("text", content=card, title=f"🎯 {date_str} 流程交集 ∩ 六维选股")
     logger.info(f"{'✅' if ok else '❌'} 飞书推送{'成功' if ok else '失败'}")
 
 

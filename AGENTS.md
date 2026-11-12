@@ -338,6 +338,9 @@ uv run python -m scripts.six_dim_screen --push 1        # 结果（前 10 只 + 
 ```
 
 结果写入 `outputs/results/six_dim_screen_YYYYMMDD.json` 与 `.md`（含每只票六维分数与依据）。
+JSON 记录 `rank_basis` / `tier_width` / `dim_priority` / `funnel` / `total_passed`（截断前通过数），
+便于事后核对排序口径；`--top` 只截断输出，`total_passed` 仍为门槛通过总数。
+注意：MD/飞书卡片中的「综合」列是加权分，仅在六维同档时决定名次，该列**不一定单调递减**。
 
 ### 一键全流程（`scripts/daily_flow.sh`）
 

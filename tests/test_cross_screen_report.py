@@ -129,9 +129,7 @@ class TestBuildCrossCard:
             notes=notes,
         )
         pool = self._pool()
-        card = csr.build_cross_card(
-            "2026-11-11", pool, [row], min_sources=3, details=pool
-        )
+        card = csr.build_cross_card("2026-11-11", pool, [row], min_sources=3, details=pool)
         assert "交集：1 只" in card
         assert "西藏药业（sh.600211）- 流程内 3 条线" in card
         assert "双均线金叉+MACD+均线+缠论-笔向上+均线多头" in card
@@ -140,8 +138,8 @@ class TestBuildCrossCard:
         assert "技术面：40分" in card
         assert "估值结论：" in card
 
-    def test_sorted_by_composite_desc(self) -> None:
-        """多只命中按六维综合分降序。"""
+    def test_all_tiers_equal_falls_back_to_composite(self) -> None:
+        """六维同档（此处维度缺失即全 0 档）时按综合分降序。"""
         pool = {
             "sh.600211": StockCandidate(code="sh.600211", hit_count=3),
             "sh.600660": StockCandidate(code="sh.600660", hit_count=3),
@@ -152,6 +150,25 @@ class TestBuildCrossCard:
         ]
         card = csr.build_cross_card("2026-11-11", pool, rows, 3)
         assert card.index("B（sh.600660）") < card.index("A（sh.600211）")
+
+    def test_logic_tier_dominates_composite(self) -> None:
+        """逻辑高一个档即排前，即使综合分更低（与 six_dim_screen 口径一致）。"""
+        pool = {
+            "sh.600211": StockCandidate(code="sh.600211", hit_count=3),
+            "sh.600660": StockCandidate(code="sh.600660", hit_count=3),
+        }
+        hi_logic = csr.SixDimRow("600211", "A", "sh.600211", 60.0, {"logic": 85.0}, {}, {})
+        hi_composite = csr.SixDimRow(
+            "600660",
+            "B",
+            "sh.600660",
+            95.0,
+            {"logic": 84.9, "valuation": 100.0},
+            {},
+            {},
+        )
+        rows = csr.select_hits(pool, [hi_composite, hi_logic])
+        assert [r.ticker for r in rows] == ["sh.600211", "sh.600660"]
 
     def test_empty_intersection_message(self) -> None:
         """无交集时给出明确提示。"""
@@ -184,9 +201,7 @@ class TestMain:
 
     def test_no_push_writes_card(self, tmp_path: Path) -> None:
         """--no-push 只写卡片，不调用飞书。"""
-        rows = [
-            csr.SixDimRow("600211", "西藏药业", "sh.600211", 74.7, {}, {}, {})
-        ]
+        rows = [csr.SixDimRow("600211", "西藏药业", "sh.600211", 74.7, {}, {}, {})]
         out = tmp_path / "card.txt"
         with (
             patch.object(
@@ -211,9 +226,7 @@ class TestMain:
 
     def test_push_called_by_default(self, tmp_path: Path) -> None:
         """默认推送一次。"""
-        rows = [
-            csr.SixDimRow("600211", "西藏药业", "sh.600211", 74.7, {}, {}, {})
-        ]
+        rows = [csr.SixDimRow("600211", "西藏药业", "sh.600211", 74.7, {}, {}, {})]
         with (
             patch.object(
                 csr,
