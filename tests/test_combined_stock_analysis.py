@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -29,7 +30,7 @@ from scripts.combined_stock_cards import (
     _build_stock_card,
     _llm_view,
 )
-from scripts.combined_stock_collect import _codes_from_czsc_csv
+from scripts.combined_stock_collect import _codes_from_czsc_csv, collect_source_sets
 from scripts.combined_stock_intersect import build_intersection
 from scripts.combined_stock_models import BacktestView, KronosView, StockCandidate
 from trade_krono_cli.domain.kronos_result import KronosForecastResult
@@ -326,12 +327,24 @@ class TestCardBuilders:
         assert "历史回测" not in card
 
     def test_combined_card_includes_prediction_lines(self) -> None:
-        """汇总卡片在候选下追加 预测 / 回测 行。"""
-        cands = [self._cand()]
+        """前 10 名候选用 analyzed_map 明细时追加 预测 / 回测 行。"""
+        cand = self._cand()
         source_sets = {"whitelist": {"600519"}, "resonance": {"600519"}}
-        card = _build_combined_card(cands, "2026-10-15", source_sets)
+        card = _build_combined_card(
+            [cand], "2026-10-15", source_sets, analyzed_map={"600519": cand}
+        )
         assert "预测:" in card
         assert "回测:" in card
+
+    def test_combined_card_rest_shows_only_name_and_hits(self) -> None:
+        """第 11 名起只列名称与交集次数，不展开技术面 / 基本面明细。"""
+        cands = [
+            StockCandidate(code=f"{600000 + i}", hit_count=3, sources=["whitelist"])
+            for i in range(12)
+        ]
+        card = _build_combined_card(cands, "2026-10-15", {"whitelist": set()})
+        assert "其余候选（仅列出名称与交集次数）" in card
+        assert "技术面:" not in card
 
     def test_llm_view_includes_kronos(self) -> None:
         """kronos 可用时 LLM 视图含 kronos payload。"""
@@ -530,6 +543,27 @@ class TestBuildIntersection:
         assert [(c.code, c.hit_count) for c in cands] == [("600519", 2)]
 
 
+class TestIntradayCodeSpace:
+    """盘中共振代码空间回归（曾返回 sh.600519，与其他线的 600519 重复计数）。"""
+
+    def test_intraday_codes_normalized_to_bare_six_digits(self, tmp_path: Path) -> None:
+        """intraday 结果应统一为 6 位裸代码，并剔除北交所。"""
+        payload = {
+            "results": [
+                {"ticker": "sh.600519"},
+                {"ticker": "sz.000858"},
+                {"ticker": "bj.920001"},
+            ]
+        }
+        (tmp_path / "intraday_scan_20261111_1000.json").write_text(
+            json.dumps(payload), encoding="utf-8"
+        )
+        source_sets = collect_source_sets(
+            "2026-11-11", results_dir=tmp_path, czsc_dir=tmp_path
+        )
+        assert source_sets["intraday"] == {"600519", "000858"}
+
+
 class TestCzscCodeParsing:
     """缠论 CSV 代码解析回归（曾误取 sh/sz 前缀，导致命中数只剩 3）。"""
 
@@ -554,7 +588,7 @@ class TestCombinedCardHeaderAndPushLimit:
     """汇总卡片标题统计（交集总数 / 展示数）与逐只推送上限。"""
 
     def test_card_header_shows_intersection_total_and_shown_count(self) -> None:
-        """标题应写交集池总数，并标注只展示前 N 只。"""
+        """标题应写交集池总数，并注明前 10 名详细 / 其余仅名称。"""
         cand = StockCandidate(
             code="600519",
             hit_count=4,
@@ -565,7 +599,8 @@ class TestCombinedCardHeaderAndPushLimit:
             [cand], "2026-11-10", {"whitelist": {"600519"}}, total=101, min_sources=3
         )
         assert "命中 ≥3 条线共 101 只" in card
-        assert "展示前 1" in card
+        assert "前 10 名详细分析" in card
+        assert "其余仅列出名称与交集次数" in card
         assert "1. 贵州茅台（600519）-4次交集" in card
 
     def test_per_stock_push_defaults_to_first_50(self) -> None:

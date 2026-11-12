@@ -271,7 +271,11 @@ def collect_source_sets(
             intraday_codes: set[str] = set()
             for item in intraday_data.get("results", []):
                 if isinstance(item, dict) and item.get("ticker"):
-                    result_ticker = normalize_ticker_key(item["ticker"])
+                    # 统一为 6 位裸代码，与其他选股线保持同一代码空间，
+                    # 否则 sh.600519 与 600519 会被 build_intersection 当成两只股票。
+                    result_ticker = normalize_ticker_key(item["ticker"]).split(".")[-1]
+                    if is_bse_code(result_ticker):
+                        continue
                     intraday_codes.add(result_ticker)
             result["intraday"] = intraday_codes
             logger.info(
