@@ -1,856 +1,133 @@
-#!/usr/bin/env python3
-"""补齐失败股票历史数据 + 今日增量同步"""
+"""补齐失败股票历史数据 + 今日增量同步。
+
+本模块为向后兼容层，所有实现已拆分至 :mod:`scripts.fill_missing` 包。
+本模块重新导出 ``scripts.fill_missing`` 的所有公共符号，确保现有导入
+（如 ``from scripts.fill_missing_and_today import ...``）继续正常工作。
+
+用法::
+
+    uv run python scripts/fill_missing_and_today.py
+    uv run python scripts/fill_missing_and_today.py --plan plan.json
+    uv run python scripts/fill_missing_and_today.py --dry-run
+    uv run python scripts/fill_missing_and_today.py --no-incremental
+    uv run python scripts/fill_missing_and_today.py --no-backup
+"""
 
 from __future__ import annotations
 
-import json
-import os
-import sys
-import threading
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-from threading import Thread
+from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-import pandas as pd
-from loguru import logger
-
-from scripts._utils import (
+from scripts.fill_missing import (  # noqa: F401
+    CACHE_DB,
     FAILED_MIN_RECORDS,
-    get_provider_chain,
-    get_sqlite_conn,
-    is_etf_ticker,
+    PROGRESS_FILE,
+    PROGRESS_FLUSH_EVERY,
+    START_DATE,
+    WORKERS,
+    _flush_completed,
+    _has_sufficient_history,
+    _has_today_data,
+    _load_completed_tickers,
+    _load_failed_tickers,
+    _mark_completed,
+    _mark_failed,
+    _save_progress,
+    fetch_missing_report,
+    get_expected_date,
+    get_failed_tickers,
+    get_today_date,
+    get_today_only_tickers,
+    load_sync_plan,
+    main,
+    print_missing_report,
 )
-from trade_krono_cli.cache import get_cache
-from trade_krono_cli.cli_commands.core import _load_env
-from trade_krono_cli.data_providers.base import KlineData
-from trade_krono_cli.data_providers.factory import get_data_factory
+from scripts.fill_missing import (
+    FETCH_TIMEOUT as _DEFAULT_FETCH_TIMEOUT,
+)
+from scripts.fill_missing import (
+    _fetch_kline_provider as _inner_fetch_kline_provider,
+)
+from scripts.fill_missing import (
+    fetch_full_range as _inner_fetch_full_range,
+)
+from scripts.fill_missing import (
+    fetch_today_incremental as _inner_fetch_today_incremental,
+)
+from trade_krono_cli.data_providers.factory import get_data_factory  # noqa: F401
 
-START_DATE = "2020-01-01"
-WORKERS = 3
-FETCH_TIMEOUT = 45
-CACHE_DB = Path("outputs/cache/pipeline_cache.db")
-PROGRESS_FILE = Path("outputs/results/fill_progress.json")
-
-_load_env()
-
-# 进度文件读写锁（多线程安全）
-_progress_lock = threading.Lock()
-# 进度文件写入计数器：每 PROGRESS_FLUSH_EVERY 个 ticker 写盘一次，避免 O(N²) 磁盘 I/O
-_progress_write_count = 0
-PROGRESS_FLUSH_EVERY = 100
-
-
-def _load_completed_tickers() -> set[str]:
-    """从进度文件加载已成功处理的 ticker 集合。
-
-    用于断点续传：若 ticker 已在进度文件中标记为完成，则跳过重复拉取。
-
-    Returns:
-        已完成的 ticker 集合。
-    """
-    if not PROGRESS_FILE.exists():
-        return set()
-    try:
-        data = json.loads(PROGRESS_FILE.read_text(encoding="utf-8"))
-        return set(data.get("completed", [])) if isinstance(data, dict) else set()
-    except (json.JSONDecodeError, OSError):
-        return set()
-
-
-def _load_failed_tickers() -> set[str]:
-    """从进度文件加载标记为失败的 ticker 集合。
-
-    失败的 ticker 会在后续运行中被重试，避免一次失败就永久放弃。
-
-    Returns:
-        已标记失败的 ticker 集合。
-    """
-    if not PROGRESS_FILE.exists():
-        return set()
-    try:
-        data = json.loads(PROGRESS_FILE.read_text(encoding="utf-8"))
-        return set(data.get("failed", [])) if isinstance(data, dict) else set()
-    except (json.JSONDecodeError, OSError):
-        return set()
-
-
-def _save_progress(completed: set[str], failed: set[str]) -> None:
-    """将已完成和失败的 ticker 集合原子写入进度文件。
-
-    Args:
-        completed: 已完成的 ticker 集合。
-        failed: 已标记失败的 ticker 集合。
-    """
-    PROGRESS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = PROGRESS_FILE.with_suffix(".json.tmp")
-    tmp.write_text(
-        json.dumps(
-            {"completed": sorted(completed), "failed": sorted(failed)},
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-    os.replace(tmp, PROGRESS_FILE)
-
-
-def _mark_completed(ticker: str, completed: set[str], failed: set[str]) -> None:
-    """将单个 ticker 标记为完成并持久化到进度文件。
-
-    线程安全：内部使用全局锁，可在多线程场景下安全调用。
-    每 PROGRESS_FLUSH_EVERY 个 ticker 写盘一次，避免 O(N²) 磁盘 I/O。
-    步骤结束时应调用 _flush_completed() 强制写盘。
-
-    Args:
-        ticker: 已成功处理的 ticker。
-        completed: 当前已完成的 ticker 集合（原地修改）。
-        failed: 当前已标记失败的 ticker 集合（原地修改）。
-    """
-    global _progress_write_count
-    with _progress_lock:
-        completed.add(ticker)
-        failed.discard(ticker)  # 从失败集中移除，避免重复重试
-        _progress_write_count += 1
-        if _progress_write_count % PROGRESS_FLUSH_EVERY == 0:
-            _save_progress(completed, failed)
-
-
-def _mark_failed(ticker: str, completed: set[str], failed: set[str]) -> None:
-    """将单个 ticker 标记为失败并持久化到进度文件。
-
-    失败的 ticker 会在后续运行中被重试。
-
-    Args:
-        ticker: 拉取失败的 ticker。
-        completed: 当前已完成的 ticker 集合（原地修改）。
-        failed: 当前已标记失败的 ticker 集合（原地修改）。
-    """
-    global _progress_write_count
-    with _progress_lock:
-        failed.add(ticker)
-        completed.discard(ticker)
-        _progress_write_count += 1
-        if _progress_write_count % PROGRESS_FLUSH_EVERY == 0:
-            _save_progress(completed, failed)
-
-
-def _flush_completed(completed: set[str], failed: set[str]) -> None:
-    """强制将当前进度写入磁盘。应在每个步骤结束时调用。
-
-    Args:
-        completed: 当前已完成的 ticker 集合。
-        failed: 当前已标记失败的 ticker 集合。
-    """
-    global _progress_write_count
-    with _progress_lock:
-        _progress_write_count = 0
-        _save_progress(completed, failed)
-
-
-def _has_sufficient_history(ticker: str) -> bool:
-    """检查 ticker 是否已有足够的历史数据（记录数 ≥ FAILED_MIN_RECORDS）。
-
-    用于增量跳过：若数据库中该 ticker 已有足够记录，说明历史补拉已完成，
-    无需再次拉取，避免中断重启后重复消耗 API 额度。
-
-    Args:
-        ticker: 带交易所前缀的 ticker，如 "sh.600519"。
-
-    Returns:
-        True 表示已有足够历史数据，可跳过；False 表示需要补拉。
-    """
-
-    conn = get_sqlite_conn(CACHE_DB)
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT COUNT(*) FROM kline_cache WHERE ticker = ?",
-        (ticker,),
-    )
-    count = cur.fetchone()[0]
-    conn.close()
-    return count >= FAILED_MIN_RECORDS
-
-
-# 首次运行时缓存今日日期，避免跨批次日期变化
-_today: str | None = None
-
-
-def get_today_date() -> str:
-    """动态获取今日日期（YYYY-MM-DD 格式），并缓存供后续调用复用。"""
-    global _today
-    if _today is None:
-        _today = time.strftime("%Y-%m-%d")
-    return _today
-
-
-def get_expected_date() -> str:
-    """获取此刻「应已落库」的最近交易日（收盘后为当日，盘中为上一交易日）。
-
-    与 :func:`get_today_date` 的区别：开盘前/盘中调用时，当日 K 线尚不存在，
-    若按当日判断会把全库标的误判为「缺今日数据」。
-
-    Returns:
-        日期字符串，如 ``2026-11-10``。
-    """
-    from scripts._utils import expected_trading_day
-
-    return expected_trading_day()
-
-
-def load_sync_plan(plan_path: str | Path) -> tuple[list[str], list[str]]:
-    """读取 check_data_status.py 产出的补拉计划 JSON，返回 (failed, need_today)。
-
-    计划文件结构：
-        {"plan": {"fetch_kline": {"tickers": [...],
-                                   "reasons": {"failed": [...], "need_today": [...]}}}}
-
-    Args:
-        plan_path: 计划 JSON 文件路径。
-
-    Returns:
-        (failed_tickers, need_today_tickers) 两个列表；文件缺失或字段缺省对应列表为空。
-    """
-    import json
-
-    path = Path(plan_path)
-    if not path.exists():
-        print(f"⚠️  补拉计划文件不存在: {path}，回退到全库扫描")
-        return [], []
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        print(f"⚠️  补拉计划 JSON 解析失败: {e}，回退到全库扫描")
-        return [], []
-
-    fetch = (data.get("plan") or {}).get("fetch_kline") or {}
-    reasons = fetch.get("reasons") or {}
-    failed = [t for t in (reasons.get("failed") or []) if isinstance(t, str)]
-    need_today = [t for t in (reasons.get("need_today") or []) if isinstance(t, str)]
-    if not failed and not need_today:
-        # reasons 缺省时直接用顶层 tickers 列表（全部视为需补今日）
-        fallback = [t for t in (fetch.get("tickers") or []) if isinstance(t, str)]
-        need_today = fallback
-    print(
-        f"📋 补拉计划: 历史失败 {len(failed)} 只, 需补今日 {len(need_today)} 只"
-        f"（来源: {path.name}）"
-    )
-    return failed, need_today
-
-
-def get_failed_tickers() -> list[str]:
-    """动态查询 DB 中记录数过少的股票（全量同步失败或未补齐的历史数据）。
-
-    使用 GROUP BY 替代子查询，避免对每行执行 COUNT(*) 导致的全表扫描。
-    """
-
-    conn = get_sqlite_conn(CACHE_DB)
-    cur = conn.cursor()
-    cur.execute(f"""
-        SELECT ticker FROM kline_cache
-        WHERE ticker NOT LIKE 'bj.%'
-        GROUP BY ticker
-        HAVING COUNT(*) < {FAILED_MIN_RECORDS}
-        ORDER BY ticker
-    """)
-    tickers = [r[0] for r in cur.fetchall()]
-    conn.close()
-    if tickers:
-        return tickers
-    return []
-
-
-def get_today_only_tickers() -> list[str]:
-    """获取只有今日数据的非北交所股票（需要补全历史）。"""
-
-    conn = get_sqlite_conn(CACHE_DB)
-    cur = conn.cursor()
-    today = get_today_date()
-    cur.execute(f"""
-        SELECT DISTINCT ticker FROM kline_cache
-        WHERE start = '{today}' AND end = '{today}'
-          AND ticker NOT LIKE 'bj.%'
-        ORDER BY ticker
-    """)
-    tickers = [r[0] for r in cur.fetchall()]
-    conn.close()
-    return tickers
-
-
-def _has_today_data(ticker: str, today: str) -> bool:
-    """检查 ticker 是否已有今日数据（end ≥ today）。
-
-    用于增量跳过：若数据库中该 ticker 已有今日 K 线，说明今日增量已同步，
-    无需再次拉取。
-
-    Args:
-        ticker: 带交易所前缀的 ticker，如 "sh.600519"。
-        today: 今日日期（YYYY-MM-DD）。
-
-    Returns:
-        True 表示已有今日数据，可跳过；False 表示需要补今日。
-    """
-
-    conn = get_sqlite_conn(CACHE_DB)
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT COUNT(*) FROM kline_cache WHERE ticker = ? AND end >= ?",
-        (ticker, today),
-    )
-    count = cur.fetchone()[0]
-    conn.close()
-    return count > 0
+# FETCH_TIMEOUT 作为模块级变量，以便测试通过 monkeypatch.setattr 修改
+FETCH_TIMEOUT = _DEFAULT_FETCH_TIMEOUT
 
 
 def _fetch_kline_provider(
-    factory, ticker: str, provider_name: str, start_date: str, end_date: str
-) -> tuple[KlineData | None, Exception | None, bool]:
-    """单个 Provider 拉取 K 线，内部启线程 + join 实现超时控制。
-
-    用于 provider 级超时后自动降级到下一个 provider 的降级链路。
-
-    Args:
-        factory: DataProviderFactory 实例。
-        ticker: 股票标准化键（如 sh.600519）。
-        provider_name: Provider 名称（如 baostock / akshare / tushare）。
-        start_date: 起始日期（YYYY-MM-DD）。
-        end_date: 结束日期（YYYY-MM-DD）。
-
-    Returns:
-        (KlineData | None, 异常 | None, 是否超时)：
-            成功且有数据时返回 (KlineData, None, False)；拉取失败时返回 (None, 异常, False)；
-            Provider 拉取超时时返回 (None, None, True)。
-    """
-    error: Exception | None = None
-    result: KlineData | None = None
-
-    def _attempt(provider_name: str) -> None:
-        nonlocal error, result
-        try:
-            provider = factory.get_provider(provider_name)
-            if provider is None:
-                return
-            result = provider.fetch_kline(
-                ticker, start_date, end_date, frequency="d", adjustflag="1"
-            )
-        except Exception as e:
-            error = e
-            result = None
-
-    attempt = Thread(target=_attempt, args=(provider_name,), daemon=True)
-    attempt.start()
-    attempt.join(timeout=FETCH_TIMEOUT)
-    if attempt.is_alive():
-        # 单 provider 拉取超时
-        return (None, None, True)
-    return (result, error, False)
+    factory: Any,
+    ticker: str,
+    provider_name: str,
+    start_date: str,
+    end_date: str,
+) -> tuple[Any | None, Exception | None, bool]:
+    """兼容层包装：从 fmat.FETCH_TIMEOUT 获取超时值，以便测试可 monkeypatch。"""
+    return _inner_fetch_kline_provider(
+        factory, ticker, provider_name, start_date, end_date, fetch_timeout=FETCH_TIMEOUT
+    )
 
 
-def fetch_full_range(factory, ticker: str, provider_chain: list[str]) -> tuple[str, int, str]:
-    """带超时的全量历史数据拉取（provider 级超时后自动降级尝试下一个 provider）。"""
-    result_container: list[tuple[str, int, str]] = []
-    error_container: list[str] = []
-
-    def _fetch() -> None:
-        for provider_name in provider_chain:
-            result, error, timed_out = _fetch_kline_provider(
-                factory, ticker, provider_name, START_DATE, get_today_date()
-            )
-            if timed_out:
-                # provider 级超时 → 转失败并降级尝试下一个 provider
-                error_container.append(f"{provider_name}: 超时{FETCH_TIMEOUT}s")
-                continue
-            if error is not None:
-                error_container.append(f"{provider_name}:{error}")
-                continue
-            if result is None or result.is_empty:
-                continue
-            df = result.to_dataframe()
-            if len(df) == 0:
-                continue
-            # ETF 无复权概念，缓存统一按 adjustflag='1' 存储
-            cache = get_cache()
-            ts = pd.to_datetime(df["timestamps"])
-            cache.set_kline(
-                ticker,
-                ts.min().strftime("%Y-%m-%d"),
-                ts.max().strftime("%Y-%m-%d"),
-                "d",
-                df,
-                ttl=0.0,
-            )
-            result_container.append(
-                (
-                    provider_name,
-                    len(df),
-                    f"{ts.min().strftime('%Y-%m-%d')}~{ts.max().strftime('%Y-%m-%d')}",
-                )
-            )
-            return
-
-    thread = Thread(target=_fetch, daemon=True)
-    thread.start()
-    thread.join()
-
-    if result_container:
-        return result_container[0]
-    return ("failed", 0, "; ".join(error_container) if error_container else "无结果")
+def fetch_full_range(
+    factory: Any,
+    ticker: str,
+    provider_chain: list[str],
+) -> tuple[str, int, str]:
+    """兼容层包装：从 fmat.FETCH_TIMEOUT 获取超时值。"""
+    return _inner_fetch_full_range(
+        factory, ticker, provider_chain, fetch_timeout=FETCH_TIMEOUT
+    )
 
 
 def fetch_today_incremental(
-    factory, ticker: str, provider_chain: list[str]
+    factory: Any,
+    ticker: str,
+    provider_chain: list[str],
 ) -> tuple[str, int, str]:
-    """拉取今日增量数据（provider 级超时后自动降级尝试下一个 provider）。"""
-    result_container: list[tuple[str, int, str]] = []
-    error_container: list[str] = []
-
-    def _fetch() -> None:
-        for provider_name in provider_chain:
-            result, error, timed_out = _fetch_kline_provider(
-                factory, ticker, provider_name, get_today_date(), get_today_date()
-            )
-            if timed_out:
-                # provider 级超时 → 转失败并降级尝试下一个 provider
-                error_container.append(f"{provider_name}: 超时{FETCH_TIMEOUT}s")
-                continue
-            if error is not None:
-                error_container.append(f"{provider_name}:{error}")
-                continue
-            if result is None or result.is_empty:
-                continue
-            df = result.to_dataframe()
-            if len(df) == 0:
-                continue
-            cache = get_cache()
-            # 把今日 K 线追加到现有历史行，而非新建独立的今日行：
-            # 读取该 ticker 从 START_DATE 起至今的全部 K 线（含历史行与已有今日行），
-            # 与今日数据合并去重后写回单条记录。
-            combined = df
-            existing = cache.get_kline(ticker, START_DATE, get_today_date(), "d", "1")
-            if existing is not None and len(existing) > 0:
-                # 统一 timestamps 为 datetime，避免 str 与 datetime64 混型导致排序崩溃
-                existing = existing.copy()
-                existing["timestamps"] = pd.to_datetime(existing["timestamps"])
-                df = df.copy()
-                df["timestamps"] = pd.to_datetime(df["timestamps"])
-                combined = (
-                    pd.concat([existing, df], ignore_index=True)
-                    .drop_duplicates(subset=["timestamps"], keep="last")
-                    .sort_values("timestamps")
-                    .reset_index(drop=True)
-                )
-            cache.set_kline(
-                ticker,
-                combined["timestamps"].min().strftime("%Y-%m-%d"),
-                combined["timestamps"].max().strftime("%Y-%m-%d"),
-                "d",
-                combined,
-                ttl=0.0,
-            )
-            result_container.append(
-                (
-                    provider_name,
-                    len(combined),
-                    f"{combined['timestamps'].min().strftime('%Y-%m-%d')}"
-                    f"~{combined['timestamps'].max().strftime('%Y-%m-%d')}",
-                )
-            )
-            return
-
-    thread = Thread(target=_fetch, daemon=True)
-    thread.start()
-    thread.join()
-
-    if result_container:
-        return result_container[0]
-    return ("failed", 0, "; ".join(error_container) if error_container else "无结果")
-
-
-def fetch_missing_report() -> dict:
-    """查询当前缺失情况，返回报告字典。
-
-    Returns:
-        dict with keys:
-            failed: list[str] — 记录数 < FAILED_MIN_RECORDS 的非北交所 ticker
-            need_today: list[str] — 缺少今日 K 线的 ticker（含北交所）
-            total: int — 总记录数
-            tickers: int — 总股票数
-            latest: str — 最新数据日期
-            has_today: int — 已有今日数据的股票数
-            has_2020: int — 已有 2020 年数据的股票数
-            today: str — 期望交易日（收盘后为当日，盘中为上一交易日）
-    """
-
-    today = get_expected_date()
-    conn = get_sqlite_conn(CACHE_DB)
-    cur = conn.cursor()
-
-    cur.execute(
-        f"""
-        SELECT DISTINCT ticker FROM kline_cache
-        WHERE ticker NOT LIKE 'bj.%'
-          AND (SELECT COUNT(*) FROM kline_cache k2 WHERE k2.ticker = kline_cache.ticker) < {FAILED_MIN_RECORDS}
-        ORDER BY ticker
-    """
-    )
-    failed = [r[0] for r in cur.fetchall()]
-
-    cur.execute(
-        f"""
-        SELECT DISTINCT ticker FROM kline_cache
-        WHERE ticker NOT IN (
-            SELECT DISTINCT ticker FROM kline_cache
-            WHERE end >= '{today}'
-        )
-        ORDER BY ticker
-    """
-    )
-    need_today = [r[0] for r in cur.fetchall()]
-
-    cur.execute("SELECT COUNT(*) FROM kline_cache")
-    total = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache")
-    tickers = cur.fetchone()[0]
-    cur.execute("SELECT MAX(end) FROM kline_cache")
-    latest = cur.fetchone()[0] or ""
-    cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE end >= ?", (today,))
-    has_today = cur.fetchone()[0]
-    cur.execute(
-        """
-        SELECT COUNT(DISTINCT ticker) FROM kline_cache
-        WHERE start <= '2020-12-31' AND end >= '2020-01-01'
-    """
-    )
-    has_2020 = cur.fetchone()[0]
-    conn.close()
-
-    return {
-        "failed": failed,
-        "need_today": need_today,
-        "total": total,
-        "tickers": tickers,
-        "latest": latest,
-        "has_today": has_today,
-        "has_2020": has_2020,
-        "today": today,
-    }
-
-
-def print_missing_report(report: dict) -> None:
-    """打印缺失情况报告。"""
-    print("=" * 60)
-    print(f"📊 缺失检查报告（{report['today']}）")
-    print("=" * 60)
-    print(f"  总记录数:   {report['total']}")
-    print(f"  股票数:     {report['tickers']}")
-    print(f"  最新日期:   {report['latest']}")
-    print(
-        f"  今日数据:   {report['has_today']}/{report['tickers']}"
-        f" ({report['has_today'] * 100 / max(report['tickers'], 1):.1f}%)"
-    )
-    print(
-        f"  2020年数据: {report['has_2020']}/{report['tickers']}"
-        f" ({report['has_2020'] * 100 / max(report['tickers'], 1):.1f}%)"
+    """兼容层包装：从 fmat.FETCH_TIMEOUT 获取超时值。"""
+    return _inner_fetch_today_incremental(
+        factory, ticker, provider_chain, fetch_timeout=FETCH_TIMEOUT
     )
 
-    print()
-    print(f"  需补全历史: {len(report['failed'])} 只")
-    if report["failed"]:
-        shown = report["failed"][:10]
-        suffix = f" ... 等 {len(report['failed'])} 只" if len(report["failed"]) > 10 else ""
-        print(f"    {', '.join(shown)}{suffix}")
-    else:
-        print("    无")
 
-    print(f"  需补今日:   {len(report['need_today'])} 只")
-    if report["need_today"]:
-        shown = report["need_today"][:10]
-        suffix = f" ... 等 {len(report['need_today'])} 只" if len(report["need_today"]) > 10 else ""
-        print(f"    {', '.join(shown)}{suffix}")
-    else:
-        print("    无")
-    print("=" * 60)
-
-
-def main(
-    plan_path: str | None = None,
-    dry_run: bool = False,
-    no_incremental: bool = False,
-    backup: bool = True,
-) -> None:
-    """主流程：补齐失败股票历史数据 + 今日增量同步。
-
-    Args:
-        plan_path: 补拉计划 JSON 路径（由 scripts/check_data_status.py 生成）；缺省时全库扫描。
-        dry_run: 仅打印补拉清单，不写缓存。
-        no_incremental: 禁用增量合并，改为全量覆盖（重拉完整历史段）。
-        backup: 写入前是否自动备份核心数据文件（默认 True）。
-    """
-    # ── 前置步骤：数据安全备份（在任何写入操作前自动备份）─────────────────
-    if backup and not dry_run:
-        from scripts.backup_cache import backup_all
-
-        backup_all(keep=10)
-
-    # ── 第一步：检查当前缺失情况 ─────────────────────────────
-    print_missing_report(fetch_missing_report())
-
-    # 补拉来源：优先读计划 JSON，缺省回退到全库扫描
-    if plan_path:
-        plan_failed, plan_need_today = load_sync_plan(plan_path)
-    else:
-        plan_failed, plan_need_today = [], []
-
-    # ETF 从本脚本剔除，统一由第 3 步 etf_history_sync.py 拉取
-    # （tonghuashun 对多数 ETF 报 Unknown thscode、mootdx 不可达，在此逐只降级极慢）
-    n_plan = len(plan_failed) + len(plan_need_today)
-    plan_failed = [t for t in plan_failed if not is_etf_ticker(t)]
-    plan_need_today = [t for t in plan_need_today if not is_etf_ticker(t)]
-    if skipped := n_plan - len(plan_failed) - len(plan_need_today):
-        print(f"ℹ️  剔除 {skipped} 只 ETF（由 etf_history_sync.py 统一拉取）")
-
-    if dry_run:
-        print("\n🧪 DRY-RUN 模式：仅打印补拉清单，不写缓存、不拉取数据")
-        print(f"   将补齐历史: {len(plan_failed) if plan_path else '待全库扫描'} 只")
-        print(f"   将补今日增量: {len(plan_need_today) if plan_path else '待全库扫描'} 只")
-        return
-
-    factory = get_data_factory()
-
-    # 加载已完成和失败进度（断点续传）
-    completed_tickers: set[str] = _load_completed_tickers()
-    failed_tickers_cache: set[str] = _load_failed_tickers()
-    if completed_tickers:
-        print(f"📍 检测到已完成进度：{len(completed_tickers)} 只股票已成功拉取，将跳过")
-    if failed_tickers_cache:
-        print(f"📍 检测到失败进度：{len(failed_tickers_cache)} 只股票曾拉取失败，将重试")
-
-    # ── 第二步：补齐失败股票的历史数据 ─────────────────────
-    print("=" * 60)
-    print("📌 第二步：补齐失败股票的历史数据")
-    print("=" * 60)
-    failed_tickers = plan_failed if plan_path else get_failed_tickers()
-    failed_before = len(failed_tickers)
-    # 增量跳过：跳过已有足够历史数据的 ticker（避免中断重启后重复拉取）
-    failed_tickers = [t for t in failed_tickers if not _has_sufficient_history(t)]
-    # 断点续传：跳过已在进度文件中标记完成的 ticker
-    failed_tickers = [t for t in failed_tickers if t not in completed_tickers]
-    # 将之前标记失败的 ticker 加入重试列表（去重）
-    retry_failed = [
-        t for t in failed_tickers_cache if t not in completed_tickers and t not in failed_tickers
-    ]
-    if retry_failed:
-        failed_tickers.extend(retry_failed)
-        print(f"ℹ️  加入 {len(retry_failed)} 只之前失败的股票进行重试")
-    if failed_before > len(failed_tickers) - len(retry_failed):
-        print(f"ℹ️  跳过 {failed_before - len(failed_tickers) + len(retry_failed)} 只已完成的股票")
-    success_13 = 0
-    failed_13 = []
-    with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-        futures = {
-            executor.submit(fetch_full_range, factory, t, get_provider_chain(t)): t
-            for t in failed_tickers
-        }
-        for i, future in enumerate(as_completed(futures), 1):
-            ticker = futures[future]
-            try:
-                provider, n_rows, detail = future.result(timeout=FETCH_TIMEOUT + 5)
-                if provider == "timeout":
-                    failed_13.append((ticker, f"超时 {FETCH_TIMEOUT}s"))
-                    _mark_failed(ticker, completed_tickers, failed_tickers_cache)
-                    print(f"  ⏱️  {i}/{len(failed_tickers)} 超时: {ticker}")
-                elif provider == "failed":
-                    failed_13.append((ticker, detail))
-                    _mark_failed(ticker, completed_tickers, failed_tickers_cache)
-                    print(f"  ❌ {i}/{len(failed_tickers)} 失败: {ticker} ({detail[:60]})")
-                else:
-                    success_13 += 1
-                    _mark_completed(ticker, completed_tickers, failed_tickers_cache)
-                    print(
-                        f"  ✅ {i}/{len(failed_tickers)} {ticker}: {provider} 拉取 {n_rows} 条 {detail}"
-                    )
-            except Exception as e:
-                failed_13.append((ticker, str(e)))
-                _mark_failed(ticker, completed_tickers, failed_tickers_cache)
-                print(f"  ❌ {i}/{len(failed_tickers)} 异常: {ticker} ({e})")
-    print(
-        f"\n第二步结果: 成功 {success_13}/{len(failed_tickers)}, 失败 {len(failed_13)}/{len(failed_tickers)}"
-    )
-    if failed_13:
-        print(f"   仍失败: {[t for t, _ in failed_13]}")
-    print()
-    _flush_completed(completed_tickers, failed_tickers_cache)
-
-    # ── 第三步：检查哪些股票缺少今日数据 ───────────────────────
-    print("=" * 60)
-    print(f"📌 第三步：同步今日（{get_expected_date()}）增量数据")
-    print("=" * 60)
-
-    today = get_expected_date()
-    # 动态查询数据库：找出所有缺少今日数据的股票（含北交所，ETF 单独脚本处理）
-    conn = get_sqlite_conn(CACHE_DB)
-    cur = conn.cursor()
-    cur.execute(f"""
-        SELECT DISTINCT ticker FROM kline_cache
-        WHERE ticker NOT IN (
-            SELECT DISTINCT ticker FROM kline_cache
-            WHERE end >= '{today}'
-        )
-        ORDER BY ticker
-    """)
-    need_today_from_db = [r[0] for r in cur.fetchall() if not is_etf_ticker(r[0])]
-    conn.close()
-
-    # 合并计划中的 need_today 与数据库动态查询结果（取并集，避免计划缺失导致漏补）
-    need_today_set = set(need_today_from_db)
-    if plan_path:
-        need_today_set.update(plan_need_today)
-    need_today = sorted(need_today_set)
-
-    # 增量跳过：跳过已有今日数据的 ticker（双重保险，SQL 查询已排除但保留兜底）
-    need_today_before = len(need_today)
-    need_today = [t for t in need_today if not _has_today_data(t, today)]
-    # 断点续传：仅在非 plan 模式下跳过已在进度文件中标记完成的 ticker；
-    # plan 模式下 need_today 已是当前缺少今日数据的股票，不应用历史完成记录过滤
-    if not plan_path:
-        need_today = [t for t in need_today if t not in completed_tickers]
-    if need_today_before > len(need_today):
-        print(f"ℹ️  跳过 {need_today_before - len(need_today)} 只已完成的股票")
-    plan_src = (
-        f"（来自补拉计划 {len(plan_need_today)} 只 + 数据库查询 {len(need_today_from_db)} 只，合并去重 {len(need_today)} 只）"
-        if plan_path
-        else "（含北交所，数据库查询）"
-    )
-    print(f"需要补今日数据的股票: {len(need_today)} 只 {plan_src}")
-    print()
-
-    # 分批同步今日增量
-    success_today = 0
-    failed_today = []
-    batch_size = 50
-    # 增量合并（默认）：仅追加最新 K 线到现有记录，不覆盖历史
-    # no_incremental（全量覆盖）：重拉完整历史段，覆盖该 ticker 的 K 线记录
-    for batch_start in range(0, len(need_today), batch_size):
-        batch = need_today[batch_start : batch_start + batch_size]
-        mode_label = "全量覆盖" if no_incremental else "增量合并"
-        print(
-            f"  批次 [{batch_start + 1}~{batch_start + len(batch)}/{len(need_today)}]（{mode_label}）"
-        )
-        with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-            if no_incremental:
-                futures = {
-                    executor.submit(fetch_full_range, factory, t, get_provider_chain(t)): t
-                    for t in batch
-                }
-            else:
-                futures = {
-                    executor.submit(fetch_today_incremental, factory, t, get_provider_chain(t)): t
-                    for t in batch
-                }
-            for future in as_completed(futures):
-                ticker = futures[future]
-                try:
-                    provider, n_rows, detail = future.result(timeout=FETCH_TIMEOUT + 5)
-                    if provider in ("timeout", "failed"):
-                        failed_today.append((ticker, detail))
-                        _mark_failed(ticker, completed_tickers, failed_tickers_cache)
-                    else:
-                        success_today += 1
-                        _mark_completed(ticker, completed_tickers, failed_tickers_cache)
-                except Exception as e:
-                    failed_today.append((ticker, str(e)))
-                    _mark_failed(ticker, completed_tickers, failed_tickers_cache)
-        time.sleep(1)  # 短暂休息避免API限流
-
-    print(
-        f"\n第三步结果: 成功 {success_today}/{len(need_today)}, 失败 {len(failed_today)}/{len(need_today)}"
-    )
-    if failed_today:
-        print(f"   仍失败: {[t for t, _ in failed_today]}")
-    print()
-    _flush_completed(completed_tickers, failed_tickers_cache)
-
-    # ── 第四步：最终统计 ───────────────────────────────────────
-    print("=" * 60)
-    print("📌 第四步：最终数据统计")
-    print("=" * 60)
-    conn = get_sqlite_conn(CACHE_DB)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM kline_cache")
-    total = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache")
-    tickers = cur.fetchone()[0]
-    cur.execute("SELECT MAX(end) FROM kline_cache")
-    latest = cur.fetchone()[0]
-    today = get_expected_date()
-    cur.execute("SELECT COUNT(DISTINCT ticker) FROM kline_cache WHERE end >= ?", (today,))
-    has_today = cur.fetchone()[0]
-    cur.execute("""
-        SELECT COUNT(DISTINCT ticker) FROM kline_cache
-        WHERE start <= '2020-12-31' AND end >= '2020-01-01'
-    """)
-    has_2020 = cur.fetchone()[0]
-    conn.close()
-
-    print(f"  总记录数:   {total}")
-    print(f"  股票数:     {tickers}")
-    print(f"  最新日期:   {latest}")
-    print(f"  今日数据:   {has_today}/{tickers} ({has_today * 100 / tickers:.1f}%)")
-    print(f"  2020年数据: {has_2020}/{tickers} ({has_2020 * 100 / tickers:.1f}%)")
-    print("=" * 60)
-    print("✅ 全部完成")
-
-    # ── 写入今日增量结果文件（供 flow_runner 判断是否启动后续选股步骤）─────
-    sync_result_file = Path("outputs/results/daily_sync_result.json")
-    sync_result_file.parent.mkdir(parents=True, exist_ok=True)
-    sync_result = {
-        "date": today,
-        "today_increment_count": success_today,
-        "total_processed": len(need_today),
-        "success_count": success_today,
-        "failed_count": len(failed_today),
-        "total_db_records": total,
-        "total_db_tickers": tickers,
-        "has_today_data": has_today,
-        "latest_date": latest,
-    }
-    sync_result_file.write_text(
-        json.dumps(sync_result, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    logger.info(f"💾 今日增量同步结果已写入: {sync_result_file}")
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="补齐失败股票历史数据 + 今日增量同步")
-    parser.add_argument(
-        "--plan",
-        default=None,
-        help="补拉计划 JSON 路径（由 scripts/check_data_status.py 生成）；缺省时全库扫描",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="仅打印补拉清单，不写缓存",
-    )
-    parser.add_argument(
-        "--no-incremental",
-        action="store_true",
-        help="禁用增量合并，改为全量覆盖（重拉完整历史段）",
-    )
-    parser.add_argument(
-        "--no-backup",
-        action="store_true",
-        help="跳过写入前的自动备份（默认会备份 pipeline_cache.db / metadata.json）",
-    )
-    args = parser.parse_args()
-    main(
-        plan_path=args.plan,
-        dry_run=args.dry_run,
-        no_incremental=args.no_incremental,
-        backup=not args.no_backup,
-    )
+__all__ = [
+    # constants
+    "START_DATE",
+    "WORKERS",
+    "FETCH_TIMEOUT",
+    "CACHE_DB",
+    "PROGRESS_FILE",
+    "PROGRESS_FLUSH_EVERY",
+    "FAILED_MIN_RECORDS",
+    # progress
+    "_load_completed_tickers",
+    "_load_failed_tickers",
+    "_save_progress",
+    "_mark_completed",
+    "_mark_failed",
+    "_flush_completed",
+    # dates
+    "get_today_date",
+    "get_expected_date",
+    # plan
+    "load_sync_plan",
+    # db_queries
+    "_has_sufficient_history",
+    "_has_today_data",
+    "get_failed_tickers",
+    "get_today_only_tickers",
+    "get_data_factory",
+    # fetch
+    "_fetch_kline_provider",
+    "fetch_full_range",
+    "fetch_today_incremental",
+    # report
+    "fetch_missing_report",
+    "print_missing_report",
+    # cli
+    "main",
+]

@@ -186,7 +186,7 @@ def trend_gate_and_score(tech: dict[str, float]) -> tuple[bool, float, str]:
     ma60_slope = tech.get("ma60_slope", 0.0)
 
     if close < ma60 and ma60_slope < 0:
-        return False, 0.0, f"下跌趋势：价格跌破 MA60 且 MA60 向下"
+        return False, 0.0, "下跌趋势：价格跌破 MA60 且 MA60 向下"
     if close < ma120:
         return False, 0.0, "下跌趋势：价格跌破 MA120"
 
