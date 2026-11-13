@@ -14,6 +14,7 @@ API 文档：https://fuyao.aicubes.cn/llms-full.txt
 
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 import time
@@ -146,10 +147,13 @@ class TongHuaShunProvider(DataProvider):
 
     _api_key: str = ""
     _initialized: bool = False
+    # 复用 HTTP Session，避免每次请求重新建立 TCP 连接（TLS 握手开销）。
+    _session: requests.Session | None = None
+    _session_lock: threading.Lock = threading.Lock()
 
     @classmethod
     def _ensure_init(cls) -> None:
-        """延迟初始化：检查 API Key 并缓存。"""
+        """延迟初始化：检查 API Key 并缓存，同时创建复用的 HTTP Session。"""
         if cls._initialized:
             return
         key = (
@@ -162,22 +166,52 @@ class TongHuaShunProvider(DataProvider):
         cls._api_key = key
         cls._initialized = True
 
+    @classmethod
+    def _ensure_session(cls) -> requests.Session:
+        """获取（懒创建）复用的 requests.Session，带连接池。"""
+        if cls._session is None:
+            with cls._session_lock:
+                if cls._session is None:
+                    sess = requests.Session()
+                    # 连接池：最大 10 个保持连接，最大 20 个总连接
+                    adapter = requests.adapters.HTTPAdapter(
+                        pool_connections=10,
+                        pool_maxsize=20,
+                        max_retries=0,  # 由上层 rate_limit/重试策略控制，此处不自动重试
+                    )
+                    sess.mount("http://", adapter)
+                    sess.mount("https://", adapter)
+                    cls._session = sess
+        return cls._session
+
+    @classmethod
+    def _close_session(cls) -> None:
+        """关闭 HTTP Session（测试/进程退出时调用）。"""
+        with cls._session_lock:
+            if cls._session is not None:
+                with contextlib.suppress(Exception):
+                    cls._session.close()
+                cls._session = None
+
     # ── 内部工具 ──────────────────────────────────────────────
 
     @staticmethod
     def _headers() -> dict[str, str]:
         return {"X-api-key": TongHuaShunProvider._api_key}
 
-    @staticmethod
-    def _get(path: str, params: dict[str, Any] | None = None) -> dict | None:
-        """发送 GET 请求，返回 ApiResponse.data 或 None。"""
+    @classmethod
+    def _get(cls, path: str, params: dict[str, Any] | None = None) -> dict | None:
+        """发送 GET 请求，返回 ApiResponse.data 或 None。
+
+        使用复用的 requests.Session，避免每次请求重新建立 TCP/TLS 连接。
+        """
         _ths_wait_for_rate_limit()
         try:
             url = f"{_BASE_URL}{path}"
-            resp = requests.get(
+            resp = cls._ensure_session().get(
                 url,
                 params=params if params is not None else {},
-                headers=TongHuaShunProvider._headers(),
+                headers=cls._headers(),
                 timeout=(8, 15),  # connect 8s，read 15s，避免握手阶段长期挂起
             )
             resp.raise_for_status()

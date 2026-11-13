@@ -265,14 +265,13 @@ class TestFetchKlineEdge:
 class TestFetchMetadata:
     def test_fetch_metadata_success(self) -> None:
         provider = AkShareHKProvider()
+        AkShareHKProvider._ak = None
+        AkShareHKProvider._req = None
         parts = [""] * 60
         parts[39] = "12.5"  # PE
         parts[58] = "1.8"  # PB
         resp = SimpleNamespace(text="~".join(parts), raise_for_status=MagicMock())
-        with patch(
-            "trade_krono_cli.data_providers.akshare_hk_provider.requests.get",
-            return_value=resp,
-        ):
+        with patch("requests.Session.get", return_value=resp):
             meta = provider.fetch_metadata("hk.00700")
         assert meta is not None
         assert meta.pe_ttm == 12.5
@@ -281,17 +280,15 @@ class TestFetchMetadata:
 
     def test_fetch_metadata_insufficient_fields(self) -> None:
         provider = AkShareHKProvider()
+        AkShareHKProvider._ak = None
+        AkShareHKProvider._req = None
         resp = SimpleNamespace(text="a~b~c", raise_for_status=MagicMock())
-        with patch(
-            "trade_krono_cli.data_providers.akshare_hk_provider.requests.get",
-            return_value=resp,
-        ):
+        with patch("requests.Session.get", return_value=resp):
             assert provider.fetch_metadata("hk.00700") is None
 
     def test_fetch_metadata_network_error(self) -> None:
         provider = AkShareHKProvider()
-        with patch(
-            "trade_krono_cli.data_providers.akshare_hk_provider.requests.get",
-            side_effect=Exception("network down"),
-        ):
+        AkShareHKProvider._ak = None
+        AkShareHKProvider._req = None
+        with patch("requests.Session.get", side_effect=Exception("network down")):
             assert provider.fetch_metadata("hk.00700") is None

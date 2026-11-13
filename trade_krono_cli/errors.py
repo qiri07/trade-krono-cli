@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
+from trade_krono_cli.security import sanitize_for_log
+
 T = TypeVar("T")
 
 
@@ -170,10 +172,15 @@ def safe_run(
         result = fn(*args, **kwargs)
         return ModuleResult(success=True, data=result, elapsed_sec=time.time() - t0)
     except Exception as e:
+        # 对 args/kwargs 做脱敏，避免 API Key/Token 等敏感信息写入错误上下文
+        # 进而泄露到日志、JSON 报告或外部推送中。
         err = ModuleError(
             module=module,
             message=str(e),
             original_exception=e,
-            context={"args": str(args)[:200], "kwargs": str(kwargs)[:200]},
+            context={
+                "args": sanitize_for_log(str(args)[:200]),
+                "kwargs": sanitize_for_log(str(kwargs)[:200]),
+            },
         )
         return ModuleResult(success=False, error=err, elapsed_sec=time.time() - t0)

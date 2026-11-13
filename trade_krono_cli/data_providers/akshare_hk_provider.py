@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from typing import Any
 
 import pandas as pd
@@ -39,6 +40,8 @@ class AkShareHKProvider(DataProvider):
 
     _ak: Any = None
     _req: Any = None
+    # 复用 HTTP Session，避免每次请求重新建立 TCP 连接。
+    _session_lock: threading.Lock = threading.Lock()
 
     @classmethod
     def _ensure_import(cls) -> None:
@@ -49,7 +52,18 @@ class AkShareHKProvider(DataProvider):
             import requests as req  # type: ignore
 
             cls._ak = ak
-            cls._req = req
+            # 懒创建 Session（线程安全），复用 TCP 连接池
+            with cls._session_lock:
+                if cls._req is None:
+                    sess = req.Session()
+                    adapter = requests.adapters.HTTPAdapter(
+                        pool_connections=10,
+                        pool_maxsize=20,
+                        max_retries=0,
+                    )
+                    sess.mount("http://", adapter)
+                    sess.mount("https://", adapter)
+                    cls._req = sess
         except ImportError:
             msg = "akshare 未安装，无法使用 akshare_hk 数据源。请运行: uv add akshare"
             raise RuntimeError(msg)
@@ -277,8 +291,9 @@ class AkShareHKProvider(DataProvider):
         """
         try:
             code = ticker.replace("hk.", "")
+            self._ensure_import()
             url = f"https://qt.gtimg.cn/q=hk{code}"
-            resp = requests.get(url, timeout=10)
+            resp = self._req.get(url, timeout=10)
             resp.raise_for_status()
             parts = resp.text.strip().split("~")
             if len(parts) > 58:

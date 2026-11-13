@@ -20,9 +20,11 @@ def _reset_provider():
     """每个测试前重置类状态。"""
     TongHuaShunProvider._initialized = False
     TongHuaShunProvider._api_key = ""
+    TongHuaShunProvider._session = None
     yield
     TongHuaShunProvider._initialized = False
     TongHuaShunProvider._api_key = ""
+    TongHuaShunProvider._session = None
 
 
 @pytest.fixture
@@ -57,21 +59,21 @@ def test_health_check_success(provider: TongHuaShunProvider, api_key: str) -> No
         "message": "success",
         "data": {"timestamp": 1747584000000, "item": [{"date_ms": 1747584000000}]},
     }
-    with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
         mock_get.return_value.raise_for_status.return_value = None
         assert provider.health_check() is True
 
 
 def test_health_check_failure(provider: TongHuaShunProvider, api_key: str) -> None:
-    with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_get.return_value.json.return_value = {"code": 2001, "message": "unauthorized"}
         mock_get.return_value.raise_for_status.return_value = None
         assert provider.health_check() is False
 
 
 def test_health_check_exception(provider: TongHuaShunProvider, api_key: str) -> None:
-    with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_get.side_effect = Exception("network error")
         assert provider.health_check() is False
 
@@ -100,7 +102,7 @@ def test_fetch_kline_success(provider: TongHuaShunProvider, api_key: str) -> Non
             ],
         },
     }
-    with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
         mock_get.return_value.raise_for_status.return_value = None
         result = provider.fetch_kline("sh.600519", "2026-08-01", "2026-08-29")
@@ -115,7 +117,7 @@ def test_fetch_kline_success(provider: TongHuaShunProvider, api_key: str) -> Non
 
 def test_fetch_kline_empty_response(provider: TongHuaShunProvider, api_key: str) -> None:
     mock_response = {"code": 0, "message": "success", "data": {"item": []}}
-    with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
         mock_get.return_value.raise_for_status.return_value = None
         result = provider.fetch_kline("sh.600519", "2026-08-01", "2026-08-29")
@@ -124,7 +126,7 @@ def test_fetch_kline_empty_response(provider: TongHuaShunProvider, api_key: str)
 
 def test_fetch_kline_api_error(provider: TongHuaShunProvider, api_key: str) -> None:
     mock_response = {"code": 3001, "message": "not found"}
-    with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
         mock_get.return_value.raise_for_status.return_value = None
         result = provider.fetch_kline("sh.600519", "2026-08-01", "2026-08-29")
@@ -134,7 +136,7 @@ def test_fetch_kline_api_error(provider: TongHuaShunProvider, api_key: str) -> N
 def test_fetch_kline_http_error(provider: TongHuaShunProvider, api_key: str) -> None:
     import requests
 
-    with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_get.side_effect = requests.exceptions.HTTPError("404")
         result = provider.fetch_kline("sh.600519", "2026-08-01", "2026-08-29")
     assert result is None
@@ -163,7 +165,7 @@ def test_fetch_quote_success(provider: TongHuaShunProvider, api_key: str) -> Non
             ],
         },
     }
-    with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
         mock_get.return_value.raise_for_status.return_value = None
         result = provider.fetch_quote("sh.600519")
@@ -176,7 +178,7 @@ def test_fetch_quote_success(provider: TongHuaShunProvider, api_key: str) -> Non
 
 def test_fetch_quote_empty(provider: TongHuaShunProvider, api_key: str) -> None:
     mock_response = {"code": 0, "message": "success", "data": {"item": []}}
-    with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
         mock_get.return_value.raise_for_status.return_value = None
         result = provider.fetch_quote("sh.600519")
@@ -219,7 +221,7 @@ def test_fetch_metadata_success(provider: TongHuaShunProvider, api_key: str) -> 
             resp.text = tencent_text
         return resp
 
-    with patch("trade_krono_cli.data_providers.tonghuashun_provider.requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_get.return_value.json.return_value = mock_response
         mock_get.return_value.raise_for_status.return_value = None
         mock_get.side_effect = _fake_get

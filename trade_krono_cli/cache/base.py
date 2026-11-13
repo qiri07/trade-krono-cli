@@ -186,6 +186,72 @@ class Cache:
                     continue
                 raise
 
+        # ── 将 adjustflag 加入 kline_cache 主键（旧表 PK 缺 adjustflag）────────
+        # 旧表 PK 为 (ticker, start, end, freq)，缺少 adjustflag，
+        # 导致同一区间不同复权方式（qfq/hfq/不复权）的数据写入时 PK 冲突，
+        # 只能告警跳过，造成部分复权数据缺失。
+        self._rebuild_kline_cache_pk_with_adjustflag(conn)
+
+    def _rebuild_kline_cache_pk_with_adjustflag(self, conn: sqlite3.Connection) -> None:
+        """重建 kline_cache 表，将 adjustflag 加入主键。
+
+        旧表 PK 为 (ticker, start, end, freq)，缺少 adjustflag。
+        重建后 PK 为 (ticker, start, end, freq, adjustflag)，
+        同一区间不同复权方式的数据可共存，不再 PK 冲突。
+        旧数据的 adjustflag 默认 '1'（前复权，与历史一致）。
+        整个过程在调用方的事务中执行（由 _run_migrations 的 _transaction 管理）。
+        """
+        try:
+            info = conn.execute("PRAGMA table_info(kline_cache)").fetchall()
+        except sqlite3.OperationalError:
+            return  # 表不存在，无需处理
+        if not info:
+            return
+        col_names = [row[1] for row in info]
+        pk_cols = [row[1] for row in info if row[5] > 0]  # pk > 0 表示在主键中
+        if "adjustflag" not in col_names:
+            return  # 列不存在，无需处理（ALTER 尚未执行或表为新建）
+        if "adjustflag" in pk_cols:
+            return  # adjustflag 已在 PK 中，无需重建
+
+        logger.info("🔄 重建 kline_cache 表：将 adjustflag 加入主键（旧表 PK 缺 adjustflag）")
+        try:
+            # 创建新表，adjustflag 加入 PK
+            conn.execute("""
+                CREATE TABLE kline_cache_new (
+                    ticker        TEXT NOT NULL,
+                    start         TEXT NOT NULL,
+                    end           TEXT NOT NULL,
+                    freq          TEXT NOT NULL,
+                    adjustflag    TEXT NOT NULL DEFAULT '1',
+                    ttl           REAL NOT NULL,
+                    data          BLOB NOT NULL,
+                    created       REAL NOT NULL,
+                    data_hash     TEXT,
+                    source_provider TEXT,
+                    source_version TEXT,
+                    PRIMARY KEY (ticker, start, end, freq, adjustflag)
+                )
+            """)
+            # 复制旧数据，adjustflag 默认 '1'
+            conn.execute("""
+                INSERT INTO kline_cache_new
+                (ticker, start, end, freq, adjustflag, ttl, data, created,
+                 data_hash, source_provider, source_version)
+                SELECT ticker, start, end, freq, '1', ttl, data, created,
+                       data_hash, source_provider, source_version
+                FROM kline_cache
+            """)
+            conn.execute("DROP TABLE kline_cache")
+            conn.execute("ALTER TABLE kline_cache_new RENAME TO kline_cache")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kline_cache_ticker ON kline_cache(ticker)"
+            )
+            logger.info("✅ kline_cache 表重建完成：adjustflag 已加入主键")
+        except sqlite3.Error as e:
+            logger.error(f"❌ kline_cache 表重建失败: {e}")
+            raise
+
     # ── 向后兼容：直接调用方法（委托给子模块）──────────────────────────────────
 
     def get_kline(self, ticker: str, start: str, end: str, freq: str, adjustflag: str = "1") -> Any:  # noqa: ANN401

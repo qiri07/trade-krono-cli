@@ -114,7 +114,7 @@ class TestAkShareHKProvider:
     def test_fetch_metadata_returns_none(self) -> None:
         """fetch_metadata 返回 None 当 API 调用失败时。"""
         p = AkShareHKProvider()
-        with patch("trade_krono_cli.data_providers.akshare_hk_provider.requests.get") as mock_get:
+        with patch("requests.Session.get") as mock_get:
             mock_get.side_effect = Exception("network error")
             assert p.fetch_metadata("hk.00700") is None
 
