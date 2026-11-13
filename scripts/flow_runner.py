@@ -37,12 +37,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+
+from scripts._utils import expected_trading_day
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -67,7 +70,7 @@ def checkpoint_path() -> Path:
     results_dir = Path(
         os.getenv("TRADING_KRONO_RESULTS_DIR", str(PROJECT_ROOT / "outputs" / "results"))
     )
-    return results_dir / f"flow_checkpoint_{time.strftime('%Y-%m-%d')}.json"
+    return results_dir / f"flow_checkpoint_{expected_trading_day()}.json"
 
 
 def load_checkpoint() -> dict[str, str]:
@@ -90,7 +93,7 @@ def save_checkpoint(statuses: dict[str, str]) -> None:
     path = checkpoint_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"date": time.strftime("%Y-%m-%d"), "steps": statuses}, ensure_ascii=False),
+        json.dumps({"date": expected_trading_day(), "steps": statuses}, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -195,7 +198,7 @@ STEPS: list[Step] = [
         description="白名单分析 + AI 核实 + 飞书推送（scripts.daily_analysis）",
         command=["uv", "run", "python", "-m", "scripts.daily_analysis"],
         enabled_by_default=True,
-        depends_on=["sync"],
+        depends_on=["sync", "buffett"],
         timeout=3600,
     ),
     Step(
@@ -225,7 +228,7 @@ STEPS: list[Step] = [
         command=[
             "bash",
             "scripts/czsc_full_scan.sh",
-            time.strftime("%Y-%m-%d"),
+            expected_trading_day(),
             str(PUSH_FLAG),
         ],
         enabled_by_default=True,
@@ -305,18 +308,29 @@ def run_step(step: Step, dry_run: bool = False) -> int:
         print("  🧪 DRY-RUN: 跳过执行")
         return 0
     try:
-        result = subprocess.run(
+        # start_new_session：让 step 及其子进程处于独立进程组，超时可整组 kill，
+        # 避免只杀掉 uv 而 python/DB 写入孙进程变孤儿继续跑（回归：2026-11-12）。
+        proc = subprocess.Popen(
             step.command,
             cwd=str(PROJECT_ROOT),
             shell=False,
-            timeout=step.timeout,
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired:
-        print(f"  ⏱️  [{step.name}] 超时（>{step.timeout}s），按失败处理")
-        return 124
-    if result.returncode != 0:
-        print(f"  ✗ [{step.name}] 失败（exit {result.returncode}）")
-    return result.returncode
+        try:
+            rc = proc.wait(timeout=step.timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            print(f"  ⏱️  [{step.name}] 超时（>{step.timeout}s），已终止进程组，按失败处理")
+            return 124
+        except OSError:
+            return 127
+    except OSError as e:
+        print(f"  ✗ [{step.name}] 启动失败: {e}")
+        return 127
+    if rc != 0:
+        print(f"  ✗ [{step.name}] 失败（exit {rc}）")
+    return rc
 
 
 def _suppress_auto_backup(step: Step) -> Step:
@@ -515,6 +529,9 @@ def cmd_run(
                     print(
                         f"  ⏭️  跳过 [{s.name}]：前置 step 失败（{sorted(d for d in s.depends_on if d in failed_set)}）"
                     )
+                    # 被跳过的 step 也视为失败，避免其下游 step 在后续层继续基于脏数据运行
+                    statuses[s.name] = "skipped"
+                    failed_set.add(s.name)
                 if not runnable:
                     continue
 
@@ -585,7 +602,10 @@ def cmd_run(
         return 2
     rc = run_step(single, dry_run=dry_run)
     if not dry_run:
-        save_checkpoint({step: "success" if rc == 0 else "failed"})
+        # 单步执行只覆盖当前 step 状态，保留当天已累积的其他 step 记录
+        statuses = load_checkpoint()
+        statuses[step] = "success" if rc == 0 else "failed"
+        save_checkpoint(statuses)
     return rc
 
 

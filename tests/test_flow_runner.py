@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from typing import TYPE_CHECKING
 
 import scripts.flow_runner as fr
@@ -94,18 +95,26 @@ class TestResolveEnabledSteps:
 class TestRunStep:
     """run_step 执行与 dry-run 行为。"""
 
+    class _FakeProc:
+        """模拟 Popen 进程：记录 wait 的超时参数并返回预设 exit code。"""
+
+        def __init__(self, rc: int = 0, recorder: dict | None = None) -> None:
+            self.pid = 4242
+            self._rc = rc
+            self._recorder = recorder if recorder is not None else {}
+
+        def wait(self, timeout=None):  # noqa: ANN001 - 模拟 Popen.wait 签名
+            self._recorder["timeout"] = timeout
+            return self._rc
+
     def test_dry_run_returns_zero_without_executing(self, monkeypatch) -> None:
         executed = {"count": 0}
 
-        def _fake_run(cmd, **kwargs):
+        def _fake_popen(*_a, **_k):
             executed["count"] += 1
+            raise AssertionError("dry-run 不应启动子进程")
 
-            class _R:
-                returncode = 0
-
-            return _R()
-
-        monkeypatch.setattr(fr.subprocess, "run", _fake_run)
+        monkeypatch.setattr(fr.subprocess, "Popen", _fake_popen)
         # 强制 dry_run 路径
         monkeypatch.setattr(fr, "DRY_RUN", False)
         step = fr.get_step("check")
@@ -116,14 +125,11 @@ class TestRunStep:
     def test_run_executes_subprocess(self, monkeypatch) -> None:
         executed = {"count": 0}
 
-        class _R:
-            returncode = 0
-
-        def _fake_run(cmd, **kwargs):
+        def _fake_popen(*_a, **_k):
             executed["count"] += 1
-            return _R()
+            return self._FakeProc(rc=0)
 
-        monkeypatch.setattr(fr.subprocess, "run", _fake_run)
+        monkeypatch.setattr(fr.subprocess, "Popen", _fake_popen)
         monkeypatch.setattr(fr, "DRY_RUN", False)
         step = fr.get_step("check")
         rc = fr.run_step(step, dry_run=False)
@@ -131,30 +137,44 @@ class TestRunStep:
         assert executed["count"] == 1
 
     def test_run_returns_nonzero_on_failure(self, monkeypatch) -> None:
-        class _R:
-            returncode = 3
-
-        monkeypatch.setattr(fr.subprocess, "run", lambda *a, **k: _R())
+        monkeypatch.setattr(fr.subprocess, "Popen", lambda *a, **k: self._FakeProc(rc=3))
         monkeypatch.setattr(fr, "DRY_RUN", False)
         step = fr.get_step("check")
         assert fr.run_step(step, dry_run=False) == 3
 
     def test_run_step_passes_step_timeout(self, monkeypatch) -> None:
-        captured: dict = {}
-
-        def _fake_run(cmd, **kwargs):
-            captured.update(kwargs)
-
-            class _R:
-                returncode = 0
-
-            return _R()
-
-        monkeypatch.setattr(fr.subprocess, "run", _fake_run)
+        recorder: dict = {}
+        monkeypatch.setattr(
+            fr.subprocess, "Popen", lambda *a, **k: self._FakeProc(rc=0, recorder=recorder)
+        )
         monkeypatch.setattr(fr, "DRY_RUN", False)
         step = fr.get_step("buffett")
         assert fr.run_step(step, dry_run=False) == 0
-        assert captured.get("timeout") == 5400
+        assert recorder.get("timeout") == 5400
+
+    def test_run_step_timeout_kills_process_group(self, monkeypatch) -> None:
+        """超时后必须整组 kill 进程（start_new_session 的进程组），避免孤儿进程。"""
+        killed: dict = {}
+
+        class _TimeoutProc(self._FakeProc):
+            def __init__(self) -> None:
+                super().__init__()
+                self._waited = False
+
+            def wait(self, timeout=None):  # noqa: ANN001 - 模拟 Popen.wait 签名
+                if not self._waited:
+                    self._waited = True
+                    self._recorder["timeout"] = timeout
+                    raise subprocess.TimeoutExpired(cmd="x", timeout=timeout or 1)
+                return -9
+
+        monkeypatch.setattr(fr.subprocess, "Popen", lambda *a, **k: _TimeoutProc())
+        monkeypatch.setattr(fr.os, "killpg", lambda pg, sig: killed.update(pg=pg, sig=sig))
+        monkeypatch.setattr(fr, "DRY_RUN", False)
+        step = fr.get_step("check")
+        assert fr.run_step(step, dry_run=False) == 124
+        assert killed["pg"] == 4242
+        assert killed["sig"] == fr.signal.SIGKILL
 
 
 class TestCmdRun:
