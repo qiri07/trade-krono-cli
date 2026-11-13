@@ -26,11 +26,10 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import get_sqlite_conn, is_bse_or_hk
+from scripts._utils import CACHE_DB, get_sqlite_conn, is_bse_or_hk
 
 # ── 常量 ─────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DB_PATH = PROJECT_ROOT / "outputs/cache/pipeline_cache.db"
 BARS_DIR = PROJECT_ROOT / "outputs/czsc_bars"
 OUT_DIR = PROJECT_ROOT / "outputs/czsc_signal_scan"
 LOG_DIR = PROJECT_ROOT / "outputs/logs"
@@ -99,7 +98,7 @@ def get_latest_bar_date(ticker: str) -> str | None:
 def get_db_latest_date(ticker: str) -> str | None:
     """读取 DB 获取最后交易日"""
     try:
-        con = get_sqlite_conn(DB_PATH, readonly=True)
+        con = get_sqlite_conn(CACHE_DB, readonly=True)
         row = con.execute(
             "select end from kline_cache where ticker=? and freq='d'", (ticker,)
         ).fetchone()
@@ -115,7 +114,7 @@ def db_to_parquet_incremental() -> tuple[int, int]:
     增量转换：只转换 DB 中 end > parquet 最后日期的标的
     返回 (新转换数, 跳过数)
     """
-    con = get_sqlite_conn(DB_PATH, readonly=True)
+    con = get_sqlite_conn(CACHE_DB, readonly=True)
     cur = con.cursor()
     # 只导出 sh./sz. 的标的，排除 bj.（北交所）和 hk.（港股）
     rows = cur.execute(
@@ -407,7 +406,7 @@ def main() -> int:
     sys.stdout = sys.stderr = log_f  # 双写日志（也保留控制台输出用 tee）
 
     print(f"[{datetime.now()}] ==== CZSC 全市场信号扫描开始 ====", flush=True)
-    print(f"DB: {DB_PATH}", flush=True)
+    print(f"DB: {CACHE_DB}", flush=True)
     print(f"BARS: {BARS_DIR}", flush=True)
     print(f"OUT: {OUT_DIR}", flush=True)
 

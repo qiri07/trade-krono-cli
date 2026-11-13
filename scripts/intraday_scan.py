@@ -66,9 +66,6 @@ from scripts.stock_name_cache import resolve_stock_names
 # 项目根目录（供结果目录使用）
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# ── 常量 ─────────────────────────────────────────────────────────────────────
-_RESULTS_DIR = _PROJECT_ROOT / "outputs" / "results"
-
 # 扫描用的 15min 主周期；金叉 / 多头 / MACD 均在该周期上判断
 PRIMARY_PERIOD = "15"
 # 拉取 bar 数量上限（akshare 接口单次可返回 ~1970 根，取尾部足够多根即可）
@@ -499,9 +496,12 @@ def _build_feishu_card(results: list[IntradayResult], mode: str) -> str:
 
 def _save_json(results: list[IntradayResult], mode: str) -> Path:
     """保存结果到 JSON。"""
-    _RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
+    results_dir = Path(get_settings().results_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M")
-    out = _RESULTS_DIR / f"intraday_scan_{ts}.json"
+    out = results_dir / f"intraday_scan_{ts}.json"
     payload: dict[str, Any] = {
         "timestamp": datetime.now().isoformat(),
         "mode": mode,

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import get_all_tickers, get_provider_chain, get_sqlite_conn
+from scripts._utils import CACHE_DB, get_all_tickers, get_provider_chain, get_sqlite_conn
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
@@ -31,7 +31,6 @@ END_DATE = "2026-09-15"
 BATCH_SIZE = 100
 WORKERS = 16
 FETCH_TIMEOUT = 20
-CACHE_DB = Path("outputs/cache/pipeline_cache.db")
 
 _load_env()
 

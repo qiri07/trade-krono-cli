@@ -31,9 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # noqa: E402
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CACHE_DB = PROJECT_ROOT / "outputs" / "cache" / "pipeline_cache.db"
 
-from scripts._utils import get_sqlite_conn, is_bse_or_hk, is_etf_ticker  # noqa: E402
+from scripts._utils import CACHE_DB, get_sqlite_conn, is_bse_or_hk, is_etf_ticker  # noqa: E402
 
 # 收盘 + 数据落库缓冲时间：此刻之后当日 K 线应已可获取
 MARKET_CLOSE_HOUR = 15

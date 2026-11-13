@@ -52,8 +52,7 @@ _SOURCE_LABELS: dict[str, str] = {
 }
 
 # 结果目录（collect_source_sets 的默认根；可用同名参数覆盖以支持测试隔离）
-_RESULTS = Path("outputs/results")
-_CZSC_DIR = Path("outputs/czsc_signal_scan")
+# 默认通过 get_settings() 获取，见 collect_source_sets 中的 None 处理
 
 
 def _codes_from_buffett_screen(path: Path) -> set[str]:
@@ -252,9 +251,13 @@ def collect_source_sets(
     其余选股线独立计数。
     """
     if results_dir is None:
-        results_dir = _RESULTS
+        from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
+        results_dir = Path(get_settings().results_dir)
     if czsc_dir is None:
-        czsc_dir = _CZSC_DIR
+        from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
+        czsc_dir = Path(get_settings().cache_dir).parent / "czsc_signal_scan"
 
     dc, dd = _date_tags(date_str)
     fmaps = {k: t.format(dc=dc, dd=dd) for k, t in _TEMPLATES.items()}

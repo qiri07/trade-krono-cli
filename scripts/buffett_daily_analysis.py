@@ -29,8 +29,13 @@ from scripts.feishu_utils import load_config, send_notification
 # 常量
 # ─────────────────────────────────────────────────────────────────────────────
 
-_RESULTS_DIR = Path("outputs/results")
 SCREEN_SCRIPT = Path("tests/buffett_screen_parallel.py")
+
+
+def _get_results_dir() -> Path:
+    from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
+    return Path(get_settings().results_dir)
 
 
 def _ticker_to_code(ticker: str) -> str:
@@ -162,7 +167,7 @@ def run(buffett_result_file: str | None = None, date_str: str | None = None) -> 
     today = date_str or datetime.now().strftime("%Y-%m-%d")
     # 筛选脚本使用 YYYYMMDD 格式命名结果文件
     date_compact = today.replace("-", "")
-    result_file = buffett_result_file or str(_RESULTS_DIR / f"buffett_screen_{date_compact}.txt")
+    result_file = buffett_result_file or str(_get_results_dir() / f"buffett_screen_{date_compact}.txt")
 
     logger.info(f"🎯 开始巴菲特筛选 + 技术面逐只分析  日期={today}")
 

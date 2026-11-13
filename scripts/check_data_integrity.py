@@ -5,15 +5,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
-from pathlib import Path
 
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import get_sqlite_conn  # noqa: E402
+from scripts._utils import CACHE_DB, get_sqlite_conn  # noqa: E402
 
-DB_PATH = Path("outputs/cache/pipeline_cache.db")
-BACKUP_DIR = Path("outputs/cache/backups")
+BACKUP_DIR = CACHE_DB.parent / "backups"
 
 
 def decode_data(raw: bytes) -> tuple[int, str, str]:
@@ -39,7 +37,7 @@ def decode_data(raw: bytes) -> tuple[int, str, str]:
 
 
 def main(full_decode: bool = False) -> None:
-    conn = get_sqlite_conn(DB_PATH)
+    conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
     logger.info("📊 数据完整性检查报告")
     logger.info(f"   检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

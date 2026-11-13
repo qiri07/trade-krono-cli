@@ -46,6 +46,7 @@ from scripts.combined_stock_intersect import build_intersection
 from scripts.daily_analysis import ai_verify
 from scripts.feishu_utils import push_feishu
 from trade_krono_cli.cli_commands.core import _load_env
+from trade_krono_cli.config import get_settings
 from trade_krono_cli.research_db import get_research  # noqa: PLC0415
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -148,18 +149,19 @@ def main() -> None:
     # 未出现在 source_sets 中的来源（如测试中未 mock 的）不做校验，避免误报。
     dc = args.date.replace("-", "")
     dd = args.date
+    results_dir = Path(get_settings().results_dir)
+    czsc_dir = Path(get_settings().cache_dir).parent / "czsc_signal_scan"
     _source_file_map: dict[str, Path] = {
-        "buffett": Path(f"outputs/results/buffett_screen_{dc}.txt"),
-        "whitelist": Path("outputs/results/buffett_dynamic_whitelist.txt"),
-        "resonance": Path(f"outputs/results/macd_resonance_{dd}.json"),
-        "multi_head": Path(f"outputs/results/multi_head_{dc}.txt"),
-        "double_ma": Path(f"outputs/results/double_ma_golden_cross_{dd}.json"),
-        "macd_ma": Path(f"outputs/results/macd_ma_screener_{dc}.json"),
+        "buffett": results_dir / f"buffett_screen_{dc}.txt",
+        "whitelist": results_dir / "buffett_dynamic_whitelist.txt",
+        "resonance": results_dir / f"macd_resonance_{dd}.json",
+        "multi_head": results_dir / f"multi_head_{dc}.txt",
+        "double_ma": results_dir / f"double_ma_golden_cross_{dd}.json",
+        "macd_ma": results_dir / f"macd_ma_screener_{dc}.json",
     }
-    _czsc_dir = Path("outputs/czsc_signal_scan")
     _czsc_files = [
-        (_czsc_dir / f"matched_bi_ma_{dc}.csv", "czsc_bi_ma"),
-        (_czsc_dir / f"matched_third_buy_{dc}.csv", "czsc_third_buy"),
+        (czsc_dir / f"matched_bi_ma_{dc}.csv", "czsc_bi_ma"),
+        (czsc_dir / f"matched_third_buy_{dc}.csv", "czsc_third_buy"),
     ]
     _missing: list[str] = []
     for src, path in _source_file_map.items():
@@ -206,7 +208,7 @@ def main() -> None:
 
     # ── Step 4: 汇总文件路径（在 Step 5.6 回测 attach 之后写出，确保 kronos/backtest 完整）──
     dc = args.date.replace("-", "")
-    out_file = Path(f"outputs/results/combined_intersection_{dc}.json")
+    out_file = Path(get_settings().results_dir) / f"combined_intersection_{dc}.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
     def _write_intersection_json() -> None:

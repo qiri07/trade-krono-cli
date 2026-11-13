@@ -39,6 +39,7 @@ from scripts.combined_stock_collect import _SOURCE_LABELS, collect_source_sets
 from scripts.combined_stock_intersect import build_intersection
 from scripts.combined_stock_models import BacktestView, StockCandidate
 from scripts.feishu_utils import push_feishu
+from trade_krono_cli.config import get_settings
 from trade_krono_cli.domain.kronos_result import KronosForecastResult
 
 
@@ -270,7 +271,7 @@ def main() -> None:
     detail_path = (
         Path(args.detail_json)
         if args.detail_json
-        else Path(f"outputs/results/combined_intersection_{dc}.json")
+        else Path(get_settings().results_dir) / f"combined_intersection_{dc}.json"
     )
     details = load_analyzed_details(detail_path, date_str)
 
@@ -283,7 +284,7 @@ def main() -> None:
         analyzed_map=details,
     )
 
-    out_path = Path(args.out or f"outputs/results/combined_report_{dc}.txt")
+    out_path = Path(args.out or str(Path(get_settings().results_dir) / f"combined_report_{dc}.txt"))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(card, encoding="utf-8")
     logger.info(f"💾 卡片已保存：{out_path}")

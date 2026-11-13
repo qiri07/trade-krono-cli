@@ -55,8 +55,7 @@ from trade_krono_cli.cli_commands._core_helpers import _load_env
 # 常量
 # ─────────────────────────────────────────────────────────────────────────────
 
-_RESULTS_DIR = Path("outputs/results")
-_DYNAMIC_WHITELIST_PATH = _RESULTS_DIR / "buffett_dynamic_whitelist.txt"
+_DYNAMIC_WHITELIST_NAME = "buffett_dynamic_whitelist.txt"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -78,8 +77,13 @@ def _write_dynamic_whitelist(results_pass: list[StockMetrics]) -> None:
         for r in results_pass
         if r.ticker and not r.ticker.upper().startswith(("920", "BJ."))
     ]
-    _DYNAMIC_WHITELIST_PATH.write_text(",".join(codes), encoding="utf-8")
-    logger.info(f"动态白名单已更新：{len(codes)} 只 → {_DYNAMIC_WHITELIST_PATH}")
+    from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
+    results_dir = Path(get_settings().results_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    whitelist_path = results_dir / _DYNAMIC_WHITELIST_NAME
+    whitelist_path.write_text(",".join(codes), encoding="utf-8")
+    logger.info(f"动态白名单已更新：{len(codes)} 只 → {whitelist_path}")
 
 
 def _ticker_to_code(ticker: str) -> str:
@@ -193,9 +197,11 @@ def run(
         是否跳过筛选步骤（直接使用已有结果文件）。
     """
     _load_env()
+    from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
     today = date_str or datetime.now().strftime("%Y-%m-%d")
     date_compact = today.replace("-", "")
-    result_file = str(_RESULTS_DIR / f"buffett_screen_{date_compact}.txt")
+    result_file = str(Path(get_settings().results_dir) / f"buffett_screen_{date_compact}.txt")
 
     logger.info(f"🎯 开始巴菲特筛选 + 技术面逐只分析  日期={today}")
 
@@ -278,8 +284,13 @@ def _write_dynamic_whitelist_from_codes(codes: list[str]) -> None:
     """
     # 排除北交所股票（920 开头的 BJ 代码）
     codes = [c for c in codes if not c.upper().startswith(("920", "BJ."))]
-    _DYNAMIC_WHITELIST_PATH.write_text(",".join(codes), encoding="utf-8")
-    logger.info(f"动态白名单已更新：{len(codes)} 只 → {_DYNAMIC_WHITELIST_PATH}")
+    from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
+    results_dir = Path(get_settings().results_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    whitelist_path = results_dir / _DYNAMIC_WHITELIST_NAME
+    whitelist_path.write_text(",".join(codes), encoding="utf-8")
+    logger.info(f"动态白名单已更新：{len(codes)} 只 → {whitelist_path}")
 
 
 def _run_full_screen(

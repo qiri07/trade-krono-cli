@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 
 from loguru import logger
 
@@ -40,7 +39,7 @@ def _load_meta_names() -> dict[str, str]:
         return _META_NAMES
 
     names: dict[str, str] = {}
-    meta_path = Path("outputs/cache/metadata.json")
+    meta_path = get_cache_db_path().parent / "metadata.json"
     if meta_path.exists():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))

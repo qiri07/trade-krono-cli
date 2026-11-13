@@ -29,7 +29,18 @@ try:
 except ImportError:
     _YAML_AVAILABLE = False
 
-CACHE_DB = Path("outputs/cache/pipeline_cache.db")
+# CACHE_DB 通过 get_cache_db_path() 获取，尊重 TRADING_KRONO_CACHE_DIR 环境变量（测试隔离）。
+# 模块加载时先尝试读取 settings，失败时回退到默认路径。
+def _default_cache_db() -> Path:
+    try:
+        from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
+        return Path(get_settings().cache_dir) / "pipeline_cache.db"
+    except Exception:
+        return Path("outputs/cache/pipeline_cache.db")
+
+
+CACHE_DB: Path = _default_cache_db()
 
 # providers.yaml 路径与回退硬编码链（configs/providers.yaml 缺失/损坏时使用，
 # 与历史行为一致，保证向后兼容）

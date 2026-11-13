@@ -38,6 +38,7 @@ from scripts.combined_stock_models import StockCandidate
 from scripts.combined_stock_report import load_analyzed_details, normalize_source_sets
 from scripts.feishu_utils import push_feishu
 from scripts.six_dim_screen import DIM_PRIORITY, TIER_WIDTH
+from trade_krono_cli.config import get_settings
 
 _SIX_DIM_DIMS: tuple[str, ...] = (
     "logic",
@@ -314,19 +315,21 @@ def main() -> None:
     pool = {c.code: c for c in cands}
     logger.info(f"流程交集池（≥{args.min_sources} 条线）：{len(pool)} 只")
 
-    rows = load_six_dim(Path(f"outputs/results/six_dim_screen_{dc}.json"))
+    results_dir = Path(get_settings().results_dir)
+
+    rows = load_six_dim(results_dir / f"six_dim_screen_{dc}.json")
     if not rows:
         logger.error(f"❌ 无六维选股结果，无法计算交集（日期 {date_str}）")
         sys.exit(1)
 
     details = load_analyzed_details(
-        Path(f"outputs/results/combined_intersection_{dc}.json"), date_str
+        results_dir / f"combined_intersection_{dc}.json", date_str
     )
     card = build_cross_card(date_str, pool, rows, args.min_sources, details)
     hits = select_hits(pool, rows)
     logger.info(f"交集命中：{len(hits)} 只")
 
-    out_path = Path(args.out or f"outputs/results/cross_flow_sixdim_{dc}.txt")
+    out_path = Path(args.out or str(results_dir / f"cross_flow_sixdim_{dc}.txt"))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(card, encoding="utf-8")
     logger.info(f"💾 卡片已保存：{out_path}")
