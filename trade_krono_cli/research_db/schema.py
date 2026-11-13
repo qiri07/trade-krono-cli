@@ -240,6 +240,26 @@ CREATE_SCRIPT = """
                     created_at      REAL NOT NULL
                 );
 
+                -- 预测评估结果（eval_report.store_summary 写入）
+                CREATE TABLE IF NOT EXISTS evaluation_results (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    eval_at         REAL NOT NULL,
+                    eval_date_range TEXT,
+                    n_records       INTEGER NOT NULL,
+                    kronos_acc_5d   REAL,
+                    kronos_acc_10d  REAL,
+                    kronos_acc_20d  REAL,
+                    ta_buy_wr_5d    REAL,
+                    ta_buy_wr_10d   REAL,
+                    ta_buy_wr_20d   REAL,
+                    combined_wr_5d  REAL,
+                    combined_wr_10d REAL,
+                    combined_wr_20d REAL,
+                    high_conf_wr_5d REAL,
+                    high_conf_wr_10d REAL,
+                    summary_json    TEXT NOT NULL
+                );
+
                 -- 性能索引：加速按 job_id 和 ticker 的查询
                 CREATE INDEX IF NOT EXISTS idx_jobs_run_at ON jobs(run_at);
                 CREATE INDEX IF NOT EXISTS idx_jobs_date ON jobs(date);

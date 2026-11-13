@@ -32,8 +32,7 @@ class ResearchDatabase:
         "external_repos",
     )
 
-    # 类级别集合，追踪所有线程创建的连接，供 close() 统一关闭
-    _all_conns: set[sqlite3.Connection] = set()
+    # 类级别锁：所有实例共用，保护各自实例的连接集合
     _conn_lock = threading.Lock()
 
     def __init__(self, db_path: Path | None = None, settings: Settings | None = None) -> None:
@@ -50,6 +49,8 @@ class ResearchDatabase:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         # 线程本地存储必须在 _init_db 之前初始化，因为 _init_db 会访问 _conn
         self._local = threading.local()
+        # 实例级连接登记：close() 只关闭本实例的连接，避免误关其他 ResearchDatabase 实例
+        self._all_conns: set[sqlite3.Connection] = set()
         self._init_db()
         self._migrate_schema()
 
@@ -57,24 +58,32 @@ class ResearchDatabase:
     def _conn(self) -> sqlite3.Connection:
         """获取当前线程的 SQLite 连接（线程安全）。"""
         conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            try:
+                conn.execute("SELECT 1")
+            except sqlite3.Error:
+                conn = None
         if conn is None:
             conn = sqlite3.connect(self._db_path, check_same_thread=False)
-            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("PRAGMA journal_mode=WAL")
+            # schema 声明的 FOREIGN KEY 只有显式开启才会被 SQLite 强制，
+            # 否则孤立子表数据（signal 指向不存在的 job）可被静默写入。
+            conn.execute("PRAGMA foreign_keys=ON")
             self._local.conn = conn
             with ResearchDatabase._conn_lock:
-                ResearchDatabase._all_conns.add(conn)
+                self._all_conns.add(conn)
         return conn
 
     def close(self) -> None:
-        """关闭所有线程的 SQLite 连接（测试清理用）。"""
+        """关闭本实例所有线程的 SQLite 连接（测试清理用）。"""
         conn = getattr(self._local, "conn", None)
         if conn is not None:
             with contextlib.suppress(sqlite3.Error):
                 conn.close()
             self._local.conn = None
         with ResearchDatabase._conn_lock:
-            for c in list(ResearchDatabase._all_conns):
+            for c in list(self._all_conns):
                 try:
                     c.execute("SELECT 1")
                 except sqlite3.Error:
@@ -82,7 +91,7 @@ class ResearchDatabase:
                     continue
                 with contextlib.suppress(sqlite3.Error):
                     c.close()
-            ResearchDatabase._all_conns.clear()
+            self._all_conns.clear()
 
     def _init_db(self) -> None:
         with self._conn as conn:

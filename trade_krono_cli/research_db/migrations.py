@@ -68,10 +68,14 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     for col in ("signal_assessment_json", "expected_value", "conflict"):
         if col not in sig_cols:
             try:
-                conn.execute(f"ALTER TABLE signals ADD COLUMN {col} TEXT")
+                # expected_value 在 schema 中为 REAL，保持一致以免数值排序/聚合失真
+                col_type = "REAL" if col == "expected_value" else "TEXT"
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {col} {col_type}")
                 logger.debug(f"📐 Schema 迁移: signals.{col}")
-            except sqlite3.OperationalError:
-                pass
+            except sqlite3.OperationalError as e:
+                if "duplicate column" in str(e).lower():
+                    continue
+                raise
     # 迁移：ranking_score 列（若 composite_score 已存在但 ranking_score 缺失）
     if "ranking_score" not in sig_cols and "composite_score" in sig_cols:
         try:

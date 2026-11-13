@@ -25,6 +25,7 @@ class JobMixin(ResearchDatabase):
         tickers: list[str],
         settings: Settings | None = None,
         notes: str | None = None,
+        job_id: str | None = None,
     ) -> str:
         """创建新分析作业，返回 job_id。
 
@@ -33,9 +34,11 @@ class JobMixin(ResearchDatabase):
         settings : Settings 对象（可选）
             传入后自动填充 run_id / data_version / model_versions /
             prompt_version / strategy_version / config_hash
+        job_id : str | None
+            可指定固定 job_id（主要用于测试/断言）；缺省自动生成 UUID 前 12 位。
 
         """
-        job_id = str(uuid4())[:12]
+        job_id = job_id or str(uuid4())[:12]
         run_at = time.time()
 
         # 版本快照
