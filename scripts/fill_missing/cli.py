@@ -46,6 +46,8 @@ def main(
     dry_run: bool = False,
     no_incremental: bool = False,
     backup: bool = True,
+    max_retries: int = 3,
+    retry_delay: float = 10.0,
 ) -> None:
     """主流程：补齐失败股票历史数据 + 今日增量同步。
 
@@ -54,7 +56,34 @@ def main(
         dry_run: 仅打印补拉清单，不写缓存。
         no_incremental: 禁用增量合并，改为全量覆盖（重拉完整历史段）。
         backup: 写入前是否自动备份核心数据文件（默认 True）。
+        max_retries: 单只股票拉取失败后的最大重试次数（默认 3 次）。
+        retry_delay: 单只股票重试前的等待间隔（秒，默认 10 秒）。
     """
+
+    def _fetch_with_retry(
+        fetch_fn,
+        factory,
+        ticker: str,
+        provider_chain: list[str],
+        max_retries: int,
+        retry_delay: float,
+    ) -> tuple[str, int, str]:
+        """带重试的 fetch，失败后等待 retry_delay 秒后重试最多 max_retries 次。"""
+        provider, n_rows, detail = fetch_fn(factory, ticker, provider_chain)
+        if provider not in ("timeout", "failed"):
+            return provider, n_rows, detail
+
+        for attempt in range(1, max_retries + 1):
+            print(
+                f"  ⏳ {ticker} 拉取失败 ({detail[:60]}), {retry_delay:.0f}s 后重试 ({attempt}/{max_retries})"
+            )
+            time.sleep(retry_delay)
+            provider, n_rows, detail = fetch_fn(factory, ticker, provider_chain)
+            if provider not in ("timeout", "failed"):
+                return provider, n_rows, detail
+
+        return provider, n_rows, detail
+
     # ── 前置步骤：数据安全备份（在任何写入操作前自动备份）─────────────────
     if backup and not dry_run:
         from scripts.backup_cache import backup_all
@@ -125,6 +154,16 @@ def main(
             ticker = futures[future]
             try:
                 provider, n_rows, detail = future.result(timeout=FETCH_TIMEOUT + 5)
+                # 如果第一次失败，进行重试
+                if provider in ("timeout", "failed"):
+                    provider, n_rows, detail = _fetch_with_retry(
+                        fetch_full_range,
+                        factory,
+                        ticker,
+                        get_provider_chain(ticker),
+                        max_retries,
+                        retry_delay,
+                    )
                 if provider == "timeout":
                     failed_13.append((ticker, f"超时 {FETCH_TIMEOUT}s"))
                     _mark_failed(ticker, completed_tickers, failed_tickers_cache)
@@ -224,6 +263,16 @@ def main(
                 ticker = futures[future]
                 try:
                     provider, n_rows, detail = future.result(timeout=FETCH_TIMEOUT + 5)
+                    # 如果第一次失败，进行重试
+                    if provider in ("timeout", "failed"):
+                        provider, n_rows, detail = _fetch_with_retry(
+                            fetch_today_incremental,
+                            factory,
+                            ticker,
+                            get_provider_chain(ticker),
+                            max_retries,
+                            retry_delay,
+                        )
                     if provider in ("timeout", "failed"):
                         failed_today.append((ticker, detail))
                         _mark_failed(ticker, completed_tickers, failed_tickers_cache)
@@ -317,10 +366,24 @@ if __name__ == "__main__":
         action="store_true",
         help="跳过写入前的自动备份（默认会备份 pipeline_cache.db / metadata.json）",
     )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="单只股票拉取失败后的最大重试次数（默认 3 次）",
+    )
+    parser.add_argument(
+        "--retry-delay",
+        type=float,
+        default=10.0,
+        help="单只股票重试前的等待间隔（秒，默认 10 秒）",
+    )
     args = parser.parse_args()
     main(
         plan_path=args.plan,
         dry_run=args.dry_run,
         no_incremental=args.no_incremental,
         backup=not args.no_backup,
+        max_retries=args.max_retries,
+        retry_delay=args.retry_delay,
     )
