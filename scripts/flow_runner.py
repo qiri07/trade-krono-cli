@@ -45,9 +45,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from scripts._utils import expected_trading_day
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts._utils import expected_trading_day  # noqa: E402
 
 # 透传 env flag（与 daily_flow.sh 历史行为一致）
 DRY_RUN = os.getenv("DRY_RUN", "0") == "1"
