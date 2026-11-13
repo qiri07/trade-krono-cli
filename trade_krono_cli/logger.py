@@ -185,7 +185,8 @@ def setup_logger(
         level="INFO",
         # 用 format 回调输出 JSON 行（回调收到的是 record dict），
         # 交给 loguru 管理文件句柄，享受 rotation/retention
-        format=lambda r: _json_line(dict(r)) + "\n",
+        # format 回调接收的是 Record 字典，直接传入（运行时 Record 即 dict）
+        format=lambda r: _json_line(r) + "\n",  # type: ignore[arg-type]
         rotation="10 MB",
         retention="7 days",
         encoding="utf-8",
