@@ -18,15 +18,19 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import timezone
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from trade_krono_cli.config import Settings, get_settings
+from trade_krono_cli.security import sanitize_for_log
 
 if TYPE_CHECKING:
     from pathlib import Path
     from typing import TextIO
+
+    from loguru import Record
 
 # Type stub so mypy knows this attribute exists (set dynamically at runtime).
 _json_sink: _JsonLogSink | None = None
@@ -50,8 +54,9 @@ def _json_line(record: dict) -> str:
 
     生产 pipeline.json 与自定义 JSON 模式共用此函数，保证字段一致。
     """
+    # record["time"] 为带时区的本地时间，统一转成 UTC 再加 Z，避免把本地时间标成 UTC
     entry = {
-        "ts": record["time"].strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        "ts": record["time"].astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
         "level": record["level"].name,
         "module": record["name"],
         "function": record["function"],
@@ -100,6 +105,14 @@ def setup_logger(
 
     """
     logger.remove()  # 移除所有默认 handler
+    # 全局脱敏：任何 handler 写入前先过滤 API Key / Bearer Token / x-api-key
+    def _redact_patcher(record: Record) -> None:
+        try:
+            record["message"] = sanitize_for_log(record["message"])
+        except (TypeError, KeyError):  # 非字符串消息不应阻断日志
+            return
+
+    logger.configure(patcher=_redact_patcher)
 
     text_fmt = (
         "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
@@ -168,8 +181,15 @@ def setup_logger(
     # ── 生产模式：pipeline.json 结构化 JSON 文件（INFO 级别，供机器解析）───
     json_file = str(s.cache_dir.parent / "pipeline.json")
     logger.add(
-        _make_json_handler(json_file),
+        json_file,
         level="INFO",
+        # 用 format 回调输出 JSON 行（回调收到的是 record dict），
+        # 交给 loguru 管理文件句柄，享受 rotation/retention
+        format=lambda r: _json_line(dict(r)) + "\n",
+        rotation="10 MB",
+        retention="7 days",
+        encoding="utf-8",
+        colorize=False,
         enqueue=True,
     )
 

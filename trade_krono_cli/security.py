@@ -30,8 +30,10 @@ _KEY_REDACT_RE = re.compile(
     r"(?P<openai>sk-[a-zA-Z0-9]{20,})"
     r"|(?P<anthropic>sk-ant-[a-zA-Z0-9_\-]{20,})"
     r"|(?P<bearer>Bearer\s+[a-zA-Z0-9._\-]+)"
-    r"|(?P<tushare>TUSHARE_TOKEN\s*[=:]\s*[a-zA-Z0-9]{20,}|[a-zA-Z0-9]{32,})"
+    r"|(?P<named>(?:x-api-key|api[_-]?key|access[_-]?token|secret|password|tushare_token)"
+    r"\s*[=:]\s*[a-zA-Z0-9._\-]{8,})"
     r"|(?P<ts_key>ts_[a-zA-Z0-9]{20,})",
+    re.IGNORECASE,
 )
 
 
@@ -46,6 +48,10 @@ _TICKER_RE = re.compile(
     r"(?P<code2>[0-9]{6})\.(?P<suffix>sh|sz|bj)"  # suffix format: 600519.SH
     r"|"
     r"(?P<code3>[0-9]{6})"  # bare code: 600519
+    r"|"
+    r"(?P<hkprefix>hk)\.(?P<hkcode>[0-9]{5})"  # 港股: hk.00700
+    r"|"
+    r"(?P<hkcode2>[0-9]{5})\.(?P<hksuffix>hk)"  # 港股后缀: 00700.HK
     r")$",
     re.IGNORECASE,
 )
@@ -64,6 +70,9 @@ def validate_ticker(ticker: str) -> str:
             msg,
         )
     # 提取代码和市场前缀/后缀
+    hk_code = m.group("hkcode") or m.group("hkcode2")
+    if hk_code:
+        return f"hk.{hk_code}"
     code = m.group("code") or m.group("code2") or m.group("code3")
     prefix = (m.group("prefix") or "").lower()
     suffix = (m.group("suffix") or "").lower()
@@ -71,10 +80,10 @@ def validate_ticker(ticker: str) -> str:
 
     # 未指定市场时根据代码推断
     if not exchange:
-        if code.startswith(("6", "5")):
-            exchange = "sh"
-        elif code.startswith("9"):
+        if code.startswith(("43", "83", "87", "920")):
             exchange = "bj"
+        elif code.startswith(("6", "5", "900")):
+            exchange = "sh"
         else:
             exchange = "sz"
     return f"{exchange}.{code}"
