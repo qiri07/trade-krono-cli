@@ -174,14 +174,16 @@ class TestDecisionsMixin:
         from trade_krono_cli.domain.types import Signal
         from trade_krono_cli.ta_decision import InvestmentDecision
 
+        # 外键强制开启后必须先有父 job 行
+        job_id = db.create_job("2026-01-01", ["sh.600519"])  # type: ignore[attr-defined]
         decision = InvestmentDecision(
             signal=Signal.BUY,
             confidence=80.0,
             thesis="strong momentum",
             risks=["overbought"],
         )
-        db.insert_decision("job-001", "sh.600519", decision, "strong momentum", ["overbought"])  # type: ignore[attr-defined]
-        result = db.get_decision("job-001", "sh.600519")  # type: ignore[attr-defined]
+        db.insert_decision(job_id, "sh.600519", decision, "strong momentum", ["overbought"])  # type: ignore[attr-defined]
+        result = db.get_decision(job_id, "sh.600519")  # type: ignore[attr-defined]
         assert result is not None
         assert result["decision"]["signal"] == "BUY"
 

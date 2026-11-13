@@ -54,7 +54,18 @@ class TestSnapshots:
 
 
 class TestWalkforward:
+    """walkforward_runs 通过 experiment_id 外键关联 experiments，需先建实验。"""
+
+    def _make_experiment(self, db, experiment_id: str) -> None:
+        db.insert_experiment(
+            experiment_id=experiment_id,
+            full_id=f"full-{experiment_id}",
+            experiment_type="walkforward",
+            hypothesis={},
+        )
+
     def test_insert_and_get_walkforward(self, db) -> None:
+        self._make_experiment(db, "exp-1")
         db.insert_walkforward_run(
             run_id="wf-1",
             experiment_id="exp-1",
@@ -77,6 +88,8 @@ class TestWalkforward:
         assert r["sharpe_annual"] == 1.5
 
     def test_get_walkforward_filtered(self, db) -> None:
+        self._make_experiment(db, "exp-1")
+        self._make_experiment(db, "exp-2")
         db.insert_walkforward_run(
             run_id="wf-1",
             experiment_id="exp-1",
@@ -108,6 +121,7 @@ class TestWalkforward:
         assert rows[0]["ticker"] == "000858"
 
     def test_get_walkforward_by_experiment(self, db) -> None:
+        self._make_experiment(db, "exp-A")
         db.insert_walkforward_run(
             run_id="wf-1",
             experiment_id="exp-A",

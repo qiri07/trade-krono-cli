@@ -18,7 +18,12 @@ from trade_krono_cli.signal_lifecycle import (
 @pytest.fixture
 def research_db(tmp_path):
     db = tmp_path / "research.db"
-    return ResearchDatabase(db_path=db)
+    rdb = ResearchDatabase(db_path=db)
+    # signal_history.job_id 有外键约束（PRAGMA foreign_keys=ON），测试需先建立父 job 行。
+    # 测试中使用了 job-001 ~ job-004，统一在此创建。
+    for jid in ("job-000", "job-001", "job-002", "job-003", "job-004"):
+        rdb.create_job("2026-08-01", ["sh.600519"], job_id=jid)  # type: ignore[arg-type]
+    return rdb
 
 
 @pytest.fixture
@@ -323,6 +328,8 @@ class TestSignalLifecycle:
     def test_persistence_across_instances(self, tmp_path) -> None:
         """同一 DB 的两个生命周期实例应共享数据。"""
         db = ResearchDatabase(db_path=tmp_path / "sig.db")
+        # 先建立父 job 行（signal_history.job_id 有外键约束）
+        db.create_job("2026-08-01", ["sh.600519"], job_id="j1")  # type: ignore[arg-type]
         lc1 = SignalLifecycle(db)
         lc2 = SignalLifecycle(db)
 
@@ -422,7 +429,7 @@ class TestResearchDbSignalHistory:
             signal="BUY",
             confidence=80.0,
             composite_score=75.0,
-            job_id="j1",
+            job_id="job-001",
             run_id="r1",
             thesis="test",
         )

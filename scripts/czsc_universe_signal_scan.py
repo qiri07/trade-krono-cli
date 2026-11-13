@@ -168,37 +168,43 @@ def signal_key(full: str) -> str:
 
 def screen_one(job: tuple[str, str | None, list[dict], dict]) -> dict:
     path, asof, cfg, cond = job
-    df = pd.read_parquet(path)
-    df["dt"] = pd.to_datetime(df["dt"])
-    df = df.sort_values("dt", kind="stable").drop_duplicates("dt", keep="last").reset_index(drop=True)
-    if len(df) < MIN_BARS:
+    try:
+        df = pd.read_parquet(path)
+        df["dt"] = pd.to_datetime(df["dt"])
+        df = df.sort_values("dt", kind="stable").drop_duplicates("dt", keep="last").reset_index(drop=True)
+        if len(df) < MIN_BARS:
+            return {"symbol": Path(path).stem, "matched": False, "dt": None, "close": None, "signals": {}}
+
+        # 延迟导入，避免多进程重复导入 czsc 的开销
+        from czsc import Event, Freq, format_standard_kline, generate_czsc_signals
+
+        bars = format_standard_kline(df, freq=Freq("日线"))
+        out = generate_czsc_signals(bars, signals_config=cfg, df=True, init_n=min(INIT_N, max(10, len(bars) - 1)))
+        out["dt"] = pd.to_datetime(out["dt"], utc=True).dt.tz_localize(None)
+        if asof:
+            out = out[out["dt"] <= pd.Timestamp(asof)]
+        if out.empty:
+            return {"symbol": Path(path).stem, "matched": False, "dt": None, "close": None, "signals": {}}
+
+        row = out.iloc[-1]
+        cols = [c for c in out.columns if len(str(c).split("_")) == 3]
+        all_signals = {c: row[c] for c in cols}
+        event = Event.load(cond)
+        matched = bool(event.is_match(all_signals))
+        keys = {signal_key(s) for s in event.unique_signals}
+        dt_val = row["dt"]
+        close_val = row["close"]
+        return {
+            "symbol": Path(path).stem,
+            "matched": matched,
+            "dt": str(dt_val.date()) if pd.notna(dt_val) else "",
+            "close": float(close_val) if pd.notna(close_val) else 0.0,
+            "signals": {k: v for k, v in all_signals.items() if k in keys},
+            "matched_signals": event.unique_signals if matched else [],
+        }
+    except Exception as e:  # 单只股票异常不应中断全市场扫描
+        logger.warning(f"⚠️  跳过 {Path(path).stem}: {e}")
         return {"symbol": Path(path).stem, "matched": False, "dt": None, "close": None, "signals": {}}
-
-    # 延迟导入，避免多进程重复导入 czsc 的开销
-    from czsc import Event, Freq, format_standard_kline, generate_czsc_signals
-
-    bars = format_standard_kline(df, freq=Freq("日线"))
-    out = generate_czsc_signals(bars, signals_config=cfg, df=True, init_n=min(INIT_N, max(10, len(bars) - 1)))
-    out["dt"] = pd.to_datetime(out["dt"], utc=True).dt.tz_localize(None)
-    if asof:
-        out = out[out["dt"] <= pd.Timestamp(asof)]
-    if out.empty:
-        return {"symbol": Path(path).stem, "matched": False, "dt": None, "close": None, "signals": {}}
-
-    row = out.iloc[-1]
-    cols = [c for c in out.columns if len(str(c).split("_")) == 3]
-    all_signals = {c: row[c] for c in cols}
-    event = Event.load(cond)
-    matched = bool(event.is_match(all_signals))
-    keys = {signal_key(s) for s in event.unique_signals}
-    return {
-        "symbol": Path(path).stem,
-        "matched": matched,
-        "dt": str(row["dt"].date()) if row["dt"] is not None else "",
-        "close": float(row["close"]) if row["close"] is not None else 0.0,
-        "signals": {k: v for k, v in all_signals.items() if k in keys},
-        "matched_signals": event.unique_signals if matched else [],
-    }
 
 
 def run_screen(
@@ -260,7 +266,7 @@ def daily_coverage(asof: str) -> dict:
     for p in paths:
         df = pd.read_parquet(p, columns=["dt"])
         dmax = df["dt"].max()
-        if dmax is None:
+        if dmax is None or not pd.notna(dmax):
             continue
         dmax_str = str(dmax.date())
         if dmax_str == asof:
@@ -268,7 +274,7 @@ def daily_coverage(asof: str) -> dict:
             # 只在 active 时算信号（省成本）
             full = pd.read_parquet(p)
             full["dt"] = pd.to_datetime(full["dt"])
-            full = full.sort_values("dt", kind="stable").drop_duplicates("dt", keep="last").reset_index(drop=True)
+            full = full[full["dt"].notna()].sort_values("dt", kind="stable").drop_duplicates("dt", keep="last").reset_index(drop=True)
             if len(full) < MIN_BARS:
                 continue
             bars = format_standard_kline(full, freq=Freq("日线"))
@@ -278,8 +284,11 @@ def daily_coverage(asof: str) -> dict:
             if row.empty:
                 continue
             cols = [c for c in out.columns if len(str(c).split("_")) == 3]
-            if ev.is_match({c: row.iloc[0][c] for c in cols}):
-                hits_count += 1
+            try:
+                if ev.is_match({c: row.iloc[0][c] for c in cols}):
+                    hits_count += 1
+            except Exception:
+                continue
 
     return {
         "date": asof,
