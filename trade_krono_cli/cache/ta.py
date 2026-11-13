@@ -44,7 +44,11 @@ class TADataCache:
         data, created, ttl, version = row
         if ttl < 0 or (ttl > 0 and time.time() - created > ttl):
             return None
-        result = json.loads(data)
+        try:
+            result = json.loads(data)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(f"⚠️ TA 缓存数据损坏，按未命中处理 ticker={ticker} date={date}: {e}")
+            return None
         result["_cache_version"] = version
         result["_cache_created"] = created
         return result
@@ -91,18 +95,21 @@ class TADataCache:
 
             if existing:
                 stored_version, stored_hash = existing
-                # 条件更新：只有当 incoming > stored 且 input_hash 相同时才更新
-                if incoming_version > stored_version and (
-                    not input_hash or input_hash == stored_hash
-                ):
+                # 版本更新或输入变化（input_hash 不同）都应刷新缓存；
+                # 旧逻辑要求 input_hash 相同才更新，导致参数变化时永远读旧结果。
+                should_update = incoming_version > stored_version or (
+                    bool(input_hash) and input_hash != (stored_hash or "")
+                )
+                if should_update:
                     conn.execute(
-                        "UPDATE ta_cache SET data=?, version=?, trace_id=?, input_hash=?, created=? "
+                        "UPDATE ta_cache SET data=?, version=?, trace_id=?, input_hash=?, ttl=?, created=? "
                         "WHERE ticker=? AND date=? AND config_hash=? AND prompt_ver=? AND model_ver=?",
                         (
                             json.dumps(result, ensure_ascii=False).encode(),
                             incoming_version,
                             trace_id,
                             input_hash,
+                            ttl,
                             time.time(),
                             ticker,
                             date,

@@ -6,6 +6,8 @@ import json
 import time
 from typing import TYPE_CHECKING
 
+from loguru import logger
+
 if TYPE_CHECKING:
     from trade_krono_cli.cache.base import Cache
 
@@ -36,7 +38,13 @@ class KronosCache:
         data, created, ttl = row
         if ttl < 0 or (ttl > 0 and time.time() - created > ttl):
             return None
-        return json.loads(data)
+        try:
+            return json.loads(data)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(
+                f"⚠️ Kronos 缓存数据损坏，按未命中处理 ticker={ticker} date={date}: {e}"
+            )
+            return None
 
     def set_kronos(
         self,

@@ -32,12 +32,27 @@ _CACHE_FMT_VERSION = b"TKC1"
 # 跨进程写入串行化，确保同一时刻只有一个进程在写入 DB。
 # ═════════════════════════════════════════════════════════════════════
 
-_SQLITE_WRITE_LOCK_FILE = Path("outputs/cache/sqlite_write.lock")
+def _sqlite_write_lock_file() -> Path:
+    """返回 SQLite 写入锁文件路径（跟随 Settings.cache_dir）。
+
+    历史实现用 ``Path("outputs/cache/sqlite_write.lock")`` 相对 CWD，
+    从其他目录启动进程时锁会落到别处，跨进程互斥失效，且测试隔离失效。
+    这里统一挂到当前配置的 cache_dir 下，与 ``pipeline_cache.db`` 同目录。
+    """
+    try:
+        from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
+        cache_dir = Path(get_settings().cache_dir)
+    except (ImportError, OSError, ValueError):
+        cache_dir = Path("outputs/cache")
+    return cache_dir / "sqlite_write.lock"
 
 
-def _ensure_sqlite_lock_dir() -> None:
-    """确保 SQLite 写入锁文件所在目录存在。"""
-    _SQLITE_WRITE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+def _ensure_sqlite_lock_dir() -> Path:
+    """确保 SQLite 写入锁文件所在目录存在，并返回锁文件路径。"""
+    lock_file = _sqlite_write_lock_file()
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    return lock_file
 
 
 class sqlite_write_lock:
@@ -46,9 +61,11 @@ class sqlite_write_lock:
     使用 fcntl 文件锁，确保同一时刻只有一个进程持有锁并写入 DB。
     """
 
+    _fd: int
+
     def __enter__(self) -> int:
-        _ensure_sqlite_lock_dir()
-        self._fd = os.open(str(_SQLITE_WRITE_LOCK_FILE), os.O_RDWR | os.O_CREAT, 0o644)
+        lock_file = _ensure_sqlite_lock_dir()
+        self._fd = os.open(str(lock_file), os.O_RDWR | os.O_CREAT, 0o644)
         fcntl.flock(self._fd, fcntl.LOCK_EX)
         return self._fd
 
@@ -98,10 +115,12 @@ class KlineCache:
             if data_hash is not None:
                 expected = _compute_data_hash(data)
                 if expected != data_hash:
-                    logger.warning(
-                        f"⚠️ 缓存数据哈希不匹配 ticker={ticker} "
-                        f"start={start} end={end}，数据仍可读取，建议重新同步更新哈希"
+                    # 哈希不符说明数据被篡改或写入损坏，跳过该段而不是继续使用
+                    logger.error(
+                        f"❌ 缓存数据哈希不匹配，已跳过 ticker={ticker} "
+                        f"start={start} end={end}"
                     )
+                    continue
             try:
                 dfs.append(pd.read_pickle(BytesIO(data)))
             except (
@@ -193,6 +212,14 @@ class KlineCache:
                         )
                     )
                 return
+            except sqlite3.IntegrityError as e:
+                # 旧表 PK 为 (ticker,start,end,freq)，同一区间不同 adjustflag 会冲突。
+                # 不覆盖既有数据，也不阻断调用方（下次读取未命中会重新拉取）。
+                logger.warning(
+                    f"⚠️ 缓存主键冲突，跳过本次写入 ticker={ticker} "
+                    f"{start}~{end} adjustflag={adjustflag}: {e}"
+                )
+                return
             except sqlite3.OperationalError as e:
                 last_err = e
                 if "locked" not in str(e).lower():
@@ -225,12 +252,28 @@ class KlineCache:
         if rows:
             # 合并所有重叠记录的数据
             all_dfs: list[pd.DataFrame] = []
-            for _, old_data in rows:
+            corrupt_rowids: list[int] = []
+            for rowid, old_data in rows:
                 try:
                     all_dfs.append(pd.read_pickle(BytesIO(old_data)))
-                except Exception as e:
-                    logger.warning(f"⚠️ 缓存数据损坏，跳过 ticker={ticker} rowid={rows[0][0]}: {e}")
+                except (
+                    pickle.UnpicklingError,
+                    EOFError,
+                    AttributeError,
+                    ImportError,
+                    ModuleNotFoundError,
+                    TypeError,
+                    ValueError,
+                    OSError,
+                ) as e:
+                    corrupt_rowids.append(rowid)
+                    logger.error(
+                        f"❌ 缓存数据损坏，将移除该段 ticker={ticker} rowid={rowid}: {e}"
+                    )
             all_dfs.append(pd.read_pickle(BytesIO(raw_bytes)))
+            if not all_dfs:
+                logger.error(f"❌ 无可用缓存数据可合并，跳过写入 ticker={ticker}")
+                return
             # 统一 timestamps 为 datetime，防止 str 与 datetime64 混型导致排序崩溃
             # format="mixed" 支持异构字符串（"2020-01-02" 与 "2020-01-02 00:00:00"）并存
             for i, df in enumerate(all_dfs):
@@ -245,6 +288,9 @@ class KlineCache:
                 .drop_duplicates(subset=["timestamps"], keep="last")
                 .sort_values("timestamps")
             )
+            if merged.empty or pd.isna(merged["timestamps"].min()):
+                logger.error(f"❌ 合并后无有效数据（timestamps 为空），跳过写入 ticker={ticker}")
+                return
             merged_buf = BytesIO()
             merged.to_pickle(merged_buf)
             merged_buf.seek(0)

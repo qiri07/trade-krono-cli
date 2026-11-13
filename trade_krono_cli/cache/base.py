@@ -39,8 +39,7 @@ class Cache:
       · TA / Kronos：缓存 key 含 config_hash + 模型版本，配置变更自动失效
     """
 
-    # 类级别集合，追踪所有线程创建的连接，供 close() 统一关闭
-    _all_conns: set[sqlite3.Connection] = set()
+    # 类级别锁：所有实例共用，保护各自实例的连接集合
     _conn_lock = threading.Lock()
 
     def __init__(self, db_path: Path | None = None, settings: Settings | None = None) -> None:
@@ -51,23 +50,31 @@ class Cache:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         # 线程本地存储：每个线程持有自己的 SQLite 连接
         self._local = threading.local()
+        # 实例级连接登记：close() 只关闭本实例创建的连接，避免误关其他 Cache 实例
+        self._all_conns: set[sqlite3.Connection] = set()
         self._init_db()
 
     @property
     def _conn(self) -> sqlite3.Connection:
         """获取当前线程的 SQLite 连接（线程安全）。"""
         conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            # close() 可能由其他线程/清理钩子关闭本线程连接，失效时重连
+            try:
+                conn.execute("SELECT 1")
+            except sqlite3.Error:
+                conn = None
         if conn is None:
             conn = sqlite3.connect(self._db_path, check_same_thread=False, timeout=10.0)
-            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("PRAGMA journal_mode=WAL")
             self._local.conn = conn
             with Cache._conn_lock:
-                Cache._all_conns.add(conn)
+                self._all_conns.add(conn)
         return conn
 
     def close(self) -> None:
-        """关闭所有线程的 SQLite 连接（测试清理用）。"""
+        """关闭本实例所有线程的 SQLite 连接（测试清理用）。"""
         # 先关当前线程的连接
         conn = getattr(self._local, "conn", None)
         if conn is not None:
@@ -76,7 +83,7 @@ class Cache:
             self._local.conn = None
         # 再关其他线程遗留的连接
         with Cache._conn_lock:
-            for c in list(Cache._all_conns):
+            for c in list(self._all_conns):
                 try:
                     c.execute("SELECT 1")
                 except sqlite3.Error:
@@ -84,7 +91,7 @@ class Cache:
                     continue
                 with contextlib.suppress(sqlite3.Error):
                     c.close()
-            Cache._all_conns.clear()
+            self._all_conns.clear()
 
     def _transaction(self, fn: Callable[..., None]) -> None:
         """以事务方式执行操作。"""
@@ -172,8 +179,12 @@ class Cache:
             try:
                 conn.execute(migration)
                 logger.debug("📦 缓存表迁移: 执行成功")
-            except sqlite3.OperationalError:
-                pass  # 列或索引已存在，跳过
+            except sqlite3.OperationalError as e:
+                msg = str(e).lower()
+                # 只忽略"已存在"类错误；数据库锁/IO 错误必须暴露，否则后续写入会因缺列失败
+                if "duplicate column" in msg or "already exists" in msg:
+                    continue
+                raise
 
     # ── 向后兼容：直接调用方法（委托给子模块）──────────────────────────────────
 
