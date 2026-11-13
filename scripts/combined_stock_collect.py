@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 from loguru import logger
@@ -102,6 +103,44 @@ def _codes_from_buffett_whitelist(path: Path) -> set[str]:
     return codes
 
 
+def _codes_from_buffett_analysis_dirs(results_dir: Path, date_str: str) -> set[str]:
+    """从当日的 ``outputs/results/<code>/`` 分析目录提取 6 位代码集合。
+
+    目录本身可能来自更早日期（如 2026-10-14 的批量分析），不能无条件计入当日白名单；
+    仅当目录内存在当日证据（``full_states_log_<date>*.json``，或 ``complete_report.md``
+    的 mtime 落在该日期）时才收录。
+
+    Args:
+        results_dir: 结果根目录 ``outputs/results``。
+        date_str: 目标日期 ``YYYY-MM-DD``。
+
+    Returns:
+        6 位代码集合（已排除北交所/港股）。
+    """
+    if not results_dir.exists():
+        return set()
+    codes: set[str] = set()
+    for d in results_dir.iterdir():
+        if not (d.is_dir() and re.fullmatch(r"\d{6}", d.name)):
+            continue
+        has_evidence = any(d.glob(f"full_states_log_{date_str}*.json"))
+        if not has_evidence:
+            report = d / "complete_report.md"
+            if report.exists():
+                try:
+                    has_evidence = datetime.fromtimestamp(report.stat().st_mtime).strftime(
+                        "%Y-%m-%d"
+                    ) == date_str
+                except OSError:
+                    has_evidence = False
+        if not has_evidence:
+            continue
+        if is_bse_code(d.name):
+            continue
+        codes.add(d.name)
+    return codes
+
+
 def _codes_from_resonance(path: Path) -> set[str]:
     """从三线共振 JSON 提取 ticker 集合。"""
     if not path.exists():
@@ -114,17 +153,19 @@ def _codes_from_resonance(path: Path) -> set[str]:
     for item in data if isinstance(data, list) else []:
         ticker = item.get("ticker", "") if isinstance(item, dict) else ""
         if ticker:
-            codes.add(normalize_ticker_key(ticker).split(".")[1])
+            code6 = normalize_ticker_key(ticker).split(".")[-1]
+            if len(code6) == 6 and not is_bse_code(code6):
+                codes.add(code6)
     return codes
 
 
 def _codes_from_multi_head(path: Path) -> set[str]:
-    """从多头排列 txt 提取全部带前缀 ticker 的 6 位代码。"""
+    """从多头排列 txt 提取全部带前缀 ticker 的 6 位代码（排除北交所/港股）。"""
     if not path.exists():
         return set()
     text = path.read_text(encoding="utf-8")
     found = set(re.findall(r"\b(?:sh|sz|bj|hk)\.(\d{6})", text))
-    return found
+    return {code for code in found if not is_bse_code(code)}
 
 
 def _codes_from_double_ma(path: Path) -> set[str]:
@@ -139,7 +180,9 @@ def _codes_from_double_ma(path: Path) -> set[str]:
     for item in data if isinstance(data, list) else []:
         ticker = item.get("ticker", "") if isinstance(item, dict) else ""
         if ticker:
-            codes.add(normalize_ticker_key(ticker).split(".")[1])
+            code6 = normalize_ticker_key(ticker).split(".")[-1]
+            if len(code6) == 6 and not is_bse_code(code6):
+                codes.add(code6)
     return codes
 
 
@@ -221,9 +264,7 @@ def collect_source_sets(
     # 白名单三路并集：动态白名单 + 当日筛选 + 当日分析目录
     whitelist_codes = _codes_from_buffett_whitelist(results_dir / fmaps["buffett_wl"])
     whitelist_codes |= _codes_from_buffett_screen(results_dir / fmaps["buffett"])
-    for d in results_dir.iterdir() if results_dir.exists() else []:
-        if d.is_dir() and re.fullmatch(r"\d{6}|hk\.\d{5}", d.name):
-            whitelist_codes.add(normalize_ticker_key(d.name).split(".")[1])
+    whitelist_codes |= _codes_from_buffett_analysis_dirs(results_dir, date_str)
     result["whitelist"] = whitelist_codes
 
     result["resonance"] = _codes_from_resonance(results_dir / fmaps["resonance"])

@@ -149,7 +149,7 @@ ETF_SZ_PREFIXES: tuple[str, ...] = ("159", "156", "158")
 
 # 北交所股票代码前缀（6 位裸代码以 920 开头，或带交易所前缀 bj.）
 # 注意：用 "920" 而非 "92"，避免误杀 92 开头的其他代码段（如 920xxx 北交所新股）
-BSE_CODE_PREFIXES: tuple[str, ...] = ("920",)
+BSE_CODE_PREFIXES: tuple[str, ...] = ("920", "43", "83", "87")
 BSE_TICKER_PREFIXES: tuple[str, ...] = ("bj.",)
 
 # 历史 K 线记录数低于此值视为同步失败（历史数据严重不足），用于全量回补判定
@@ -196,7 +196,7 @@ MIN_MARKET_CAP_YI: float = 50.0
 
 
 def is_bse_code(code: str) -> bool:
-    """判断 6 位裸代码是否为北交所股票（920 开头）。"""
+    """判断 6 位裸代码是否为北交所股票（920/43/83/87 开头）。"""
     return code.startswith(BSE_CODE_PREFIXES)
 
 
@@ -293,6 +293,12 @@ def normalize_ticker_key(ticker: str) -> str:
     code = ticker.strip()
     if not code.isdigit():
         return ticker
+    # 港股为 5 位代码（如 00700），不能当深市 6 位代码补零
+    if len(code) == 5:
+        return f"hk.{code}"
+    if code[:2] in ("43", "83", "87") or code.startswith("920"):
+        # 北交所（含 920 新码段与 43/83/87 存量码段）
+        return f"bj.{code.zfill(6)}"
     if code[:2] in ETF_SH_PREFIXES or code[:3] in ETF_SZ_PREFIXES or code.startswith("5"):
         # ETF 代码：5x 开头（沪市 ETF 全段）或 159/156/158 开头（深市 ETF）
         # 归一化为带交易所前缀格式，使 baostock 能直接识别

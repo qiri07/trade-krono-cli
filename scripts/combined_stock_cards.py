@@ -200,6 +200,9 @@ def _build_combined_card(
             # 尝试添加前缀
             else:
                 detail_cand = analyzed_map.get(f"sh.{code}") or analyzed_map.get(f"sz.{code}")
+        # 交集池里的候选本身可能已带分析结果（未经 analyzed_map 中转）
+        if detail_cand is None and cand.analysis is not None:
+            detail_cand = cand
         if detail_cand is not None and detail_cand.analysis is not None:
             tv = detail_cand.tech
             fv = detail_cand.fund
@@ -212,10 +215,15 @@ def _build_combined_card(
             lines.append(f"     基本面: {fv.summary_line()}")
             kv = detail_cand.kronos_view
             if kv.available:
-                lines.append(
-                    f"     预测: {kv.direction} {kv.expected_change_pct:+.1f}% "
-                    f"({kv.confidence_low:+.1f}%~{kv.confidence_high:+.1f}%)"
-                )
+                # 部分预测结果只有方向、缺少幅度/置信区间，直接格式化 None 会抛 TypeError，
+                # 进而整张汇总卡片推送失败。
+                if kv.expected_change_pct is not None and kv.confidence_low is not None and kv.confidence_high is not None:
+                    lines.append(
+                        f"     预测: {kv.direction} {kv.expected_change_pct:+.1f}% "
+                        f"({kv.confidence_low:+.1f}%~{kv.confidence_high:+.1f}%)"
+                    )
+                else:
+                    lines.append(f"     预测: {kv.summary_line()}")
             bt = detail_cand.backtest
             if bt and bt.available:
                 lines.append(

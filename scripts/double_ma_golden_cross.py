@@ -35,6 +35,7 @@ from scripts._utils import (
     get_all_tickers,
     get_cache_db_path,
     get_sqlite_conn,
+    is_bse_or_hk,
     is_etf_ticker,
     load_metadata_index,
     ticker_to_thscode,
@@ -467,8 +468,8 @@ def process_ticker(
         由调用方后续通过 Fuyao API 补充，避免本地 metadata 过期导致
         技术面达标股票被整体丢弃）
     """
-    # 排除北交所和港股
-    if ".BJ" in ticker or ticker.startswith("hk."):
+    # 排除北交所和港股（缓存键为小写 bj./hk.，不能只匹配大写 .BJ 后缀）
+    if is_bse_or_hk(ticker):
         return None
 
     is_etf = is_etf_ticker(ticker)

@@ -21,10 +21,13 @@ cd "$PROJECT_ROOT"
 export PYTHONPATH="$PROJECT_ROOT:${PYTHONPATH:-}"
 
 # 必须用 .venv 里的 python（含 pandas 3.x 兼容 pickle）
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] [1/2] DB → parquet 导出（czsc_convert_db.py）" 
-uv run python scripts/czsc_convert_db.py
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [1/2] DB → parquet 导出（czsc_convert_db.py）"
+# 导出失败不阻断扫描：parquet 已是增量产物，扫描阶段会跳过缺失/过期标的
+if ! uv run python scripts/czsc_convert_db.py; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ parquet 导出失败，继续使用现有 parquet 扫描" >&2
+fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] [2/2] 缠论信号扫描 + 飞书推送（czsc_universe_signal_scan.py --scan-only asof=$ASOF push=$PUSH_FLAG）"
-uv run python scripts/czsc_universe_signal_scan.py --scan-only --asof "$ASOF" --push "$PUSH_FLAG"
+uv run python -m scripts.czsc_universe_signal_scan --scan-only --asof "$ASOF" --push "$PUSH_FLAG"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] CZSC 全流程完成"

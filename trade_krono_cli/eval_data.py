@@ -56,8 +56,12 @@ def get_close_price(ticker: str, date_str: str, _fetch_kline=None) -> float | No
         target = df[df["date_col"] == date_str]
         if not target.empty:
             return float(target["close"].iloc[0])
-        df_sorted = df.sort_values("timestamps", ascending=False)
-        return float(df_sorted["close"].iloc[0])
+        # 目标日无行情（停牌/非交易日）时，只能回退到目标日**之前**最近的收盘价，
+        # 不能取区间内最新价，否则会把未来价格当成当日价，造成前视偏差。
+        prior = df[df["date_col"] <= date_str].sort_values("timestamps", ascending=False)
+        if prior.empty:
+            return None
+        return float(prior["close"].iloc[0])
     except Exception as e:
         logger.debug(f"获取收盘价失败 {ticker} @ {date_str}: {str(e)[:200]}")
         return None

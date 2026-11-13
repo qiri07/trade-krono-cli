@@ -29,13 +29,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
+from scripts._utils import expected_trading_day
 from scripts.combined_stock_analyze import analyze_candidates, attach_backtest, attach_kronos
 from scripts.combined_stock_cards import (
     _build_combined_card,
@@ -58,8 +58,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="综合选股交集分析 + 飞书推送")
     parser.add_argument(
         "--date",
-        default=datetime.now().strftime("%Y-%m-%d"),
-        help="分析日期 YYYY-MM-DD（默认今日）",
+        default=expected_trading_day(),
+        help="分析日期 YYYY-MM-DD（默认最近交易日）",
     )
     parser.add_argument(
         "--min-sources",
@@ -88,8 +88,8 @@ def main() -> None:
     parser.add_argument(
         "--per-stock-push",
         type=int,
-        default=1,
-        help="是否逐只推送飞书（1=是，0=否，默认 1；需 --push=1 同时开启）",
+        default=0,
+        help="是否逐只推送飞书（1=是，0=否；默认 0，只推汇总卡片）",
     )
     parser.add_argument(
         "--per-stock-limit",
@@ -120,6 +120,12 @@ def main() -> None:
         type=int,
         default=5,
         help="回测持仓周期（交易日，默认 5）",
+    )
+    parser.add_argument(
+        "--strict",
+        type=int,
+        default=0,
+        help="严格模式：依赖选股线结果文件缺失/为空时直接失败（1=是，0=仅告警继续，默认 0）",
     )
     args = parser.parse_args()
 
@@ -165,12 +171,18 @@ def main() -> None:
         if codes is not None and not codes and (not path.exists() or path.stat().st_size == 0):
             _missing.append(f"czsc: {path}")
     if _missing:
-        logger.error("❌ 综合选股前置校验失败，以下依赖文件缺失或为空：")
+        if args.strict:
+            logger.error("❌ 综合选股前置校验失败，以下依赖文件缺失或为空：")
+            for m in _missing:
+                logger.error(f"   - {m}")
+            logger.error("   请先运行相应选股步骤（buffett/resonance/multi_head/double_ma/macd_ma/czsc）")
+            sys.exit(1)
+        # 非严格模式：缺失线按 0 只参与交集，不阻断当日汇总（节假日/零命中日常见）
+        logger.warning("⚠️ 以下选股线结果文件缺失或为空，将按 0 只参与交集：")
         for m in _missing:
-            logger.error(f"   - {m}")
-        logger.error("   请先运行相应选股步骤（buffett/resonance/multi_head/double_ma/macd_ma/czsc）")
-        sys.exit(1)
-    logger.info("✅ 前置校验通过：所有依赖选股线输出文件存在且非空")
+            logger.warning(f"   - {m}")
+    else:
+        logger.info("✅ 前置校验通过：所有依赖选股线输出文件存在且非空")
 
     # ── Step 2: 交集候选池（≥N 条线）────────────────────────────
     cands = build_intersection(source_sets, args.min_sources)
@@ -187,6 +199,9 @@ def main() -> None:
     if args.sort_by == "hits":
         # 交集条数优先（同条数再按技术分），满足「共振越多越靠前」
         analyzed.sort(key=lambda c: (-c.hit_count, -c.rank_score))
+    else:
+        # score：命中数*10 + 技术分（此前该分支实际未排序，参数形同虚设）
+        analyzed.sort(key=lambda c: -(c.hit_count * 10 + c.rank_score))
     logger.info(f"  有效技术分析结果：{len(analyzed)} 只")
 
     # ── Step 4: 汇总文件路径（在 Step 5.6 回测 attach 之后写出，确保 kronos/backtest 完整）──
@@ -336,13 +351,9 @@ def main() -> None:
         logger.warning(f"写入 research_db 失败（不影响结果输出）：{e}")
 
     logger.info("=" * 60)
-    per_push_info = (
-        f"，逐只推送 {len(analyzed)} 只"
-        if (args.push and args.per_stock_push and analyzed)
-        else ""
-    )
     logger.info(
-        f"综合选股交集分析完成：交集 {len(cands)} 只，技术分析 {len(analyzed)} 只{per_push_info}"
+        f"综合选股交集分析完成：交集 {len(cands)} 只，技术分析 {len(analyzed)} 只"
+        f"{'（仅汇总卡片）' if args.push else ''}"
     )
     logger.info("=" * 60)
 

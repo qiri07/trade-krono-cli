@@ -38,6 +38,7 @@ def main() -> int:
     converted = skipped = 0
     for ticker, blob in rows:
         out_path = BARS_DIR / f"{ticker}.parquet"
+        df_blob = None  # 每只票重置，避免沿用上一只票的 blob 写错 parquet
         # 增量检查：若 parquet 已存在，仅在 DB end > parquet 最大日期时重新导出
         try:
             df_existing = pd.read_parquet(out_path, columns=["dt"])
@@ -55,7 +56,7 @@ def main() -> int:
             logger.warning(f"⚠️  跳过 {ticker}: 读取缓存失败 - {e}")
             pass
 
-        df = df_blob if "df_blob" in locals() else pickle.loads(blob)
+        df = df_blob if df_blob is not None else pickle.loads(blob)
         if len(df) < MIN_BARS:
             skipped += 1
             continue
@@ -93,7 +94,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import os
     import sys
 
-    sys.exit(main())
+    rc = main()
+    # pyarrow/多线程 C++ 运行时在解释器退出阶段偶发 terminate 崩溃（非脚本错误），
+    # 用 os._exit 跳过 atexit/析构，避免把成功产物误判为失败（回归：2026-11-12）。
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(rc)
 

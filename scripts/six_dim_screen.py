@@ -52,6 +52,7 @@ from loguru import logger
 
 from scripts._utils import (
     BSE_TICKER_PREFIXES,
+    expected_trading_day,
     filter_stock_universe,
     get_cache_db_path,
     load_metadata_index,
@@ -263,7 +264,23 @@ def _parse_thscode(key: str, prefix: str) -> str | None:
     return code if len(code) == 9 and code[6] == "." else None
 
 
-def load_fundamentals(buffett_db: Path) -> dict[str, LogicMetrics]:
+def _analysis_year(date_str: str | None) -> int:
+    """返回分析日期对应的最近已披露年报年份。
+
+    年报在次年 5 月前披露：11 月看 Y-1 年报，3 月看 Y-2 年报。
+    避免硬编码年份导致跨年后静默产出 0 只。
+    """
+    ref = date_str or date.today().isoformat()
+    try:
+        d = date.fromisoformat(ref)
+    except ValueError:
+        return date.today().year
+    return d.year - 1 if d.month >= 5 else d.year - 2
+
+
+def load_fundamentals(
+    buffett_db: Path, date_str: str | None = None
+) -> dict[str, LogicMetrics]:
     """从巴菲特缓存库加载并汇总逻辑维度指标。
 
     Args:
@@ -324,8 +341,15 @@ def load_fundamentals(buffett_db: Path) -> dict[str, LogicMetrics]:
     metrics: dict[str, LogicMetrics] = {}
     for code, val in valuations.items():
         fins = financials.get(code) or {}
-        latest = fins.get("2025-4")
-        prev = fins.get("2024-4")
+        fin_years = []
+        for y in range(_analysis_year(date_str) - 1, _analysis_year(date_str) - 7, -1):
+            if fins.get(f"{y}-4") and fins.get(f"{y - 1}-4"):
+                fin_years = [y, y - 1]
+                break
+        if not fin_years:
+            continue
+        latest = fins.get(f"{fin_years[0]}-4")
+        prev = fins.get(f"{fin_years[1]}-4")
         if not latest or prev is None or latest.get("roe") is None or prev.get("roe") is None:
             continue
         roe_pairs = [latest["roe"], prev["roe"]]
@@ -598,7 +622,7 @@ def _compute_technicals(df: pd.DataFrame) -> dict[str, float] | None:
 
 
 def load_technicals(
-    tickers: dict[str, str], db_path: Path, workers: int = 8
+    tickers: dict[str, str], db_path: Path, workers: int = 8, asof: str | None = None
 ) -> dict[str, dict[str, float]]:
     """并发从 K 线缓存读取并计算技术指标。
 
@@ -606,6 +630,7 @@ def load_technicals(
         tickers: ``code -> 带前缀 ticker`` 映射。
         db_path: ``pipeline_cache.db`` 路径。
         workers: 并发线程数。
+        asof: 分析日期（YYYY-MM-DD）；给出时只用该日及之前的 K 线，保证历史回放不使用未来数据。
 
     Returns:
         ``code -> 技术指标字典``；读取失败或数据不足的股票不会出现在结果中。
@@ -616,17 +641,24 @@ def load_technicals(
         try:
             conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
             try:
-                row = conn.execute(
-                    "SELECT data FROM kline_cache WHERE ticker=? AND freq='d' "
-                    "ORDER BY end DESC LIMIT 1",
+                rows = conn.execute(
+                    "SELECT data FROM kline_cache WHERE ticker=? AND freq='d' ORDER BY end",
                     (ticker,),
-                ).fetchone()
+                ).fetchall()
             finally:
                 conn.close()
-            if not row:
+            if not rows:
                 return code, None
-            df = pd.read_pickle(io.BytesIO(row[0]))
-            return code, _compute_technicals(df)
+            # 多段缓存（不同日期区间）先拼接去重，避免只取到短段/未来段
+            frames = [pd.read_pickle(io.BytesIO(r[0])) for r in rows]
+            df = pd.concat(frames, ignore_index=True)
+            df["timestamps"] = pd.to_datetime(df["timestamps"])
+            df = df.sort_values("timestamps").drop_duplicates("timestamps", keep="last")
+            if asof:
+                df = df[df["timestamps"] <= pd.Timestamp(asof)]
+            if df.empty:
+                return code, None
+            return code, _compute_technicals(df.reset_index(drop=True))
         except (sqlite3.Error, OSError, ValueError, KeyError):
             return code, None
 
@@ -755,11 +787,13 @@ def fetch_holder_counts(today: date | None = None) -> dict[str, dict[str, float]
         for _, row in df.iterrows():
             code = str(row.get("代码", "")).zfill(6)
             chg = row.get("股东户数-增减比例")
+            holders = row.get("股东户数-本次")
+            avg_value = row.get("户均持股市值")
             try:
                 out[code] = {
                     "chg_pct": float(chg) if chg is not None and not pd.isna(chg) else 0.0,
-                    "holders": float(row.get("股东户数-本次") or 0),
-                    "avg_value": float(row.get("户均持股市值") or 0),
+                    "holders": 0.0 if holders is None or pd.isna(holders) else float(holders),
+                    "avg_value": 0.0 if avg_value is None or pd.isna(avg_value) else float(avg_value),
                 }
             except (TypeError, ValueError):
                 continue
@@ -886,13 +920,13 @@ def screen(
         ``(按分档字典序排序的候选列表, 各关卡人数统计)``；列表包含全部通过门槛的股票，
         由调用方按 ``--top`` 截断。
     """
-    date_str = date_str or date.today().isoformat()
+    date_str = date_str or expected_trading_day()
     cache_dir = get_cache_db_path().parent
     buffett_db = cache_dir / "buffett_cache.db"
     meta = load_metadata_index(cache_dir)
     universe = _load_universe(meta)
 
-    fundamentals = load_fundamentals(buffett_db)
+    fundamentals = load_fundamentals(buffett_db, date_str)
     spot = fetch_spot_snapshot(cache_dir, date_str) if fetch else {}
 
     # ── 第 1 关：逻辑 ──
@@ -905,7 +939,8 @@ def screen(
             reject_logic["无基本面数据"] = reject_logic.get("无基本面数据", 0) + 1
             continue
         cap = spot.get(code, {}).get("market_cap_yi")
-        if min_cap and cap is not None and cap < min_cap:
+        if min_cap and spot and (cap is None or cap < min_cap):
+            # 快照可用但该票缺市值（或低于门槛）时按淘汰处理，避免门槛被静默跳过
             reject_logic["市值不足"] = reject_logic.get("市值不足", 0) + 1
             continue
         ok, score, reason = score_logic(m)
@@ -936,6 +971,7 @@ def screen(
 
     # 五年分位（联网）
     abs_pass.sort(key=lambda x: -x[1])
+    abs_val_pass_total = len(abs_pass)  # 截断前通过绝对估值门槛的总数（漏斗审计用）
     abs_pass = abs_pass[:max_candidates]
     hist: dict[str, dict[str, float]] = {}
     if fetch and abs_pass:
@@ -961,14 +997,14 @@ def screen(
         return [], {
             "universe": len(universe),
             "logic_pass": len(passed),
-            "abs_val_pass": 0,
+            "abs_val_pass": abs_val_pass_total,
             "val_pass": 0,
             "trend_pass": 0,
         }
 
     # ── 技术面（位置/趋势/量价）──
     tickers = {x[0].code: normalize_ticker_key(x[0].code) for x in val_pass}
-    tech_map = load_technicals(tickers, get_cache_db_path())
+    tech_map = load_technicals(tickers, get_cache_db_path(), asof=date_str)
     latest_kline_date = (
         date.fromtimestamp(max(t["last_bar_ts"] for t in tech_map.values())).isoformat()
         if tech_map
@@ -1044,7 +1080,7 @@ def screen(
     funnel = {
         "universe": len(universe),
         "logic_pass": len(passed),
-        "abs_val_pass": len(abs_pass),
+        "abs_val_pass": abs_val_pass_total,
         "val_pass": len(val_pass),
         "trend_pass": len(results),
     }
@@ -1247,7 +1283,9 @@ def main(argv: list[str] | None = None) -> int:
     """CLI 入口。"""
     parser = argparse.ArgumentParser(description="六维选股：逻辑>估值>位置>趋势>股东人数>量价")
     parser.add_argument("--top", type=int, default=10, help="推荐股票数量（默认 10）")
-    parser.add_argument("--date", default=date.today().isoformat(), help="分析日期 YYYY-MM-DD")
+    parser.add_argument(
+        "--date", default=expected_trading_day(), help="分析日期 YYYY-MM-DD（默认最近交易日）"
+    )
     parser.add_argument(
         "--min-cap", type=float, default=MIN_MARKET_CAP_YI, help="最小总市值（亿元）"
     )
