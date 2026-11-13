@@ -272,7 +272,14 @@ class Settings:
 
     # ── 运行时路径 ────────────────────────────────────────
     def __post_init__(self):
-        """确保目录存在。"""
+        """确保目录存在，并让 research DB 跟随 cache_dir（测试隔离自动生效）。
+
+        此前 ``research_db_path`` 默认硬编码 ``outputs/cache/research.db``，
+        只设 ``TRADING_KRONO_CACHE_DIR`` 的测试隔离不会改变它，必须额外设
+        ``RESEARCH_DB_PATH`` 才能真正隔离。这里改为默认跟随 cache_dir。
+        """
+        if not os.getenv("RESEARCH_DB_PATH", "").strip():
+            object.__setattr__(self, "research_db_path", self.cache_dir / "research.db")
         for p in (self.results_dir, self.cache_dir):
             p.mkdir(parents=True, exist_ok=True)
 

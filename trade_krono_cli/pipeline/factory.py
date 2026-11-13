@@ -9,6 +9,7 @@ PipelineFactory 负责根据 Settings / PipelineConfig 组装 TASession 和 Kron
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -20,6 +21,11 @@ from trade_krono_cli.universe.engine import UniverseEngine
 
 if TYPE_CHECKING:
     from trade_krono_cli.pipeline_config import PipelineConfig
+
+
+def _is_test_environment() -> bool:
+    """判断当前是否运行在测试环境（pytest / 测试隔离变量存在）。"""
+    return bool(os.getenv("PYTEST_CURRENT_TEST") or os.getenv("TRADING_KRONO_CACHE_DIR"))
 
 
 def _collect_futures(
@@ -114,7 +120,11 @@ class PipelineFactory:
                 try:
                     return TASession()
                 except RuntimeError as _e:
-                    # 无 LLM 密钥时（测试环境常见），降级为 MagicMock 避免阻塞
+                    # 仅测试环境允许降级为 MagicMock：生产环境缺 LLM 密钥时
+                    # 若也静默 mock，会产出一批「看起来成功」的假 TA 结果。
+                    if not _is_test_environment():
+                        raise
+                    logger.warning(f"⚠️ 测试环境无 LLM 密钥，TA 降级为 MagicMock: {_e}")
                     _mock = _Mock()
                     _mock.runner = _mock
                     _mock.is_loaded = True
