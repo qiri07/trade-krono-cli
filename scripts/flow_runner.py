@@ -38,6 +38,7 @@ import argparse
 import json
 import os
 import signal
+import sqlite3
 import subprocess
 import sys
 import time
@@ -49,6 +50,25 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts._utils import expected_trading_day  # noqa: E402
+from trade_krono_cli.config import get_settings  # noqa: E402
+
+# 透传 env flag（与 daily_flow.sh 历史行为一致）
+DRY_RUN = os.getenv("DRY_RUN", "0") == "1"
+NO_PUSH = os.getenv("NO_PUSH", "0") == "1"
+NO_SYNC = os.getenv("NO_SYNC", "0") == "1"
+SKIP_ETF = os.getenv("SKIP_ETF", "0") == "1"
+EXPORT = os.getenv("EXPORT", "0") == "1"
+
+PUSH_FLAG = 0 if NO_PUSH else 1
+
+DEFAULT_STEP_TIMEOUT_SECONDS = 3600
+
+# 今日 K 线数据最小阈值：低于此数量时，跳过所有选股步骤
+MIN_TODAY_KLINE_COUNT = 5000
+
+# 由 backup step 统一备份后，这些自带备份的 step 追加 --no-backup，保证一轮流程只备一次
+BACKUP_STEP_NAME = "backup"
+STEPS_WITH_AUTO_BACKUP = frozenset({"sync", "sync_etf"})
 
 # 透传 env flag（与 daily_flow.sh 历史行为一致）
 DRY_RUN = os.getenv("DRY_RUN", "0") == "1"
@@ -72,6 +92,33 @@ def checkpoint_path() -> Path:
         os.getenv("TRADING_KRONO_RESULTS_DIR", str(PROJECT_ROOT / "outputs" / "results"))
     )
     return results_dir / f"flow_checkpoint_{expected_trading_day()}.json"
+
+
+def _get_today_kline_count() -> int:
+    """查询今日（最新交易日）的 K 线记录总数。
+
+    用于在执行选股步骤前，校验今日数据量是否达标（>= 5000 条）。
+    若数据库不存在或查询失败，返回 0。
+    """
+    try:
+        settings = get_settings()
+        db_path = settings.cache_dir / "pipeline_cache.db"
+        if not db_path.exists():
+            return 0
+        con = sqlite3.connect(str(db_path))
+        try:
+            row = con.execute("SELECT MAX(end) FROM kline_cache").fetchone()
+            latest_date = row[0] if row else None
+            if not latest_date:
+                return 0
+            cur = con.execute(
+                "SELECT COUNT(*) FROM kline_cache WHERE end=?", (latest_date,)
+            )
+            return cur.fetchone()[0]
+        finally:
+            con.close()
+    except Exception:
+        return 0
 
 
 def load_checkpoint() -> dict[str, str]:
@@ -493,8 +540,6 @@ def cmd_run(
 
         failed_set: set[str] = set()
         first_failure_rc: int | None = None
-        # 今日增量数据不足时，跳过后续选股步骤（除非 --force）
-        skip_selection = False
         SELECTION_STEP_NAMES = frozenset(
             {
                 "buffett",
@@ -509,12 +554,16 @@ def cmd_run(
             }
         )
         for layer_idx, layer in enumerate(layers, 1):
-            # 若今日增量数据不足，跳过本层的所有选股步骤
-            if skip_selection:
+            # 在每一层执行前，检查今日数据量。若 < 5000 条，跳过本层所有选股步骤
+            today_count = _get_today_kline_count()
+            if today_count < MIN_TODAY_KLINE_COUNT and not force:
+                print(
+                    f"  ⚠️  今日数据量 {today_count} < {MIN_TODAY_KLINE_COUNT} 条，跳过本层所有选股步骤（使用 --force 强制执行）"
+                )
                 selection_in_layer = [s for s in layer if s.name in SELECTION_STEP_NAMES]
                 for s in selection_in_layer:
                     print(
-                        f"  ⏭️  跳过 [{s.name}]：今日增量数据获取数量 < 5000，已跳过选股步骤（使用 --force 强制执行）"
+                        f"  ⏭️  跳过 [{s.name}]：今日数据量 {today_count} < {MIN_TODAY_KLINE_COUNT} 条"
                     )
                     statuses[s.name] = "skipped"
                 runnable = [s for s in layer if s.name not in SELECTION_STEP_NAMES]
@@ -557,23 +606,6 @@ def cmd_run(
                             first_failure_rc = rc
             if not dry_run:
                 save_checkpoint(statuses)
-
-            # 执行完当前层后，检查 sync 步骤的今日增量数据数量
-            if "sync" in layer_results and layer_results["sync"] == 0:
-                sync_result_file = Path("outputs/results/daily_sync_result.json")
-                if sync_result_file.exists():
-                    try:
-                        sync_data = json.loads(
-                            sync_result_file.read_text(encoding="utf-8")
-                        )
-                        today_count = sync_data.get("today_increment_count", 0)
-                        if today_count < 5000 and not force:
-                            print(
-                                f"  ⚠️  今日增量数据获取数量 {today_count} < 5000，将跳过后续选股步骤（使用 --force 强制执行）"
-                            )
-                            skip_selection = True
-                    except Exception:
-                        pass
 
             # 打印本层结果
             for s in runnable:
