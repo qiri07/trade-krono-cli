@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Any
 
@@ -80,6 +81,10 @@ class DataProviderFactory:
         """
         self.primary = primary
         self.fallbacks = fallbacks or self._default_fallbacks()
+        # 健康检查结果短 TTL 缓存：fetch_quote/fetch_metadata 逐票调用 health_check，
+        # 全市场数千只票会成倍放大 API 流量，这里按 Provider 缓存 60 秒。
+        self._health_cache: dict[str, tuple[bool, float]] = {}
+        self._health_lock = threading.Lock()
 
     @staticmethod
     def _default_fallbacks() -> list[str]:
@@ -103,17 +108,16 @@ class DataProviderFactory:
         """返回按优先级排列的完整 Provider 链."""
         return [self.primary] + [f for f in self.fallbacks if f != self.primary]
 
-    @staticmethod
-    def _provider_chain_for_ticker(ticker: str) -> list[str]:
-        """根据 ticker 前缀返回最优 Provider 链。
+    def _chain_for_ticker(self, ticker: str) -> list[str]:
+        """根据 ticker 前缀返回本实例的最优 Provider 链。
 
-        优先使用自适应 benchmark 缓存结果（TTL 10 分钟）；
+        使用 ``self.primary`` / ``self.fallbacks``（而非全局单例），保证显式构造的
+        工厂配置生效；优先使用自适应 benchmark 缓存结果（TTL 10 分钟），
         未缓存或过期时回退到固定顺序。
         北交所（bj.）股票 baostock/mootdx 均不支持，强制优先使用 tonghuashun。
         港股（hk.）股票由 akshare_hk 专属提供，akshare（A股）降级备用。
         """
-        s = get_data_factory()
-        base_chain = [s.primary] + [f for f in s.fallbacks if f != s.primary]
+        base_chain = self.provider_chain
 
         # 北交所特殊处理：tonghuashun 置顶
         if ticker.startswith("bj."):
@@ -129,7 +133,7 @@ class DataProviderFactory:
 
         # 尝试使用 cached benchmark 结果
         ticker_type = ticker.split(".", maxsplit=1)[0] if "." in ticker else ticker
-        cached = s._get_cached_ranked_chain(ticker_type)
+        cached = self._get_cached_ranked_chain(ticker_type)
         if cached is not None:
             ranked_chain = cached[0]
             filtered = [p for p in ranked_chain if p in base_chain]
@@ -137,6 +141,37 @@ class DataProviderFactory:
             return filtered + extra
 
         return base_chain
+
+    @staticmethod
+    def _provider_chain_for_ticker(ticker: str) -> list[str]:
+        """向后兼容的静态入口（使用全局工厂单例）。
+
+        新代码请用实例方法 :meth:`_chain_for_ticker`，避免自定义 primary/fallbacks
+        被全局单例覆盖。
+        """
+        return get_data_factory()._chain_for_ticker(ticker)
+
+    def _provider_healthy(self, name: str, provider: DataProvider) -> bool:
+        """带短 TTL 缓存的 Provider 健康检查。
+
+        ``fetch_quote`` / ``fetch_metadata`` 会逐票调用 ``health_check``，
+        未缓存时 5000 只票会对同一 Provider 发起 5000 次探测。按 Provider 缓存
+        60 秒即可显著降低无效网络请求，同时仍能较快感知故障。
+        """
+        ttl = 60.0
+        now = time.time()
+        with self._health_lock:
+            cached = self._health_cache.get(name)
+            if cached is not None and now - cached[1] < ttl:
+                return cached[0]
+        try:
+            ok = bool(provider.health_check())
+        except Exception as e:  # noqa: BLE001 - provider 自定义实现，异常类型不可控
+            logger.debug(f"{name} health_check 异常: {e}")
+            ok = False
+        with self._health_lock:
+            self._health_cache[name] = (ok, now)
+        return ok
 
     # ── Provider 实例管理 ───────────────────────────────────────────────
 
@@ -208,7 +243,7 @@ class DataProviderFactory:
         KlineData | None
 
         """
-        chain = self._provider_chain_for_ticker(ticker)
+        chain = self._chain_for_ticker(ticker)
         for name in chain:
             provider = self.get_provider(name)
             if provider is None:
@@ -216,10 +251,12 @@ class DataProviderFactory:
             if not provider.supports_kline:
                 logger.debug(f"{name}: 不支持 K 线，跳过")
                 continue
+            if not self._provider_healthy(name, provider):
+                logger.debug(f"{name}: 健康检查未通过，跳过")
+                continue
             try:
-                # 先尝试 fetch_kline，健康检查仅作为参考不作为守门条件。
-                # 某些 provider（如 baostock）网络波动时 health_check 可能假阴性，
-                # 但 fetch_kline 本身仍可成功；若 fetch_kline 失败再降级到下一个 provider。
+                # 健康检查通过后仍需兜底：provider 可能在 fetch 时立即失败，
+                # 这里捕获异常并继续降级到下一个 provider。
                 data = provider.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
                 if data is not None and not data.is_empty:
                     logger.info(f"✅ K 线获取成功: {ticker} ← {name} ({len(data.timestamps)} 条)")
@@ -238,14 +275,14 @@ class DataProviderFactory:
         RealtimeQuote | None
 
         """
-        chain = self._provider_chain_for_ticker(ticker)
+        chain = self._chain_for_ticker(ticker)
         for name in chain:
             provider = self.get_provider(name)
             if provider is None:
                 continue
             if not provider.supports_quote:
                 continue
-            if not provider.health_check():
+            if not self._provider_healthy(name, provider):
                 continue
             try:
                 quote = provider.fetch_quote(ticker)
@@ -268,7 +305,7 @@ class DataProviderFactory:
         StockMetadata | None
 
         """
-        chain = self._provider_chain_for_ticker(ticker)
+        chain = self._chain_for_ticker(ticker)
         merged: dict[str, Any] = {"ticker": ticker}
         found_any = False
         for name in chain:
@@ -277,7 +314,7 @@ class DataProviderFactory:
                 continue
             if not provider.supports_metadata:
                 continue
-            if not provider.health_check():
+            if not self._provider_healthy(name, provider):
                 continue
             try:
                 meta = provider.fetch_metadata(ticker)
@@ -513,6 +550,8 @@ class DataProviderFactory:
         """清空进程级缓存（用于测试隔离）."""
         with self._cache_lock:
             self._instance_cache.clear()
+        with self._health_lock:
+            self._health_cache.clear()
 
 
 # ═══════════════════════════════════════════════════════
@@ -526,6 +565,9 @@ _factory_lock = threading.Lock()
 def get_data_factory() -> DataProviderFactory:
     """获取全局 DataProviderFactory 单例。
     自动从 Settings 读取 primary / fallbacks 配置。
+
+    ``AKSHARE_ENABLED`` / ``MOOTDX_ENABLED`` / ``TONGHUASHUN_ENABLED`` 为 false 时，
+    对应数据源会从主源与降级链中剔除（此前这些开关在代码中完全未生效）。
     """
     global _factory_instance
     if _factory_instance is None:
@@ -539,6 +581,21 @@ def get_data_factory() -> DataProviderFactory:
                     if fallback_str
                     else []
                 )
+                disabled = {
+                    name
+                    for name, enabled in (
+                        ("akshare", getattr(s, "akshare_enabled", True)),
+                        ("mootdx", getattr(s, "mootdx_enabled", True)),
+                        ("tonghuashun", getattr(s, "tonghuashun_enabled", True)),
+                    )
+                    if not enabled
+                }
+                if disabled:
+                    fallbacks = [f for f in fallbacks if f not in disabled]
+                    if primary in disabled:
+                        logger.warning(f"⚠️ 主数据源 {primary} 已被禁用，改用备用源")
+                        primary = fallbacks[0] if fallbacks else "baostock"
+                    logger.info(f"数据源开关生效，已禁用: {', '.join(sorted(disabled))}")
                 _factory_instance = DataProviderFactory(
                     primary=primary,
                     fallbacks=fallbacks,

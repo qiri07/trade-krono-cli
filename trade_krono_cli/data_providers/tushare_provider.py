@@ -66,6 +66,30 @@ class TushareProvider(DataProvider):
 
     # ── 核心接口实现 ──────────────────────────────────────────
 
+    @staticmethod
+    def _to_ts_code(ticker: str) -> str | None:
+        """把内部 ticker 转换为 tushare ts_code（600519.SH / 920001.BJ）。
+
+        港股（hk.）tushare pro_bar 不支持，返回 None 让工厂降级到 akshare_hk。
+        """
+        ticker = ticker.strip()
+        if ticker.startswith("hk."):
+            return None
+        if ticker.startswith("sh."):
+            return f"{ticker[3:]}.SH"
+        if ticker.startswith("sz."):
+            return f"{ticker[3:]}.SZ"
+        if ticker.startswith("bj."):
+            return f"{ticker[3:]}.BJ"
+        if ticker.endswith(".SH") or ticker.endswith(".SZ") or ticker.endswith(".BJ"):
+            return ticker.upper()
+        # 裸代码：按交易所规则推断
+        if ticker.startswith(("6", "5", "900")):
+            return f"{ticker}.SH"
+        if ticker.startswith(("43", "83", "87", "920")):
+            return f"{ticker}.BJ"
+        return f"{ticker}.SZ"
+
     def fetch_kline(
         self,
         ticker: str,
@@ -76,14 +100,21 @@ class TushareProvider(DataProvider):
     ) -> KlineData | None:
         try:
             self._ensure_import()
-            # tushare 代码格式: 600519.SH / 000858.SZ
-            ts_code = ticker.replace("sh.", ".SH").replace("sz.", ".SZ")
+            # tushare 代码格式: 600519.SH / 000858.SZ / 920001.BJ
+            ts_code = self._to_ts_code(ticker)
+            if ts_code is None:
+                return None
+
+            # tushare adj 语义：None=不复权 / "qfq"=前复权 / "hfq"=后复权
+            # adjustflag：0=不复权 / 1=前复权 / 2=后复权（与 baostock 一致）
+            adj_map: dict[str, str | None] = {"0": None, "1": "qfq", "2": "hfq"}
+            adj = adj_map.get(adjustflag, "qfq")
 
             df = self._ts.pro_bar(
                 ts_code=ts_code,
                 start_date=start_date,
                 end_date=end_date,
-                adj=adjustflag if adjustflag != "1" else "",
+                adj=adj,
             )
             if df is None or df.empty:
                 return None
@@ -94,8 +125,10 @@ class TushareProvider(DataProvider):
                 high=df["high"].astype(float).tolist(),
                 low=df["low"].astype(float).tolist(),
                 close=df["close"].astype(float).tolist(),
-                volume=df["vol"].astype(float).tolist(),
-                amount=df["amount"].astype(float).tolist(),
+                # tushare vol 单位为手（100 股）、amount 单位为千元，统一换算为
+                # 股 / 元，与 baostock、腾讯等主流来源保持一致。
+                volume=(df["vol"].astype(float) * 100).tolist(),
+                amount=(df["amount"].astype(float) * 1000).tolist(),
             )
         except ImportError:
             raise
@@ -106,7 +139,9 @@ class TushareProvider(DataProvider):
     def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
         try:
             self._ensure_import()
-            ts_code = ticker.replace("sh.", ".SH").replace("sz.", ".SZ")
+            ts_code = self._to_ts_code(ticker)
+            if ts_code is None:
+                return None
             df = self._ts.realtime_quote(ts_code=ts_code)
             if df is None or df.empty:
                 return None
@@ -129,7 +164,9 @@ class TushareProvider(DataProvider):
     def fetch_metadata(self, ticker: str) -> StockMetadata | None:
         try:
             self._ensure_import()
-            ts_code = ticker.replace("sh.", ".SH").replace("sz.", ".SZ")
+            ts_code = self._to_ts_code(ticker)
+            if ts_code is None:
+                return None
 
             # 基本信息
             df = self._ts.stock_basic(

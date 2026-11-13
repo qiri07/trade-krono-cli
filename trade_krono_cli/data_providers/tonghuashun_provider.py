@@ -234,11 +234,17 @@ class TongHuaShunProvider(DataProvider):
         """
         try:
             self._ensure_init()
+            # 该端点只提供日线，非日频请求必须返回 None 让工厂降级，
+            # 否则会把日线数据当作周线/分钟线写入缓存，造成跨周期污染。
+            if frequency not in ("d", "1d"):
+                logger.debug(f"{self.name} 不支持 frequency={frequency}，跳过")
+                return None
             thscode = self._ticker_to_thscode(ticker)
             if not thscode:
                 return None
 
-            adjust = "forward" if adjustflag == "1" else "backward"
+            # adjustflag：0=不复权 / 1=前复权 / 2=后复权（与 baostock 语义一致）
+            adjust = {"0": "none", "1": "forward", "2": "backward"}.get(adjustflag, "forward")
             params = {
                 "thscode": thscode,
                 "interval": "1d",

@@ -189,19 +189,27 @@ class BaostockProvider(DataProvider):
     def _build_kline_data(
         ticker: str, rows: list[list[str]], fields: list[str]
     ) -> KlineData | None:
-        """从查询结果构建 KlineData。"""
+        """从查询结果构建 KlineData。
+
+        停牌日 baostock 会返回空字符串，直接 ``fillna(0.0)`` 会把 OHLC 变成 0，
+        这些假 0 价格会污染均线、涨跌幅与回测。这里改为剔除 OHLC 任一缺失的行；
+        volume/amount 缺失按 0 处理（停牌日成交为 0 属正常语义）。
+        """
         import pandas as pd
 
         df = pd.DataFrame(rows, columns=fields)
-        df = df.dropna(subset=["close"])
+        for col in ("open", "high", "low", "close"):
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna(subset=["open", "high", "low", "close"])
         if df.empty:
             return None
         return KlineData(
             timestamps=pd.to_datetime(df["date"]).tolist(),
-            open=pd.to_numeric(df["open"], errors="coerce").fillna(0.0).tolist(),
-            high=pd.to_numeric(df["high"], errors="coerce").fillna(0.0).tolist(),
-            low=pd.to_numeric(df["low"], errors="coerce").fillna(0.0).tolist(),
-            close=pd.to_numeric(df["close"], errors="coerce").fillna(0.0).tolist(),
+            open=df["open"].astype(float).tolist(),
+            high=df["high"].astype(float).tolist(),
+            low=df["low"].astype(float).tolist(),
+            close=df["close"].astype(float).tolist(),
             volume=pd.to_numeric(df["volume"], errors="coerce").fillna(0.0).tolist(),
             amount=pd.to_numeric(df["amount"], errors="coerce").fillna(0.0).tolist(),
         )
