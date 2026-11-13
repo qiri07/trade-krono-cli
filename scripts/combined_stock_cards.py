@@ -212,6 +212,11 @@ def _build_combined_card(
             lines.append(
                 f"     技术面: {tv.score}分 趋势={tv.trend} 均线={tv.ma_signal} 量能={tv.vol_signal}"
             )
+            # 站稳5日线提示：收盘价 > MA5 视为站稳
+            ma5_txt = "-"
+            if tv.close is not None and tv.ma5 is not None:
+                ma5_txt = "✅ 站稳5日线" if tv.close > tv.ma5 else "❌ 未站稳5日线"
+            lines.append(f"     站稳5日线: {ma5_txt} (close={tv.close if tv.close is not None else '-'}, MA5={tv.ma5 if tv.ma5 is not None else '-'})")
             lines.append(f"     基本面: {fv.summary_line()}")
             kv = detail_cand.kronos_view
             if kv.available:

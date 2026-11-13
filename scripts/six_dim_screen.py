@@ -1059,6 +1059,7 @@ def screen(
             "ret20": round(tech["ret20"], 2),
             "holder_chg_pct": None if m.code not in holders else holders[m.code]["chg_pct"],
             "close": round(tech["close"], 2),
+            "ma5": round(tech["ma5"], 2),
             "last_date": latest_kline_date,
         }
         logic_detail = (
@@ -1174,6 +1175,13 @@ def build_feishu_card(
             f"   {pe_txt} PB{m.get('pb')} ROE{m.get('roe_avg')}% "
             f"净利CAGR{m.get('profit_cagr')}% 市值{m.get('market_cap_yi')}亿"
         )
+        # 站稳5日线提示
+        close = m.get("close")
+        ma5 = m.get("ma5")
+        ma5_txt = "-"
+        if isinstance(close, (int, float)) and isinstance(ma5, (int, float)):
+            ma5_txt = "✅ 站稳5日线" if close > ma5 else "❌ 未站稳5日线"
+        lines.append(f"   站稳5日线: {ma5_txt} (close={close if isinstance(close,(int,float)) else '-'}, MA5={ma5 if isinstance(ma5,(int,float)) else '-'})")
         pos = m.get("pct_pos_3y")
         slope = m.get("ma60_slope")
         amount_ratio = m.get("amount_ratio")

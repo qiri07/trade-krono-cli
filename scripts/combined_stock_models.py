@@ -31,6 +31,8 @@ class TechView:
     ma_signal: str = ""
     vol_signal: str = ""
     score: int | float = 0
+    close: float | None = None
+    ma5: float | None = None
 
     @classmethod
     def from_analysis(cls, an: dict[str, object] | None) -> TechView:
@@ -47,12 +49,23 @@ class TechView:
                 score = 0
         else:
             score = 0
+
+        def _coerce(key: str) -> float | None:
+            v = an.get(key)
+            if isinstance(v, bool):
+                return None
+            if isinstance(v, (int, float)):
+                return float(v)
+            return None
+
         return cls(
             name=str(an.get("name", "")),
             trend=str(an.get("trend", "")),
             ma_signal=str(an.get("ma_signal", "")),
             vol_signal=str(an.get("vol_signal", "")),
             score=score,
+            close=_coerce("close"),
+            ma5=_coerce("ma5"),
         )
 
     def to_payload(self) -> dict[str, object]:
@@ -63,6 +76,8 @@ class TechView:
             "ma_signal": self.ma_signal,
             "vol_signal": self.vol_signal,
             "score": self.score,
+            "close": self.close,
+            "ma5": self.ma5,
         }
 
 
