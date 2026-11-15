@@ -37,6 +37,9 @@ if TYPE_CHECKING:
 # 向后兼容：_BenchResult 供测试直接 import（运行时可用）
 from trade_krono_cli.data_providers.benchmark import _BenchResult  # noqa: TC001
 
+# 导入限流器和重试装饰器
+from trade_krono_cli.data_providers.rate_limiter import RateLimiter  # noqa: F401
+
 # ═══════════════════════════════════════════════════════
 #  工厂实现
 # ═══════════════════════════════════════════════════════
@@ -62,6 +65,9 @@ class DataProviderFactory:
     # 自适应优先级缓存：ticker_type → (ranked_chain, timestamp)
     _rank_cache: dict[str, tuple[list[str], float]] = {}
     _rank_lock = threading.Lock()
+
+    # 全局限流器
+    _rate_limiter = RateLimiter.get_instance()
 
     @staticmethod
     def _rank_cache_ttl_sec() -> int:
@@ -234,7 +240,7 @@ class DataProviderFactory:
         frequency: str = "d",
         adjustflag: str = "1",
     ) -> KlineData | None:
-        """拉取 K 线数据，按优先级尝试各 Provider，失败自动降级。
+        """拉取 K 线数据，带限流和重试，按优先级尝试各 Provider，失败自动降级。
 
         北交所（bj.）股票由 baostock/mootdx 不支持，强制优先使用 tonghuashun。
 
@@ -244,6 +250,7 @@ class DataProviderFactory:
 
         """
         chain = self._chain_for_ticker(ticker)
+
         for name in chain:
             provider = self.get_provider(name)
             if provider is None:
@@ -254,15 +261,29 @@ class DataProviderFactory:
             if not self._provider_healthy(name, provider):
                 logger.debug(f"{name}: 健康检查未通过，跳过")
                 continue
+
+            # 获取限流许可，如果需要等待则先等待
+            wait_time = self._rate_limiter.acquire(name)
+            if wait_time > 0:
+                logger.debug(f"⏳ {name} 限流等待 {wait_time:.1f}s: {ticker}")
+                time.sleep(wait_time)
+
             try:
                 # 健康检查通过后仍需兜底：provider 可能在 fetch 时立即失败，
                 # 这里捕获异常并继续降级到下一个 provider。
                 data = provider.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
                 if data is not None and not data.is_empty:
+                    self._rate_limiter.record_success(name)
                     logger.info(f"✅ K 线获取成功: {ticker} ← {name} ({len(data.timestamps)} 条)")
                     return data
+                else:
+                    logger.debug(f"{name} 返回空数据: {ticker}")
             except Exception as e:
-                logger.warning(f"{name} K 线拉取异常 {ticker}: {str(e)[:100]}")
+                # 如果是 429 限流错误，标记 provider 进入冷却期
+                error_msg = str(e)
+                if "429" in error_msg or "rate limit" in error_msg.lower():
+                    self._rate_limiter.record_429(name)
+                logger.warning(f"{name} K 线拉取异常 {ticker}: {error_msg[:100]}")
                 continue
         logger.warning(f"❌ 所有 Provider 均无法获取 K 线: {ticker}")
         return None
@@ -284,12 +305,20 @@ class DataProviderFactory:
                 continue
             if not self._provider_healthy(name, provider):
                 continue
+            # 获取限流许可
+            wait_time = self._rate_limiter.acquire(name)
+            if wait_time > 0:
+                logger.debug(f"⏳ {name} 限流等待 {wait_time:.1f}s: {ticker} 行情")
+                time.sleep(wait_time)
             try:
                 quote = provider.fetch_quote(ticker)
                 if quote is not None:
+                    self._rate_limiter.record_success(name)
                     logger.debug(f"✅ 行情获取成功: {ticker} ← {name}")
                     return quote
             except Exception as e:
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    self._rate_limiter.record_429(name)
                 logger.warning(f"{name} 行情拉取异常 {ticker}: {str(e)[:100]}")
                 continue
         return None
@@ -316,6 +345,11 @@ class DataProviderFactory:
                 continue
             if not self._provider_healthy(name, provider):
                 continue
+            # 获取限流许可
+            wait_time = self._rate_limiter.acquire(name)
+            if wait_time > 0:
+                logger.debug(f"⏳ {name} 限流等待 {wait_time:.1f}s: {ticker} 元数据")
+                time.sleep(wait_time)
             try:
                 meta = provider.fetch_metadata(ticker)
                 if meta is None:
@@ -338,6 +372,8 @@ class DataProviderFactory:
                 if meta.source is not None and (meta.pe_ttm is not None or meta.pb is not None):
                     merged["source"] = meta.source
             except Exception as e:
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    self._rate_limiter.record_429(name)
                 logger.warning(f"{name} 元数据拉取异常 {ticker}: {str(e)[:100]}")
                 continue
         if not found_any:
