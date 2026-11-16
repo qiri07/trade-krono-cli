@@ -21,10 +21,13 @@
 from __future__ import annotations
 
 import argparse
+import pickle
+import sqlite3
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
@@ -35,6 +38,7 @@ from loguru import logger
 
 from scripts._utils import get_cache_db_path, get_sqlite_conn
 from trade_krono_cli.cache import get_cache
+from trade_krono_cli.cache.kline import _compute_data_hash
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
 
@@ -94,20 +98,62 @@ def fetch_and_store_hk(
             else:
                 return (ticker, False, "no_timestamp_col")
 
+        df = result.to_dataframe()
+        if df is None or len(df) == 0:
+            return (ticker, False, "empty_df")
+
+        # 确保有 timestamps 列
+        if "timestamps" not in df.columns:
+            if "date" in df.columns:
+                df = df.rename(columns={"date": "timestamps"})
+            else:
+                return (ticker, False, "no_timestamp_col")
+
         df["timestamps"] = pd.to_datetime(df["timestamps"])
         df = df.sort_values("timestamps").reset_index(drop=True)
 
-        # 写入缓存
-        cache = get_cache()
-        cache.set_kline(
-            ticker,
-            df["timestamps"].iloc[0].strftime("%Y-%m-%d"),
-            df["timestamps"].iloc[-1].strftime("%Y-%m-%d"),
-            freq="d",
-            df=df,
-            ttl=0.0,
-            adjustflag="1",
-        )
+        # 直接写入 SQLite，绕过 cache.set_kline 的复杂合并逻辑
+        # 先删除该 ticker 的所有现有记录，再插入完整历史数据
+        start_str = df["timestamps"].iloc[0].strftime("%Y-%m-%d")
+        end_str = df["timestamps"].iloc[-1].strftime("%Y-%m-%d")
+
+        buf = BytesIO()
+        df.to_pickle(buf)
+        buf.seek(0)
+        raw_bytes = buf.read()
+        data_hash = _compute_data_hash(raw_bytes)
+
+        import sqlite3 as _sqlite3
+        _conn = _sqlite3.connect(str(CACHE_DB), timeout=30.0)
+        _conn.execute("PRAGMA journal_mode=WAL")
+        _conn.execute("PRAGMA busy_timeout=5000")
+        try:
+            _conn.execute(
+                "DELETE FROM kline_cache "
+                "WHERE ticker=? AND freq=? AND adjustflag=?",
+                (ticker, "d", "1"),
+            )
+            _conn.execute(
+                "INSERT INTO kline_cache "
+                "(ticker, start, end, freq, adjustflag, ttl, data, data_hash, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ticker, start_str, end_str, "d", "1", 0.0, raw_bytes, data_hash, time.time()),
+            )
+            _conn.commit()
+            _conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            # Verify immediately
+            _row = _conn.execute(
+                "SELECT data FROM kline_cache WHERE ticker=?", (ticker,)
+            ).fetchone()
+            if _row:
+                import pickle
+                _df_check = pd.read_pickle(BytesIO(_row[0]))
+                print(f"  [DEBUG] {ticker}: 已写入 {len(_df_check)} 条记录到数据库")
+            else:
+                print(f"  [DEBUG] {ticker}: 写入后未找到数据!")
+        finally:
+            _conn.close()
+
         return (ticker, True, f"{len(df)} rows")
 
     except Exception as e:

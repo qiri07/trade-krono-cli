@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import pandas as pd
 from loguru import logger
 
 from scripts.hk_screen.constants import (
@@ -48,17 +49,17 @@ class HKScreenResult:
     # 上市信息
     listing_days: int | None = None
     is_hk_connect: bool = False
-    is_hkd: bool = False
-    is_common_stock: bool = False
+    is_hkd: bool | None = None
+    is_common_stock: bool | None = None
     suspension_days_30d: int = 0
     has_risk_warning: bool = False
 
     # 财务指标
     debt_to_asset: float | None = None
-    non_gaap_profit_2y: bool = False
-    clean_audit_2y: bool = False
-    operating_cashflow_3y: bool = False
-    revenue_growth_3y: bool = False
+    non_gaap_profit_2y: bool | None = None
+    clean_audit_2y: bool | None = None
+    operating_cashflow_3y: bool | None = None
+    revenue_growth_3y: bool | None = None
     gross_margin: float | None = None
     avg_roe_3y: float | None = None
 
@@ -71,7 +72,7 @@ class HKScreenResult:
     single_day_spike_1y: float | None = None
 
     # 质量加分指标
-    dividend_3y: bool = False
+    dividend_3y: bool | None = None
     annualized_volatility_12m: float | None = None
     fcf_to_net_profit: float | None = None
 
@@ -122,11 +123,21 @@ class HKScreenResult:
         }
 
 
-def count_passed_rules(result: HKScreenResult) -> tuple[int, int, list[str]]:
+def count_passed_rules(
+    result: HKScreenResult,
+    require_hk_connect: bool = False,
+) -> tuple[int, int, list[str]]:
     """统计通过的规则数量和失败原因。
 
     数据缺失（None）时不计入失败，只在明确不满足条件时才算失败。
     通过率 = 通过数 / (通过数 + 失败数)，不包括未知数。
+
+    Parameters
+    ----------
+    result : HKScreenResult
+        待检查的股票结果。
+    require_hk_connect : bool
+        是否强制要求港股通资格。默认 False（数据缺失时不剔除）。
 
     Returns
     -------
@@ -143,12 +154,40 @@ def count_passed_rules(result: HKScreenResult) -> tuple[int, int, list[str]]:
         else:
             checks.append((condition, reason))
 
+    def _check_value(
+        value: float | int | None,
+        threshold: float | int,
+        op: str,
+        reason: str,
+    ) -> None:
+        """只有当值不为 None 时才检查阈值，缺失时不计入失败"""
+        nonlocal unknown_count
+        if value is None:
+            unknown_count += 1
+            return
+        if op == ">=":
+            condition = value >= threshold
+        elif op == "<=":
+            condition = value <= threshold
+        elif op == ">":
+            condition = value > threshold
+        elif op == "<":
+            condition = value < threshold
+        elif op == "==":
+            condition = value == threshold
+        else:
+            raise ValueError(f"未知操作符: {op}")
+        checks.append((condition, reason))
+
     # 交易规则
-    _check(result.is_hk_connect, "不在港股通清单")
+    _check(result.is_hk_connect or not require_hk_connect,
+        "不在港股通清单",
+    )
     _check(result.is_hkd, "非港币计价")
-    _check(
-        result.listing_days is not None
-        and result.listing_days >= HK_TRADE_RULES["min_listing_days"],
+    _check_value(
+        result.listing_days,
+        HK_TRADE_RULES["min_listing_days"],
+        ">=",
         f"上市时长不足{HK_TRADE_RULES['min_listing_days']}天",
     )
     _check(result.is_common_stock, "非普通股标的")
@@ -159,19 +198,22 @@ def count_passed_rules(result: HKScreenResult) -> tuple[int, int, list[str]]:
     _check(not result.has_risk_warning, "存在监管风险警示")
 
     # 流动性与市值
-    _check(
-        result.turnover_20d_avg is not None
-        and result.turnover_20d_avg >= HK_LIQUIDITY_RULES["min_avg_turnover_20d"],
+    _check_value(
+        result.turnover_20d_avg,
+        HK_LIQUIDITY_RULES["min_avg_turnover_20d"],
+        ">=",
         f"近20日日均成交额低于{HK_LIQUIDITY_RULES['min_avg_turnover_20d']:.0f}港元",
     )
-    _check(
-        result.turnover_rate_12m_avg is not None
-        and result.turnover_rate_12m_avg >= HK_LIQUIDITY_RULES["min_avg_turnover_rate_12m"],
+    _check_value(
+        result.turnover_rate_12m_avg,
+        HK_LIQUIDITY_RULES["min_avg_turnover_rate_12m"],
+        ">=",
         f"近12个月日均换手率低于{HK_LIQUIDITY_RULES['min_avg_turnover_rate_12m']}%",
     )
-    _check(
-        result.market_cap is not None
-        and result.market_cap >= HK_LIQUIDITY_RULES["min_market_cap"],
+    _check_value(
+        result.market_cap,
+        HK_LIQUIDITY_RULES["min_market_cap"],
+        ">=",
         f"总市值低于{HK_LIQUIDITY_RULES['min_market_cap'] / 1e8:.0f}亿港元",
     )
     # 成交/市值比需要额外数据，暂时跳过（数据源可能不提供）
@@ -179,51 +221,60 @@ def count_passed_rules(result: HKScreenResult) -> tuple[int, int, list[str]]:
     # 财务基本面
     _check(result.non_gaap_profit_2y, "近2年扣非盈利非正")
     _check(result.clean_audit_2y, "近2年审计意见非标准无保留")
-    _check(
-        result.debt_to_asset is not None
-        and result.debt_to_asset <= HK_FUNDAMENTAL_RULES["max_debt_to_asset"],
+    _check_value(
+        result.debt_to_asset,
+        HK_FUNDAMENTAL_RULES["max_debt_to_asset"],
+        "<=",
         f"资产负债率超{HK_FUNDAMENTAL_RULES['max_debt_to_asset']:.0%}",
     )
     _check(result.operating_cashflow_3y, "近3年经营现金流累计非正")
     _check(result.revenue_growth_3y, "近3年营收连续负增长")
-    _check(
-        result.gross_margin is not None
-        and result.gross_margin >= HK_FUNDAMENTAL_RULES["min_gross_margin"],
+    _check_value(
+        result.gross_margin,
+        HK_FUNDAMENTAL_RULES["min_gross_margin"],
+        ">=",
         f"主业毛利率低于{HK_FUNDAMENTAL_RULES['min_gross_margin']:.0%}",
     )
-    _check(
-        result.avg_roe_3y is not None
-        and result.avg_roe_3y >= HK_FUNDAMENTAL_RULES["min_avg_roe_3y"],
+    _check_value(
+        result.avg_roe_3y,
+        HK_FUNDAMENTAL_RULES["min_avg_roe_3y"],
+        ">=",
         f"近3年平均ROE低于{HK_FUNDAMENTAL_RULES['min_avg_roe_3y']:.0%}",
     )
 
     # 庄股与异常
-    _check(
-        result.top_shareholder_pct is not None
-        and result.top_shareholder_pct <= HK_ABNORMAL_RULES["max_top_shareholder_concentration"],
+    _check_value(
+        result.top_shareholder_pct,
+        HK_ABNORMAL_RULES["max_top_shareholder_concentration"],
+        "<=",
         f"第一大股东+一致行动人持股超{HK_ABNORMAL_RULES['max_top_shareholder_concentration']:.0%}",
     )
-    _check(
-        result.max_drawdown_12m is not None
-        and result.max_drawdown_12m <= HK_ABNORMAL_RULES["max_drawdown_12m"],
+    _check_value(
+        result.max_drawdown_12m,
+        HK_ABNORMAL_RULES["max_drawdown_12m"],
+        "<=",
         f"近12个月最大回撤超{HK_ABNORMAL_RULES['max_drawdown_12m']:.0%}",
     )
     _check(
         result.rights_issues_12m <= HK_ABNORMAL_RULES["max_rights_issues_12m"],
         f"近12个月供股/合股次数超{HK_ABNORMAL_RULES['max_rights_issues_12m']}次",
     )
-    _check(
-        result.price is not None and result.price >= HK_ABNORMAL_RULES["min_price"],
+    _check_value(
+        result.price,
+        HK_ABNORMAL_RULES["min_price"],
+        ">=",
         f"最新股价低于{HK_ABNORMAL_RULES['min_price']}港元",
     )
-    _check(
-        result.drawdown_from_high is not None
-        and result.drawdown_from_high <= HK_ABNORMAL_RULES["max_drawdown_from_high"],
+    _check_value(
+        result.drawdown_from_high,
+        HK_ABNORMAL_RULES["max_drawdown_from_high"],
+        "<=",
         f"相对历史高点跌幅超{HK_ABNORMAL_RULES['max_drawdown_from_high']:.0%}",
     )
-    _check(
-        result.single_day_spike_1y is not None
-        and result.single_day_spike_1y <= HK_ABNORMAL_RULES["max_single_day_spike_1y"],
+    _check_value(
+        result.single_day_spike_1y,
+        HK_ABNORMAL_RULES["max_single_day_spike_1y"],
+        "<=",
         f"近1年无基本面支撑单日涨幅超{HK_ABNORMAL_RULES['max_single_day_spike_1y']:.0%}",
     )
 
@@ -275,9 +326,36 @@ def compute_quality_score(result: HKScreenResult) -> float:
     return min(score, max_score)
 
 
+def _fmt_pe(val: float | None) -> str:
+    """安全格式化 PE_TTM，处理 None 和 NaN"""
+    if val is None:
+        return "N/A"
+    try:
+        v = float(val)
+        if pd.isna(v):
+            return "N/A"
+        return f"{v:.1f}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
+def _fmt_roe(val: float | None) -> str:
+    """安全格式化 ROE，处理 None 和 NaN"""
+    if val is None:
+        return "N/A"
+    try:
+        v = float(val)
+        if pd.isna(v):
+            return "N/A"
+        return f"{v:.1%}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
 def screen_hk_stocks(
     results: list[HKScreenResult],
     min_pass_rate: float = 1.0,
+    require_hk_connect: bool = False,
 ) -> list[HKScreenResult]:
     """对筛选结果进行硬过滤和排序。
 
@@ -287,6 +365,8 @@ def screen_hk_stocks(
         待筛选的结果列表。
     min_pass_rate : float
         最小通过比例（1.0 表示必须通过所有规则）。
+    require_hk_connect : bool
+        是否强制要求港股通资格。默认 False（数据缺失时不剔除）。
 
     Returns
     -------
@@ -296,7 +376,9 @@ def screen_hk_stocks(
     passed_results: list[HKScreenResult] = []
 
     for r in results:
-        passed_count, total_rules, fail_reasons = count_passed_rules(r)
+        passed_count, total_rules, fail_reasons = count_passed_rules(
+            r, require_hk_connect=require_hk_connect
+        )
         r.pass_count = passed_count
         r.total_rules = total_rules
         r.fail_reasons = fail_reasons
@@ -338,9 +420,9 @@ def print_screen_summary(results: list[HKScreenResult]) -> None:
                 score = compute_quality_score(r)
                 logger.info(
                     f"  {i:2d}. {r.ticker} {r.name:<20} "
-                    f"市值={r.market_cap / 1e8 if r.market_cap else 0:.0f}亿 "
-                    f"PE={r.pe_ttm:.1f if r.pe_ttm else 'N/A'} "
-                    f"ROE={r.avg_roe_3y:.1% if r.avg_roe_3y else 'N/A'} "
+                    f"市值={r.market_cap / 1e8 if r.market_cap is not None else 0:.0f}亿 "
+                    f"PE={_fmt_pe(r.pe_ttm)} "
+                    f"ROE={_fmt_roe(r.avg_roe_3y)} "
                     f"质量分={score:.0f} "
                     f"通过规则={r.pass_count}/{r.total_rules}"
                 )

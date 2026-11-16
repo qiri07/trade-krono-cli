@@ -50,10 +50,10 @@ class HKRawData:
 
     # 财务指标（优先从 API 获取，缺失时保留 None）
     debt_to_asset: float | None = None
-    non_gaap_profit_2y: bool = False
-    clean_audit_2y: bool = False
-    operating_cashflow_3y: bool = False
-    revenue_growth_3y: bool = False
+    non_gaap_profit_2y: bool | None = None
+    clean_audit_2y: bool | None = None
+    operating_cashflow_3y: bool | None = None
+    revenue_growth_3y: bool | None = None
     gross_margin: float | None = None
     avg_roe_3y: float | None = None
 
@@ -65,7 +65,7 @@ class HKRawData:
     single_day_spike_1y: float | None = None
 
     # 质量加分指标
-    dividend_3y: bool = False
+    dividend_3y: bool | None = None
     payout_ratio: float | None = None
     annualized_volatility_12m: float | None = None
     fcf_to_net_profit: float | None = None

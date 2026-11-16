@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import pandas as pd
 import sys
 from pathlib import Path
 
@@ -57,6 +58,11 @@ def main() -> None:
         action="store_true",
         help="不推送飞书",
     )
+    parser.add_argument(
+        "--require-hk-connect",
+        action="store_true",
+        help="强制要求港股通资格（默认不强制，数据缺失时不剔除）",
+    )
     args = parser.parse_args()
 
     # 获取港股通成分股清单
@@ -85,7 +91,11 @@ def main() -> None:
 
     # 执行筛选
     logger.info("🔍 开始执行筛选规则...")
-    passed = screen_hk_stocks(results, min_pass_rate=args.min_pass_rate)
+    passed = screen_hk_stocks(
+        results,
+        min_pass_rate=args.min_pass_rate,
+        require_hk_connect=args.require_hk_connect,
+    )
 
     # 打印摘要
     print_screen_summary(passed)
@@ -95,11 +105,14 @@ def main() -> None:
 
     logger.info("\n📋 筛选通过股票明细:")
     for i, r in enumerate(top_results, 1):
+        pe_str = f"{r.pe_ttm:.1f}" if r.pe_ttm is not None else "N/A"
+        roe_str = f"{r.avg_roe_3y:.1%}" if r.avg_roe_3y is not None else "N/A"
+        cap_str = f"{r.market_cap / 1e8:.0f}亿" if r.market_cap is not None else "N/A"
         logger.info(
             f"  {i:3d}. {r.ticker} {r.name:<20} "
-            f"市值={r.market_cap / 1e8 if r.market_cap else 0:.0f}亿港元 "
-            f"PE={r.pe_ttm:.1f if r.pe_ttm else 'N/A'} "
-            f"ROE={r.avg_roe_3y:.1% if r.avg_roe_3y else 'N/A'} "
+            f"市值={cap_str} "
+            f"PE={pe_str} "
+            f"ROE={roe_str} "
             f"质量分={compute_quality_score(r):.0f} "
             f"规则={r.pass_count}/{r.total_rules}"
         )
@@ -119,11 +132,14 @@ def main() -> None:
 
             lines = [f"📈 **港股筛选结果**（共 {len(passed)} 只通过）\n"]
             for r in top_results[:20]:
+                pe_str = f"{r.pe_ttm:.1f}" if r.pe_ttm is not None and not pd.isna(r.pe_ttm) else "N/A"
+                roe_str = f"{r.avg_roe_3y:.1%}" if r.avg_roe_3y is not None and not pd.isna(r.avg_roe_3y) else "N/A"
+                cap_str = f"{r.market_cap / 1e8:.0f}亿" if r.market_cap is not None else "N/A"
                 lines.append(
                     f"  {r.ticker} {r.name[:10]:<10} "
-                    f"市值={r.market_cap / 1e8 if r.market_cap else 0:.0f}亿 "
-                    f"PE={r.pe_ttm:.1f if r.pe_ttm else 'N/A'} "
-                    f"ROE={r.avg_roe_3y:.1% if r.avg_roe_3y else 'N/A'}"
+                    f"市值={cap_str} "
+                    f"PE={pe_str} "
+                    f"ROE={roe_str}"
                 )
             push_feishu("text", content="\n".join(lines), title="港股筛选结果")
             logger.info("✅ 飞书推送成功")
