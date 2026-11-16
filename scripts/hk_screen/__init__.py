@@ -15,7 +15,8 @@
 from scripts.hk_screen.data_fetcher import (
     fetch_hk_raw_data,
     get_hk_connect_stocks,
-    get_hk_stock_list,
+    get_hk_stock_list_from_akshare,
+    get_hk_stock_list_from_cache,
     raw_to_screen_result,
 )
 from scripts.hk_screen.screener import (
@@ -34,6 +35,7 @@ __all__ = [
     "screen_hk_stocks",
     "fetch_hk_raw_data",
     "get_hk_connect_stocks",
-    "get_hk_stock_list",
+    "get_hk_stock_list_from_cache",
+    "get_hk_stock_list_from_akshare",
     "raw_to_screen_result",
 ]

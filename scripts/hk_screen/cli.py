@@ -17,7 +17,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from loguru import logger
 
@@ -25,6 +25,7 @@ from scripts.hk_screen import (
     compute_quality_score,
     fetch_hk_raw_data,
     get_hk_connect_stocks,
+    get_hk_stock_list_from_cache,
     print_screen_summary,
     raw_to_screen_result,
     screen_hk_stocks,
@@ -61,10 +62,20 @@ def main() -> None:
     # 获取港股通成分股清单
     hk_connect_stocks = get_hk_connect_stocks()
 
-    # 获取全量港股原始数据
+    # 优先从本地缓存获取股票列表
+    logger.info("📊 正在从本地缓存获取港股列表...")
+    tickers = get_hk_stock_list_from_cache()
+    if not tickers:
+        logger.warning("⚠️  本地缓存无港股数据，将尝试从 akshare 获取全量列表")
+        from scripts.hk_screen.data_fetcher import get_hk_stock_list_from_akshare
+
+        tickers = get_hk_stock_list_from_akshare()
+    logger.info(f"📋 待筛选港股数量: {len(tickers)} 只")
+
+    # 获取全量港股原始数据（优先从本地缓存读取 K 线）
     logger.info("🚀 开始获取全量港股数据...")
     raw_data = fetch_hk_raw_data(
-        tickers=[],  # 空列表表示获取全量
+        tickers=tickers,
         hk_connect_stocks=hk_connect_stocks,
     )
 

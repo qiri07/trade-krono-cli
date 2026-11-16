@@ -125,14 +125,23 @@ class HKScreenResult:
 def count_passed_rules(result: HKScreenResult) -> tuple[int, int, list[str]]:
     """统计通过的规则数量和失败原因。
 
+    数据缺失（None）时不计入失败，只在明确不满足条件时才算失败。
+    通过率 = 通过数 / (通过数 + 失败数)，不包括未知数。
+
     Returns
     -------
-    (passed_count, total_rules, fail_reasons)
+    (passed_count, total_evaluated_rules, fail_reasons)
     """
     checks: list[tuple[bool, str]] = []
+    unknown_count = 0
 
-    def _check(condition: bool, reason: str) -> None:
-        checks.append((condition, reason))
+    def _check(condition: bool | None, reason: str) -> None:
+        """condition: True=通过, False=失败, None=数据缺失未知"""
+        nonlocal unknown_count
+        if condition is None:
+            unknown_count += 1
+        else:
+            checks.append((condition, reason))
 
     # 交易规则
     _check(result.is_hk_connect, "不在港股通清单")
@@ -219,10 +228,11 @@ def count_passed_rules(result: HKScreenResult) -> tuple[int, int, list[str]]:
     )
 
     passed = sum(1 for ok, _ in checks if ok)
-    total = len(checks)
+    failed = sum(1 for ok, _ in checks if not ok)
+    total_evaluated = passed + failed
     fail_reasons = [reason for ok, reason in checks if not ok]
 
-    return passed, total, fail_reasons
+    return passed, total_evaluated, fail_reasons
 
 
 def compute_quality_score(result: HKScreenResult) -> float:
