@@ -26,6 +26,7 @@ from loguru import logger
 
 from trade_krono_cli.config import get_settings
 from trade_krono_cli.data_providers.base import StockMetadata
+from trade_krono_cli.data_providers.adk_data_provider import AdkDataProvider
 
 if TYPE_CHECKING:
     from trade_krono_cli.data_providers.base import (
@@ -116,6 +117,7 @@ class DataProviderFactory:
             "tonghuashun",
             "efinance",
             "easyquotation",
+            "adk",
         ]
 
     @property
@@ -923,10 +925,22 @@ class DataProviderFactory:
                 )
 
                 registry[name] = EasyQuotationProvider
+            elif name == "easyquotation":
+                from trade_krono_cli.data_providers.easyquotation_provider import (
+                    EasyQuotationProvider,
+                )
+
+                registry[name] = EasyQuotationProvider
             elif name == "tencent":
                 from trade_krono_cli.data_providers.tencent_provider import TencentProvider
 
                 registry[name] = TencentProvider
+            elif name == "adk":
+                from trade_krono_cli.data_providers.adk_data_provider import (
+                    AdkDataProvider,
+                )
+
+                registry[name] = AdkDataProvider
             else:
                 logger.warning(f"未知的 Provider 名称: {name}")
                 return None

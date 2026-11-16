@@ -312,9 +312,9 @@ def _fetch_hk_spot_data() -> dict[str, Any]:
                 logger.info(f"✅ 获取到 {len(spot_df)} 只港股实时行情")
                 spot_map: dict[str, Any] = {}
                 for _, row in spot_df.iterrows():
-                    code = str(r.get("代码", "")).zfill(5)
+                    code = str(row.get("代码", "")).zfill(5)
                     if code:
-                        spot_map[code] = r
+                        spot_map[code] = row
                 return spot_map
         except Exception as e:
             logger.warning(f"获取全市场行情失败（第{attempt + 1}次）: {e}")
@@ -336,7 +336,7 @@ def _fetch_hk_metadata_from_akshare(ticker: str) -> dict[str, Any] | None:
     Returns
     -------
     dict[str, Any] | None
-        基本面数据字典，包含 name, industry, pe_ttm, pb, dividend_yield,
+        基本面数据字典，包含 name, industry, pe_ttm, pb, dividend_yield，
         market_cap, turnover_20d_avg, turnover_rate_12m_avg 等字段。
     """
     import akshare as ak
@@ -354,12 +354,12 @@ def _fetch_hk_metadata_from_akshare(ticker: str) -> dict[str, Any] | None:
                     return {
                         "name": str(row_data.get("中文名称", "")),
                         "price": _safe_float(row_data.get("最新价")),
-                        "market_cap": _safe_float(r.get("总市值")),
-                        "pe_ttm": _safe_float(r.get("市盈率")),
-                        "pb": _safe_float(r.get("市净率")),
-                        "dividend_yield": _safe_float(r.get("股息率")),
-                        "turnover_20d_avg": _safe_float(r.get("成交额")),
-                        "turnover_rate_12m_avg": _safe_float(r.get("换手率")),
+                        "market_cap": _safe_float(row_data.get("总市值")),
+                        "pe_ttm": _safe_float(row_data.get("市盈率")),
+                        "pb": _safe_float(row_data.get("市净率")),
+                        "dividend_yield": _safe_float(row_data.get("股息率")),
+                        "turnover_20d_avg": _safe_float(row_data.get("成交额")),
+                        "turnover_rate_12m_avg": _safe_float(row_data.get("换手率")),
                     }
         except Exception as e:
             logger.debug(f"获取 {ticker} 行情失败（第{attempt + 1}次）: {e}")
@@ -418,9 +418,9 @@ def fetch_hk_raw_data(
             if spot_df is not None and not spot_df.empty:
                 logger.info(f"✅ 获取到 {len(spot_df)} 只港股实时行情")
                 for _, row in spot_df.iterrows():
-                    code = str(r.get("代码", "")).zfill(5)
+                    code = str(row.get("代码", "")).zfill(5)
                     if code:
-                        spot_map[code] = r
+                        spot_map[code] = row
                 break
         except Exception as e:
             logger.warning(f"获取全市场行情失败（第{attempt + 1}次）: {e}")
@@ -450,18 +450,18 @@ def fetch_hk_raw_data(
         )
 
         # 从全市场行情中查找对应股票，补充基本面数据
-        row = spot_map.get(symbol)
-        if row is not None:
-            raw.name = str(r.get("中文名称", "")) if (r := row) is not None else ""
-            raw.market_cap = _safe_float(r.get("总市值"))
-            raw.pe_ttm = _safe_float(r.get("市盈率"))
-            raw.pb = _safe_float(r.get("市净率"))
-            raw.dividend_yield = _safe_float(r.get("股息率"))
+        row_data = spot_map.get(symbol)
+        if row_data is not None:
+            raw.name = str(row_data.get("中文名称", ""))
+            raw.market_cap = _safe_float(row_data.get("总市值"))
+            raw.pe_ttm = _safe_float(row_data.get("市盈率"))
+            raw.pb = _safe_float(row_data.get("市净率"))
+            raw.dividend_yield = _safe_float(row_data.get("股息率"))
             # 如果本地没有成交额数据，尝试从 API 补充
             if raw.turnover_20d_avg is None:
-                raw.turnover_20d_avg = _safe_float(r.get("成交额"))
+                raw.turnover_20d_avg = _safe_float(row_data.get("成交额"))
             if raw.turnover_rate_12m_avg is None:
-                raw.turnover_rate_12m_avg = _safe_float(r.get("换手率"))
+                raw.turnover_rate_12m_avg = _safe_float(row_data.get("换手率"))
 
         # 设置港股通标志
         raw.is_hk_connect = ticker in hk_connect_stocks
@@ -473,3 +473,41 @@ def fetch_hk_raw_data(
 
     logger.info(f"✅ 完成 {len(results)} 只港股原始数据获取")
     return results
+
+
+def raw_to_screen_result(raw: HKRawData) -> HKScreenResult:
+    """将 HKRawData 转换为 HKScreenResult。"""
+    return HKScreenResult(
+        ticker=raw.ticker,
+        name=raw.name,
+        sector=raw.sector,
+        industry=raw.industry,
+        market_cap=raw.market_cap,
+        pe_ttm=raw.pe_ttm,
+        pb=raw.pb,
+        dividend_yield=raw.dividend_yield,
+        turnover_20d_avg=raw.turnover_20d_avg,
+        turnover_rate_12m_avg=raw.turnover_rate_12m_avg,
+        listing_days=raw.listing_days,
+        is_hk_connect=raw.is_hk_connect,
+        is_hkd=raw.is_hkd,
+        is_common_stock=raw.is_common_stock,
+        suspension_days_30d=raw.suspension_days_30d,
+        has_risk_warning=raw.has_risk_warning,
+        debt_to_asset=raw.debt_to_asset,
+        non_gaap_profit_2y=raw.non_gaap_profit_2y,
+        clean_audit_2y=raw.clean_audit_2y,
+        operating_cashflow_3y=raw.operating_cashflow_3y,
+        revenue_growth_3y=raw.revenue_growth_3y,
+        gross_margin=raw.gross_margin,
+        avg_roe_3y=raw.avg_roe_3y,
+        top_shareholder_pct=raw.top_shareholder_pct,
+        max_drawdown_12m=raw.max_drawdown_12m,
+        rights_issues_12m=raw.rights_issues_12m,
+        price=raw.price,
+        drawdown_from_high=raw.drawdown_from_high,
+        single_day_spike_1y=raw.single_day_spike_1y,
+        dividend_3y=raw.dividend_3y,
+        annualized_volatility_12m=raw.annualized_volatility_12m,
+        fcf_to_net_profit=raw.fcf_to_net_profit,
+    )
