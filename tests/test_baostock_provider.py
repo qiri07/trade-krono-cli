@@ -45,7 +45,10 @@ class TestBaostockProvider:
             patch(
                 "trade_krono_cli.data_providers.baostock_provider.BaostockProvider._ensure_import",
             ),
-            patch("trade_krono_cli.data_providers.baostock_provider.BaostockProvider._get_limiter"),
+            patch(
+                "trade_krono_cli.data_providers.baostock_provider._bs_semaphore",
+                MagicMock(),
+            ),
             patch(
                 "trade_krono_cli.data_providers.baostock_provider.BaostockProvider._ensure_login",
             ),
@@ -66,7 +69,10 @@ class TestBaostockProvider:
             patch(
                 "trade_krono_cli.data_providers.baostock_provider.BaostockProvider._ensure_import",
             ),
-            patch("trade_krono_cli.data_providers.baostock_provider.BaostockProvider._get_limiter"),
+            patch(
+                "trade_krono_cli.data_providers.baostock_provider._bs_semaphore",
+                MagicMock(),
+            ),
             patch(
                 "trade_krono_cli.data_providers.baostock_provider.BaostockProvider._ensure_login",
             ),

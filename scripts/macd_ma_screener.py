@@ -41,6 +41,7 @@ from scripts._utils import (
     MIN_MARKET_CAP_YI,
     PE_MAX_TECH,
     ST_NAME_KEYWORDS_MINIMAL,
+    fetch_hk_pe_snapshot,
     get_astock_tickers,
     get_cache_db_path,
     get_sqlite_conn,
@@ -384,7 +385,7 @@ def _scan_all(
     """
     conn = get_sqlite_conn(db_path)
     rows = conn.execute(
-        "SELECT ticker, data FROM kline_cache WHERE ticker NOT LIKE 'bj.%' AND ticker NOT LIKE 'hk.%'"
+        "SELECT ticker, data FROM kline_cache WHERE ticker NOT LIKE 'bj.%'"
     ).fetchall()
     conn.close()
 
@@ -448,6 +449,7 @@ def _scan_all(
             skipped["limit_up"] += 1
             continue
 
+        is_hk = tk.startswith("hk.")
         results.append(
             {
                 "ticker": tk,
@@ -457,6 +459,7 @@ def _scan_all(
                 "ma13": round(ma13, 2),
                 "macd": round(macd_val, 4),
                 "daily_chg_pct": round(chg, 2),
+                "is_hk": is_hk,
             }
         )
     return results, dict(skipped)
@@ -511,6 +514,26 @@ def run(
         if not r.get("name"):
             r["name"] = name_map.get(str(r["ticker"]).split(".")[-1], "")
 
+    # ── 港股 PE 补充：从腾讯行情 API 批量获取 ──
+    hk_tickers = [str(r["ticker"]) for r in candidates if r.get("is_hk") and r.get("pe_ttm") is None]
+    if hk_tickers:
+        logger.info(f"📊 港股 PE 获取：{len(hk_tickers)} 只需要从腾讯 API 补充...")
+        hk_pe_map = fetch_hk_pe_snapshot(hk_tickers)
+        hk_filled = 0
+        for r in candidates:
+            if r.get("is_hk") and r.get("pe_ttm") is None:
+                code6 = str(r["ticker"]).split(".")[1]
+                info = hk_pe_map.get(code6)
+                if info and info.get("pe") is not None:
+                    r["pe_ttm"] = round(info["pe"], 2)
+                    if not r.get("name"):
+                        r["name"] = info.get("name", "")
+                    hk_filled += 1
+        logger.info(
+            f"  港股 PE 回退完成: 补充 {hk_filled}/{len(hk_tickers)} 只，"
+            f"剩余缺失 {len(hk_tickers) - hk_filled} 只"
+        )
+
     # PE 过滤：本地 metadata 优先，缺失走 Fuyao 批量补
     missing_pe = [str(r["ticker"]) for r in candidates if r["ticker"] not in pe_local]
     pe_extra: dict[str, float] = {}
@@ -519,6 +542,9 @@ def run(
         pe_extra = _fetch_pe_from_fuyao(missing_pe)
         logger.info(f"  PE 补充 {len(pe_extra)}/{len(missing_pe)} 只")
     for r in candidates:
+        # HK 股票的 PE 已通过腾讯 API 补充，不再被本地/Fuyao 覆盖为 None
+        if r.get("pe_ttm") is not None:
+            continue
         ticker_str = str(r.get("ticker", ""))
         r["pe_ttm"] = pe_local.get(ticker_str, pe_extra.get(ticker_str.split(".")[-1]))
 

@@ -14,13 +14,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import subprocess
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
+import requests
+
+logger = logging.getLogger(__name__)
 
 try:
     import yaml  # noqa: PLC0415
@@ -798,3 +803,66 @@ def get_sqlite_conn(db_path: Path | str = CACHE_DB, readonly: bool = False) -> s
     except Exception:
         pass  # 测试中可能 mock 连接对象，不支持 PRAGMA
     return conn
+
+
+def fetch_hk_pe_snapshot(
+    tickers: list[str], batch_size: int = 50
+) -> dict[str, dict[str, Any]]:
+    """批量获取港股的 PE_TTM 和名称（通过腾讯行情接口 qt.gtimg.cn/q=hk{code}）。
+
+    这是专门为港股设计的元数据获取函数，因为港股不使用同花顺 Fuyao API，
+    而使用腾讯行情接口。每批最多 50 只股票。
+
+    Parameters
+    ----------
+    tickers : list[str]
+        港股 ticker 列表，格式如 ``hk.00700``、``hk.09988``。
+    batch_size : int
+        每批请求数量，默认 50。
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        6位代码到信息的映射，如 ``{"00700": {"pe": 12.5, "name": "腾讯控股"}}``。
+        获取失败或 PE 为空的股票不会出现在结果中。
+    """
+    import time as _time
+
+    result: dict[str, dict[str, Any]] = {}
+    for i in range(0, len(tickers), batch_size):
+        batch = tickers[i : i + batch_size]
+        codes = ",".join(t.replace("hk.", "") for t in batch)
+        url = f"https://qt.gtimg.cn/q=hk{codes}"
+        try:
+            r = requests.get(url, timeout=10)
+            r.raise_for_status()
+            for line in r.text.strip().split(";"):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw_code = ""
+                    prefix, data = line.split("=", 1)
+                    raw_code = prefix.replace("v_", "").lower()
+                    parts = data.strip('"').split("~")
+                    if len(parts) < 40:
+                        continue
+                    name = parts[1].strip() if len(parts) > 1 else ""
+                    pe_raw = parts[39]
+                    if not pe_raw or pe_raw == "--":
+                        continue
+                    try:
+                        pe_f = float(pe_raw)
+                    except (TypeError, ValueError):
+                        continue
+                    result[raw_code] = {"pe": pe_f, "name": name}
+                except Exception:
+                    logger.debug(f"港股 PE 解析失败: {raw_code}")
+                    continue
+        except Exception as e:
+            logger.debug(f"港股 PE 获取失败（批次 {i // batch_size + 1}）: {str(e)[:80]}")
+            continue
+        # 避免频繁请求触发腾讯限流
+        if i + batch_size < len(tickers):
+            _time.sleep(0.5)
+    return result

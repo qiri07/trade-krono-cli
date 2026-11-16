@@ -17,10 +17,15 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
+from trade_krono_cli.config import get_settings
+
 
 @dataclass
 class RateLimitConfig:
-    """限流配置"""
+    """限流配置
+
+    所有字段均可通过环境变量覆盖（见 Settings 中 ``rate_limit_*`` 字段）。
+    """
 
     max_requests_per_second: int = 2        # 每秒最大请求数
     min_interval_seconds: float = 0.5       # 最小请求间隔(秒)
@@ -29,6 +34,20 @@ class RateLimitConfig:
     max_retries: int = 5                    # 最大重试次数
     base_backoff: float = 2.0               # 指数退避基数(秒)
     max_backoff: float = 300.0              # 最大退避时间(秒)
+
+    @classmethod
+    def from_settings(cls) -> RateLimitConfig:
+        """从全局 Settings 构建限流配置。"""
+        s = get_settings()
+        return cls(
+            max_requests_per_second=s.rate_limit_max_requests_per_second,
+            min_interval_seconds=s.rate_limit_min_interval_seconds,
+            burst_size=s.rate_limit_max_requests_per_second * 5,
+            cooldown_seconds=s.rate_limit_cooldown_seconds,
+            max_retries=s.rate_limit_max_retries,
+            base_backoff=s.rate_limit_base_backoff,
+            max_backoff=s.rate_limit_max_backoff,
+        )
 
 
 class RateLimiter:
@@ -49,7 +68,7 @@ class RateLimiter:
     _lock: threading.Lock = threading.Lock()
 
     def __init__(self, config: RateLimitConfig | None = None):
-        self.config = config or RateLimitConfig()
+        self.config = config or RateLimitConfig.from_settings()
         self._request_log: deque[float] = deque()
         self._lock = threading.Lock()
         # 按 Provider 维护独立的请求时间戳
@@ -64,7 +83,7 @@ class RateLimiter:
 
     @classmethod
     def get_instance(cls) -> RateLimiter:
-        """获取单例实例"""
+        """获取单例实例（从 Settings 读取限流配置）。"""
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:

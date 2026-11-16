@@ -13,25 +13,21 @@ from datetime import datetime
 
 from loguru import logger
 
-from trade_krono_cli.config import get_settings
 from trade_krono_cli.data_providers.base import (
     DataProvider,
     KlineData,
     RealtimeQuote,
     StockMetadata,
 )
-from trade_krono_cli.security import TokenBucket, validate_date, validate_ticker
+from trade_krono_cli.security import validate_date, validate_ticker
 from trade_krono_cli.utils.st_cache import cached
 
 # baostock 模块级状态（保持与 data.py 原有的全局状态兼容）
 _bs = None
 _HAS_BS = False
 _bs_logged_in = False
-_bs_limiter: TokenBucket | None = None
-_bs_login_lock = threading.Lock()
-_bs_query_lock = threading.Lock()
-# 合并锁：baostock 仅支持单会话，登录和查询必须在同一把锁下原子执行
-_bs_lock = threading.Lock()
+_bs_semaphore: threading.Semaphore = threading.Semaphore(3)
+# Semaphore 允许有限并发（baostock 单会话但可容纳少量并发查询），避免全局互斥锁导致的线程退化
 
 # ST 标记正则（与 trading_constraints.py 保持一致）
 _ST_PATTERNS = re.compile(r"^(ST|\*ST|SST|N ST)", re.IGNORECASE)
@@ -64,16 +60,6 @@ class BaostockProvider(DataProvider):
 
     # ── 内部工具方法 ──────────────────────────────────────────
 
-    def _get_limiter(self) -> TokenBucket:
-        global _bs_limiter
-        if _bs_limiter is None:
-            s = get_settings()
-            _bs_limiter = TokenBucket(
-                rate=1.0 / s.baostock_sleep_sec,
-                capacity=5.0,
-            )
-        return _bs_limiter
-
     def _ensure_import(self) -> None:
         global _bs, _HAS_BS
         if _HAS_BS:
@@ -93,7 +79,7 @@ class BaostockProvider(DataProvider):
             self._ensure_import()
         if _bs_logged_in:
             return
-        # 注意：调用者必须已持有 _bs_lock
+        # 注意：调用者必须已持有 _bs_semaphore
         lg = _bs.login()  # type: ignore
         if lg.error_code != "0":
             msg = f"baostock 登录失败: {lg.error_msg}"
@@ -112,7 +98,7 @@ class BaostockProvider(DataProvider):
 
     def _query_stock_basic(self, ticker: str) -> list[dict]:
         """查询股票基本信息。"""
-        with _bs_lock:
+        with _bs_semaphore:
             self._ensure_login()
             rs = _bs.query_stock_basic(code=ticker)  # type: ignore
         if rs.error_code != "0":
@@ -138,12 +124,11 @@ class BaostockProvider(DataProvider):
         end_date = validate_date(end_date)
 
         self._ensure_import()
-        self._get_limiter().acquire()
 
         rows: list[list[str]] = []
         try:
-            with _bs_lock:
-                # baostock 仅支持单会话：登录和查询必须在同一把锁下原子执行
+            with _bs_semaphore:
+                # baostock 仅支持单会话：登录和查询必须在同一信号量下原子执行
                 self._ensure_login()
                 rs = _bs.query_history_k_data_plus(  # type: ignore
                     ticker,

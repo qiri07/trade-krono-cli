@@ -204,6 +204,130 @@ class AkShareProvider(DataProvider):
             logger.debug(f"{self.name} 元数据拉取异常 {ticker}: {str(e)[:100]}")
             return None
 
+    # ── 批量获取（复用全市场快照缓存，避免逐票 HTTP）──────────
+
+    def fetch_quotes_batch(
+        self,
+        tickers: list[str],
+        max_workers: int = 8,
+    ) -> dict[str, RealtimeQuote]:
+        """批量获取实时行情。
+
+        复用 akshare 全市场快照缓存（TTL 60 秒），一次拉取全市场后在内存中
+        匹配各 ticker，避免逐票 HTTP 请求。
+
+        Parameters
+        ----------
+        tickers : list[str]
+            股票代码列表。
+        max_workers : int
+            保留参数以兼容基类签名，批量快照模式下不使用多线程。
+
+        Returns
+        -------
+        dict[str, RealtimeQuote]
+            成功获取的 ticker → 行情映射。
+        """
+        results: dict[str, RealtimeQuote] = {}
+        if not tickers:
+            return results
+
+        try:
+            self._ensure_import()
+            df = self._get_full_market_cache()
+            if df is None or df.empty:
+                return results
+
+            # 构建 代码 → 行 的映射，避免重复查询 DataFrame
+            code_to_row: dict[str, Any] = {}
+            for _, row in df.iterrows():
+                code = str(row.get("代码", ""))
+                if code:
+                    code_to_row[code] = row
+
+            for ticker in tickers:
+                code = self._ticker_to_ak(ticker)
+                row = code_to_row.get(code)
+                if row is None:
+                    continue
+                try:
+                    results[ticker] = RealtimeQuote(
+                        ticker=ticker,
+                        price=safe_float(row.get("最新价")),
+                        pe=safe_float(row.get("市盈率-动态")),
+                        pb=safe_float(row.get("市净率")),
+                        market_cap=safe_float(row.get("总市值")),
+                        turnover=safe_float(row.get("换手率")),
+                        source=self.name,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"{self.name} 批量行情构建 {ticker} 异常: {e}")
+        except ImportError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"{self.name} 批量行情拉取异常: {str(e)[:100]}")
+        return results
+
+    def fetch_metadata_batch(
+        self,
+        tickers: list[str],
+        max_workers: int = 8,
+    ) -> dict[str, StockMetadata]:
+        """批量获取股票元数据。
+
+        复用 akshare 全市场快照缓存（TTL 60 秒），一次拉取全市场后在内存中
+        匹配各 ticker。
+
+        Parameters
+        ----------
+        tickers : list[str]
+            股票代码列表。
+        max_workers : int
+            保留参数以兼容基类签名，批量快照模式下不使用多线程。
+
+        Returns
+        -------
+        dict[str, StockMetadata]
+            成功获取的 ticker → 元数据映射。
+        """
+        results: dict[str, StockMetadata] = {}
+        if not tickers:
+            return results
+
+        try:
+            self._ensure_import()
+            df = self._get_full_market_cache()
+            if df is None or df.empty:
+                return results
+
+            code_to_row: dict[str, Any] = {}
+            for _, row in df.iterrows():
+                code = str(row.get("代码", ""))
+                if code:
+                    code_to_row[code] = row
+
+            for ticker in tickers:
+                code = self._ticker_to_ak(ticker)
+                row = code_to_row.get(code)
+                if row is None:
+                    continue
+                try:
+                    industry = str(row.get("行业") or "").strip() or None
+                    results[ticker] = StockMetadata(
+                        ticker=ticker,
+                        industry=industry,
+                        pe_ttm=safe_float(row.get("市盈率-动态")),
+                        pb=safe_float(row.get("市净率")),
+                        source=self.name,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"{self.name} 批量元数据构建 {ticker} 异常: {e}")
+        except ImportError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"{self.name} 批量元数据拉取异常: {str(e)[:100]}")
+        return results
+
     def health_check(self) -> bool:
         try:
             self._ensure_import()

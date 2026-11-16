@@ -69,6 +69,15 @@ class DataProviderFactory:
     # 全局限流器
     _rate_limiter = RateLimiter.get_instance()
 
+    # Provider 连续失败计数与"暂时不可用"标记
+    _provider_fail_count: dict[str, int] = {}
+    _provider_unavailable_until: dict[str, float] = {}
+    _provider_fail_lock = threading.Lock()
+    # 连续失败阈值：达到后该 provider 在 UNAVAILABLE_TTL_SEC 内被标记为不可用，跳过 health_check 和调用
+    _PROVIDER_FAIL_THRESHOLD = 3
+    # 标记不可用后的冷却时间（秒），期间直接降级，不再探测
+    _PROVIDER_UNAVAILABLE_TTL_SEC = 300.0
+
     @staticmethod
     def _rank_cache_ttl_sec() -> int:
         """Provider 排名缓存 TTL（秒），从 Settings 读取。"""
@@ -158,26 +167,73 @@ class DataProviderFactory:
         return get_data_factory()._chain_for_ticker(ticker)
 
     def _provider_healthy(self, name: str, provider: DataProvider) -> bool:
-        """带短 TTL 缓存的 Provider 健康检查。
+        """带短 TTL 缓存和连续失败熔断的 Provider 健康检查。
 
-        ``fetch_quote`` / ``fetch_metadata`` 会逐票调用 ``health_check``，
-        未缓存时 5000 只票会对同一 Provider 发起 5000 次探测。按 Provider 缓存
-        60 秒即可显著降低无效网络请求，同时仍能较快感知故障。
+        如果某 Provider 连续失败达到阈值（3 次），在 5 分钟内标记为"暂时不可用"，
+        期间跳过 health_check 和实际调用，直接降级到下一个 Provider。
+        成功调用后重置失败计数，恢复可用状态。
+
+        这避免对长期不可达的数据源反复发起无效探测请求。
         """
         ttl = 60.0
-        now = time.time()
+        now = time.monotonic()
+
+        # 检查是否在"暂时不可用"冷却期内
+        with self._provider_fail_lock:
+            unavailable_until = self._provider_unavailable_until.get(name, 0.0)
+            if now < unavailable_until:
+                return False
+            fail_count = self._provider_fail_count.get(name, 0)
+
+        # 检查健康检查缓存
         with self._health_lock:
             cached = self._health_cache.get(name)
             if cached is not None and now - cached[1] < ttl:
                 return cached[0]
+
         try:
             ok = bool(provider.health_check())
         except Exception as e:  # noqa: BLE001 - provider 自定义实现，异常类型不可控
             logger.debug(f"{name} health_check 异常: {e}")
             ok = False
+
         with self._health_lock:
             self._health_cache[name] = (ok, now)
+
+        if ok:
+            # 成功：重置失败计数
+            with self._provider_fail_lock:
+                self._provider_fail_count.pop(name, None)
+                self._provider_unavailable_until.pop(name, None)
+        else:
+            # 失败：增加计数，达到阈值后进入冷却期
+            with self._provider_fail_lock:
+                new_count = fail_count + 1
+                self._provider_fail_count[name] = new_count
+                if new_count >= self._PROVIDER_FAIL_THRESHOLD:
+                    self._provider_unavailable_until[name] = now + self._PROVIDER_UNAVAILABLE_TTL_SEC
+                    logger.warning(
+                        f"⚠️  {name} 连续失败 {new_count} 次，进入 {self._PROVIDER_UNAVAILABLE_TTL_SEC:.0f}s 冷却期，将跳过探测"
+                    )
         return ok
+
+    def _record_provider_fail(self, name: str) -> None:
+        """记录一次 Provider 调用失败，用于熔断计数。"""
+        now = time.monotonic()
+        with self._provider_fail_lock:
+            fail_count = self._provider_fail_count.get(name, 0) + 1
+            self._provider_fail_count[name] = fail_count
+            if fail_count >= self._PROVIDER_FAIL_THRESHOLD:
+                self._provider_unavailable_until[name] = now + self._PROVIDER_UNAVAILABLE_TTL_SEC
+                logger.warning(
+                    f"⚠️  {name} 连续失败 {fail_count} 次，进入 {self._PROVIDER_UNAVAILABLE_TTL_SEC:.0f}s 冷却期"
+                )
+
+    def _record_provider_success(self, name: str) -> None:
+        """记录一次 Provider 调用成功，重置熔断计数。"""
+        with self._provider_fail_lock:
+            self._provider_fail_count.pop(name, None)
+            self._provider_unavailable_until.pop(name, None)
 
     # ── Provider 实例管理 ───────────────────────────────────────────────
 
@@ -232,6 +288,204 @@ class DataProviderFactory:
 
     # ── 核心接口：带降级的拉取方法 ─────────────────────────────────────
 
+    def _fetch_kline_with_retry(
+        self,
+        provider: DataProvider,
+        name: str,
+        ticker: str,
+        start_date: str,
+        end_date: str,
+        frequency: str,
+        adjustflag: str,
+        max_retries: int | None = None,
+        base_delay: float | None = None,
+        max_delay: float | None = None,
+        retry_on: tuple[type[Exception], ...] = (ConnectionError, TimeoutError, OSError),
+    ) -> KlineData | None:
+        """对单个 Provider 带指数退避重试地拉取 K 线。
+
+        重试耗尽后返回 None，由调用方决定是否降级到下一个 Provider。
+        429 限流错误会触发 provider 冷却期，避免持续打击已限流的源。
+
+        只有在 ``retry_on`` 指定的异常类型，或异常消息包含 ``429``/``rate limit``
+        时才会重试；其他异常（如硬故障的 ``RuntimeError``）立即放弃并降级。
+        这避免对明确不可恢复的错误做无谓重试，保持降级链路的响应速度。
+
+        若 ``max_retries``/``base_delay``/``max_delay`` 为 None，则从全局 Settings
+        中读取（对应环境变量 ``RATE_LIMIT_MAX_RETRIES`` /
+        ``RATE_LIMIT_BASE_BACKOFF`` / ``RATE_LIMIT_MAX_BACKOFF``）。
+
+        Parameters
+        ----------
+        provider : DataProvider
+            目标 Provider 实例。
+        name : str
+            Provider 名称（用于限流和日志）。
+        ticker : str
+            股票代码。
+        start_date, end_date : str
+            日期范围。
+        frequency : str
+            K 线频率。
+        adjustflag : str
+            复权标志。
+        max_retries : int | None
+            最大重试次数，缺省从 Settings 读取（默认 3 次）。
+        base_delay : float | None
+            基础退避秒数，缺省从 Settings 读取（默认 2.0 秒）。
+        max_delay : float | None
+            最大退避秒数，缺省从 Settings 读取（默认 60.0 秒）。
+        retry_on : tuple[type[Exception], ...]
+            需要重试的异常类型元组，默认只重试网络相关异常。
+
+        Returns
+        -------
+        KlineData | None
+            成功返回数据，重试耗尽或空数据返回 None。
+        """
+        if max_retries is None:
+            max_retries = get_settings().rate_limit_max_retries
+        if base_delay is None:
+            base_delay = get_settings().rate_limit_base_backoff
+        if max_delay is None:
+            max_delay = get_settings().rate_limit_max_backoff
+
+        delay = base_delay
+        last_error = ""
+
+        for attempt in range(max_retries + 1):
+            try:
+                data = provider.fetch_kline(
+                    ticker, start_date, end_date, frequency, adjustflag
+                )
+                if data is not None and not data.is_empty:
+                    self._rate_limiter.record_success(name)
+                    self._record_provider_success(name)
+                    logger.info(
+                        f"✅ K 线获取成功: {ticker} ← {name} ({len(data.timestamps)} 条)"
+                    )
+                    return data
+                # 空数据不重试，直接返回 None
+                logger.debug(f"{name} 返回空数据: {ticker}")
+                return None
+            except retry_on as e:
+                # 可重试异常：网络错误、超时等
+                last_error = str(e)[:100]
+                error_msg = str(e)
+                is_429 = "429" in error_msg or "rate limit" in error_msg.lower()
+                if is_429:
+                    self._rate_limiter.record_429(name)
+                    delay = min(delay * 2, max_delay)
+
+                if attempt == max_retries:
+                    self._record_provider_fail(name)
+                    logger.warning(
+                        f"{name} K 线拉取失败 {ticker}: {last_error} "
+                        f"(重试{max_retries}次后放弃)"
+                    )
+                    return None
+
+                wait = min(delay, max_delay)
+                logger.warning(
+                    f"⚠️  {name} 第{attempt + 1}次失败: {last_error}, "
+                    f"{wait:.1f}s后重试({attempt + 1}/{max_retries})"
+                )
+                time.sleep(wait)
+                delay = min(delay * 2, max_delay)
+            except Exception as e:
+                # 不可重试异常（如 RuntimeError 等硬故障）：立即放弃，降级到下一个 provider
+                last_error = str(e)[:100]
+                error_msg = str(e)
+                if "429" in error_msg or "rate limit" in error_msg.lower():
+                    self._rate_limiter.record_429(name)
+                self._record_provider_fail(name)
+                logger.warning(f"{name} K 线拉取非重试异常 {ticker}: {last_error}")
+                return None
+
+        return None
+
+    def _retry_fetch(
+        self,
+        name: str,
+        ticker: str,
+        fetch_fn,
+        op_label: str = "",
+    ):
+        """对单个 Provider 调用带指数退避重试的通用封装。
+
+        只重试网络相关异常（ConnectionError/TimeoutError/OSError）以及包含
+        ``429``/``rate limit`` 的异常；硬故障立即放弃并返回 ``None``。
+
+        Parameters
+        ----------
+        name : str
+            Provider 名称（用于限流和熔断计数）。
+        ticker : str
+            股票代码。
+        fetch_fn : callable
+            无参数可调用对象，执行实际的 Provider 拉取，返回结果或 None。
+        op_label : str
+            操作标签，用于日志输出（如 "行情"、"元数据"）。
+
+        Returns
+        -------
+        Any | None
+            成功返回 fetch_fn 的结果，重试耗尽或硬故障返回 None。
+        """
+        max_retries = get_settings().rate_limit_max_retries
+        base_delay = get_settings().rate_limit_base_backoff
+        max_delay = get_settings().rate_limit_max_backoff
+        retry_on = (ConnectionError, TimeoutError, OSError)
+
+        delay = base_delay
+        last_error = ""
+
+        for attempt in range(max_retries + 1):
+            try:
+                result = fetch_fn()
+                if result is not None:
+                    self._rate_limiter.record_success(name)
+                    self._record_provider_success(name)
+                    logger.debug(f"✅ {op_label}获取成功: {ticker} ← {name}")
+                else:
+                    logger.debug(f"{name} 返回空{op_label}: {ticker}")
+                return result
+            except retry_on as e:
+                # 可重试异常：网络错误、超时等
+                last_error = str(e)[:100]
+                error_msg = str(e)
+                is_429 = "429" in error_msg or "rate limit" in error_msg.lower()
+                if is_429:
+                    self._rate_limiter.record_429(name)
+                    delay = min(delay * 2, max_delay)
+
+                if attempt == max_retries:
+                    self._record_provider_fail(name)
+                    logger.warning(
+                        f"{name} {op_label}拉取失败 {ticker}: {last_error} "
+                        f"(重试{max_retries}次后放弃)"
+                    )
+                    return None
+
+                wait = min(delay, max_delay)
+                logger.warning(
+                    f"⚠️  {name} 第{attempt + 1}次{op_label}失败: {last_error}, "
+                    f"{wait:.1f}s后重试({attempt + 1}/{max_retries})"
+                )
+                time.sleep(wait)
+                delay = min(delay * 2, max_delay)
+            except Exception as e:
+                # 不可重试异常（硬故障）：立即放弃
+                last_error = str(e)[:100]
+                error_msg = str(e)
+                if "429" in error_msg or "rate limit" in error_msg.lower():
+                    self._rate_limiter.record_429(name)
+                self._record_provider_fail(name)
+                logger.warning(f"{name} {op_label}拉取非重试异常 {ticker}: {last_error}")
+                return None
+
+        return None
+
     def fetch_kline(
         self,
         ticker: str,
@@ -268,23 +522,12 @@ class DataProviderFactory:
                 logger.debug(f"⏳ {name} 限流等待 {wait_time:.1f}s: {ticker}")
                 time.sleep(wait_time)
 
-            try:
-                # 健康检查通过后仍需兜底：provider 可能在 fetch 时立即失败，
-                # 这里捕获异常并继续降级到下一个 provider。
-                data = provider.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
-                if data is not None and not data.is_empty:
-                    self._rate_limiter.record_success(name)
-                    logger.info(f"✅ K 线获取成功: {ticker} ← {name} ({len(data.timestamps)} 条)")
-                    return data
-                else:
-                    logger.debug(f"{name} 返回空数据: {ticker}")
-            except Exception as e:
-                # 如果是 429 限流错误，标记 provider 进入冷却期
-                error_msg = str(e)
-                if "429" in error_msg or "rate limit" in error_msg.lower():
-                    self._rate_limiter.record_429(name)
-                logger.warning(f"{name} K 线拉取异常 {ticker}: {error_msg[:100]}")
-                continue
+            # 带指数退避重试；重试耗尽后降级到下一个 provider
+            data = self._fetch_kline_with_retry(
+                provider, name, ticker, start_date, end_date, frequency, adjustflag
+            )
+            if data is not None:
+                return data
         logger.warning(f"❌ 所有 Provider 均无法获取 K 线: {ticker}")
         return None
 
@@ -310,17 +553,19 @@ class DataProviderFactory:
             if wait_time > 0:
                 logger.debug(f"⏳ {name} 限流等待 {wait_time:.1f}s: {ticker} 行情")
                 time.sleep(wait_time)
-            try:
-                quote = provider.fetch_quote(ticker)
-                if quote is not None:
-                    self._rate_limiter.record_success(name)
-                    logger.debug(f"✅ 行情获取成功: {ticker} ← {name}")
-                    return quote
-            except Exception as e:
-                if "429" in str(e) or "rate limit" in str(e).lower():
-                    self._rate_limiter.record_429(name)
-                logger.warning(f"{name} 行情拉取异常 {ticker}: {str(e)[:100]}")
-                continue
+
+            # 带指数退避重试；重试耗尽后降级到下一个 provider
+            quote = self._retry_fetch(
+                name,
+                ticker,
+                lambda p=provider: p.fetch_quote(ticker),
+                op_label="行情",
+            )
+            if quote is not None:
+                return quote
+            # 空数据不降级，直接返回 None
+            logger.debug(f"{name} 返回空行情: {ticker}")
+            return None
         return None
 
     def fetch_metadata(self, ticker: str) -> StockMetadata | None:
@@ -350,32 +595,33 @@ class DataProviderFactory:
             if wait_time > 0:
                 logger.debug(f"⏳ {name} 限流等待 {wait_time:.1f}s: {ticker} 元数据")
                 time.sleep(wait_time)
-            try:
-                meta = provider.fetch_metadata(ticker)
-                if meta is None:
-                    continue
-                found_any = True
-                logger.debug(f"✅ 元数据获取成功: {ticker} ← {name}")
-                # 合并非空字段（后面的 provider 覆盖前面的同名字段）
-                if meta.pe_ttm is not None:
-                    merged["pe_ttm"] = meta.pe_ttm
-                if meta.pb is not None:
-                    merged["pb"] = meta.pb
-                if meta.industry is not None:
-                    merged["industry"] = meta.industry
-                if meta.ipo_date is not None and merged.get("ipo_date") is None:
-                    merged["ipo_date"] = meta.ipo_date
-                if meta.out_date is not None and merged.get("out_date") is None:
-                    merged["out_date"] = meta.out_date
-                if meta.is_st and not merged.get("is_st"):
-                    merged["is_st"] = meta.is_st
-                if meta.source is not None and (meta.pe_ttm is not None or meta.pb is not None):
-                    merged["source"] = meta.source
-            except Exception as e:
-                if "429" in str(e) or "rate limit" in str(e).lower():
-                    self._rate_limiter.record_429(name)
-                logger.warning(f"{name} 元数据拉取异常 {ticker}: {str(e)[:100]}")
+
+            # 带指数退避重试；重试耗尽后降级到下一个 provider
+            meta = self._retry_fetch(
+                name,
+                ticker,
+                lambda p=provider: p.fetch_metadata(ticker),
+                op_label="元数据",
+            )
+            if meta is None:
                 continue
+            found_any = True
+            logger.debug(f"✅ 元数据获取成功: {ticker} ← {name}")
+            # 合并非空字段（后面的 provider 覆盖前面的同名字段）
+            if meta.pe_ttm is not None:
+                merged["pe_ttm"] = meta.pe_ttm
+            if meta.pb is not None:
+                merged["pb"] = meta.pb
+            if meta.industry is not None:
+                merged["industry"] = meta.industry
+            if meta.ipo_date is not None and merged.get("ipo_date") is None:
+                merged["ipo_date"] = meta.ipo_date
+            if meta.out_date is not None and merged.get("out_date") is None:
+                merged["out_date"] = meta.out_date
+            if meta.is_st and not merged.get("is_st"):
+                merged["is_st"] = meta.is_st
+            if meta.source is not None and (meta.pe_ttm is not None or meta.pb is not None):
+                merged["source"] = meta.source
         if not found_any:
             return None
         return StockMetadata(**merged)
@@ -406,6 +652,113 @@ class DataProviderFactory:
             "quote": quote,
             "metadata": metadata,
         }
+
+    # ── 批量获取 ──────────────────────────────────────────────
+
+    def fetch_quotes_batch(
+        self,
+        tickers: list[str],
+        max_workers: int = 8,
+    ) -> dict[str, RealtimeQuote]:
+        """批量获取实时行情，按 Provider 链顺序尝试，合并结果。
+
+        对每个 Provider 依次调用其批量方法，后续 Provider 只补充前面
+        未获取到的 ticker。akshare 会复用全市场快照缓存，其他 Provider
+        使用并发单票拉取。
+
+        Parameters
+        ----------
+        tickers : list[str]
+            股票代码列表。
+        max_workers : int
+            并发线程数，传给各 Provider 的批量方法。
+
+        Returns
+        -------
+        dict[str, RealtimeQuote]
+            成功获取的 ticker → 行情映射。
+        """
+        results: dict[str, RealtimeQuote] = {}
+        remaining = list(tickers)
+        for name in self.provider_chain:
+            if not remaining:
+                break
+            provider = self.get_provider(name)
+            if provider is None or not provider.supports_quote:
+                continue
+            if not self._provider_healthy(name, provider):
+                continue
+            wait_time = self._rate_limiter.acquire(name)
+            if wait_time > 0:
+                logger.debug(f"⏳ {name} 限流等待 {wait_time:.1f}s: 批量行情")
+                time.sleep(wait_time)
+            try:
+                batch = provider.fetch_quotes_batch(remaining, max_workers=max_workers)
+                if batch:
+                    results.update(batch)
+                    found = set(batch.keys())
+                    remaining = [t for t in remaining if t not in found]
+                    self._rate_limiter.record_success(name)
+                    self._record_provider_success(name)
+                    logger.debug(
+                        f"✅ 批量行情 {name}: 获取 {len(batch)} 只，剩余 {len(remaining)} 只"
+                    )
+            except Exception as e:  # noqa: BLE001
+                self._record_provider_fail(name)
+                logger.warning(f"{name} 批量行情异常: {str(e)[:100]}")
+        return results
+
+    def fetch_metadata_batch(
+        self,
+        tickers: list[str],
+        max_workers: int = 8,
+    ) -> dict[str, StockMetadata]:
+        """批量获取股票元数据，按 Provider 链顺序尝试，合并结果。
+
+        对每个 Provider 依次调用其批量方法，后续 Provider 只补充前面
+        未获取到的 ticker。
+
+        Parameters
+        ----------
+        tickers : list[str]
+            股票代码列表。
+        max_workers : int
+            并发线程数，传给各 Provider 的批量方法。
+
+        Returns
+        -------
+        dict[str, StockMetadata]
+            成功获取的 ticker → 元数据映射。
+        """
+        results: dict[str, StockMetadata] = {}
+        remaining = list(tickers)
+        for name in self.provider_chain:
+            if not remaining:
+                break
+            provider = self.get_provider(name)
+            if provider is None or not provider.supports_metadata:
+                continue
+            if not self._provider_healthy(name, provider):
+                continue
+            wait_time = self._rate_limiter.acquire(name)
+            if wait_time > 0:
+                logger.debug(f"⏳ {name} 限流等待 {wait_time:.1f}s: 批量元数据")
+                time.sleep(wait_time)
+            try:
+                batch = provider.fetch_metadata_batch(remaining, max_workers=max_workers)
+                if batch:
+                    results.update(batch)
+                    found = set(batch.keys())
+                    remaining = [t for t in remaining if t not in found]
+                    self._rate_limiter.record_success(name)
+                    self._record_provider_success(name)
+                    logger.debug(
+                        f"✅ 批量元数据 {name}: 获取 {len(batch)} 只，剩余 {len(remaining)} 只"
+                    )
+            except Exception as e:  # noqa: BLE001
+                self._record_provider_fail(name)
+                logger.warning(f"{name} 批量元数据异常: {str(e)[:100]}")
+        return results
 
     # ── 工具方法 ────────────────────────────────────────────────────────
 

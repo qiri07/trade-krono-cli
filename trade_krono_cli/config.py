@@ -256,6 +256,32 @@ class Settings:
         default_factory=lambda: float(os.getenv("BAOSTOCK_SLEEP_SEC", "1.0")),
     )
 
+    # ── 数据源限流配置 ────────────────────────────────────
+    rate_limit_max_requests_per_second: int = field(
+        default_factory=lambda: int(os.getenv("RATE_LIMIT_MAX_REQUESTS_PER_SECOND", "2")),
+    )
+    """全局每秒最大请求数（所有 Provider 共享），默认 2。"""
+    rate_limit_min_interval_seconds: float = field(
+        default_factory=lambda: float(os.getenv("RATE_LIMIT_MIN_INTERVAL_SECONDS", "0.5")),
+    )
+    """Provider 间最小请求间隔（秒），默认 0.5。"""
+    rate_limit_cooldown_seconds: float = field(
+        default_factory=lambda: float(os.getenv("RATE_LIMIT_COOLDOWN_SECONDS", "60.0")),
+    )
+    """触发 429 后 Provider 冷却时间（秒），默认 60。"""
+    rate_limit_max_retries: int = field(
+        default_factory=lambda: int(os.getenv("RATE_LIMIT_MAX_RETRIES", "3")),
+    )
+    """数据源拉取最大重试次数，默认 3。"""
+    rate_limit_base_backoff: float = field(
+        default_factory=lambda: float(os.getenv("RATE_LIMIT_BASE_BACKOFF", "2.0")),
+    )
+    """指数退避基数（秒），默认 2.0。"""
+    rate_limit_max_backoff: float = field(
+        default_factory=lambda: float(os.getenv("RATE_LIMIT_MAX_BACKOFF", "60.0")),
+    )
+    """指数退避最大时间（秒），默认 60。"""
+
     # ── 同步白名单配置 ──────────────────────────────────────
     sync_whitelist: str = field(default_factory=lambda: os.getenv("SYNC_WHITELIST", ""))
     """同步白名单，逗号分隔的6位股票代码（不含sh./sz./bj.前缀），如 \"600519,000858\"。"""

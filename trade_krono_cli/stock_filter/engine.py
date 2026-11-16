@@ -272,7 +272,7 @@ def fetch_stock_meta(
 ) -> dict[str, StockMeta]:
     """批量获取股票的过滤元数据（PE / PB / 行业 / 市值）。
 
-    使用 BaostockProvider 的统一锁（_bs_lock）确保线程安全，
+    使用 BaostockProvider 的统一信号量（_bs_semaphore）确保线程安全，
     避免与 BaostockProvider.fetch_kline() 并发冲突。
 
     Parameters
@@ -295,12 +295,12 @@ def fetch_stock_meta(
         logger.warning("baostock 未安装，跳过元数据获取")
         return {t: StockMeta(ticker=t) for t in tickers}
 
-    # 使用 BaostockProvider 的统一锁，确保与 fetch_kline 等并发调用不冲突
-    from trade_krono_cli.data_providers.baostock_provider import _bs_lock  # noqa: PLC0415
+    # 使用 BaostockProvider 的统一信号量，确保与 fetch_kline 等并发调用不冲突
+    from trade_krono_cli.data_providers.baostock_provider import _bs_semaphore  # noqa: PLC0415
 
     metas: dict[str, StockMeta] = {}
 
-    with _bs_lock:
+    with _bs_semaphore:
         lg = bs.login()
         if lg.error_code != "0":
             logger.warning(f"baostock 登录失败: {lg.error_msg}，跳过元数据获取")

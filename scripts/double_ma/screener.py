@@ -15,6 +15,7 @@ import pandas as pd
 from loguru import logger
 
 from scripts._utils import (
+    fetch_hk_pe_snapshot,
     get_all_tickers,
     get_cache_db_path,
     get_sqlite_conn,
@@ -47,10 +48,14 @@ def process_ticker(
 ) -> dict | None:
     """处理单只股票：读取 K 线，计算双均线金叉 + MACD。
 
+    A 股和港股分别处理：
+    - A 股：使用 baostock/akshare K 线，PE 来自本地 metadata（同花顺 Fuyao API 补充）
+    - 港股：使用 akshare_hk K 线，PE 来自腾讯行情 API（qt.gtimg.cn/q=hk{code}）
+
     Parameters
     ----------
     ticker : str
-        标准化股票键（sh.600519 / sz.000858）
+        标准化股票键（sh.600519 / sz.000858 / hk.00700）
     conn : sqlite3.Connection
         K 线缓存数据库连接
     metadata : dict
@@ -59,7 +64,7 @@ def process_ticker(
         ST 股票集合
     skip_pe : bool
         为 True 时跳过本地 PE 过滤（PE 缺失保留为 None，
-        由调用方后续通过 Fuyao API 补充，避免本地 metadata 过期导致
+        由调用方后续 API 补充，避免本地 metadata 过期导致
         技术面达标股票被整体丢弃）
 
     Returns
@@ -67,11 +72,12 @@ def process_ticker(
     dict | None
         筛选结果字典，不通过时返回 None
     """
-    # 排除北交所和港股（缓存键为小写 bj./hk.，不能只匹配大写 .BJ 后缀）
-    if is_bse_or_hk(ticker):
-        return None
-
     is_etf = is_etf_ticker(ticker)
+    is_hk = ticker.startswith("hk.")
+
+    # 港股和北交所不适用 A 股的 ST 判断和 PE 逻辑
+    if is_bse_or_hk(ticker) and not is_hk:
+        return None
 
     # 查询 K 线数据
     cur = conn.execute(
@@ -102,18 +108,20 @@ def process_ticker(
     if len(df) < 30:
         return None
 
-    # 排除 ST
-    if ticker in st_set:
-        return None
+    # ── A 股特有过滤：ST 和涨跌停 ──
+    # 港股没有 ST 概念，涨跌停规则也不同，这里只对 A 股和 ETF 应用
+    if not is_hk:
+        if ticker in st_set:
+            return None
 
-    # 排除涨跌停
-    latest_close = float(df["close"].iloc[-1])
-    prev_close = float(df["close"].iloc[-2])
-    chg_pct = (latest_close / prev_close - 1) * 100
-    bare = ticker.split(".", 1)[-1] if "." in ticker else ticker
-    limit_pct = _limit_pct(bare)
-    if chg_pct >= limit_pct - 0.05 or chg_pct <= -limit_pct + 0.05:
-        return None
+        # 排除涨跌停
+        latest_close = float(df["close"].iloc[-1])
+        prev_close = float(df["close"].iloc[-2])
+        chg_pct = (latest_close / prev_close - 1) * 100
+        bare = ticker.split(".", 1)[-1] if "." in ticker else ticker
+        limit_pct = _limit_pct(bare)
+        if chg_pct >= limit_pct - 0.05 or chg_pct <= -limit_pct + 0.05:
+            return None
 
     # 日 K 线 MA5 > MA13
     daily_ratio = calc_ma_ratio(df)
@@ -140,8 +148,9 @@ def process_ticker(
 
     # PE 过滤（skip_pe 时本地缺 PE 不丢弃，保留 None 由调用方后续 API 补充）
     # ETF 无基本面指标，直接豁免 PE 门槛（纯技术面参与）
+    # 港股无本地 PE 数据，保留 None，后续从腾讯 API 补充
     pe = None
-    if not is_etf:
+    if not is_etf and not is_hk:
         meta = metadata.get(ticker, {})
         if isinstance(meta, dict):
             for key in ["pe_ttm", "pe"]:
@@ -182,6 +191,9 @@ def process_ticker(
     if is_etf:
         # ETF 无基本面指标，纯技术面参与；PE 保持 None
         result["is_etf"] = True
+    if is_hk:
+        # 港股无 ROE/净利润等基本面指标，纯技术面参与
+        result["is_hk"] = True
     return result
 
 
@@ -240,6 +252,27 @@ def run_lite(
                 logger.info(f"已处理 {i}/{len(all_tickers)} 只...")
 
     conn.close()
+
+    # ── 港股 PE 补充：从腾讯行情 API 批量获取港股 PE_TTM ──
+    # 港股没有本地 metadata PE 数据，需要从腾讯 qt.gtimg.cn/q=hk{code} 获取
+    hk_tickers = [s["ticker"] for s in results if s.get("is_hk") and s.get("pe_ttm") is None]
+    if hk_tickers:
+        logger.info(f"📊 港股 PE 获取：{len(hk_tickers)} 只需要从腾讯 API 补充 PE...")
+        hk_pe_map = fetch_hk_pe_snapshot(hk_tickers)
+        hk_filled = 0
+        for s in results:
+            if s.get("is_hk") and s.get("pe_ttm") is None:
+                code6 = s["ticker"].split(".")[1]
+                info = hk_pe_map.get(code6)
+                if info and info.get("pe") is not None:
+                    s["pe_ttm"] = round(info["pe"], 2)
+                    if not s.get("name"):
+                        s["name"] = info.get("name", "")
+                    hk_filled += 1
+        logger.info(
+            f"  港股 PE 回退完成: 补充 {hk_filled}/{len(hk_tickers)} 只，"
+            f"剩余缺失 {len(hk_tickers) - hk_filled} 只"
+        )
 
     # skip_pe 模式：本地 metadata 过期（条目极少/PE 全空）时，
     # 技术面达标的股票 pe_ttm 为 None，需从 Fuyao API 补充后再做 PE 界内过滤
@@ -322,7 +355,8 @@ def run_full(
     if results:
         _fill_pe_and_industry(results)
         before_pe = len(results)
-        results = [s for s in results if s.get("pe_ttm") is not None]
+        # 港股无基本面指标，PE 缺失不剔除（保留纯技术面参与）
+        results = [s for s in results if s.get("is_hk") or s.get("pe_ttm") is not None]
         if len(results) < before_pe:
             logger.info(
                 f"  PE 仍缺失剔除: {before_pe - len(results)} 只"
@@ -338,11 +372,12 @@ def run_full(
     profit_cache = load_profit_from_cache(buffett_cache)
     logger.info(f"  缓存 ROE 数据: {len(roe_cache)} 条, 净利润数据: {len(profit_cache)} 条")
 
-    # 补充 API 获取（仅缓存中没有的）
+    # 补充 API 获取（仅缓存中没有的，且非港股）
     missing_thscodes = [
         ticker_to_thscode(s["ticker"])
         for s in results
         if s["ticker"].split(".")[1] not in roe_cache
+        and not s.get("is_hk")
     ]
 
     api_roe: dict[str, float] = {}
@@ -373,8 +408,8 @@ def run_full(
     skipped_profit_low = 0
 
     for s in results:
-        # ETF 无基本面指标，技术面达标即入选（完整模式下也保留）
-        if s.get("is_etf"):
+        # ETF 和港股无基本面指标，技术面达标即入选（完整模式下也保留）
+        if s.get("is_etf") or s.get("is_hk"):
             final_results.append(s)
             continue
 

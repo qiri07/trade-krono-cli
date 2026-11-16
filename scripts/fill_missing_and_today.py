@@ -15,9 +15,15 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Any
 
-from scripts.fill_missing import (  # noqa: F401
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.fill_missing import (  # noqa: F401, E402
     CACHE_DB,
     FAILED_MIN_RECORDS,
     PROGRESS_FILE,
@@ -41,19 +47,19 @@ from scripts.fill_missing import (  # noqa: F401
     main,
     print_missing_report,
 )
-from scripts.fill_missing import (
+from scripts.fill_missing import (  # noqa: E402
     FETCH_TIMEOUT as _DEFAULT_FETCH_TIMEOUT,
 )
-from scripts.fill_missing import (
+from scripts.fill_missing import (  # noqa: E402
     _fetch_kline_provider as _inner_fetch_kline_provider,
 )
-from scripts.fill_missing import (
+from scripts.fill_missing import (  # noqa: E402
     fetch_full_range as _inner_fetch_full_range,
 )
-from scripts.fill_missing import (
+from scripts.fill_missing import (  # noqa: E402
     fetch_today_incremental as _inner_fetch_today_incremental,
 )
-from trade_krono_cli.data_providers.factory import get_data_factory  # noqa: F401
+from trade_krono_cli.data_providers.factory import get_data_factory  # noqa: F401, E402
 
 # FETCH_TIMEOUT 作为模块级变量，以便测试通过 monkeypatch.setattr 修改
 FETCH_TIMEOUT = _DEFAULT_FETCH_TIMEOUT

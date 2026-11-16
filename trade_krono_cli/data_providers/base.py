@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -229,6 +230,83 @@ class DataProvider(ABC):
         if data is None:
             return None
         return data.to_dataframe()
+
+    # ── 批量获取（默认实现：并发调用单只票方法）───────────────
+
+    def fetch_quotes_batch(
+        self,
+        tickers: list[str],
+        max_workers: int = 8,
+    ) -> dict[str, RealtimeQuote]:
+        """批量获取实时行情。
+
+        默认实现使用 ThreadPoolExecutor 并发调用 :meth:`fetch_quote`。
+        子类如 AkShareProvider 可覆盖为全市场快照复用，避免逐票 HTTP 请求。
+
+        Parameters
+        ----------
+        tickers : list[str]
+            股票代码列表。
+        max_workers : int
+            并发线程数，默认 8。
+
+        Returns
+        -------
+        dict[str, RealtimeQuote]
+            成功获取的 ticker → 行情映射。
+        """
+        results: dict[str, RealtimeQuote] = {}
+        if not tickers:
+            return results
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(self.fetch_quote, t): t for t in tickers}
+            for future in as_completed(futures):
+                ticker = futures[future]
+                try:
+                    quote = future.result()
+                    if quote is not None:
+                        results[ticker] = quote
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"{self.name} 批量行情 {ticker} 异常: {e}")
+        return results
+
+    def fetch_metadata_batch(
+        self,
+        tickers: list[str],
+        max_workers: int = 8,
+    ) -> dict[str, StockMetadata]:
+        """批量获取股票元数据。
+
+        默认实现使用 ThreadPoolExecutor 并发调用 :meth:`fetch_metadata`。
+
+        Parameters
+        ----------
+        tickers : list[str]
+            股票代码列表。
+        max_workers : int
+            并发线程数，默认 8。
+
+        Returns
+        -------
+        dict[str, StockMetadata]
+            成功获取的 ticker → 元数据映射。
+        """
+        results: dict[str, StockMetadata] = {}
+        if not tickers:
+            return results
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(self.fetch_metadata, t): t for t in tickers}
+            for future in as_completed(futures):
+                ticker = futures[future]
+                try:
+                    meta = future.result()
+                    if meta is not None:
+                        results[ticker] = meta
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"{self.name} 批量元数据 {ticker} 异常: {e}")
+        return results
 
 
 # 导入 Any 用于类型注解

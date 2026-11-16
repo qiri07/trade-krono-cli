@@ -91,6 +91,8 @@ trade_krono_cli/
 │   ├── base.py / factory.py / baostock_provider.py / akshare_provider.py / mootdx_provider.py
 │   ├── tushare_provider.py / tonghuashun_provider.py / tencent_provider.py / efinance_provider.py
 │   ├── easyquotation_provider.py / akshare_hk_provider.py / benchmark.py
+│   ├── rate_limiter.py        # 统一限流管理器（滑动窗口，从 Settings 读取配置）
+│   └── retry_with_backoff.py  # 指数退避重试装饰器
 ├── pipeline/             # 流水线编排：orchestrator（QuantPipeline + PipelineFactory）/ merge / reporter / stream_pipeline
 ├── models/               # Session 封装：ta_session.py / kronos_session.py
 ├── adapters/             # 外部项目适配器：kronos.py / tradingagents.py
@@ -627,6 +629,23 @@ reason = exclusion_reason(ticker, meta, exclude_etf=True)   # "hk"/"bse"/"etf"/"
 - 北交所股票特殊处理：provider 链为 `["tonghuashun", "baostock"]`；港股由 `akshare_hk` 专属提供。
 - K 线来源异常统一由 Provider 抛 `RuntimeError`（来源格式变 / 网络错误），由 Factory 的降级循环捕获并切换备用源。
 
+#### 限流与重试机制（2026-11-16 新增）
+- **统一限流器**（`RateLimiter`，单例）：所有数据源共享同一滑动窗口计数器，按 provider 独立跟踪请求时间戳。支持每秒最大请求数 + 最小请求间隔双重限制，429 响应后进入冷却期。
+- **指数退避重试**（`_retry_fetch` / `_fetch_kline_with_retry`）：对每个 provider 调用做指数退避重试（默认 3 次），仅重试网络相关异常和 429；硬故障立即降级。重试参数从 Settings 读取。
+- **熔断机制**：连续失败达到阈值（3 次）后，该 provider 在 300s 内标记为“暂时不可用”，期间跳过 health_check 和实际调用，直接降级。成功调用后重置计数器。
+- **批量获取**：`fetch_quotes_batch()` / `fetch_metadata_batch()`，akshare 复用全市场快照缓存（TTL 60s），一次 HTTP 获取全市场后内存匹配，避免 O(N) 逐票请求；其他 provider 使用 ThreadPoolExecutor 并发。
+
+#### 限流配置（环境变量）
+| 环境变量 | 默认值 | 说明 |
+|---------|--------|------|
+| `RATE_LIMIT_MAX_REQUESTS_PER_SECOND` | 2 | 全局每秒最大请求数 |
+| `RATE_LIMIT_MIN_INTERVAL_SECONDS` | 0.5 | Provider 间最小请求间隔（秒） |
+| `RATE_LIMIT_COOLDOWN_SECONDS` | 60 | 触发 429 后冷却时间（秒） |
+| `RATE_LIMIT_MAX_RETRIES` | 3 | 数据源拉取最大重试次数 |
+| `RATE_LIMIT_BASE_BACKOFF` | 2.0 | 指数退避基数（秒） |
+| `RATE_LIMIT_MAX_BACKOFF` | 60 | 指数退避最大时间（秒） |
+
+
 ### 待接入生产的实验子系统（2026-11-01 清理盘点）
 
 ### 数据源对标与补充计划（与 a-stock-data V3.10.4 对齐）
@@ -652,6 +671,9 @@ efinance / easyquotation / akshare_hk，主备降级由 `DataProviderFactory` �
 2. `AkShareProvider.supports_metadata` 由 `False` 改为 `True`，`fetch_metadata` 现可从 `stock_zh_a_spot_em` 全市场快照提取 行业 / PE(PB)/市值，填补 `metadata.json` 的空值。
 3. `scripts/_utils.py` 补全 ETF 前缀段（沪市 `5x` 全段 → `sh.`，深市 `159/156/158` → `sz.`）并新增 `expected_trading_day()` / `get_stale_tickers()` 用于滞后判定与定向补拉。
 4. 清洗 `pipeline_cache.db` 与 `metadata.json` 中错前缀 ETF（`sz.510310/511360/513650/588000/501030` → `sh.*`）。
+5. **限流与重试**：新增 `rate_limiter.py`（`RateLimiter` 单例，滑动窗口）和 `retry_with_backoff.py`（指数退避重试）；`factory.py` 对每个 provider 调用添加指数退避重试、429 冷却、连续失败熔断；`baostock_provider.py` 移除内部 `TokenBucket`，改用 `Semaphore(3)` 允许有限并发。
+6. **批量获取**：`base.py` 新增 `fetch_quotes_batch()` / `fetch_metadata_batch()`（akshare 复用全市场快照缓存，O(1) 请求）；`factory.py` 新增 `fetch_quotes_batch()` / `fetch_metadata_batch()` 按 provider 链合并结果。
+7. **配置化**：`config.py` 新增 `rate_limit_*` 字段，所有限流/重试参数可通过环境变量 `RATE_LIMIT_*` 运行时调整。
 
 以下 8 个模块已建成、测试全绿，但**生产代码零调用**（仅测试引用）。它们构成
 「实验追踪 + 评估」子系统，接入流水线前不要误判为死代码删除，也不要重复造轮子：
