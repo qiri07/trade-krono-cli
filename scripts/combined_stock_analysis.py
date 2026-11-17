@@ -158,6 +158,7 @@ def main() -> None:
         "multi_head": results_dir / f"multi_head_{dc}.txt",
         "double_ma": results_dir / f"double_ma_golden_cross_{dd}.json",
         "macd_ma": results_dir / f"macd_ma_screener_{dc}.json",
+        "six_dim": results_dir / f"six_dim_screen_{dc}.json",
     }
     _czsc_files = [
         (czsc_dir / f"matched_bi_ma_{dc}.csv", "czsc_bi_ma"),
@@ -177,7 +178,7 @@ def main() -> None:
             logger.error("❌ 综合选股前置校验失败，以下依赖文件缺失或为空：")
             for m in _missing:
                 logger.error(f"   - {m}")
-            logger.error("   请先运行相应选股步骤（buffett/resonance/multi_head/double_ma/macd_ma/czsc）")
+            logger.error("   请先运行相应选股步骤（buffett/resonance/multi_head/double_ma/macd_ma/six_dim/czsc）")
             sys.exit(1)
         # 非严格模式：缺失线按 0 只参与交集，不阻断当日汇总（节假日/零命中日常见）
         logger.warning("⚠️ 以下选股线结果文件缺失或为空，将按 0 只参与交集：")

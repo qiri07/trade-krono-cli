@@ -115,3 +115,6 @@ __all__ = [
     "write_report",
     "main",
 ]
+
+if __name__ == "__main__":
+    main()

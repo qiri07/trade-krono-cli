@@ -19,6 +19,13 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# 直接运行本脚本时 sys.path[0] 是 scripts/ 目录，需将仓库根目录加入
+# 路径，以便 `from scripts.xxx import ...` 形式的导入正常工作。
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from scripts.double_ma import (  # noqa: F401
     API_KEY,
     BASE,
@@ -81,3 +88,6 @@ __all__ = [
     # cli
     "main",
 ]
+
+if __name__ == "__main__":
+    main()

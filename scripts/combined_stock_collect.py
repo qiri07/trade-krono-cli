@@ -31,6 +31,7 @@ _TEMPLATES: dict[str, str] = {
     "multi_head": "multi_head_{dc}.txt",
     "double_ma": "double_ma_golden_cross_{dd}.json",
     "macd_ma": "macd_ma_screener_{dc}.json",
+    "six_dim": "six_dim_screen_{dc}.json",
 }
 
 # czsc 缠论信号结果文件名（在 outputs/czsc_signal_scan/，不在 _RESULTS）
@@ -49,6 +50,7 @@ _SOURCE_LABELS: dict[str, str] = {
     "czsc_bi_ma": "缠论-笔向上+均线多头",
     "czsc_third_buy": "缠论-三买+笔向上",
     "intraday": "盘中共振",
+    "six_dim": "六维选股",
 }
 
 # 结果目录（collect_source_sets 的默认根；可用同名参数覆盖以支持测试隔离）
@@ -190,6 +192,26 @@ def _codes_from_macd_ma(path: Path) -> set[str]:
     return _codes_from_double_ma(path)
 
 
+def _codes_from_six_dim(path: Path) -> set[str]:
+    """从六维选股 JSON 提取 ticker 集合。
+
+    JSON 结构：{"results": [{"code": "600519", ...}, ...]}，code 为 6 位裸代码。
+    """
+    if not path.exists():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return set()
+    codes: set[str] = set()
+    for item in data.get("results", []) if isinstance(data, dict) else []:
+        if isinstance(item, dict) and item.get("code"):
+            code6 = str(item["code"]).split(".")[-1].strip()
+            if len(code6) == 6 and code6.isdigit() and not is_bse_code(code6):
+                codes.add(code6)
+    return codes
+
+
 def _codes_from_czsc_csv(path: Path) -> set[str]:
     """从 czsc 信号扫描 CSV 提取 6 位代码集合。
 
@@ -274,6 +296,7 @@ def collect_source_sets(
     result["multi_head"] = _codes_from_multi_head(results_dir / fmaps["multi_head"])
     result["double_ma"] = _codes_from_double_ma(results_dir / fmaps["double_ma"])
     result["macd_ma"] = _codes_from_macd_ma(results_dir / fmaps["macd_ma"])
+    result["six_dim"] = _codes_from_six_dim(results_dir / fmaps["six_dim"])
 
     # czsc 缠论信号（两个预设，独立于其他选股线计数）
     dc, _ = _date_tags(date_str)

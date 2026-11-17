@@ -109,7 +109,7 @@ def load_fundamentals(
     for code, val in valuations.items():
         fins = financials.get(code) or {}
         fin_years = []
-        for y in range(_analysis_year(date_str) - 1, _analysis_year(date_str) - 7, -1):
+        for y in range(_analysis_year(date_str), _analysis_year(date_str) - 7, -1):
             if fins.get(f"{y}-4") and fins.get(f"{y - 1}-4"):
                 fin_years = [y, y - 1]
                 break
@@ -150,7 +150,7 @@ def load_fundamentals(
         gross = latest.get("gross_margin")
         is_financial = gross is None and debt is not None and debt > 70
 
-        metrics[code] = LogicMetrics(
+        metrics[code.split(".")[0]] = LogicMetrics(
             code=code.split(".")[0],
             name=str(val.get("name") or ""),
             roe_avg=roe_avg,

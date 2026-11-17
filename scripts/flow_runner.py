@@ -63,7 +63,7 @@ PUSH_FLAG = 0 if NO_PUSH else 1
 
 DEFAULT_STEP_TIMEOUT_SECONDS = 3600
 
-# 今日 K 线数据最小阈值：低于此数量时，跳过所有选股步骤
+# 今日 A 股（沪+深）K 线数据最小阈值：低于此数量时，跳过所有选股步骤
 MIN_TODAY_KLINE_COUNT = 5000
 
 # 由 backup step 统一备份后，这些自带备份的 step 追加 --no-backup，保证一轮流程只备一次
@@ -95,9 +95,11 @@ def checkpoint_path() -> Path:
 
 
 def _get_today_kline_count() -> int:
-    """查询今日（最新交易日）的 K 线记录总数。
+    """查询今日（期望交易日）A 股（沪+深）的 K 线记录总数。
 
     用于在执行选股步骤前，校验今日数据量是否达标（>= 5000 条）。
+    仅统计 ticker 以 "sh." 或 "sz." 前缀的 A 股记录，不包含港股（hk.）
+    和北交所（bj.）。
     若数据库不存在或查询失败，返回 0。
     """
     try:
@@ -107,12 +109,11 @@ def _get_today_kline_count() -> int:
             return 0
         con = sqlite3.connect(str(db_path))
         try:
-            row = con.execute("SELECT MAX(end) FROM kline_cache").fetchone()
-            latest_date = row[0] if row else None
-            if not latest_date:
-                return 0
+            today = expected_trading_day()
             cur = con.execute(
-                "SELECT COUNT(*) FROM kline_cache WHERE end=?", (latest_date,)
+                "SELECT COUNT(*) FROM kline_cache "
+                "WHERE end=? AND (ticker LIKE 'sh.%' OR ticker LIKE 'sz.%')",
+                (today,),
             )
             return cur.fetchone()[0]
         finally:
@@ -291,6 +292,14 @@ STEPS: list[Step] = [
         depends_on=["sync"],
     ),
     Step(
+        name="sixdim",
+        description="六维选股（逻辑>估值>位置>趋势>股东人数>量价，six_dim_screen.py）",
+        command=["uv", "run", "python", "-m", "scripts.six_dim_screen"],
+        enabled_by_default=True,
+        depends_on=["sync"],
+        timeout=7200,
+    ),
+    Step(
         name="combined",
         description="综合选股交集汇总（combined_stock_analysis.py，含回测 + 飞书推送）",
         command=[
@@ -322,6 +331,7 @@ STEPS: list[Step] = [
             "macd_ma",
             "czsc",
             "intraday",
+            "sixdim",
         ],
         timeout=10800,
     ),
@@ -550,6 +560,7 @@ def cmd_run(
                 "macd_ma",
                 "czsc",
                 "intraday",
+                "sixdim",
                 "combined",
             }
         )

@@ -216,18 +216,27 @@ def main(
     need_today_set = set(need_today_from_db)
     if plan_path:
         need_today_set.update(plan_need_today)
-    need_today = sorted(need_today_set)
+    # 按市场前缀排序：优先处理 A 股（sh./sz.），然后是北交所（bj.），最后是港股（hk.）
+    # 避免按字典序导致港股（hk.*）排在最前，A 股数据长时间无法拉取
+    def _market_sort_key(t: str) -> tuple[int, str]:
+        if t.startswith("sh."):
+            return (0, t)
+        if t.startswith("sz."):
+            return (1, t)
+        if t.startswith("bj."):
+            return (2, t)
+        return (3, t)  # hk. 及其他
+
+    need_today = sorted(need_today_set, key=_market_sort_key)
 
     # 增量跳过：跳过已有今日数据的 ticker（双重保险，SQL 查询已排除但保留兜底）
     need_today_before = len(need_today)
 
     need_today = [t for t in need_today if not _has_today_data(t, today)]
-    # 断点续传：仅在非 plan 模式下跳过已在进度文件中标记完成的 ticker；
-    # plan 模式下 need_today 已是当前缺少今日数据的股票，不应用历史完成记录过滤
-    if not plan_path:
-        need_today = [t for t in need_today if t not in completed_tickers]
+    # 今日数据每天都需要重新拉取，不应根据历史完成记录跳过；
+    # 即使 ticker 在之前的历史同步中标记为完成，今日数据也可能缺失。
     if need_today_before > len(need_today):
-        print(f"ℹ️  跳过 {need_today_before - len(need_today)} 只已完成的股票")
+        print(f"ℹ️  跳过 {need_today_before - len(need_today)} 只已有今日数据的股票")
     plan_src = (
         f"（来自补拉计划 {len(plan_need_today)} 只 + 数据库查询 {len(need_today_from_db)} 只，合并去重 {len(need_today)} 只）"
         if plan_path

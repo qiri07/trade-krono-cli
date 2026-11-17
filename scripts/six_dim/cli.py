@@ -125,3 +125,9 @@ def main(argv: list[str] | None = None) -> int:
         print("飞书卡片已推送")
 
     return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())
