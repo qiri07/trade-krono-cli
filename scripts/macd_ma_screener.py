@@ -385,7 +385,7 @@ def _scan_all(
     """
     conn = get_sqlite_conn(db_path)
     rows = conn.execute(
-        "SELECT ticker, data FROM kline_cache WHERE ticker NOT LIKE 'bj.%'"
+        "SELECT ticker, data FROM kline_cache WHERE ticker NOT LIKE 'bj.%' AND ticker NOT LIKE 'hk.%'"
     ).fetchall()
     conn.close()
 
