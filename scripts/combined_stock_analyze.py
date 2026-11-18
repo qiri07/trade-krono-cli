@@ -94,12 +94,9 @@ def _build_eval_records(
     norm_ticker = normalize_ticker_key(ticker)
 
     records: list[EvalRecord] = []
-    seen_dates: set[str] = set()
     for job in jobs:
         job_date = str(job.get("date") or "")
         if not job_date or job_date < window_start or job_date > date_str:
-            continue
-        if job_date in seen_dates:
             continue
         job_id = str(job.get("job_id") or "")
         if not job_id:
@@ -110,7 +107,6 @@ def _build_eval_records(
             continue
         if sig["has_error"]:
             continue
-        seen_dates.add(job_date)
 
         entry_price = get_close_price(norm_ticker, job_date)
         if entry_price is None or entry_price <= 0:
@@ -155,9 +151,14 @@ def _build_eval_records(
 def _lookup_signal(research: ResearchDatabase, job_id: str, norm_ticker: str) -> dict | None:
     """取某 job 中某 ticker 的历史信号，统一为内部字段。
 
-    优先 `ta_analysis`（独立分析脚本写入），fallback `signals`（pipeline 写入）。
+    合并 `ta_analysis`（独立分析脚本写入）与 `signals`（pipeline 写入）两来源：
+    - `ta_signal`：优先取 `ta_analysis.signal`，缺失时取 `signals.ta_signal`
+    - `kronos_direction` / `kronos_change`：仅 `signals` 表有，`ta_analysis` 无此字段
+    - `has_error`：仅当 `ta_analysis` 有错/缺失 **且** `signals` 双字段皆错/缺失 时为 True（两源均不可用才跳过）
     统一字段：ta_signal / kronos_direction / kronos_change / composite_score / has_error。
     """
+    # 查 ta_analysis：仅有 TA 信号，无 Kronos 字段
+    ta_sig: dict | None = None
     norm_sig = next(
         (
             s
@@ -167,16 +168,11 @@ def _lookup_signal(research: ResearchDatabase, job_id: str, norm_ticker: str) ->
         None,
     )
     if norm_sig is not None:
-        has_error = bool(norm_sig.get("error"))
-        return {
-            "ta_signal": norm_sig.get("signal"),
-            "kronos_direction": None,
-            "kronos_change": None,
-            "composite_score": None,
-            "has_error": has_error,
-        }
+        ta_sig = norm_sig
 
-    sig = next(
+    # 查 signals：含完整 Kronos 字段
+    sig: dict | None = None
+    norm_sig2 = next(
         (
             s
             for s in research.get_signals_by_job(job_id)
@@ -184,16 +180,28 @@ def _lookup_signal(research: ResearchDatabase, job_id: str, norm_ticker: str) ->
         ),
         None,
     )
-    if sig is not None:
-        both_errors = bool(sig.get("ta_error")) and bool(sig.get("kronos_error"))
-        return {
-            "ta_signal": sig.get("ta_signal"),
-            "kronos_direction": sig.get("kronos_direction") or None,
-            "kronos_change": sig.get("kronos_change"),
-            "composite_score": sig.get("composite_score"),
-            "has_error": both_errors,
-        }
-    return None
+    if norm_sig2 is not None:
+        sig = norm_sig2
+
+    if ta_sig is None and sig is None:
+        return None
+
+    ta_error = bool(ta_sig.get("error")) if ta_sig else True
+    both_errors = (
+        bool(sig.get("ta_error")) and bool(sig.get("kronos_error")) if sig else True
+    )
+    has_error = ta_error and both_errors
+
+    return {
+        "ta_signal": (ta_sig.get("signal") if ta_sig else None)
+        or (sig.get("ta_signal") if sig else None),
+        "kronos_direction": (sig.get("kronos_direction") or None) if sig else None,
+        "kronos_change": sig.get("kronos_change") if sig else None,
+        "composite_score": (
+            sig.get("composite_score") if sig else None
+        ),
+        "has_error": has_error,
+    }
 
 
 def attach_backtest(
