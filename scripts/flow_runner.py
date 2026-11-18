@@ -294,7 +294,7 @@ STEPS: list[Step] = [
     Step(
         name="sixdim",
         description="六维选股（逻辑>估值>位置>趋势>股东人数>量价，six_dim_screen.py）",
-        command=["uv", "run", "python", "-m", "scripts.six_dim_screen"],
+        command=["uv", "run", "python", "-m", "scripts.six_dim_screen", "--push", str(PUSH_FLAG)],
         enabled_by_default=True,
         depends_on=["sync"],
         timeout=7200,
