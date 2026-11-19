@@ -417,61 +417,64 @@ def main() -> int:
     ensure_dirs()
     log_file = LOG_DIR / f"czsc_scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     log_f = open(log_file, "w", encoding="utf-8")
+    _orig_stdout, _orig_stderr = sys.stdout, sys.stderr
     sys.stdout = sys.stderr = log_f  # 双写日志（也保留控制台输出用 tee）
+    try:
+        print(f"[{datetime.now()}] ==== CZSC 全市场信号扫描开始 ====", flush=True)
+        print(f"DB: {CACHE_DB}", flush=True)
+        print(f"BARS: {BARS_DIR}", flush=True)
+        print(f"OUT: {OUT_DIR}", flush=True)
 
-    print(f"[{datetime.now()}] ==== CZSC 全市场信号扫描开始 ====", flush=True)
-    print(f"DB: {CACHE_DB}", flush=True)
-    print(f"BARS: {BARS_DIR}", flush=True)
-    print(f"OUT: {OUT_DIR}", flush=True)
+        asof = args.asof or datetime.now().strftime("%Y-%m-%d")
+        print(f"as-of: {asof}", flush=True)
 
-    asof = args.asof or datetime.now().strftime("%Y-%m-%d")
-    print(f"as-of: {asof}", flush=True)
+        # 1) DB → parquet
+        if not args.scan_only:
+            print("[1/3] DB → parquet 增量转换...", flush=True)
+            converted, skipped = db_to_parquet_incremental()
+            print(f"     新转换 {converted} 只，跳过 {skipped} 只", flush=True)
 
-    # 1) DB → parquet
-    if not args.scan_only:
-        print("[1/3] DB → parquet 增量转换...", flush=True)
-        converted, skipped = db_to_parquet_incremental()
-        print(f"     新转换 {converted} 只，跳过 {skipped} 只", flush=True)
+        # 2) 信号扫描（两个预设）
+        if not args.convert_only:
+            print("[2/3] 全市场信号扫描...", flush=True)
+            r1 = run_screen(asof, SIGNALS_CONFIG, CONDITION, "bi_ma")
+            print(f"     预设 bi_ma: 命中 {r1['hits']}/{r1['universe']} 只，{r1['seconds']}s", flush=True)
 
-    # 2) 信号扫描（两个预设）
-    if not args.convert_only:
-        print("[2/3] 全市场信号扫描...", flush=True)
-        r1 = run_screen(asof, SIGNALS_CONFIG, CONDITION, "bi_ma")
-        print(f"     预设 bi_ma: 命中 {r1['hits']}/{r1['universe']} 只，{r1['seconds']}s", flush=True)
+            r2 = run_screen(asof, SIGNALS_CONFIG_THIRD_BUY, CONDITION_THIRD_BUY, "third_buy")
+            print(f"     预设 third_buy: 命中 {r2['hits']}/{r2['universe']} 只，{r2['seconds']}s", flush=True)
 
-        r2 = run_screen(asof, SIGNALS_CONFIG_THIRD_BUY, CONDITION_THIRD_BUY, "third_buy")
-        print(f"     预设 third_buy: 命中 {r2['hits']}/{r2['universe']} 只，{r2['seconds']}s", flush=True)
+            # 3) 覆盖度校验
+            print("[3/3] 覆盖度校验...", flush=True)
+            cov = daily_coverage(asof)
+            print(f"     {cov['date']}: active={cov['active_symbols']}, hits={cov['hits']}, rate={cov['hit_rate']:.2%}", flush=True)
 
-        # 3) 覆盖度校验
-        print("[3/3] 覆盖度校验...", flush=True)
-        cov = daily_coverage(asof)
-        print(f"     {cov['date']}: active={cov['active_symbols']}, hits={cov['hits']}, rate={cov['hit_rate']:.2%}", flush=True)
+            # 汇总 JSON
+            summary = {
+                "date": asof,
+                "timestamp": datetime.now().isoformat(),
+                "presets": [r1, r2],
+                "coverage": cov,
+                "conversion": {"converted": converted, "skipped": skipped} if not args.scan_only else {},
+            }
+            summary_path = OUT_DIR / f"summary_{asof}.json"
+            summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"[done] 汇总: {summary_path}", flush=True)
 
-        # 汇总 JSON
-        summary = {
-            "date": asof,
-            "timestamp": datetime.now().isoformat(),
-            "presets": [r1, r2],
-            "coverage": cov,
-            "conversion": {"converted": converted, "skipped": skipped} if not args.scan_only else {},
-        }
-        summary_path = OUT_DIR / f"summary_{asof}.json"
-        summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"[done] 汇总: {summary_path}", flush=True)
+            # 4) 飞书推送（两个预设结果，独立于综合交集汇总）
+            if args.push:
+                print("[4/4] 飞书推送...", flush=True)
+                from scripts.feishu_utils import push_feishu  # noqa: PLC0415
+                content = _build_czsc_feishu_content(asof, r1, r2)
+                ok = push_feishu(
+                    "text",
+                    content=content,
+                    title=f"📊 {asof} 缠论信号全市场选股",
+                )
+                print(f"     飞书推送：{'成功' if ok else '失败'}", flush=True)
 
-        # 4) 飞书推送（两个预设结果，独立于综合交集汇总）
-        if args.push:
-            print("[4/4] 飞书推送...", flush=True)
-            from scripts.feishu_utils import push_feishu  # noqa: PLC0415
-            content = _build_czsc_feishu_content(asof, r1, r2)
-            ok = push_feishu(
-                "text",
-                content=content,
-                title=f"📊 {asof} 缠论信号全市场选股",
-            )
-            print(f"     飞书推送：{'成功' if ok else '失败'}", flush=True)
-
-    log_f.close()
+    finally:
+        sys.stdout, sys.stderr = _orig_stdout, _orig_stderr
+        log_f.close()
     return 0
 
 

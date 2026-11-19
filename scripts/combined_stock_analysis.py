@@ -41,6 +41,7 @@ from scripts.combined_stock_cards import (
     _build_combined_card,
     _get_stock_name_from_metadata,
     _llm_view,
+    _push_per_stock,
 )
 from scripts.combined_stock_collect import collect_source_sets
 from scripts.combined_stock_intersect import build_intersection
@@ -150,8 +151,8 @@ def main() -> None:
     parser.add_argument(
         "--min-sources",
         type=int,
-        default=3,
-        help="最少命中几条选股线才进入交集池（默认 3）",
+        default=2,
+        help="最少命中几条选股线才进入交集池（默认 2）",
     )
     parser.add_argument(
         "--a-stock-screen",
@@ -180,8 +181,8 @@ def main() -> None:
     parser.add_argument(
         "--per-stock-push",
         type=int,
-        default=0,
-        help="是否逐只推送飞书（1=是，0=否；默认 0，只推汇总卡片）",
+        default=1,
+        help="是否逐只推送飞书（1=是，0=否；默认 1，推汇总卡片后逐只推送）",
     )
     parser.add_argument(
         "--per-stock-limit",
@@ -388,9 +389,9 @@ def main() -> None:
             f"{'✅' if ok else '❌'} 飞书汇总推送{'成功' if ok else '失败'}"
         )
 
-        # 6b. 逐只推送（已禁用：仅推送汇总卡片用于验证）
-        # if args.per_stock_push and analyzed:
-        #     _push_per_stock(analyzed, args.date, limit=args.per_stock_limit)
+        # 6b. 逐只推送
+        if args.per_stock_push and analyzed:
+            _push_per_stock(analyzed, args.date, limit=args.per_stock_limit)
     else:
         logger.info("已跳过飞书推送（--push 0）")
 

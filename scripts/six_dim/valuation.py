@@ -5,26 +5,66 @@
 
 from __future__ import annotations
 
+import pandas as pd
+from loguru import logger
+
 from scripts.six_dim.constants import MAX_PB, MAX_PE, MAX_PE_PCT, MAX_PEG
 
 
 def fetch_valuation_history(
     codes: list[str], date_str: str | None = None
 ) -> dict[str, dict[str, float]]:
-    """获取五年 PE/PB 分位和 PEG。
+    """获取五年 PE/PB 分位。
 
-    此处为桩实现：实际估值数据通过 akshare 联网获取，由调用方在
-    ``screen()`` 中注入。保持该函数签名以便后续替换为真实数据源。
+    通过 akshare.stock_zh_valuation_baidu 获取每只股票近五年估值序列，
+    计算 PE/PB 五年分位（百分位排名，0~100）。
 
     Args:
         codes: 股票代码列表（6 位裸代码）。
-        date_str: 分析日期。
+        date_str: 分析日期（保留签名兼容性，实际不使用）。
 
     Returns:
-        代码 → 估值字典的映射。
+        代码 → 估值字典的映射，包含 ``pe_pct`` / ``pb_pct`` 字段。
     """
-    # TODO: 接入 akshare.stock_zh_valuation_baidu 获取五年 PE/PB 分位
-    return {}
+    import akshare as ak
+
+    result: dict[str, dict[str, float]] = {}
+    for code in codes:
+        try:
+            df = ak.stock_zh_valuation_baidu(code=code)
+            if df is None or df.empty:
+                continue
+            # 百度估值接口返回中文列名，常见为 "日期"、"PE"、"PB" 等
+            pe_col: str | None = None
+            pb_col: str | None = None
+            for col in df.columns:
+                c = str(col).upper().strip()
+                if c == "PE":
+                    pe_col = str(col)
+                elif c == "PB":
+                    pb_col = str(col)
+            if pe_col is None or pb_col is None:
+                continue
+            pe_series = pd.to_numeric(df[pe_col], errors="coerce").dropna()
+            pb_series = pd.to_numeric(df[pb_col], errors="coerce").dropna()
+            if pe_series.empty or pb_series.empty:
+                continue
+            # 最新值取序列末点（按接口返回顺序，通常最近在后）
+            pe_latest = float(pe_series.iloc[-1])
+            pb_latest = float(pb_series.iloc[-1])
+            # 五年分位：当前值在历史序列中的百分位排名（0~100）
+            pe_pct = float((pe_series <= pe_latest).mean() * 100)
+            pb_pct = float((pb_series <= pb_latest).mean() * 100)
+            result[code] = {
+                "pe_pct": round(pe_pct, 1),
+                "pb_pct": round(pb_pct, 1),
+            }
+            logger.info(f"估值 {code}: PE分位={pe_pct:.0f}% PB分位={pb_pct:.0f}%")
+        except Exception as exc:  # noqa: BLE001 - akshare 网络异常不可控
+            logger.warning(f"估值 {code} 获取失败：{exc}")
+            continue
+    logger.info(f"估值分位获取完成：{len(result)}/{len(codes)} 只")
+    return result
 
 
 def score_valuation(

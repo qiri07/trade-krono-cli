@@ -549,7 +549,11 @@ def cmd_run(
             print(f"  第 {i} 层: {layer_names}")
 
         failed_set: set[str] = set()
+        skipped_set: set[str] = set()
         first_failure_rc: int | None = None
+        # 今日数据量门控：仅在首次遇到选择层前检查一次，避免重复判定
+        selection_gate_checked = False
+        selection_gate_blocked = False
         SELECTION_STEP_NAMES = frozenset(
             {
                 "buffett",
@@ -565,34 +569,45 @@ def cmd_run(
             }
         )
         for layer_idx, layer in enumerate(layers, 1):
-            # 在每一层执行前，检查今日数据量。若 < 5000 条，跳过本层所有选股步骤
-            today_count = _get_today_kline_count()
-            if today_count < MIN_TODAY_KLINE_COUNT and not force:
-                print(
-                    f"  ⚠️  今日数据量 {today_count} < {MIN_TODAY_KLINE_COUNT} 条，跳过本层所有选股步骤（使用 --force 强制执行）"
-                )
+            # 检查今日数据量门控（仅在首次遇到选择层前检查一次，避免每层重复判定）
+            has_selection = any(s.name in SELECTION_STEP_NAMES for s in layer)
+            if has_selection and not selection_gate_checked:
+                selection_gate_checked = True
+                today_count = _get_today_kline_count()
+                if today_count < MIN_TODAY_KLINE_COUNT and not force:
+                    print(
+                        f"  ⚠️  今日数据量 {today_count} < {MIN_TODAY_KLINE_COUNT} 条，跳过选股步骤（--force 强制执行）"
+                    )
+                    selection_gate_blocked = True
+
+            if selection_gate_blocked:
+                # 跳过本层的所有选择步骤，不污染 failed_set
                 selection_in_layer = [s for s in layer if s.name in SELECTION_STEP_NAMES]
                 for s in selection_in_layer:
                     print(
-                        f"  ⏭️  跳过 [{s.name}]：今日数据量 {today_count} < {MIN_TODAY_KLINE_COUNT} 条"
+                        f"  ⏭️  跳过 [{s.name}]：今日数据量不足，未达到 {MIN_TODAY_KLINE_COUNT} 条"
                     )
                     statuses[s.name] = "skipped"
+                    skipped_set.add(s.name)
                 runnable = [s for s in layer if s.name not in SELECTION_STEP_NAMES]
                 if not runnable:
                     continue
             else:
-                # 过滤掉依赖已失败 step 的 step（避免用脏数据推导后续结论）
+                # 过滤掉依赖已失败或已跳过 step 的 step（避免基于缺失/脏数据推导后续结论）
                 runnable = [
-                    s for s in layer if not any(d in failed_set for d in s.depends_on)
+                    s
+                    for s in layer
+                    if not any(
+                        d in failed_set or d in skipped_set for d in s.depends_on
+                    )
                 ]
                 skipped_in_layer = [s for s in layer if s not in runnable]
                 for s in skipped_in_layer:
                     print(
-                        f"  ⏭️  跳过 [{s.name}]：前置 step 失败（{sorted(d for d in s.depends_on if d in failed_set)}）"
+                        f"  ⏭️  跳过 [{s.name}]：前置 step 不可用（{sorted(d for d in s.depends_on if d in failed_set or d in skipped_set)}）"
                     )
-                    # 被跳过的 step 也视为失败，避免其下游 step 在后续层继续基于脏数据运行
                     statuses[s.name] = "skipped"
-                    failed_set.add(s.name)
+                    skipped_set.add(s.name)
                 if not runnable:
                     continue
 

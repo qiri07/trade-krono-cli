@@ -93,7 +93,6 @@ def _preload_stock_names(timeout: float = 180.0) -> None:
                         )
                     finally:
                         conn.close()
-                        conn.close()
                 logger.info(
                     f"✅ 名称预加载完成：全表 {len(result_box[0])} 条 → STOCK_NAMES {len(STOCK_NAMES)} 条"
                 )
