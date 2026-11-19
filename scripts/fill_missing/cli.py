@@ -16,6 +16,7 @@ from loguru import logger
 from scripts._utils import (
     get_provider_chain,
     get_sqlite_conn,
+    is_bse_code,
     is_etf_ticker,
 )
 from scripts.fill_missing.constants import CACHE_DB, FETCH_TIMEOUT, WORKERS
@@ -99,13 +100,18 @@ def main(
     else:
         plan_failed, plan_need_today = [], []
 
-    # ETF 从本脚本剔除，统一由第 3 步 etf_history_sync.py 拉取
-    # （tonghuashun 对多数 ETF 报 Unknown thscode、mootdx 不可达，在此逐只降级极慢）
+    # ETF 从本脚本剔除：ETF 统一由 scripts/etf_history_sync.py 拉取。
+    # 港股由 akshare_hk 逐只拉取，单只较慢且常需重试，但用户明确要求补拉，
+    # 故放行港股；北交所（bj.）保持剔除，保持与选股流程一致。
     n_plan = len(plan_failed) + len(plan_need_today)
-    plan_failed = [t for t in plan_failed if not is_etf_ticker(t)]
-    plan_need_today = [t for t in plan_need_today if not is_etf_ticker(t)]
+    plan_failed = [
+        t for t in plan_failed if not is_etf_ticker(t) and not is_bse_code(t.split(".")[-1])
+    ]
+    plan_need_today = [
+        t for t in plan_need_today if not is_etf_ticker(t) and not is_bse_code(t.split(".")[-1])
+    ]
     if skipped := n_plan - len(plan_failed) - len(plan_need_today):
-        print(f"ℹ️  剔除 {skipped} 只 ETF（由 etf_history_sync.py 统一拉取）")
+        print(f"ℹ️  剔除 {skipped} 只 ETF/北交所（不在本脚本拉取范围）")
 
     if dry_run:
         print("\n🧪 DRY-RUN 模式：仅打印补拉清单，不写缓存、不拉取数据")
@@ -129,14 +135,24 @@ def main(
     print("=" * 60)
     failed_tickers = plan_failed if plan_path else get_failed_tickers()
     failed_before = len(failed_tickers)
+    # ETF 不在本脚本拉取范围（由 etf_history_sync.py 统一拉取）；
+    # 港股放行（用户要求补拉港股数据）；北交所保持剔除。
+    failed_tickers = [
+        t for t in failed_tickers if not is_etf_ticker(t) and not is_bse_code(t.split(".")[-1])
+    ]
     # 增量跳过：跳过已有足够历史数据的 ticker（避免中断重启后重复拉取）
 
     failed_tickers = [t for t in failed_tickers if not _has_sufficient_history(t)]
     # 断点续传：跳过已在进度文件中标记完成的 ticker
     failed_tickers = [t for t in failed_tickers if t not in completed_tickers]
-    # 将之前标记失败的 ticker 加入重试列表（去重）
+    # 将之前标记失败的 ticker 加入重试列表（去重），并同剔除 ETF，放行港股，剔除北交所
     retry_failed = [
-        t for t in failed_tickers_cache if t not in completed_tickers and t not in failed_tickers
+        t
+        for t in failed_tickers_cache
+        if t not in completed_tickers
+        and t not in failed_tickers
+        and not is_etf_ticker(t)
+        and not is_bse_code(t.split(".")[-1])
     ]
     if retry_failed:
         failed_tickers.extend(retry_failed)
@@ -196,7 +212,7 @@ def main(
     print("=" * 60)
 
     today = get_expected_date()
-    # 动态查询数据库：找出所有缺少今日数据的股票（含北交所，ETF 单独脚本处理）
+    # 动态查询数据库：找出所有缺少今日数据的股票（ETF/北交所由专属脚本处理）
     conn = get_sqlite_conn(CACHE_DB)
     cur = conn.cursor()
     cur.execute(
@@ -209,7 +225,11 @@ def main(
         ORDER BY ticker
     """
     )
-    need_today_from_db = [r[0] for r in cur.fetchall() if not is_etf_ticker(r[0])]
+    need_today_from_db = [
+        r[0]
+        for r in cur.fetchall()
+        if not is_etf_ticker(r[0]) and not is_bse_code(r[0].split(".")[-1])
+    ]
     conn.close()
 
     # 合并计划中的 need_today 与数据库动态查询结果（取并集，避免计划缺失导致漏补）
