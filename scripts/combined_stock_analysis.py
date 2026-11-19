@@ -35,14 +35,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import expected_trading_day
+from scripts._utils import expected_trading_day, load_metadata_index
 from scripts.combined_stock_analyze import analyze_candidates, attach_backtest, attach_kronos
 from scripts.combined_stock_cards import (
     _build_combined_card,
+    _get_stock_name_from_metadata,
     _llm_view,
 )
 from scripts.combined_stock_collect import collect_source_sets
 from scripts.combined_stock_intersect import build_intersection
+from scripts.combined_stock_models import StockCandidate
 from scripts.daily_analysis import ai_verify
 from scripts.feishu_utils import push_feishu
 from trade_krono_cli.cli_commands.core import _load_env
@@ -67,6 +69,12 @@ def main() -> None:
         type=int,
         default=3,
         help="最少命中几条选股线才进入交集池（默认 3）",
+    )
+    parser.add_argument(
+        "--a-stock-screen",
+        type=int,
+        default=1,
+        help="是否对交集候选做 A股 筛选硬过滤（1=是，0=否；默认 1，剔除 ST/北交所/ETF/停牌/低流动性/低价股）",
     )
     parser.add_argument(
         "--sort-by",
@@ -196,6 +204,35 @@ def main() -> None:
     for c in cands[:20]:
         logger.info(f"  🔗 {c.code}  命中 {c.hit_count} 条: {'+'.join(c.sources)}")
 
+    # ── Step 2.5: A股筛选硬过滤（流动性/市值/停牌/股价/ST/北交所/ETF）──
+    if args.a_stock_screen:
+        logger.info("\n🧹 对交集候选做 A股 筛选硬过滤...")
+        from scripts.a_stock_screen.screener import screen_a_stock_candidates
+
+        meta = load_metadata_index()
+        cand_codes = [c.code for c in cands]
+        passed_codes, screen_details = screen_a_stock_candidates(
+            cand_codes, args.date, metadata=meta
+        )
+        passed_set = set(passed_codes)
+
+        filtered_out = [c for c in cands if c.code not in passed_set]
+        cands = [c for c in cands if c.code in passed_set]
+
+        logger.info(
+            f"A股筛选：候选 {len(cand_codes)} 只，通过 {len(cands)} 只，"
+            f"剔除 {len(filtered_out)} 只"
+        )
+        for c in filtered_out[:10]:
+            detail = screen_details.get(c.code)
+            reasons = detail.fail_reasons if detail else []
+            cname = (meta.get(c.code) or {}).get("name", "")
+            logger.info(
+                f"  ❌ 剔除 {c.code} ({cname}): {'; '.join(reasons)}"
+            )
+    else:
+        logger.info("\n⏭️  已跳过 A股 筛选硬过滤（--a-stock-screen 0）")
+
     # ── Step 3: 对候选做技术分析 ────────────────────────────────
     logger.info(f"\n📈 对前 {args.max_analyze} 只候选做技术分析...")
     analyzed = analyze_candidates(cands, args.date, args.max_analyze)
@@ -212,33 +249,65 @@ def main() -> None:
     out_file = Path(get_settings().results_dir) / f"combined_intersection_{dc}.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
+    def _candidate_entry(c: StockCandidate) -> dict[str, object]:
+        """构造单只候选的 JSON 条目。
+
+        已做技术分析的候选包含完整 tech/fund/kronos/backtest 字段；
+        未做技术分析的候选（超出 max_analyze 范围）仅补 code/name/hit_count/sources。
+        """
+        entry: dict[str, object] = {
+            "code": c.code,
+            "hit_count": c.hit_count,
+            "sources": list(c.sources),
+        }
+        if c.analysis is not None:
+            entry.update(
+                {
+                    **c.tech.to_payload(),
+                    **c.fund.to_payload(),
+                    "kronos": c.kronos_view.to_payload() if c.kronos is not None else None,
+                    "backtest": (
+                        c.backtest.to_payload() if c.backtest is not None else None
+                    ),
+                }
+            )
+        else:
+            # 未做技术分析：仅补名称，其余字段留空/默认
+            entry["name"] = _get_stock_name_from_metadata(c.code) or ""
+            entry["trend"] = ""
+            entry["ma_signal"] = ""
+            entry["vol_signal"] = ""
+            entry["score"] = 0
+            entry["close"] = None
+            entry["ma5"] = None
+            entry["pe_ttm"] = None
+            entry["pb"] = None
+            entry["valuation_score"] = None
+            entry["valuation_conclusion"] = ""
+            entry["kronos"] = None
+            entry["backtest"] = None
+        return entry
+
     def _write_intersection_json() -> None:
-        """构造并写出交集汇总 JSON（kronos / backtest 字段在此时已填充）。"""
+        """构造并写出交集汇总 JSON（所有候选均包含，未分析的补名称）。
+
+        kronos / backtest 字段在 Step 5.5/5.6 之后已填充。
+        """
+        # 按交集次数降序排列，与飞书卡片展示顺序一致
+        all_cands = sorted(cands, key=lambda c: -c.hit_count)
         out_payload = {
             "date": args.date,
             "min_sources": args.min_sources,
             "source_counts": {k: len(v) for k, v in source_sets.items()},
             "intersection_total": len(cands),
-            "analyzed": [
-                {
-                    "code": c.code,
-                    "hit_count": c.hit_count,
-                    "sources": c.sources,
-                    **c.tech.to_payload(),
-                    **c.fund.to_payload(),
-                    "kronos": (c.kronos_view.to_payload() if c.kronos is not None else None),
-                    "backtest": (
-                        c.backtest.to_payload() if c.backtest is not None else None
-                    ),
-                }
-                for c in analyzed
-            ],
+            "analyzed_count": len(analyzed),
+            "analyzed": [_candidate_entry(c) for c in all_cands],
         }
         out_file.write_text(
             json.dumps(out_payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        logger.info(f"💾 结果已保存: {out_file}")
+        logger.info(f"💾 结果已保存: {out_file} （{len(all_cands)} 只候选，其中 {len(analyzed)} 只已技术分析）")
 
     # ── Step 5: AI 核实（聚合交集 + 多线共振视角）────────────────
     logger.info("🤖 启动 AI 核实...")

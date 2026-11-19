@@ -444,6 +444,10 @@ class TestMainFlagWiring:
             patch.object(csa, "push_feishu", return_value=True),
             patch.object(csa, "attach_kronos") as mk,
             patch.object(csa, "attach_backtest") as mb,
+            patch(
+                "scripts.a_stock_screen.screener.screen_a_stock_candidates",
+                return_value=(["600519"], {}),
+            ),
         ):
             argv = [
                 "--date",
@@ -468,6 +472,7 @@ class TestMainFlagWiring:
                         backtest=0,
                         backtest_days=90,
                         backtest_horizon=5,
+                        a_stock_screen=1,
                     ),
                     autospec=False,
                 ),
@@ -501,6 +506,10 @@ class TestMainFlagWiring:
             patch.object(csa, "push_feishu", return_value=True),
             patch.object(csa, "attach_kronos", return_value=1),
             patch.object(csa, "attach_backtest", return_value=1),
+            patch(
+                "scripts.a_stock_screen.screener.screen_a_stock_candidates",
+                return_value=(["600519"], {}),
+            ),
         ):
             ns = argparse.Namespace(
                 date="2026-10-15",
@@ -513,6 +522,7 @@ class TestMainFlagWiring:
                 backtest=1,
                 backtest_days=90,
                 backtest_horizon=5,
+                a_stock_screen=1,
             )
             with (
                 patch("argparse.ArgumentParser.parse_args", return_value=ns),
