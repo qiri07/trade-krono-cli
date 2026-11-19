@@ -26,7 +26,6 @@ from loguru import logger
 
 from trade_krono_cli.config import get_settings
 from trade_krono_cli.data_providers.base import StockMetadata
-from trade_krono_cli.data_providers.adk_data_provider import AdkDataProvider
 
 if TYPE_CHECKING:
     from trade_krono_cli.data_providers.base import (
@@ -104,10 +103,11 @@ class DataProviderFactory:
 
     @staticmethod
     def _default_fallbacks() -> list[str]:
-        """默认降级顺序：baostock → akshare → tencent → mootdx → tushare → tonghuashun → efinance → easyquotation。
+        """默认降级顺序：baostock → akshare → tencent → mootdx → tushare → tonghuashun → efinance → easyquotation → adk。
 
         tencent（腾讯财经）作为兜底补充源：不封 IP、覆盖沪深 A 股 / ETF / 沪深指数且带估值 / 市值 / 换手
-        字段，主源不可达或缺少估值字段时自动降级使用。北交所由 tonghuashun 提供。
+        字段，主源不可达或缺少估值字段时自动降级使用。北交所由 tonghuashun 提供。adk（a-stock-data/adata）
+        作为链尾兜底源。
         """
         return [
             "akshare",
@@ -213,7 +213,9 @@ class DataProviderFactory:
                 new_count = fail_count + 1
                 self._provider_fail_count[name] = new_count
                 if new_count >= self._PROVIDER_FAIL_THRESHOLD:
-                    self._provider_unavailable_until[name] = now + self._PROVIDER_UNAVAILABLE_TTL_SEC
+                    self._provider_unavailable_until[name] = (
+                        now + self._PROVIDER_UNAVAILABLE_TTL_SEC
+                    )
                     logger.warning(
                         f"⚠️  {name} 连续失败 {new_count} 次，进入 {self._PROVIDER_UNAVAILABLE_TTL_SEC:.0f}s 冷却期，将跳过探测"
                     )
@@ -357,15 +359,11 @@ class DataProviderFactory:
 
         for attempt in range(max_retries + 1):
             try:
-                data = provider.fetch_kline(
-                    ticker, start_date, end_date, frequency, adjustflag
-                )
+                data = provider.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
                 if data is not None and not data.is_empty:
                     self._rate_limiter.record_success(name)
                     self._record_provider_success(name)
-                    logger.info(
-                        f"✅ K 线获取成功: {ticker} ← {name} ({len(data.timestamps)} 条)"
-                    )
+                    logger.info(f"✅ K 线获取成功: {ticker} ← {name} ({len(data.timestamps)} 条)")
                     return data
                 # 空数据不重试，直接返回 None
                 logger.debug(f"{name} 返回空数据: {ticker}")
@@ -382,8 +380,7 @@ class DataProviderFactory:
                 if attempt == max_retries:
                     self._record_provider_fail(name)
                     logger.warning(
-                        f"{name} K 线拉取失败 {ticker}: {last_error} "
-                        f"(重试{max_retries}次后放弃)"
+                        f"{name} K 线拉取失败 {ticker}: {last_error} (重试{max_retries}次后放弃)"
                     )
                     return None
 
@@ -919,12 +916,6 @@ class DataProviderFactory:
                 from trade_krono_cli.data_providers.efinance_provider import EFinanceProvider
 
                 registry[name] = EFinanceProvider
-            elif name == "easyquotation":
-                from trade_krono_cli.data_providers.easyquotation_provider import (
-                    EasyQuotationProvider,
-                )
-
-                registry[name] = EasyQuotationProvider
             elif name == "easyquotation":
                 from trade_krono_cli.data_providers.easyquotation_provider import (
                     EasyQuotationProvider,

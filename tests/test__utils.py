@@ -43,6 +43,17 @@ class TestGetExpectedDate:
         # 周五是 2026-09-11
         assert result == "2026-09-11"
 
+    def test_after_close_returns_today(self) -> None:
+        """收盘后（>=15:30）：返回当日日期（与 expected_trading_day 口径一致）。"""
+        from scripts._utils import _get_expected_date
+
+        wednesday_after_close = datetime(2026, 9, 16, 15, 45)  # 周三 15:45，收盘后
+        with patch("scripts._utils.datetime") as mock_dt:
+            mock_dt.now.return_value = wednesday_after_close
+            mock_dt.timedelta = timedelta
+            result = _get_expected_date()
+        assert result == "2026-09-16"
+
 
 class TestGetCacheLatestDate:
     """_get_cache_latest_date: 数据库查询最新 end 日期。"""

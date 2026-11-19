@@ -83,14 +83,14 @@ trade_krono_cli/
 │   └── export_daily_pv.py    # export-daily-pv 命令
 ├── config.py             # Settings dataclass：从 .env 加载，模块级单例 get_settings()
 ├── errors.py             # 异常层次：TradeKronoError → ModuleError / DataError / ModelError 等
-├── logger.py             # loguru 初始化（控制台 + 文本日志 + JSON 结构化日志）
+├── logger.py             # loguru 初始化（控制台 + 文本日志 + 轮转 JSON 结构化日志 `_RotatingJsonFileSink`）
 ├── globals.py            # 全局单例清理工具（测试隔离用 clear_all_globals）
 ├── security.py           # 敏感信息脱敏（sanitize_for_log）
 ├── domain/               # 领域层（无外部依赖）：types / decision / signal / risk / prediction
 ├── data_providers/       # 多数据源抽象层（DataProvider ABC + KlineData/RealtimeQuote/StockMetadata）
 │   ├── base.py / factory.py / baostock_provider.py / akshare_provider.py / mootdx_provider.py
 │   ├── tushare_provider.py / tonghuashun_provider.py / tencent_provider.py / efinance_provider.py
-│   ├── easyquotation_provider.py / akshare_hk_provider.py / benchmark.py
+│   ├── easyquotation_provider.py / akshare_hk_provider.py / adk_data_provider.py / benchmark.py
 │   ├── rate_limiter.py        # 统一限流管理器（滑动窗口，从 Settings 读取配置）
 │   └── retry_with_backoff.py  # 指数退避重试装饰器
 ├── pipeline/             # 流水线编排：orchestrator（QuantPipeline + PipelineFactory）/ merge / reporter / stream_pipeline
@@ -447,7 +447,7 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `backup_cache.py` | 核心数据备份（SQLite 在线快照 + 原子写入；按族保留备份，未变化自动跳过） |
 | `full_sync_v2.py` | 优化版主备降级同步（沪深优先 tonghuashun） |
 | `fill_missing_latest.py` | 补齐缺少最新日期的股票增量数据（tonghuashun 主，baostock 降级） |
-| `etf_history_sync.py` | ETF K 线同步（akshare 同花顺发现全市场 ~1409 只，baostock 拉取；`--full` 全量 / `--codes` 指定） |
+| `etf_history_sync.py` | ETF K 线同步（akshare 同花顺发现全市场 ~1409 只，baostock 拉取；`--full` 全量 / `--codes` 指定；单只拉取 18s 超时兜底防 baostock 挂起，批次级 `wait=False` 不阻塞） |
 | `intraday_scan.py` | 盘中技术信号扫描（akshare 分钟 K 线 + 腾讯实时价；金叉/多头/MACD/三线共振，`--mode` 选类型，`--min-signals` 过滤，`--push` 飞书） |
 | `six_dim_screen.py` | 六维选股（逻辑>估值>位置>趋势>股东人数>量价；前两维硬门槛，后四维递减权重打分，输出前 N 只 + JSON/MD 报告） |
 | `combined_stock_report.py` | 综合选股交集重放（复用 collect/intersect/cards，按日期重算交集并生成/推送汇总卡片，`--no-push` 仅落盘） |
@@ -624,8 +624,9 @@ reason = exclusion_reason(ticker, meta, exclude_etf=True)   # "hk"/"bse"/"etf"/"
 
 ### DataProvider 配置
 - 实际配置的 primary provider 是 `tonghuashun`（非 baostock），由 `get_data_factory()` 读取 Settings
-- Provider 默认降级链（`DataProviderFactory._default_fallbacks()`）：`akshare → tencent → mootdx → tushare → tonghuashun → efinance → easyquotation`；
-  `tencent`（腾讯财经）已作为第二梯队纳入（不封 IP、覆盖沪深 A 股 / ETF / 沪深指数且带 PE/PB/市值/换手字段）。
+- Provider 默认降级链（`DataProviderFactory._default_fallbacks()`）：`akshare → tencent → mootdx → tushare → tonghuashun → efinance → easyquotation → adk`；
+  `tencent`（腾讯财经）已作为第二梯队纳入（不封 IP、覆盖沪深 A 股 / ETF / 沪深指数且带 PE/PB/市值/换手字段）；
+  `adk`（a-stock-data/adata）作为链尾兜底源（`adk_data_provider.py`）。
 - 北交所股票特殊处理：provider 链为 `["tonghuashun", "baostock"]`；港股由 `akshare_hk` 专属提供。
 - K 线来源异常统一由 Provider 抛 `RuntimeError`（来源格式变 / 网络错误），由 Factory 的降级循环捕获并切换备用源。
 
@@ -651,7 +652,7 @@ reason = exclusion_reason(ticker, meta, exclude_etf=True)   # "hk"/"bse"/"etf"/"
 ### 数据源对标与补充计划（与 a-stock-data V3.10.4 对齐）
 
 本项目的 `data_providers/` 目前实现：baostock / akshare / mootdx / tushare / tonghuashun / tencent /
-efinance / easyquotation / akshare_hk，主备降级由 `DataProviderFactory` 统一调度。
+efinance / easyquotation / akshare_hk / adk（a-stock-data/adata），主备降级由 `DataProviderFactory` 统一调度。
 与 `https://github.com/simonlin1212/a-stock-data`（A股全栈数据工具包 V3.10.4，15层/87端点/34源）
 对标后，现状与差距如下：
 
@@ -674,6 +675,7 @@ efinance / easyquotation / akshare_hk，主备降级由 `DataProviderFactory` �
 5. **限流与重试**：新增 `rate_limiter.py`（`RateLimiter` 单例，滑动窗口）和 `retry_with_backoff.py`（指数退避重试）；`factory.py` 对每个 provider 调用添加指数退避重试、429 冷却、连续失败熔断；`baostock_provider.py` 移除内部 `TokenBucket`，改用 `Semaphore(3)` 允许有限并发。
 6. **批量获取**：`base.py` 新增 `fetch_quotes_batch()` / `fetch_metadata_batch()`（akshare 复用全市场快照缓存，O(1) 请求）；`factory.py` 新增 `fetch_quotes_batch()` / `fetch_metadata_batch()` 按 provider 链合并结果。
 7. **配置化**：`config.py` 新增 `rate_limit_*` 字段，所有限流/重试参数可通过环境变量 `RATE_LIMIT_*` 运行时调整。
+8. **adk 兜底源**：新增 `trade_krono_cli/data_providers/adk_data_provider.py`（a-stock-data/adata），注册进 `DataProviderFactory` 默认降级链链尾（`easyquotation → adk`），作为主备源全挂时的最终兜底。
 
 以下 8 个模块已建成、测试全绿，但**生产代码零调用**（仅测试引用）。它们构成
 「实验追踪 + 评估」子系统，接入流水线前不要误判为死代码删除，也不要重复造轮子：

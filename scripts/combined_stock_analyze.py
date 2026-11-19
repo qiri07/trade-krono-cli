@@ -69,15 +69,15 @@ def attach_kronos(cands: list[StockCandidate], date_str: str) -> int:
         return 0
 
 
-def _build_eval_records(
-    ticker: str, date_str: str, days: int, horizon: int
-) -> list[EvalRecord]:
+def _build_eval_records(ticker: str, date_str: str, days: int, horizon: int) -> list[EvalRecord]:
     """从 research DB 读取该 ticker 近 days 天的历史信号，构造 EvalRecord 列表。
 
-    优先读 `ta_analysis` 表（独立分析脚本实际写入的表），`signals` 表（pipeline
-    post_processing 写入）作为 fallback —— 二者取到即视为该日有信号。复用
-    eval_data 的价格获取（±5 日回退）与成本扣减；无信号 / 无价格时返回空列表。
-    按 (job, ticker) 粒度取每个 job 的信号，同一天多 job 仅取首个。
+    信号经 `_lookup_signal` 合并 `ta_analysis` 与 `signals` 两表（Kronos 字段仅
+    `signals` 表有，TA 信号优先 `ta_analysis`，二者任一可用即视为该 job 有信号）。
+    复用 eval_data 的价格获取（±5 日回退）与成本扣减；无信号 / 无价格时跳过该 job。
+    按 (job, ticker) 粒度取每个 job 的信号，同一天多 job 仅保留首个实际产出记录的
+    job —— 日期去重在信号与入场/出场价校验全部通过后才标记，避免同天首个 job
+    缺价格时把后续 job 一并跳过。
     """
     from trade_krono_cli.eval_data import (  # noqa: PLC0415
         apply_roundtrip_cost,
@@ -94,9 +94,12 @@ def _build_eval_records(
     norm_ticker = normalize_ticker_key(ticker)
 
     records: list[EvalRecord] = []
+    seen_dates: set[str] = set()
     for job in jobs:
         job_date = str(job.get("date") or "")
         if not job_date or job_date < window_start or job_date > date_str:
+            continue
+        if job_date in seen_dates:
             continue
         job_id = str(job.get("job_id") or "")
         if not job_id:
@@ -117,6 +120,9 @@ def _build_eval_records(
         exit_price = get_close_price(norm_ticker, exit_date)
         if exit_price is None or exit_price <= 0:
             continue
+
+        # 日期去重标记：信号与价格校验全部通过后才计入，同天后续 job 不再重复产出记录
+        seen_dates.add(job_date)
 
         gross = calc_return(entry_price, exit_price)
         net = apply_roundtrip_cost(gross, 17.0)
@@ -187,9 +193,7 @@ def _lookup_signal(research: ResearchDatabase, job_id: str, norm_ticker: str) ->
         return None
 
     ta_error = bool(ta_sig.get("error")) if ta_sig else True
-    both_errors = (
-        bool(sig.get("ta_error")) and bool(sig.get("kronos_error")) if sig else True
-    )
+    both_errors = bool(sig.get("ta_error")) and bool(sig.get("kronos_error")) if sig else True
     has_error = ta_error and both_errors
 
     return {
@@ -197,9 +201,7 @@ def _lookup_signal(research: ResearchDatabase, job_id: str, norm_ticker: str) ->
         or (sig.get("ta_signal") if sig else None),
         "kronos_direction": (sig.get("kronos_direction") or None) if sig else None,
         "kronos_change": sig.get("kronos_change") if sig else None,
-        "composite_score": (
-            sig.get("composite_score") if sig else None
-        ),
+        "composite_score": sig.get("composite_score") if sig else None,
         "has_error": has_error,
     }
 

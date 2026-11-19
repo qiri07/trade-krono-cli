@@ -143,12 +143,14 @@ class AdkDataProvider(DataProvider):
                         col_map_inv[c] = std_name
                         break
 
-            df = df.rename(columns={k: v for k, v in col_map_inv.items()})
+            df = df.rename(columns=dict(col_map_inv))
 
             required = ["timestamps", "open", "high", "low", "close", "volume"]
             missing = [c for c in required if c not in df.columns]
             if missing:
-                logger.warning(f"{self.name} K 线缺少必要列: {missing}, 实际列: {df.columns.tolist()}")
+                logger.warning(
+                    f"{self.name} K 线缺少必要列: {missing}, 实际列: {df.columns.tolist()}"
+                )
                 return None
 
             return KlineData(

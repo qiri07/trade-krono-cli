@@ -19,8 +19,12 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from trade_krono_cli.eval_data import EvalRecord
+
 from scripts import combined_stock_analysis as csa
 from scripts.combined_stock_analyze import (
+    _build_eval_records,
+    _lookup_signal,
     analyze_candidates,
     attach_backtest,
     attach_kronos,
@@ -558,9 +562,7 @@ class TestIntradayCodeSpace:
         (tmp_path / "intraday_scan_20261111_1000.json").write_text(
             json.dumps(payload), encoding="utf-8"
         )
-        source_sets = collect_source_sets(
-            "2026-11-11", results_dir=tmp_path, czsc_dir=tmp_path
-        )
+        source_sets = collect_source_sets("2026-11-11", results_dir=tmp_path, czsc_dir=tmp_path)
         assert source_sets["intraday"] == {"600519", "000858"}
 
 
@@ -628,6 +630,261 @@ class TestCombinedCardHeaderAndPushLimit:
         ):
             cards_mod._push_per_stock(cands, "2026-11-10", limit=0)
         assert mock_push.call_count == 7
+
+
+def _ta_row(**overrides: object) -> dict:
+    """构造 ta_analysis 表行样本（get_ta_by_job 返回结构）。"""
+    row: dict = {
+        "ticker": "sz.002027",
+        "signal": None,
+        "confidence": None,
+        "thesis": None,
+        "risks": None,
+        "error": None,
+        "elapsed": 0.1,
+    }
+    row.update(overrides)
+    return row
+
+
+def _signals_row(**overrides: object) -> dict:
+    """构造 signals 表行样本（get_signals_by_job 返回结构）。"""
+    row: dict = {
+        "ticker": "sz.002027",
+        "rank": 1,
+        "composite_score": None,
+        "ranking_score": None,
+        "ta_signal": None,
+        "ta_confidence": None,
+        "kronos_direction": None,
+        "kronos_change": None,
+        "ta_error": None,
+        "kronos_error": None,
+        "expected_value": None,
+        "conflict": None,
+    }
+    row.update(overrides)
+    return row
+
+
+class TestLookupSignal:
+    """_lookup_signal 合并 ta_analysis / signals 两表：任一源可用即产出记录。"""
+
+    TICKER = "sz.002027"
+
+    def _research(self, ta_rows: list[dict], sig_rows: list[dict]) -> MagicMock:
+        research = MagicMock()
+        research.get_ta_by_job.return_value = ta_rows
+        research.get_signals_by_job.return_value = sig_rows
+        return research
+
+    def test_no_rows_returns_none(self) -> None:
+        """两表均无该 ticker 记录时返回 None。"""
+        assert _lookup_signal(self._research([], []), "job-1", self.TICKER) is None
+
+    def test_ignores_rows_of_other_tickers(self) -> None:
+        """同 job 内其他 ticker 的记录不影响匹配，仍返回 None。"""
+        research = self._research(
+            [_ta_row(ticker="sh.600519", signal="多头排列✅")],
+            [_signals_row(ticker="sh.600519", ta_signal="偏多")],
+        )
+        assert _lookup_signal(research, "job-1", self.TICKER) is None
+
+    def test_ta_only_record_shape(self) -> None:
+        """仅 ta_analysis 可用时：TA 信号透传，Kronos/composite 为空。"""
+        research = self._research([_ta_row(signal="多头排列✅")], [])
+        result = _lookup_signal(research, "job-1", self.TICKER)
+        assert result == {
+            "ta_signal": "多头排列✅",
+            "kronos_direction": None,
+            "kronos_change": None,
+            "composite_score": None,
+            "has_error": False,
+        }
+
+    @pytest.mark.parametrize(
+        ("ta_row", "sig_row", "exp_has_error", "exp_ta_signal"),
+        [
+            pytest.param(
+                _ta_row(signal="多头排列✅"),
+                None,
+                False,
+                "多头排列✅",
+                id="ta_ok_signals_missing",
+            ),
+            pytest.param(_ta_row(error="boom"), None, True, None, id="ta_error_signals_missing"),
+            pytest.param(
+                None,
+                _signals_row(ta_signal="偏多", kronos_direction="UP", kronos_change=2.5),
+                False,
+                "偏多",
+                id="signals_ok",
+            ),
+            pytest.param(
+                None,
+                _signals_row(kronos_error="kronos fail"),
+                False,
+                None,
+                id="signals_only_kronos_error",
+            ),
+            pytest.param(
+                None,
+                _signals_row(ta_error="ta fail", kronos_error="kronos fail"),
+                True,
+                None,
+                id="signals_both_errors",
+            ),
+            pytest.param(
+                _ta_row(error="boom"),
+                _signals_row(ta_signal="偏多", kronos_direction="UP", kronos_change=2.5),
+                False,
+                "偏多",
+                id="ta_error_signals_ok_fallback",
+            ),
+            pytest.param(
+                _ta_row(signal="多头排列✅"),
+                _signals_row(ta_error="ta fail", kronos_error="kronos fail"),
+                False,
+                "多头排列✅",
+                id="ta_ok_signals_both_errors",
+            ),
+            pytest.param(
+                _ta_row(error="boom"),
+                _signals_row(ta_error="ta fail", kronos_error="kronos fail"),
+                True,
+                None,
+                id="both_sources_errored",
+            ),
+        ],
+    )
+    def test_has_error_truth_table(
+        self,
+        ta_row: dict | None,
+        sig_row: dict | None,
+        exp_has_error: bool,
+        exp_ta_signal: str | None,
+    ) -> None:
+        """has_error 仅在两源均不可用（缺失或报错）时为 True；ta_signal 优先 ta_analysis。"""
+        research = self._research([ta_row] if ta_row else [], [sig_row] if sig_row else [])
+        result = _lookup_signal(research, "job-1", self.TICKER)
+        assert result is not None
+        assert result["has_error"] == exp_has_error
+        assert result["ta_signal"] == exp_ta_signal
+
+    def test_kronos_fields_taken_from_signals(self) -> None:
+        """Kronos 字段与 composite_score 仅来自 signals 表。"""
+        research = self._research(
+            [],
+            [_signals_row(kronos_direction="UP", kronos_change=2.5, composite_score=80.0)],
+        )
+        result = _lookup_signal(research, "job-1", self.TICKER)
+        assert result is not None
+        assert result["kronos_direction"] == "UP"
+        assert result["kronos_change"] == 2.5
+        assert result["composite_score"] == 80.0
+
+
+class TestBuildEvalRecords:
+    """_build_eval_records：同一天多 job 仅保留首个产出记录的 job。"""
+
+    DATE_STR = "2026-11-17"
+
+    def _run(
+        self,
+        jobs: list[dict],
+        ta_by_job: dict[str, list[dict]],
+        prices: dict[str, float],
+    ) -> list[EvalRecord]:
+        """以 mock 的 research DB 与价格表执行 _build_eval_records。"""
+        research = MagicMock()
+        research.list_jobs.return_value = jobs
+        research.get_ta_by_job.side_effect = lambda job_id: ta_by_job.get(job_id, [])
+        research.get_signals_by_job.side_effect = lambda job_id: []
+        with (
+            patch("trade_krono_cli.research_db.get_research", return_value=research),
+            patch(
+                "trade_krono_cli.eval_data.get_close_price",
+                side_effect=lambda _ticker, date: prices.get(date),
+            ),
+        ):
+            return _build_eval_records("002027", self.DATE_STR, 90, 5)
+
+    def test_same_day_jobs_yield_single_record(self) -> None:
+        """同一天多个 job 均有效时仅产出 1 条记录，取最新 run 的信号。"""
+        jobs = [
+            {"job_id": "job-latest", "date": "2026-11-10"},
+            {"job_id": "job-earlier", "date": "2026-11-10"},
+        ]
+        ta_by_job = {
+            "job-latest": [_ta_row(signal="多头排列✅")],
+            "job-earlier": [_ta_row(signal="偏多")],
+        }
+        prices = {"2026-11-10": 10.0, "2026-11-15": 11.0}
+        records = self._run(jobs, ta_by_job, prices)
+        assert len(records) == 1
+        assert records[0].eval_date == "2026-11-10"
+        assert records[0].ta_signal == "多头排列✅"
+
+    def test_signal_less_job_does_not_block_same_day_jobs(self) -> None:
+        """同天首个 job 无信号时不应消耗该日期，后续 job 仍产出记录。"""
+        jobs = [
+            {"job_id": "job-latest", "date": "2026-11-10"},
+            {"job_id": "job-earlier", "date": "2026-11-10"},
+        ]
+        ta_by_job = {"job-earlier": [_ta_row(signal="偏多")]}
+        prices = {"2026-11-10": 10.0, "2026-11-15": 11.0}
+        records = self._run(jobs, ta_by_job, prices)
+        assert len(records) == 1
+        assert records[0].ta_signal == "偏多"
+
+    def test_errored_job_does_not_block_same_day_jobs(self) -> None:
+        """同天首个 job 信号报错时不应消耗该日期，后续 job 仍产出记录。"""
+        jobs = [
+            {"job_id": "job-latest", "date": "2026-11-10"},
+            {"job_id": "job-earlier", "date": "2026-11-10"},
+        ]
+        ta_by_job = {
+            "job-latest": [_ta_row(error="boom")],
+            "job-earlier": [_ta_row(signal="偏多")],
+        }
+        prices = {"2026-11-10": 10.0, "2026-11-15": 11.0}
+        records = self._run(jobs, ta_by_job, prices)
+        assert len(records) == 1
+        assert records[0].ta_signal == "偏多"
+
+    def test_multi_day_window_one_record_per_date(self) -> None:
+        """多天窗口每天至多 1 条记录，窗口外（过旧/未来）job 被排除。"""
+        jobs = [
+            {"job_id": "job-future", "date": "2026-11-18"},
+            {"job_id": "job-d2", "date": "2026-11-12"},
+            {"job_id": "job-d1", "date": "2026-11-10"},
+            {"job_id": "job-stale", "date": "2026-08-01"},
+        ]
+        ta_by_job = {
+            "job-d1": [_ta_row(signal="多头排列✅")],
+            "job-d2": [_ta_row(signal="偏多")],
+            "job-future": [_ta_row(signal="多头排列✅")],
+            "job-stale": [_ta_row(signal="偏多")],
+        }
+        prices = {
+            "2026-11-10": 10.0,
+            "2026-11-15": 11.0,
+            "2026-11-12": 20.0,
+            "2026-11-17": 22.0,
+            "2026-08-01": 5.0,
+            "2026-08-06": 5.5,
+        }
+        records = self._run(jobs, ta_by_job, prices)
+        assert [r.eval_date for r in records] == ["2026-11-12", "2026-11-10"]
+        assert [r.ta_signal for r in records] == ["偏多", "多头排列✅"]
+
+    def test_missing_exit_price_skips_record(self) -> None:
+        """出场价缺失时跳过该 job，不产出记录。"""
+        jobs = [{"job_id": "job-1", "date": "2026-11-10"}]
+        ta_by_job = {"job-1": [_ta_row(signal="多头排列✅")]}
+        prices = {"2026-11-10": 10.0}  # 缺 2026-11-15 出场价
+        records = self._run(jobs, ta_by_job, prices)
+        assert records == []
 
 
 if __name__ == "__main__":

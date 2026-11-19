@@ -53,12 +53,14 @@ def _query_kline_status(today: str, expected_date: str) -> dict:
     latest_date = cur.fetchone()[0] or ""
 
     cur.execute(
-        f"""
-        SELECT DISTINCT ticker FROM kline_cache
+        """
+        SELECT ticker FROM kline_cache
         WHERE ticker NOT LIKE 'bj.%'
-          AND (SELECT COUNT(*) FROM kline_cache k2 WHERE k2.ticker = kline_cache.ticker) < {FAILED_MIN_RECORDS}
+        GROUP BY ticker
+        HAVING COUNT(*) < ?
         ORDER BY ticker
-    """
+        """,
+        (FAILED_MIN_RECORDS,),
     )
     failed_tickers = [r[0] for r in cur.fetchall()]
 

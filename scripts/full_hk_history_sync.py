@@ -21,8 +21,6 @@
 from __future__ import annotations
 
 import argparse
-import pickle
-import sqlite3
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -37,7 +35,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from loguru import logger
 
 from scripts._utils import get_cache_db_path, get_sqlite_conn
-from trade_krono_cli.cache import get_cache
 from trade_krono_cli.cache.kline import _compute_data_hash
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import get_data_factory
@@ -146,7 +143,6 @@ def fetch_and_store_hk(
                 "SELECT data FROM kline_cache WHERE ticker=?", (ticker,)
             ).fetchone()
             if _row:
-                import pickle
                 _df_check = pd.read_pickle(BytesIO(_row[0]))
                 print(f"  [DEBUG] {ticker}: 已写入 {len(_df_check)} 条记录到数据库")
             else:

@@ -646,13 +646,13 @@ def get_provider_chain(ticker: str) -> list[str]:
 
 
 def _get_expected_date() -> str:
-    """计算期望的缓存日期（最近交易日，优先昨天，周末回退到周五）。"""
-    today = datetime.now()
-    yesterday = today - timedelta(days=1)
-    if today.weekday() >= 5:  # 5=周六, 6=周日
-        days_back = today.weekday() - 4  # 周六→1, 周日→2
-        yesterday = today - timedelta(days=days_back)
-    return yesterday.strftime("%Y-%m-%d")
+    """计算期望的缓存日期（最近交易日，收盘后 ≥15:30 返回当日，盘中返回上一交易日，周末回退到周五）。
+
+    与 :func:`expected_trading_day` 口径保持一致，避免 check_data_status /
+    retry_missing_history / data_backfill / check_data_freshness 与 flow_runner /
+    fill_missing 使用两套日期判定逻辑。
+    """
+    return expected_trading_day()
 
 
 def check_kline_regime(ticker: str, kline: pd.DataFrame, window: int = 20) -> None:

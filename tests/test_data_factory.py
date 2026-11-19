@@ -42,6 +42,7 @@ class TestProviderChain:
             "tonghuashun",
             "efinance",
             "easyquotation",
+            "adk",
         ]
 
     def test_custom_primary(self) -> None:

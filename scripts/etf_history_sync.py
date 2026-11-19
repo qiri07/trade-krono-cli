@@ -25,6 +25,7 @@ import argparse
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -51,7 +52,7 @@ FULL_START_DATE = "2020-01-01"
 WORKERS = 8
 BATCH_SIZE = 100
 FETCH_TIMEOUT = 30
-FETCH_PER_TICKER_TIMEOUT = 180  # 单只 ETF 拉取超时（baostock 会话失效重登录后易挂起）
+FETCH_PER_TICKER_TIMEOUT = 18  # 单只 ETF 拉取超时（baostock 网络挂起保护）
 
 
 def etf_code_to_ticker(code: str) -> str | None:
@@ -108,6 +109,23 @@ def _load_retry_failed_list(path_str: str) -> list[str]:
     return codes
 
 
+def _fetch_kline_with_timeout(provider, ticker, start_date, end_date, frequency, adjustflag, timeout_sec: int = FETCH_PER_TICKER_TIMEOUT):
+    """为单个 fetch_kline 调用添加超时，避免 baostock 网络挂起导致 worker 永久阻塞。"""
+    inner = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = inner.submit(
+            provider.fetch_kline, ticker, start_date, end_date,
+            frequency=frequency, adjustflag=adjustflag,
+        )
+        try:
+            return future.result(timeout=timeout_sec)
+        except FuturesTimeoutError:
+            future.cancel()
+            raise TimeoutError(f"fetch_kline 超时 ({timeout_sec}s): {ticker}") from None
+    finally:
+        inner.shutdown(wait=False, cancel_futures=True)
+
+
 def fetch_and_append(
     factory,
     ticker: str,
@@ -130,8 +148,10 @@ def fetch_and_append(
             if provider is None:
                 continue
             # ETF 无复权概念，统一 adjustflag='1'（与缓存写入约定一致）
-            result = provider.fetch_kline(
-                ticker, start_date, end_date, frequency="d", adjustflag="1"
+            result = _fetch_kline_with_timeout(
+                provider, ticker, start_date, end_date,
+                frequency="d", adjustflag="1",
+                timeout_sec=FETCH_PER_TICKER_TIMEOUT,
             )
             if result is None or result.is_empty:
                 continue
@@ -294,7 +314,8 @@ def main() -> None:
         new_rows = 0
         batch_failed: list[tuple[str, str]] = []
 
-        with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+        executor = ThreadPoolExecutor(max_workers=WORKERS)
+        try:
             futures = {
                 executor.submit(fetch_and_append, factory, t, start_date, today): t for t in batch
             }
@@ -323,6 +344,10 @@ def main() -> None:
                     f"  批次 {batch_idx + 1}/{len(all_batches)} 超时兜底："
                     f"{len(timed_out)} 只未完成（疑似 baostock 会话挂起）"
                 )
+        finally:
+            # 不等待挂起的 future（baostock 会话卡住会导致永久等待），
+            # 仅取消尚未开始的 pending future，运行中的自行后台继续但不阻塞
+            executor.shutdown(wait=False, cancel_futures=True)
 
         elapsed = time.time() - t0
         total_ok += ok

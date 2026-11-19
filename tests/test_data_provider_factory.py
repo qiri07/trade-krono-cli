@@ -27,6 +27,7 @@ class TestDataProviderFactory:
             "tonghuashun",
             "efinance",
             "easyquotation",
+            "adk",
         ]
         assert factory.provider_chain == [
             "baostock",
@@ -37,6 +38,7 @@ class TestDataProviderFactory:
             "tonghuashun",
             "efinance",
             "easyquotation",
+            "adk",
         ]
 
     def test_custom_chain(self) -> None:
