@@ -26,7 +26,11 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import CACHE_DB, get_sqlite_conn, is_bse_or_hk
+from scripts._utils import CACHE_DB, get_cache_db_path, get_sqlite_conn, is_bse_or_hk
+from scripts.stock_name_cache import (
+    batch_get_cached_stock_names,
+    ensure_stock_name_table,
+)
 
 # ── 常量 ─────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -107,6 +111,71 @@ def get_db_latest_date(ticker: str) -> str | None:
     except Exception as e:
         logger.warning(f"⚠️  查询 {ticker} 最新日期失败: {e}")
         return None
+
+
+# ── 股票名称解析 ──────────────────────────────────────────────────
+
+_META_NAMES: dict[str, str] | None = None
+
+
+def _load_meta_names() -> dict[str, str]:
+    """一次性加载 metadata.json 中所有股票名称，作为名称缓存的兜底。
+
+    metadata.json 的 key 为带前缀 ticker（如 sh.600519），value 包含 name 字段。
+    """
+    global _META_NAMES
+    if _META_NAMES is not None:
+        return _META_NAMES
+    names: dict[str, str] = {}
+    meta_path = get_cache_db_path().parent / "metadata.json"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            for k, v in meta.items():
+                if isinstance(v, dict) and v.get("name"):
+                    names[k] = v["name"]
+        except (OSError, ValueError) as e:
+            logger.debug(f"读取 metadata.json 失败: {e}")
+    _META_NAMES = names
+    return names
+
+
+def _resolve_stock_names(symbols: list[str]) -> dict[str, str]:
+    """批量解析股票名称，优先本地 SQLite 缓存，缺失再从 metadata.json 兜底。
+
+    Args:
+        symbols: 带前缀 ticker 列表，如 ["sh.600519", "sz.000858"]。
+
+    Returns:
+        {symbol: name} 仅含有名称的映射。
+    """
+    names: dict[str, str] = {}
+    if not symbols:
+        return names
+    try:
+        conn = get_sqlite_conn(get_cache_db_path())
+        try:
+            ensure_stock_name_table(conn)
+            cached: dict[str, str] = {}
+            for i in range(0, len(symbols), 500):
+                batch = symbols[i : i + 500]
+                cached.update(batch_get_cached_stock_names(conn, batch))
+        finally:
+            conn.close()
+        for sym in symbols:
+            if sym in cached and cached[sym]:
+                names[sym] = cached[sym]
+    except Exception as e:
+        logger.debug(f"从本地名称缓存读取失败: {e}")
+
+    # metadata.json 兜底
+    meta_names = _load_meta_names()
+    for sym in symbols:
+        if sym not in names or not names[sym]:
+            nm = meta_names.get(sym, "")
+            if nm:
+                names[sym] = nm
+    return names
 
 
 def db_to_parquet_incremental() -> tuple[int, int]:
@@ -227,10 +296,16 @@ def run_screen(
 
     hits = [r for r in results if r["matched"]]
     out_csv = OUT_DIR / f"matched_{preset_name}_{datetime.now().strftime('%Y%m%d')}.csv"
+
+    # 批量解析命中股票的名称
+    hit_symbols = [r["symbol"] for r in hits]
+    name_map = _resolve_stock_names(hit_symbols)
+
     pd.DataFrame(
         [
             {
                 "symbol": r["symbol"],
+                "name": name_map.get(r["symbol"], ""),
                 "dt": r["dt"],
                 "close": r["close"],
                 "signals": json.dumps(r["signals"], ensure_ascii=False),
@@ -238,7 +313,7 @@ def run_screen(
             }
             for r in hits
         ],
-        columns=["symbol", "dt", "close", "signals", "matched_signals"],
+        columns=["symbol", "name", "dt", "close", "signals", "matched_signals"],
     ).to_csv(out_csv, index=False, encoding="utf-8-sig")
 
     return {
@@ -298,7 +373,7 @@ def daily_coverage(asof: str) -> dict:
 
 
 def _read_hit_details(csv_path: Path) -> list[dict]:
-    """读取命中股票详情（symbol / dt / close / signals / matched_signals）。"""
+    """读取命中股票详情（symbol / name / dt / close / signals / matched_signals）。"""
     if not csv_path.exists():
         return []
     rows: list[dict] = []
@@ -308,6 +383,7 @@ def _read_hit_details(csv_path: Path) -> list[dict]:
             rows.append(
                 {
                     "symbol": row.get("symbol", ""),
+                    "name": row.get("name", ""),
                     "dt": row.get("dt", ""),
                     "close": row.get("close", ""),
                     "signals": row.get("signals", ""),
@@ -355,10 +431,11 @@ def _build_czsc_feishu_content(date_str: str, r1: dict, r2: dict) -> str:
     lines.append(f"  命中：{r1['hits']}/{r1['universe']} 只，耗时 {r1['seconds']}s")
     details = _read_hit_details(Path(r1.get("output_csv", "")))
     if details:
-        lines.append("  命中股票（前 10 只，格式：代码 日期 收盘 信号键值）：")
+        lines.append("  命中股票（前 10 只，格式：代码 名称 日期 收盘 信号键值）：")
         for d in details[:10]:
             sig_keys = _format_matched_signals(d.get("matched_signals", ""))
-            lines.append(f"    - {d['symbol']} {d['dt']} 收盘 {d['close']} {sig_keys}")
+            name = d.get("name", "")
+            lines.append(f"    - {d['symbol']} {name} {d['dt']} 收盘 {d['close']} {sig_keys}")
         if len(details) > 10:
             lines.append(f"    ... 共 {len(details)} 只")
     lines.append("")
@@ -368,10 +445,11 @@ def _build_czsc_feishu_content(date_str: str, r1: dict, r2: dict) -> str:
     lines.append(f"  命中：{r2['hits']}/{r2['universe']} 只，耗时 {r2['seconds']}s")
     details = _read_hit_details(Path(r2.get("output_csv", "")))
     if details:
-        lines.append("  命中股票（前 10 只，格式：代码 日期 收盘 信号键值）：")
+        lines.append("  命中股票（前 10 只，格式：代码 名称 日期 收盘 信号键值）：")
         for d in details[:10]:
             sig_keys = _format_matched_signals(d.get("matched_signals", ""))
-            lines.append(f"    - {d['symbol']} {d['dt']} 收盘 {d['close']} {sig_keys}")
+            name = d.get("name", "")
+            lines.append(f"    - {d['symbol']} {name} {d['dt']} 收盘 {d['close']} {sig_keys}")
         if len(details) > 10:
             lines.append(f"    ... 共 {len(details)} 只")
     lines.append("")

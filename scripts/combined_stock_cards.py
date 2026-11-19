@@ -59,22 +59,37 @@ def _load_meta_names() -> dict[str, str]:
 def _get_stock_name_from_metadata(ticker: str) -> str:
     """获取股票名称，优先本地 SQLite 缓存，缺失再从 metadata.json 兜底。
 
+    同时尝试带前缀（sh./sz.）和裸代码两种 key 格式，确保能命中缓存：
+    SQLite 缓存 key 为带前缀 ticker（如 sh.600519），而调用方可能传入裸代码（如 600519）。
+
     作为 analyze_stock 返回 name 为空时的兜底。
     """
+    # 构造要尝试的 key：原样、加 sh. 前缀、加 sz. 前缀
+    keys: list[str] = [ticker]
+    if not ticker.startswith(("sh.", "sz.", "bj.", "hk.")):
+        keys.extend([f"sh.{ticker}", f"sz.{ticker}"])
+
     # 1. 优先本地 SQLite 名称缓存（命中不联网，实现「每日仅补漏」）
     try:
         _conn = get_sqlite_conn(get_cache_db_path())
         try:
             ensure_stock_name_table(_conn)
-            name = get_cached_stock_name(_conn, ticker)
-            if isinstance(name, str) and name:
-                return name
+            for key in keys:
+                name = get_cached_stock_name(_conn, key)
+                if isinstance(name, str) and name:
+                    return name
         finally:
             _conn.close()
     except Exception as e:
         logger.debug(f"{ticker} 从本地名称缓存读取失败: {e}")
-    # 2. 从 metadata.json 兜底
-    return _load_meta_names().get(ticker, "")
+
+    # 2. 从 metadata.json 兜底（已同时索引带前缀和裸代码）
+    meta_names = _load_meta_names()
+    for key in keys:
+        name = meta_names.get(key, "")
+        if name:
+            return name
+    return ""
 
 
 def _build_stock_card(cand: StockCandidate, date_str: str, ai_note: str = "") -> str:
