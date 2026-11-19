@@ -26,11 +26,8 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import CACHE_DB, get_cache_db_path, get_sqlite_conn, is_bse_or_hk
-from scripts.stock_name_cache import (
-    batch_get_cached_stock_names,
-    ensure_stock_name_table,
-)
+from scripts._utils import CACHE_DB, get_sqlite_conn, is_bse_or_hk
+from scripts.stock_name_cache import resolve_stock_names
 
 # ── 常量 ─────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -111,71 +108,6 @@ def get_db_latest_date(ticker: str) -> str | None:
     except Exception as e:
         logger.warning(f"⚠️  查询 {ticker} 最新日期失败: {e}")
         return None
-
-
-# ── 股票名称解析 ──────────────────────────────────────────────────
-
-_META_NAMES: dict[str, str] | None = None
-
-
-def _load_meta_names() -> dict[str, str]:
-    """一次性加载 metadata.json 中所有股票名称，作为名称缓存的兜底。
-
-    metadata.json 的 key 为带前缀 ticker（如 sh.600519），value 包含 name 字段。
-    """
-    global _META_NAMES
-    if _META_NAMES is not None:
-        return _META_NAMES
-    names: dict[str, str] = {}
-    meta_path = get_cache_db_path().parent / "metadata.json"
-    if meta_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            for k, v in meta.items():
-                if isinstance(v, dict) and v.get("name"):
-                    names[k] = v["name"]
-        except (OSError, ValueError) as e:
-            logger.debug(f"读取 metadata.json 失败: {e}")
-    _META_NAMES = names
-    return names
-
-
-def _resolve_stock_names(symbols: list[str]) -> dict[str, str]:
-    """批量解析股票名称，优先本地 SQLite 缓存，缺失再从 metadata.json 兜底。
-
-    Args:
-        symbols: 带前缀 ticker 列表，如 ["sh.600519", "sz.000858"]。
-
-    Returns:
-        {symbol: name} 仅含有名称的映射。
-    """
-    names: dict[str, str] = {}
-    if not symbols:
-        return names
-    try:
-        conn = get_sqlite_conn(get_cache_db_path())
-        try:
-            ensure_stock_name_table(conn)
-            cached: dict[str, str] = {}
-            for i in range(0, len(symbols), 500):
-                batch = symbols[i : i + 500]
-                cached.update(batch_get_cached_stock_names(conn, batch))
-        finally:
-            conn.close()
-        for sym in symbols:
-            if sym in cached and cached[sym]:
-                names[sym] = cached[sym]
-    except Exception as e:
-        logger.debug(f"从本地名称缓存读取失败: {e}")
-
-    # metadata.json 兜底
-    meta_names = _load_meta_names()
-    for sym in symbols:
-        if sym not in names or not names[sym]:
-            nm = meta_names.get(sym, "")
-            if nm:
-                names[sym] = nm
-    return names
 
 
 def db_to_parquet_incremental() -> tuple[int, int]:
@@ -297,9 +229,13 @@ def run_screen(
     hits = [r for r in results if r["matched"]]
     out_csv = OUT_DIR / f"matched_{preset_name}_{datetime.now().strftime('%Y%m%d')}.csv"
 
-    # 批量解析命中股票的名称
+    # 批量解析命中股票的名称（复用 stock_name_cache.resolve_stock_names）
     hit_symbols = [r["symbol"] for r in hits]
-    name_map = _resolve_stock_names(hit_symbols)
+    _conn = get_sqlite_conn(CACHE_DB)
+    try:
+        name_map = resolve_stock_names(_conn, hit_symbols)
+    finally:
+        _conn.close()
 
     pd.DataFrame(
         [

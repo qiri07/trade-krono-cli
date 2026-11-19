@@ -42,6 +42,21 @@ from scripts.fill_missing.report import fetch_missing_report, print_missing_repo
 from trade_krono_cli.data_providers.factory import get_data_factory
 
 
+def _is_eligible_ticker(ticker: str) -> bool:
+    """判断 ticker 是否在 fill_missing 的拉取范围内。
+
+    ETF 由 scripts/etf_history_sync.py 统一拉取，在此剔除；北交所（bj.）
+    与选股流程保持一致剔除；港股（hk.）放行，供用户补拉港股数据。
+
+    Args:
+        ticker: 带交易所前缀的 ticker，如 "sh.600519" / "hk.00700" / "bj.920001"。
+
+    Returns:
+        True 表示应由本脚本拉取，False 表示剔除。
+    """
+    return not is_etf_ticker(ticker) and not is_bse_code(ticker.split(".")[-1])
+
+
 def main(
     plan_path: str | None = None,
     dry_run: bool = False,
@@ -104,12 +119,8 @@ def main(
     # 港股由 akshare_hk 逐只拉取，单只较慢且常需重试，但用户明确要求补拉，
     # 故放行港股；北交所（bj.）保持剔除，保持与选股流程一致。
     n_plan = len(plan_failed) + len(plan_need_today)
-    plan_failed = [
-        t for t in plan_failed if not is_etf_ticker(t) and not is_bse_code(t.split(".")[-1])
-    ]
-    plan_need_today = [
-        t for t in plan_need_today if not is_etf_ticker(t) and not is_bse_code(t.split(".")[-1])
-    ]
+    plan_failed = [t for t in plan_failed if _is_eligible_ticker(t)]
+    plan_need_today = [t for t in plan_need_today if _is_eligible_ticker(t)]
     if skipped := n_plan - len(plan_failed) - len(plan_need_today):
         print(f"ℹ️  剔除 {skipped} 只 ETF/北交所（不在本脚本拉取范围）")
 
@@ -137,9 +148,7 @@ def main(
     failed_before = len(failed_tickers)
     # ETF 不在本脚本拉取范围（由 etf_history_sync.py 统一拉取）；
     # 港股放行（用户要求补拉港股数据）；北交所保持剔除。
-    failed_tickers = [
-        t for t in failed_tickers if not is_etf_ticker(t) and not is_bse_code(t.split(".")[-1])
-    ]
+    failed_tickers = [t for t in failed_tickers if _is_eligible_ticker(t)]
     # 增量跳过：跳过已有足够历史数据的 ticker（避免中断重启后重复拉取）
 
     failed_tickers = [t for t in failed_tickers if not _has_sufficient_history(t)]
@@ -151,8 +160,7 @@ def main(
         for t in failed_tickers_cache
         if t not in completed_tickers
         and t not in failed_tickers
-        and not is_etf_ticker(t)
-        and not is_bse_code(t.split(".")[-1])
+        and _is_eligible_ticker(t)
     ]
     if retry_failed:
         failed_tickers.extend(retry_failed)
@@ -226,9 +234,7 @@ def main(
     """
     )
     need_today_from_db = [
-        r[0]
-        for r in cur.fetchall()
-        if not is_etf_ticker(r[0]) and not is_bse_code(r[0].split(".")[-1])
+        r[0] for r in cur.fetchall() if _is_eligible_ticker(r[0])
     ]
     conn.close()
 

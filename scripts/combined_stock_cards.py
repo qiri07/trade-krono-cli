@@ -64,10 +64,10 @@ def _get_stock_name_from_metadata(ticker: str) -> str:
 
     作为 analyze_stock 返回 name 为空时的兜底。
     """
-    # 构造要尝试的 key：原样、加 sh. 前缀、加 sz. 前缀
+    # 构造要尝试的 key：原样、加 sh. 前缀、加 sz. 前缀、加 bj. 前缀
     keys: list[str] = [ticker]
     if not ticker.startswith(("sh.", "sz.", "bj.", "hk.")):
-        keys.extend([f"sh.{ticker}", f"sz.{ticker}"])
+        keys.extend([f"sh.{ticker}", f"sz.{ticker}", f"bj.{ticker}"])
 
     # 1. 优先本地 SQLite 名称缓存（命中不联网，实现「每日仅补漏」）
     try:

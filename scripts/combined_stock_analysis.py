@@ -56,6 +56,89 @@ from trade_krono_cli.research_db import get_research  # noqa: PLC0415
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _build_candidate_entry(c: StockCandidate) -> dict[str, object]:
+    """构造单只候选的 JSON 条目。
+
+    已做技术分析的候选包含完整 tech/fund/kronos/backtest 字段；
+    未做技术分析的候选（超出 max_analyze 范围）仅补 code/name/hit_count/sources。
+
+    Args:
+        c: 交集候选股票。
+
+    Returns:
+        可直接落盘的 dict 条目。
+    """
+    entry: dict[str, object] = {
+        "code": c.code,
+        "hit_count": c.hit_count,
+        "sources": list(c.sources),
+    }
+    if c.analysis is not None:
+        entry.update(
+            {
+                **c.tech.to_payload(),
+                **c.fund.to_payload(),
+                "kronos": c.kronos_view.to_payload() if c.kronos is not None else None,
+                "backtest": (
+                    c.backtest.to_payload() if c.backtest is not None else None
+                ),
+            }
+        )
+    else:
+        # 未做技术分析：仅补名称，其余字段留空/默认
+        entry["name"] = _get_stock_name_from_metadata(c.code) or ""
+        entry["trend"] = ""
+        entry["ma_signal"] = ""
+        entry["vol_signal"] = ""
+        entry["score"] = 0
+        entry["close"] = None
+        entry["ma5"] = None
+        entry["pe_ttm"] = None
+        entry["pb"] = None
+        entry["valuation_score"] = None
+        entry["valuation_conclusion"] = ""
+        entry["kronos"] = None
+        entry["backtest"] = None
+    return entry
+
+
+def _write_intersection_json(
+    cands: list[StockCandidate],
+    analyzed: list[StockCandidate],
+    source_sets: dict[str, set[str]],
+    args: argparse.Namespace,
+    out_file: Path,
+) -> None:
+    """构造并写出交集汇总 JSON（所有候选均包含，未分析的补名称）。
+
+    kronos / backtest 字段在 Step 5.5/5.6 之后已填充。
+
+    Args:
+        cands: 全量交集候选（已按命中条数排序）。
+        analyzed: 已做技术分析的候选子集。
+        source_sets: 各选股线命中代码集合。
+        args: CLI 参数解析结果。
+        out_file: 汇总 JSON 输出路径。
+    """
+    # 按交集次数降序排列，与飞书卡片展示顺序一致
+    all_cands = sorted(cands, key=lambda c: -c.hit_count)
+    out_payload = {
+        "date": args.date,
+        "min_sources": args.min_sources,
+        "source_counts": {k: len(v) for k, v in source_sets.items()},
+        "intersection_total": len(cands),
+        "analyzed_count": len(analyzed),
+        "analyzed": [_build_candidate_entry(c) for c in all_cands],
+    }
+    out_file.write_text(
+        json.dumps(out_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    logger.info(
+        f"💾 结果已保存: {out_file} （{len(all_cands)} 只候选，其中 {len(analyzed)} 只已技术分析）"
+    )
+
+
 def main() -> None:
     """主流程：汇总交集 → 技术分析 → AI 核实 → 飞书推送。"""
     parser = argparse.ArgumentParser(description="综合选股交集分析 + 飞书推送")
@@ -249,66 +332,6 @@ def main() -> None:
     out_file = Path(get_settings().results_dir) / f"combined_intersection_{dc}.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
-    def _candidate_entry(c: StockCandidate) -> dict[str, object]:
-        """构造单只候选的 JSON 条目。
-
-        已做技术分析的候选包含完整 tech/fund/kronos/backtest 字段；
-        未做技术分析的候选（超出 max_analyze 范围）仅补 code/name/hit_count/sources。
-        """
-        entry: dict[str, object] = {
-            "code": c.code,
-            "hit_count": c.hit_count,
-            "sources": list(c.sources),
-        }
-        if c.analysis is not None:
-            entry.update(
-                {
-                    **c.tech.to_payload(),
-                    **c.fund.to_payload(),
-                    "kronos": c.kronos_view.to_payload() if c.kronos is not None else None,
-                    "backtest": (
-                        c.backtest.to_payload() if c.backtest is not None else None
-                    ),
-                }
-            )
-        else:
-            # 未做技术分析：仅补名称，其余字段留空/默认
-            entry["name"] = _get_stock_name_from_metadata(c.code) or ""
-            entry["trend"] = ""
-            entry["ma_signal"] = ""
-            entry["vol_signal"] = ""
-            entry["score"] = 0
-            entry["close"] = None
-            entry["ma5"] = None
-            entry["pe_ttm"] = None
-            entry["pb"] = None
-            entry["valuation_score"] = None
-            entry["valuation_conclusion"] = ""
-            entry["kronos"] = None
-            entry["backtest"] = None
-        return entry
-
-    def _write_intersection_json() -> None:
-        """构造并写出交集汇总 JSON（所有候选均包含，未分析的补名称）。
-
-        kronos / backtest 字段在 Step 5.5/5.6 之后已填充。
-        """
-        # 按交集次数降序排列，与飞书卡片展示顺序一致
-        all_cands = sorted(cands, key=lambda c: -c.hit_count)
-        out_payload = {
-            "date": args.date,
-            "min_sources": args.min_sources,
-            "source_counts": {k: len(v) for k, v in source_sets.items()},
-            "intersection_total": len(cands),
-            "analyzed_count": len(analyzed),
-            "analyzed": [_candidate_entry(c) for c in all_cands],
-        }
-        out_file.write_text(
-            json.dumps(out_payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        logger.info(f"💾 结果已保存: {out_file} （{len(all_cands)} 只候选，其中 {len(analyzed)} 只已技术分析）")
-
     # ── Step 5: AI 核实（聚合交集 + 多线共振视角）────────────────
     logger.info("🤖 启动 AI 核实...")
     ai_summary = ""
@@ -345,7 +368,7 @@ def main() -> None:
         attach_backtest(analyzed, args.date, args.backtest_days, args.backtest_horizon)
 
     # ── Step 5.7: 写出汇总 JSON（含 kronos / backtest 字段）────
-    _write_intersection_json()
+    _write_intersection_json(cands, analyzed, source_sets, args, out_file)
 
     # ── Step 6: 飞书推送（汇总 + 逐只）───────────────────────────
     if args.push:

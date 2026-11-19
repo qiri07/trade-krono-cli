@@ -36,8 +36,6 @@ ASTOCK_LIQUIDITY_RULES = {
     "min_avg_turnover_rate_12m": 0.1,  # %
     # 最新总市值 >= 5,000,000,000 元（50 亿元人民币，与 _utils.MIN_MARKET_CAP_YI 一致）
     "min_market_cap": 5_000_000_000.0,  # 元
-    # 近 12 个月累计成交额/总市值 >= 50%
-    "min_turnover_to_market_cap_ratio_12m": 0.50,  # 50%
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -47,8 +45,6 @@ ASTOCK_LIQUIDITY_RULES = {
 ASTOCK_FUNDAMENTAL_RULES = {
     # 资产负债率 <= 80%
     "max_debt_to_asset": 0.80,
-    # 经营活动现金流净额：近 3 年累计值 > 0
-    "require_operating_cashflow_positive_3y": True,
     # 主业毛利率 >= 10%
     "min_gross_margin": 0.10,
     # 近 3 年平均 ROE >= 15%

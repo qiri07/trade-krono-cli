@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any  # 值类型混杂（float/int/bool/str/None），使用 Any 避免冗余 Union
@@ -102,18 +103,11 @@ class AStockScreenResult:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _fetch_kline_window(ticker: str, end_date: str, days: int) -> pd.DataFrame | None:
-    """从缓存读取最近 days 个交易日的日线数据。"""
-    start = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=days + 10)).strftime(
-        "%Y-%m-%d"
-    )
-    conn = get_sqlite_conn(CACHE_DB)
-    try:
-        row = conn.execute(
-            "SELECT data FROM kline_cache WHERE ticker = ?", (ticker,)
-        ).fetchone()
-    finally:
-        conn.close()
+def _load_kline_full(conn: sqlite3.Connection, ticker: str) -> pd.DataFrame | None:
+    """从缓存读取该 ticker 的完整日线数据（已按日期升序排列，复用传入连接）。"""
+    row = conn.execute(
+        "SELECT data FROM kline_cache WHERE ticker = ?", (ticker,)
+    ).fetchone()
     if not row:
         return None
     try:
@@ -128,8 +122,26 @@ def _fetch_kline_window(ticker: str, end_date: str, days: int) -> pd.DataFrame |
     ts_col = "timestamps" if "timestamps" in df.columns else "date"
     df[ts_col] = pd.to_datetime(df[ts_col])
     df = df.sort_values(ts_col).reset_index(drop=True)
+    return df
+
+
+def _window_kline(df: pd.DataFrame | None, end_date: str, days: int) -> pd.DataFrame | None:
+    """从已加载的完整日线中截取最近 days 个交易日的窗口。"""
+    if df is None or df.empty:
+        return None
+    start = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=days + 10)).strftime(
+        "%Y-%m-%d"
+    )
+    ts_col = "timestamps" if "timestamps" in df.columns else "date"
     mask = (df[ts_col] >= pd.Timestamp(start)) & (df[ts_col] <= pd.Timestamp(end_date))
     return df.loc[mask].reset_index(drop=True)
+
+
+def _fetch_kline_window(
+    conn: sqlite3.Connection, ticker: str, end_date: str, days: int
+) -> pd.DataFrame | None:
+    """从缓存读取最近 days 个交易日的日线数据（复用传入的连接，不再每只股票开关连接）。"""
+    return _window_kline(_load_kline_full(conn, ticker), end_date, days)
 
 
 def _compute_technical_from_kline(df: pd.DataFrame | None) -> dict[str, Any]:  # 值类型混杂，Any 为合理
@@ -316,8 +328,10 @@ def screen_a_stock_candidates(
 
     results: dict[str, AStockScreenResult] = {}
 
-    for code in codes:
-        ticker = normalize_ticker_key(code)
+    conn = get_sqlite_conn(CACHE_DB)
+    try:
+        for code in codes:
+            ticker = normalize_ticker_key(code)
         bare = strip_ticker_prefix(ticker)
 
         meta = metadata.get(ticker) or metadata.get(bare) or {}
@@ -332,8 +346,10 @@ def screen_a_stock_candidates(
         is_bse = is_bse_code(bare)
         is_st = bool(meta.get("is_st")) or is_st_name(name)
 
-        # 从 K 线读取：最近 30 日（覆盖 20 日均量 + 30 日停牌）
-        kline = _fetch_kline_window(ticker, date_str, days=30)
+        # 从 K 线读取：完整历史（用于上市时长）及最近 30 日窗口（用于流动性/停牌）
+        df_full = _load_kline_full(conn, ticker)
+        listing_days = int(len(df_full)) if df_full is not None else None
+        kline = _window_kline(df_full, date_str, days=30)
         tech = _compute_technical_from_kline(kline)
 
         result = AStockScreenResult(
@@ -350,9 +366,12 @@ def screen_a_stock_candidates(
             is_st=is_st,
             is_etf=is_etf,
             is_bse=is_bse,
+            listing_days=listing_days,
             suspension_days_30d=tech.get("suspension_days_30d", 0),
         )
         results[code] = result
+    finally:
+        conn.close()
 
     # 统计通过规则
     passed_codes: list[str] = []
