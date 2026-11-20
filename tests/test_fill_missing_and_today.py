@@ -461,3 +461,40 @@ class TestFetchTodayIncrementalFallback:
         )
         assert provider == "ok"
         assert n_rows == 1
+
+
+class TestFetchTodayIncrementalUsesExpectedTradingDay:
+    """fetch_today_incremental 以「应已落库的最近交易日」为终点，而非原始今日。"""
+
+    def test_requests_expected_trading_day_with_lookback(self, monkeypatch) -> None:
+        """开盘前/盘中运行时按 expected_trading_day 拉取并回看窗口，避免当日无数据空拉。
+
+        回归：此前用 get_today_date()（原始今日）作为起止，开盘前当日 K 线尚不存在，
+        导致全部标的返回空、触发 3 次 × 10s 无谓重试。
+        """
+        captured: dict[str, str] = {}
+
+        class _RecordingProvider:
+            def fetch_kline(
+                self,
+                ticker: str,
+                start_date: str,
+                end_date: str,
+                frequency: str = "d",
+                adjustflag: str = "1",
+            ) -> KlineData | None:
+                captured["start"] = start_date
+                captured["end"] = end_date
+                return _make_kline()
+
+        factory = SimpleNamespace(get_provider=lambda name: _RecordingProvider())
+        monkeypatch.setattr(
+            "scripts.fill_missing.fetch.get_expected_date", lambda: "2026-11-19"
+        )
+        provider, n_rows, detail = fmat.fetch_today_incremental(
+            factory, "sh.600519", ["rec"]
+        )
+        assert provider == "rec"
+        assert captured["end"] == "2026-11-19"
+        assert captured["start"] == "2026-11-09"
+

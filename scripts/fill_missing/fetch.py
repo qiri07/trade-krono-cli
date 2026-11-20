@@ -7,13 +7,14 @@
 from __future__ import annotations
 
 import threading
+from datetime import datetime, timedelta
 from typing import Any
 
 import pandas as pd
 
 from scripts.fill_missing.constants import FETCH_TIMEOUT as _DEFAULT_FETCH_TIMEOUT
-from scripts.fill_missing.constants import START_DATE
-from scripts.fill_missing.dates import get_today_date
+from scripts.fill_missing.constants import INCREMENTAL_LOOKBACK_DAYS, START_DATE
+from scripts.fill_missing.dates import get_expected_date, get_today_date
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.data_providers.base import KlineData
 
@@ -146,11 +147,14 @@ def fetch_today_incremental(
     provider_chain: list[str],
     fetch_timeout: float = _DEFAULT_FETCH_TIMEOUT,
 ) -> tuple[str, int, str]:
-    """拉取今日增量数据（provider 级超时后自动降级尝试下一个 provider）。
+    """拉取增量数据（provider 级超时后自动降级尝试下一个 provider）。
 
-    今日 K 线会追加到现有历史行，而非新建独立的今日行：
-    读取该 ticker 从 START_DATE 起至今的全部 K 线（含历史行与已有今日行），
-    与今日数据合并去重后写回单条记录。
+    以「应已落库的最近交易日」(:func:`get_expected_date`) 为终点，向前回看
+    ``INCREMENTAL_LOOKBACK_DAYS`` 天拉取窗口，用于补齐最新交易日以及中间可能
+    缺失的交易日（数据源滞后时单日窗口会留下空洞）。
+
+    新拉取的 K 线会与现有历史行合并去重后写回单条记录（按 timestamps 去重，
+    保留最新值），重复拉取已有交易日是幂等的。
 
     Args:
         factory: DataProviderFactory 实例。
@@ -165,14 +169,21 @@ def fetch_today_incremental(
     result_container: list[tuple[str, int, str]] = []
     error_container: list[str] = []
 
+    # 终点取「应已落库的最近交易日」而非原始今日：开盘前/盘中运行时当日 K 线尚不存在，
+    # 若按今日拉取会全部返回空、触发无谓重试。回看窗口可顺带补齐中间缺失交易日。
+    end_date = get_expected_date()
+    start_date = (
+        datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=INCREMENTAL_LOOKBACK_DAYS)
+    ).strftime("%Y-%m-%d")
+
     def _fetch() -> None:
         for provider_name in provider_chain:
             result, error, timed_out = _fetch_kline_provider(
                 factory,
                 ticker,
                 provider_name,
-                get_today_date(),
-                get_today_date(),
+                start_date,
+                end_date,
                 fetch_timeout=fetch_timeout,
             )
             if timed_out:
@@ -188,11 +199,11 @@ def fetch_today_incremental(
             if len(df) == 0:
                 continue
             cache = get_cache()
-            # 把今日 K 线追加到现有历史行，而非新建独立的今日行：
-            # 读取该 ticker 从 START_DATE 起至今的全部 K 线（含历史行与已有今日行），
-            # 与今日数据合并去重后写回单条记录。
+            # 把新拉取的增量 K 线追加到现有历史行，而非新建独立记录：
+            # 读取该 ticker 从 START_DATE 起至预期交易日的全部 K 线（含历史行与已有今日行），
+            # 与增量数据合并去重后写回单条记录。
             combined = df
-            existing = cache.get_kline(ticker, START_DATE, get_today_date(), "d", "1")
+            existing = cache.get_kline(ticker, START_DATE, end_date, "d", "1")
             if existing is not None and len(existing) > 0:
                 # 统一 timestamps 为 datetime，避免 str 与 datetime64 混型导致排序崩溃
                 existing = existing.copy()
