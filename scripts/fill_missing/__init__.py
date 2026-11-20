@@ -21,6 +21,7 @@ from scripts.fill_missing.constants import (
     CACHE_DB,
     FAILED_MIN_RECORDS,
     FETCH_TIMEOUT,
+    FULL_HISTORY_START,
     PROGRESS_FILE,
     PROGRESS_FLUSH_EVERY,
     START_DATE,
@@ -31,6 +32,7 @@ from scripts.fill_missing.db_queries import (
     _has_sufficient_history,
     _has_today_data,
     get_failed_tickers,
+    get_insufficient_history_tickers,
     get_today_only_tickers,
 )
 from scripts.fill_missing.fetch import (
@@ -58,6 +60,7 @@ __all__ = [
     "PROGRESS_FILE",
     "PROGRESS_FLUSH_EVERY",
     "FAILED_MIN_RECORDS",
+    "FULL_HISTORY_START",
     # progress
     "_load_completed_tickers",
     "_load_failed_tickers",
@@ -74,6 +77,7 @@ __all__ = [
     "_has_sufficient_history",
     "_has_today_data",
     "get_failed_tickers",
+    "get_insufficient_history_tickers",
     "get_today_only_tickers",
     # fetch
     "_fetch_kline_provider",

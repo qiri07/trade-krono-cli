@@ -95,13 +95,7 @@ class TestMainFlags:
         plan = tmp_path / "plan.json"
         plan.write_text(
             json.dumps(
-                {
-                    "plan": {
-                        "fetch_kline": {
-                            "reasons": {"failed": ["sh.600519"], "need_today": []}
-                        }
-                    }
-                }
+                {"plan": {"fetch_kline": {"reasons": {"failed": ["sh.600519"], "need_today": []}}}}
             ),
             encoding="utf-8",
         )
@@ -112,16 +106,24 @@ class TestMainFlags:
     def test_main_no_plan_full_flow_smoke(self, monkeypatch) -> None:
         """完整主流程（非 dry-run、无计划）冒烟：确认 main() 走通到汇总打印。
 
-        通过 mock 掉「全库扫描 + 网络拉取」相关函数，使流程可在测试环境无 DB /
-        无网络跑通，验证 main() 的编排逻辑（补历史 + 补今日 + 汇总）无异常。
-        """
-        import scripts.fill_missing_and_today as fmat
+        通过 mock 掉「全库扫描 + 网络拉取 + 进度文件」相关函数，使流程可在测试环境
+        无 DB / 无网络 / 不写生产进度文件跑通，验证 main() 的编排逻辑
+        （补历史 + 补今日 + 汇总）无异常。
 
-        # mock 全库扫描 / 报告，避免触碰真实 DB
-        monkeypatch.setattr(fmat, "get_data_factory", lambda: object())
-        monkeypatch.setattr(fmat, "fetch_missing_report", lambda: {"today": "2026-10-30"})
-        monkeypatch.setattr(fmat, "print_missing_report", lambda r: None)
-        monkeypatch.setattr(fmat, "get_failed_tickers", lambda: [])
+        注意：``main()`` 实现在 ``scripts.fill_missing.cli`` 中，调用的是该模块
+        自己导入的名字，只 patch 兼容层 ``scripts.fill_missing_and_today`` 不会生效，
+        会退化成真实网络拉取（每次 45s 超时 + 3×10s 重试）。
+        """
+        import scripts.fill_missing.cli as cli
+
+        # mock 全库扫描 / 报告 / 进度文件，避免触碰真实 DB、网络与生产进度文件
+        monkeypatch.setattr(cli, "get_data_factory", lambda: object())
+        monkeypatch.setattr(cli, "fetch_missing_report", lambda: {"today": "2026-10-30"})
+        monkeypatch.setattr(cli, "print_missing_report", lambda r: None)
+        monkeypatch.setattr(cli, "get_failed_tickers", lambda: [])
+        monkeypatch.setattr(cli, "_load_completed_tickers", lambda: set())
+        monkeypatch.setattr(cli, "_load_failed_tickers", lambda: set())
+        monkeypatch.setattr(cli, "_flush_completed", lambda *a, **k: None)
 
         # mock 今日查询 SQL（main 内联的 sqlite3.connect）与拉取函数
         import sqlite3
@@ -160,8 +162,8 @@ class TestMainFlags:
             called["today"] += 1
             return ("baostock", 0, "")
 
-        monkeypatch.setattr(fmat, "fetch_full_range", _fake_full)
-        monkeypatch.setattr(fmat, "fetch_today_incremental", _fake_today)
+        monkeypatch.setattr(cli, "fetch_full_range", _fake_full)
+        monkeypatch.setattr(cli, "fetch_today_incremental", _fake_today)
 
         # 备份在写入前触发；此处替换掉真实备份，避免触碰 DB（sqlite3.connect 已被 mock）
         backup_calls = {"n": 0}
@@ -212,35 +214,33 @@ class TestMainFlags:
         main(plan_path=str(plan), dry_run=True)
         assert scanned["called"] is False, "--plan 模式不得触发全库扫描"
 
-    def test_get_failed_tickers_uses_db(self, monkeypatch) -> None:
-        """get_failed_tickers 查询 DB（默认路径，非计划）。"""
+    def test_get_failed_tickers_uses_db(self, monkeypatch, tmp_path) -> None:
+        """get_failed_tickers 读取 DB 并按真实 K 线根数判定（非表行数）。"""
+        import pickle
         import sqlite3
 
-        captured = {"called": False}
+        import pandas as pd
 
-        class _FakeConn:
-            def connect(self, *a, **k):
-                return self
+        from scripts.fill_missing import db_queries
 
-            def cursor(self):
-                captured["called"] = True
-                fake_cur = _FakeCursor()
-                return fake_cur
+        db = tmp_path / "pipeline_cache.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("CREATE TABLE kline_cache (ticker TEXT, start TEXT, end TEXT, data BLOB)")
+        dense = pd.DataFrame({"close": [1.0] * 120})
+        sparse = pd.DataFrame({"close": [1.0] * 5})
+        conn.execute(
+            "INSERT INTO kline_cache VALUES ('sh.600519', '2023-01-03', '2026-11-19', ?)",
+            (pickle.dumps(dense),),
+        )
+        conn.execute(
+            "INSERT INTO kline_cache VALUES ('sz.000001', '2026-10-15', '2026-11-19', ?)",
+            (pickle.dumps(sparse),),
+        )
+        conn.commit()
+        conn.close()
+        monkeypatch.setattr(db_queries, "CACHE_DB", db)
 
-            def close(self):
-                pass
-
-        class _FakeCursor:
-            def execute(self, *a, **k):
-                return self
-
-            def fetchall(self):
-                return [("sh.600519",), ("sz.000001",)]
-
-        monkeypatch.setattr(sqlite3, "connect", lambda *a, **k: _FakeConn())
-        result = get_failed_tickers()
-        assert captured["called"]
-        assert result == ["sh.600519", "sz.000001"]
+        assert get_failed_tickers() == ["sz.000001"]
 
 
 def _make_kline() -> KlineData:
@@ -488,13 +488,8 @@ class TestFetchTodayIncrementalUsesExpectedTradingDay:
                 return _make_kline()
 
         factory = SimpleNamespace(get_provider=lambda name: _RecordingProvider())
-        monkeypatch.setattr(
-            "scripts.fill_missing.fetch.get_expected_date", lambda: "2026-11-19"
-        )
-        provider, n_rows, detail = fmat.fetch_today_incremental(
-            factory, "sh.600519", ["rec"]
-        )
+        monkeypatch.setattr("scripts.fill_missing.fetch.get_expected_date", lambda: "2026-11-19")
+        provider, n_rows, detail = fmat.fetch_today_incremental(factory, "sh.600519", ["rec"])
         assert provider == "rec"
         assert captured["end"] == "2026-11-19"
         assert captured["start"] == "2026-11-09"
-

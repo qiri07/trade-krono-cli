@@ -26,6 +26,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from scripts.fill_missing import (  # noqa: F401, E402
     CACHE_DB,
     FAILED_MIN_RECORDS,
+    FULL_HISTORY_START,
     PROGRESS_FILE,
     PROGRESS_FLUSH_EVERY,
     START_DATE,
@@ -41,6 +42,7 @@ from scripts.fill_missing import (  # noqa: F401, E402
     fetch_missing_report,
     get_expected_date,
     get_failed_tickers,
+    get_insufficient_history_tickers,
     get_today_date,
     get_today_only_tickers,
     load_sync_plan,
@@ -84,9 +86,7 @@ def fetch_full_range(
     provider_chain: list[str],
 ) -> tuple[str, int, str]:
     """兼容层包装：从 fmat.FETCH_TIMEOUT 获取超时值。"""
-    return _inner_fetch_full_range(
-        factory, ticker, provider_chain, fetch_timeout=FETCH_TIMEOUT
-    )
+    return _inner_fetch_full_range(factory, ticker, provider_chain, fetch_timeout=FETCH_TIMEOUT)
 
 
 def fetch_today_incremental(
@@ -109,6 +109,7 @@ __all__ = [
     "PROGRESS_FILE",
     "PROGRESS_FLUSH_EVERY",
     "FAILED_MIN_RECORDS",
+    "FULL_HISTORY_START",
     # progress
     "_load_completed_tickers",
     "_load_failed_tickers",
@@ -125,6 +126,7 @@ __all__ = [
     "_has_sufficient_history",
     "_has_today_data",
     "get_failed_tickers",
+    "get_insufficient_history_tickers",
     "get_today_only_tickers",
     "get_data_factory",
     # fetch

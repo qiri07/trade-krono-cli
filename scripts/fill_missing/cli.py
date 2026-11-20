@@ -158,9 +158,7 @@ def main(
     retry_failed = [
         t
         for t in failed_tickers_cache
-        if t not in completed_tickers
-        and t not in failed_tickers
-        and _is_eligible_ticker(t)
+        if t not in completed_tickers and t not in failed_tickers and _is_eligible_ticker(t)
     ]
     if retry_failed:
         failed_tickers.extend(retry_failed)
@@ -233,15 +231,14 @@ def main(
         ORDER BY ticker
     """
     )
-    need_today_from_db = [
-        r[0] for r in cur.fetchall() if _is_eligible_ticker(r[0])
-    ]
+    need_today_from_db = [r[0] for r in cur.fetchall() if _is_eligible_ticker(r[0])]
     conn.close()
 
     # 合并计划中的 need_today 与数据库动态查询结果（取并集，避免计划缺失导致漏补）
     need_today_set = set(need_today_from_db)
     if plan_path:
         need_today_set.update(plan_need_today)
+
     # 按市场前缀排序：优先处理 A 股（sh./sz.），然后是北交所（bj.），最后是港股（hk.）
     # 避免按字典序导致港股（hk.*）排在最前，A 股数据长时间无法拉取
     def _market_sort_key(t: str) -> tuple[int, str]:

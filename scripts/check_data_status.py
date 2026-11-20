@@ -24,7 +24,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts._utils import (
-    FAILED_MIN_RECORDS,
     _get_expected_date,
     get_cache_db_path,
     get_sqlite_conn,
@@ -33,6 +32,7 @@ from scripts.fetch_reference_data import (
     METADATA_FILE,
     metadata_age_hours,
 )
+from scripts.fill_missing.db_queries import get_insufficient_history_tickers
 
 CACHE_DB = get_cache_db_path()
 RESULTS_DIR = Path("outputs/results")
@@ -52,17 +52,8 @@ def _query_kline_status(today: str, expected_date: str) -> dict:
     cur.execute("SELECT MAX(end) FROM kline_cache")
     latest_date = cur.fetchone()[0] or ""
 
-    cur.execute(
-        """
-        SELECT ticker FROM kline_cache
-        WHERE ticker NOT LIKE 'bj.%'
-        GROUP BY ticker
-        HAVING COUNT(*) < ?
-        ORDER BY ticker
-        """,
-        (FAILED_MIN_RECORDS,),
-    )
-    failed_tickers = [r[0] for r in cur.fetchall()]
+    # 历史不足判定：按行内真实 K 线根数统计（而非表行数，每只票通常仅 1 行）
+    failed_tickers = get_insufficient_history_tickers(CACHE_DB)
 
     cur.execute(f"""
         SELECT DISTINCT ticker FROM kline_cache
@@ -188,8 +179,10 @@ def print_plan_summary(plan: dict) -> None:
     age_str = f"{meta['age_hours']:.1f}h" if meta["age_hours"] is not None else "不存在"
     print(f"  距上次更新: {age_str}（TTL {meta['ttl_hours']:.0f}h）")
     print(f"  是否过期:   {'✅' if not meta['is_stale'] else '❌'}")
-    print(f"  补拉计划:   K 线 {len(plan['plan']['fetch_kline']['tickers'])} 只，"
-          f"参考数据 {plan['plan']['fetch_metadata']['mode']}")
+    print(
+        f"  补拉计划:   K 线 {len(plan['plan']['fetch_kline']['tickers'])} 只，"
+        f"参考数据 {plan['plan']['fetch_metadata']['mode']}"
+    )
     print("=" * 65)
 
 
