@@ -48,6 +48,7 @@ app.add_typer(repo_app, name="repo")
 # 注册命令（显式装饰，避免模块级装饰器的循环导入问题）
 # ═══════════════════════════════════════════════════════
 from trade_krono_cli.cli_commands import (  # noqa: E402
+    a_stock_screen,
     clear_cache,
     eval_prediction,
     export_daily_pv,
@@ -85,6 +86,7 @@ app.command()(eval_prediction)
 app.command()(retry_failed)
 app.command()(rank_providers)
 app.command()(export_daily_pv)
+app.command()(a_stock_screen)
 
 
 # ═══════════════════════════════════════════════════════

@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+# A股筛选命令
+from trade_krono_cli.cli_commands.a_stock_screen import a_stock_screen
+
 # 共享工具函数（cli.py 和测试直接导入）
 from trade_krono_cli.cli_commands.core import (
     _build_degrade_overrides,
@@ -46,6 +49,7 @@ __all__ = [
     "_load_env",
     "_load_tickers",
     "_sanitize_path",
+    "a_stock_screen",
     "clear_cache",
     "eval_prediction",
     "export_daily_pv",

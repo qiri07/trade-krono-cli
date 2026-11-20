@@ -19,6 +19,8 @@ uv run trade-krono-cli run --tickers "600519,000858" --date 2026-08-11  # 一键
 uv run trade-krono-cli ta --tickers "600519"                           # 仅 TA 分析
 uv run trade-krono-cli kronos --tickers "600519"                       # 仅 Kronos 预测
 uv run trade-krono-cli sync-whitelist                  # 仅同步白名单股票
+uv run trade-krono-cli a-stock-screen --all              # A股流动性/市值/停牌/ST/北交所/ETF 硬过滤（全部缓存股票）
+uv run trade-krono-cli a-stock-screen --codes "600519,000858"  # 指定股票筛选
 uv run python tests/buffett_screen_parallel.py         # 巴菲特六闸门全量筛选（并行版，仅筛选+AI核实）
 uv run python scripts/buffett_daily.py                 # 巴菲特筛选+技术分析+逐只飞书推送（统一版，推荐）
 uv run python scripts/full_history_from_2015.py        # 全量历史同步（2015起，~30分钟）
