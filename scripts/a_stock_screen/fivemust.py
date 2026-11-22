@@ -342,7 +342,7 @@ def _eval_cond5_breakout(
 ) -> tuple[bool, str, float | None, float | None, None, None, None]:
     """条件 5：日K多头排列且向上突破。
 
-    MA5 > MA13，且收盘价 > MA5。
+    MA5 > MA13，收盘价 > MA5。
     """
     m_fast = int(rules["ma_fast"])
     m_mid13 = int(rules["ma13"])
