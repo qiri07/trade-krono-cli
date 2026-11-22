@@ -34,9 +34,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 from scripts._utils import CACHE_DB, get_sqlite_conn, is_bse_or_hk, is_etf_ticker  # noqa: E402
 
-# 收盘 + 数据落库缓冲时间：此刻之后当日 K 线应已可获取
+# 收盘时刻：此刻之后当日 K 线视为已落库（15:00 收盘即切换为当日）
 MARKET_CLOSE_HOUR = 15
-MARKET_CLOSE_MINUTE = 30
+MARKET_CLOSE_MINUTE = 0
 
 # 按 kline_cache.end 判定滞后时的分类顺序
 STALE_CATEGORIES: tuple[str, ...] = ("A股", "ETF", "北交所", "港股")
@@ -58,7 +58,7 @@ def _stale_category(ticker: str) -> str:
 def get_expected_date() -> str:
     """获取期望的缓存日期（此刻应已落库的最近交易日）。
 
-    收盘后（>= 15:30）期望当日数据；盘中或收盘前期望上一交易日。
+    收盘后（>= 15:00）期望当日数据；盘中或收盘前期望上一交易日。
     周末回退到最近的周五。
 
     Returns:

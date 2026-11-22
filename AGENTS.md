@@ -559,7 +559,7 @@ uv run python scripts/export_vnpy_data.py
 | `get_all_tickers()` | 从缓存数据库读取所有不重复 ticker |
 | `get_provider_chain(ticker)` | 根据股票类型返回 Provider 优先级链 |
 | `check_data_freshness(logger_fn)` | 检查 K 线缓存是否已更新至预期日期 |
-| `expected_trading_day(now=None)` | 期望交易日（收盘后>=15:30 当日；盘中/凌晨前一天；周末回退周五） |
+| `expected_trading_day(now=None)` | 期望交易日（收盘后>=15:00 当日；盘中/凌晨前一天；周末回退周五） |
 | `get_stale_tickers(expected_date)` | 按类别（A股/ETF/北交所/港股）返回未更新至预期日的滞后 ticker 清单 |
 | `is_bse_code(code)` | 判断 6 位裸代码是否为北交所（920 开头） |
 | `is_bse_or_hk(ticker)` | 判断带前缀 ticker 或裸代码是否为需排除的北交所/港股 |
@@ -576,7 +576,7 @@ uv run python scripts/export_vnpy_data.py
 | `ST_NAME_PREFIXES` | 新股（N）/次新（C）名称首字符前缀，仅完整规则用 |
 | `BSE_CODE_PREFIXES` / `BSE_TICKER_PREFIXES` | 北交所代码/前缀 |
 | `ETF_SH_PREFIXES` / `ETF_SZ_PREFIXES` | ETF 沪市段（5x，如 51/52/53/55/56/57/58 + 50x）/ 深市段（159/156/158） |
-| `MARKET_CLOSE_HOUR` / `MARKET_CLOSE_MINUTE` | 收盘时间（15:30），用于期望交易日判定 |
+| `MARKET_CLOSE_HOUR` / `MARKET_CLOSE_MINUTE` | 收盘时间（15:00），用于期望交易日判定 |
 | `STOCK_NAMES` | 白名单常用股票的 6 位代码 → 名称映射（`daily_analysis` 会动态补充） |
 | `PE_MAX_TECH` (30) | 技术面选股线 PE 上限（双均线 / MACD+均线 / 综合交集） |
 | `PE_MAX_VALUE` (16) | 价值线（巴菲特六闸门）PE 上限 |

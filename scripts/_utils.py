@@ -171,15 +171,15 @@ BSE_TICKER_PREFIXES: tuple[str, ...] = ("bj.",)
 # 历史 K 线记录数低于此值视为同步失败（历史数据严重不足），用于全量回补判定
 FAILED_MIN_RECORDS: int = 100
 
-# 收盘 + 落库缓冲：此刻之后当日 K 线应可获取
+# 收盘时刻：此刻之后当日 K 线视为已落库（15:00 收盘即切换为当日）
 MARKET_CLOSE_HOUR: int = 15
-MARKET_CLOSE_MINUTE: int = 30
+MARKET_CLOSE_MINUTE: int = 0
 
 
 def expected_trading_day(now: datetime | None = None) -> str:
     """返回此刻应已落库的最近交易日（YYYY-MM-DD）。
 
-    收盘后（>= 15:30）返回当日；盘中返回上一交易日；周末回退到周五。
+    收盘后（>= 15:00）返回当日；盘中返回上一交易日；周末回退到周五。
 
     Args:
         now: 用于测试注入的时间，缺省取 ``datetime.now()``。
@@ -646,7 +646,7 @@ def get_provider_chain(ticker: str) -> list[str]:
 
 
 def _get_expected_date() -> str:
-    """计算期望的缓存日期（最近交易日，收盘后 ≥15:30 返回当日，盘中返回上一交易日，周末回退到周五）。
+    """计算期望的缓存日期（最近交易日，收盘后 ≥15:00 返回当日，盘中返回上一交易日，周末回退到周五）。
 
     与 :func:`expected_trading_day` 口径保持一致，避免 check_data_status /
     retry_missing_history / data_backfill / check_data_freshness 与 flow_runner /
