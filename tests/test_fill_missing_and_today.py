@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+import warnings
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -493,3 +494,68 @@ class TestFetchTodayIncrementalUsesExpectedTradingDay:
         assert provider == "rec"
         assert captured["end"] == "2026-11-19"
         assert captured["start"] == "2026-11-09"
+
+
+class TestRunCliArgs:
+    """命令行参数必须真正传到 main()（兼容层曾静默丢弃全部 argv）。"""
+
+    def test_run_cli_forwards_flags_to_main(self, monkeypatch) -> None:
+        """run_cli 解析 argv 后以关键字参数调用 main()。"""
+        import scripts.fill_missing.cli as cli
+
+        captured: dict[str, object] = {}
+        monkeypatch.setattr(cli, "main", lambda **kwargs: captured.update(kwargs))
+
+        cli.run_cli(
+            [
+                "--plan",
+                "plan.json",
+                "--dry-run",
+                "--no-incremental",
+                "--no-backup",
+                "--max-retries",
+                "2",
+                "--retry-delay",
+                "5",
+            ]
+        )
+
+        assert captured == {
+            "plan_path": "plan.json",
+            "dry_run": True,
+            "no_incremental": True,
+            "backup": False,
+            "max_retries": 2,
+            "retry_delay": 5.0,
+        }
+
+    def test_run_cli_defaults_when_no_flags(self, monkeypatch) -> None:
+        """无参数时使用默认值（备份开启、重试 3 次 / 10 秒）。"""
+        import scripts.fill_missing.cli as cli
+
+        captured: dict[str, object] = {}
+        monkeypatch.setattr(cli, "main", lambda **kwargs: captured.update(kwargs))
+
+        cli.run_cli([])
+
+        assert captured["plan_path"] is None
+        assert captured["backup"] is True
+        assert captured["max_retries"] == 3
+        assert captured["retry_delay"] == 10.0
+
+    def test_compat_module_main_entry_uses_run_cli(self, monkeypatch) -> None:
+        """以脚本方式运行兼容层时走 run_cli，而不是裸 main()（否则 argv 被丢弃）。"""
+        import runpy
+
+        import scripts.fill_missing.cli as cli
+
+        called: dict[str, int] = {"n": 0}
+        monkeypatch.setattr(cli, "run_cli", lambda argv=None: called.__setitem__("n", called["n"] + 1))
+        monkeypatch.setattr("sys.argv", ["fill_missing_and_today.py", "--no-backup"])
+
+        with warnings.catch_warnings():
+            # runpy 对「模块已在 sys.modules 中」会发 RuntimeWarning，与本用例无关
+            warnings.simplefilter("ignore", RuntimeWarning)
+            runpy.run_module("scripts.fill_missing_and_today", run_name="__main__")
+
+        assert called["n"] == 1

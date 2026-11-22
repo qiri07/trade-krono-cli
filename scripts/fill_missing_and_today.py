@@ -141,4 +141,7 @@ __all__ = [
 ]
 
 if __name__ == "__main__":
-    main()
+    # 必须走 run_cli：直接调用 main() 会丢弃 --plan / --no-backup 等命令行参数
+    from scripts.fill_missing.cli import run_cli
+
+    run_cli()

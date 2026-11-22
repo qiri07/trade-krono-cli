@@ -376,7 +376,16 @@ def main(
     logger.info(f"💾 今日增量同步结果已写入: {sync_result_file}")
 
 
-if __name__ == "__main__":
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """解析命令行参数。
+
+    Args:
+        argv: 参数列表，缺省取 ``sys.argv[1:]``。
+
+    Returns:
+        解析后的命名空间（plan / dry_run / no_incremental / no_backup /
+        max_retries / retry_delay）。
+    """
     parser = argparse.ArgumentParser(description="补齐失败股票历史数据 + 今日增量同步")
     parser.add_argument(
         "--plan",
@@ -410,7 +419,19 @@ if __name__ == "__main__":
         default=10.0,
         help="单只股票重试前的等待间隔（秒，默认 10 秒）",
     )
-    args = parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def run_cli(argv: list[str] | None = None) -> None:
+    """解析命令行参数并执行主流程。
+
+    供 ``scripts/fill_missing_and_today.py`` 兼容层与 ``python -m`` 调用，
+    避免命令行参数被静默丢弃。
+
+    Args:
+        argv: 参数列表，缺省取 ``sys.argv[1:]``。
+    """
+    args = parse_args(argv)
     main(
         plan_path=args.plan,
         dry_run=args.dry_run,
@@ -419,3 +440,7 @@ if __name__ == "__main__":
         max_retries=args.max_retries,
         retry_delay=args.retry_delay,
     )
+
+
+if __name__ == "__main__":
+    run_cli()
