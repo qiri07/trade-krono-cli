@@ -53,6 +53,7 @@ FIVEMUST_RULES = {
     # 条件 5：均线周期
     "ma_fast": 5,
     "ma_mid": 10,
+    "ma13": 13,
     "ma_slow": 20,
     "ma_trend": 60,
     # 突破判定窗口（交易日）
@@ -101,7 +102,7 @@ class FiveMustResult:
 
     # 条件 5：日K多头+突破
     ma5: float | None = None
-    ma10: float | None = None
+    ma13: float | None = None
     ma20: float | None = None
     ma60: float | None = None
     high_20d: float | None = None
@@ -153,7 +154,7 @@ class FiveMustResult:
             "cond4_concentration": self.cond4_concentration,
             "cond4_reason": self.cond4_reason,
             "ma5": self.ma5,
-            "ma10": self.ma10,
+            "ma13": self.ma13,
             "ma20": self.ma20,
             "ma60": self.ma60,
             "high_20d": self.high_20d,
@@ -338,39 +339,31 @@ def _eval_cond4_concentration_from_holder(
 
 def _eval_cond5_breakout(
     df: pd.DataFrame | None, rules: dict[str, Any]
-) -> tuple[bool, str, float | None, float | None, float | None, float | None, float | None]:
+) -> tuple[bool, str, float | None, float | None, None, None, None]:
     """条件 5：日K多头排列且向上突破。
 
-    MA5 > MA10 > MA20 > MA60，收盘价 > MA5，且收盘价 ≥ 近 20 日最高价。
+    MA5 > MA13，且收盘价 > MA5。
     """
     m_fast = int(rules["ma_fast"])
-    m_mid = int(rules["ma_mid"])
-    m_slow = int(rules["ma_slow"])
-    m_trend = int(rules["ma_trend"])
-    window = int(rules["breakout_window"])
+    m_mid13 = int(rules["ma13"])
     if (
         df is None
         or df.empty
         or "close" not in df.columns
-        or len(df) < m_trend + window
+        or len(df) < m_mid13 + 5
     ):
         return False, "K 线数据不足", None, None, None, None, None
     close = df["close"].astype(float)
     cur = float(close.iloc[-1])
     ma5 = float(close.rolling(m_fast).mean().iloc[-1])
-    ma10 = float(close.rolling(m_mid).mean().iloc[-1])
-    ma20 = float(close.rolling(m_slow).mean().iloc[-1])
-    ma60 = float(close.rolling(m_trend).mean().iloc[-1])
-    high_20 = float(df["high"].astype(float).tail(window).max()) if "high" in df.columns else None
+    ma13 = float(close.rolling(m_mid13).mean().iloc[-1])
     reasons: list[str] = []
-    if not (ma5 > ma10 > ma20 > ma60):
-        reasons.append(f"非多头排列 MA5={ma5:.2f} MA10={ma10:.2f} MA20={ma20:.2f} MA60={ma60:.2f}")
+    if not (ma5 > ma13):
+        reasons.append(f"非多头排列 MA5={ma5:.2f} MA13={ma13:.2f}")
     if cur <= ma5:
         reasons.append(f"收盘 {cur:.2f} ≤ MA5 {ma5:.2f}")
-    if high_20 is not None and cur < high_20:
-        reasons.append(f"未突破20日高 {cur:.2f} < {high_20:.2f}")
     ok = not reasons
-    return ok, "; ".join(reasons) if reasons else "", ma5, ma10, ma20, ma60, high_20
+    return ok, "; ".join(reasons) if reasons else "", ma5, ma13, None, None, None
 
 
 def _compute_turnover_and_cap(
@@ -640,16 +633,13 @@ def screen_five_must(
                 result.share_cap_wan = share_cap_wan
 
             # 条件 5：日K多头排列且向上突破
-            ok5, reason5, ma5, ma10, ma20, ma60, high_20 = _eval_cond5_breakout(
+            ok5, reason5, ma5, ma13, _, _, _ = _eval_cond5_breakout(
                 df, FIVEMUST_RULES
             )
             result.cond5_breakout = ok5
             result.cond5_reason = reason5
             result.ma5 = ma5
-            result.ma10 = ma10
-            result.ma20 = ma20
-            result.ma60 = ma60
-            result.high_20d = high_20
+            result.ma13 = ma13
 
             results[bare] = result
 
