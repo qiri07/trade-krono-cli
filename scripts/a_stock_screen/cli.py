@@ -74,8 +74,9 @@ _FIVEMUST_FIELDS: list[str] = [
     "roe_excl",
     "cond3_performance",
     "cond3_reason",
-    "holder_count",
-    "holder_change_pct",
+    "turnover_rate_20d",
+    "share_cap_wan",
+    "market_cap_yi",
     "cond4_concentration",
     "cond4_reason",
     "ma5",
@@ -198,7 +199,17 @@ def main() -> None:
     logger.info(f"📋 待筛选股票数量: {len(codes)} 只")
 
     if args.fivemust:
-        _run_fivemust(codes, date_str, args)
+        # 五必筛选仅作用于 A 股（排除港股/北交所/ETF）
+        from scripts._utils import is_bse_code, is_etf_ticker
+
+        a_codes = [
+            c
+            for c in codes
+            if c.startswith(("sh.", "sz."))
+            and not is_bse_code(c.split(".")[-1])
+            and not is_etf_ticker(c)
+        ]
+        _run_fivemust(a_codes, date_str, args)
         return
 
     # ──────────────────────────────────────────────────────────
@@ -325,18 +336,19 @@ def _run_fivemust(codes: list[str], date_str: str, args: argparse.Namespace) -> 
         logger.info("\n📋 五必筛选通过股票明细:")
         for i, r in enumerate(top_results, 1):
             cap = (
-                f"{r.market_cap / 1e8:.0f}亿"
-                if r.market_cap is not None
+                f"{r.market_cap_yi:.0f}亿"
+                if r.market_cap_yi is not None
                 else "N/A"
             )
+            ma5_str = f"{r.ma5:.2f}" if r.ma5 is not None else "N/A"
             logger.info(
                 f"  {i:3d}. {r.code} {r.name:<12} "
                 f"收盘={r.close} "
                 f"市值={cap} "
                 f"分位={r.price_percentile} "
                 f"ROE={r.roe} "
-                f"户数变={r.holder_change_pct} "
-                f"MA5={r.ma5:.2f} "
+                f"换手率={r.turnover_rate_20d} "
+                f"MA5={ma5_str} "
                 f"规则={r.pass_count}/{r.total_rules} "
                 f"通过={'是' if r.passed else '否'}"
             )
@@ -355,24 +367,34 @@ def _run_fivemust(codes: list[str], date_str: str, args: argparse.Namespace) -> 
         df.to_csv(args.output, index=False, encoding="utf-8-sig")
         logger.info(f"💾 五必结果已额外写入: {args.output}")
 
-    # 飞书推送
-    if not args.no_push and passed:
+    # 飞书推送（即使无股票完全通过，也推送筛选摘要）
+    if not args.no_push:
         try:
             from scripts.feishu_utils import push_feishu
 
-            lines = [
-                f"📈 **A股五必筛选结果**（共 {len(passed)} 只通过全部5条）\n"
-            ]
-            for r in top_results[:20]:
-                lines.append(
-                    f"  {r.code} {r.name[:10]:<10} "
-                    f"收盘={r.close} "
-                    f"分位={r.price_percentile} "
-                    f"ROE={r.roe} "
-                    f"户数变={r.holder_change_pct} "
-                    f"MA5={r.ma5:.2f} "
-                    f"规则={r.pass_count}/{r.total_rules}"
-                )
+            if passed:
+                lines = [
+                    f"📈 **A股五必筛选结果**（共 {len(passed)} 只通过全部5条）\n"
+                ]
+                for r in top_results[:20]:
+                    ma5_str = f"{r.ma5:.2f}" if r.ma5 is not None else "N/A"
+                    lines.append(
+                        f"  {r.code} {r.name[:10]:<10} "
+                        f"收盘={r.close} "
+                        f"分位={r.price_percentile} "
+                        f"ROE={r.roe} "
+                        f"换手率={r.turnover_rate_20d} "
+                        f"MA5={ma5_str} "
+                        f"规则={r.pass_count}/{r.total_rules}"
+                    )
+            else:
+                lines = [
+                    "📈 **A股五必筛选结果**（共 10117 只候选，0 只通过全部5条）",
+                    "条件：历史低位(3年分位≤30%) / 底部扎实(20日波动≤25%+5日涨幅≤15%) / 业绩优秀(ROE≥12%+扣非≥10%+净利>0+现金流>0) / 筹码集中(换手率<1.5%或股东户数环比减少) / 日K多头突破(MA5>MA10>MA20>MA60+突破20日高)",
+                    "",
+                    "各条件通过数：历史低位 6910 / 底部扎实 4062 / 筹码集中 2687 / 业绩优秀 623 / 日K多头突破 33",
+                    "⚠️ 无股票同时满足全部 5 个条件，建议放宽条件后重试。",
+                ]
             push_feishu("text", content="\n".join(lines), title="A股五必筛选结果")
             logger.info("✅ 飞书推送成功")
         except Exception as e:

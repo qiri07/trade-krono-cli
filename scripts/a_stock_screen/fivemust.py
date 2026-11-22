@@ -48,7 +48,7 @@ FIVEMUST_RULES = {
     # 最近 5 日累计涨幅上限
     "max_5d_return": 0.15,
     # 条件 3：业绩优秀——ROE / 扣非 ROE 下限（%）
-    "min_roe": 12.0,
+    "min_roe": 10.0,
     "min_roe_excl": 10.0,
     # 条件 5：均线周期
     "ma_fast": 5,
@@ -57,6 +57,8 @@ FIVEMUST_RULES = {
     "ma_trend": 60,
     # 突破判定窗口（交易日）
     "breakout_window": 20,
+    # 条件 4：筹码集中——20日日均换手率上限（越低越集中）
+    "max_turnover_rate_20d": 0.015,
 }
 
 
@@ -90,10 +92,10 @@ class FiveMustResult:
     cond3_performance: bool = False
     cond3_reason: str = ""
 
-    # 条件 4：筹码集中
-    holder_count: float | None = None
-    holder_count_prev: float | None = None
-    holder_change_pct: float | None = None
+    # 条件 4：筹码集中（本地 K 线换手率，替代股东户数环比）
+    turnover_rate_20d: float | None = None  # 近20日日均换手率
+    share_cap_wan: float | None = None      # 总股本（万股，来自 share_cap_cache）
+    market_cap_yi: float | None = None      # 总市值（亿元，本地估算）
     cond4_concentration: bool = False
     cond4_reason: str = ""
 
@@ -145,8 +147,9 @@ class FiveMustResult:
             "operating_cash_flow": self.operating_cash_flow,
             "cond3_performance": self.cond3_performance,
             "cond3_reason": self.cond3_reason,
-            "holder_count": self.holder_count,
-            "holder_change_pct": self.holder_change_pct,
+            "turnover_rate_20d": self.turnover_rate_20d,
+            "share_cap_wan": self.share_cap_wan,
+            "market_cap_yi": self.market_cap_yi,
             "cond4_concentration": self.cond4_concentration,
             "cond4_reason": self.cond4_reason,
             "ma5": self.ma5,
@@ -291,21 +294,45 @@ def _eval_cond3_performance(
 
 
 def _eval_cond4_concentration(
-    holder_curr: float | None, holder_prev: float | None
+    turnover_rate_20d: float | None,
 ) -> tuple[bool, str, float | None]:
-    """条件 4：筹码集中——股东户数环比减少。
+    """条件 4：筹码集中（基于本地 K 线换手率）。
 
-    股东户数本次 < 上次，说明股东在减少，筹码集中，疑似主力高控盘。
+    近 20 日日均换手率 < 阈值（默认 1.5%），说明筹码集中不轻易流出，
+    疑似主力高控盘。数据全部来自本地 K 线 + share_cap_cache，不调用任何接口。
     """
-    change_pct: float | None = None
-    if holder_curr is None or holder_prev is None or holder_prev <= 0:
-        return False, "无股东户数数据", None
-    change_pct = (holder_curr - holder_prev) / holder_prev
-    ok = holder_curr < holder_prev
+    max_turnover = float(FIVEMUST_RULES["max_turnover_rate_20d"])
+    if turnover_rate_20d is None:
+        return False, "无换手率数据", None
+    ok = turnover_rate_20d < max_turnover
     return (
         ok,
-        "" if ok else f"股东户数环比 {change_pct:.0%} 未减少",
-        change_pct,
+        "" if ok else f"20日日均换手率 {turnover_rate_20d:.2%} >= {max_turnover:.0%}",
+        turnover_rate_20d,
+    )
+
+
+def _eval_cond4_concentration_from_holder(
+    holder_change_pct: float | None,
+) -> tuple[bool, str, float | None]:
+    """条件 4：筹码集中（基于 akshare 股东户数环比，接口补漏）。
+
+    股东户数环比减少（<0），说明筹码集中，疑似主力高控盘。
+    数据来自 akshare 接口，仅用于本地无换手率数据时的补漏。
+
+    Args:
+        holder_change_pct: 股东户数环比变化率（负数表示减少）。
+
+    Returns:
+        (是否通过, 原因, 环比变化率)
+    """
+    if holder_change_pct is None:
+        return False, "无股东户数数据", None
+    ok = holder_change_pct < 0
+    return (
+        ok,
+        "" if ok else f"股东户数环比 {holder_change_pct:.2%} 未减少",
+        holder_change_pct,
     )
 
 
@@ -346,11 +373,101 @@ def _eval_cond5_breakout(
     return ok, "; ".join(reasons) if reasons else "", ma5, ma10, ma20, ma60, high_20
 
 
+def _compute_turnover_and_cap(
+    conn: sqlite3.Connection, bare: str, df: pd.DataFrame | None
+) -> tuple[float | None, float | None, float | None]:
+    """基于本地 K 线 + share_cap_cache 计算近20日日均换手率和总市值。
+
+    - 换手率 = 近20日日均成交额（元） / 总市值（元）
+    - 总市值（元）= 总股本（万股） × 10000 × 最新收盘价（元）
+    - 总股本从 share_cap_cache 读取（万股）；若缺失则无法计算换手率。
+
+    Returns
+    -------
+    (turnover_rate_20d, market_cap_yi, share_cap_wan)
+    """
+    share_cap_wan = _load_share_cap(conn, bare)
+    if share_cap_wan is None or share_cap_wan <= 0:
+        return None, None, None
+    if df is None or df.empty or "close" not in df.columns or "amount" not in df.columns:
+        return None, None, share_cap_wan
+    closes = df["close"].astype(float)
+    amounts = df["amount"].astype(float)
+    if len(closes) < 20 or len(amounts) < 20:
+        return None, None, share_cap_wan
+    close = float(closes.iloc[-1])
+    avg_amount_20d = float(amounts.tail(20).mean())  # 元
+    # 总市值（元）= 总股本（万股）× 10000 × 收盘价
+    market_cap_yuan = share_cap_wan * close
+    if market_cap_yuan <= 0:
+        return None, None, share_cap_wan
+    turnover_rate = avg_amount_20d / market_cap_yuan
+    market_cap_yi = market_cap_yuan / 1e8
+    return turnover_rate, market_cap_yi, share_cap_wan
+
+
 def _thscode(bare: str) -> str:
     """把 6 位裸代码转成 buffett_cache 的 thscode（如 600519.SH / 000858.SZ）。"""
     if bare.startswith("6"):
         return f"{bare}.SH"
     return f"{bare}.SZ"
+
+
+def _load_share_cap(
+    conn: sqlite3.Connection, bare: str
+) -> float | None:
+    """从 pipeline_cache.share_cap_cache 读取最新季度总股本（万股）。
+
+    ticker 可能是 sh.600519 或 600519 两种写法，均尝试匹配。
+    """
+    candidates = [bare, f"sh.{bare}", f"sz.{bare}"]
+    for tk in candidates:
+        row = conn.execute(
+            "SELECT total_share_wan FROM share_cap_cache WHERE ticker = ? "
+            "ORDER BY quarter DESC LIMIT 1",
+            (tk,),
+        ).fetchone()
+        if row and row[0]:
+            return float(row[0])
+    return None
+
+
+def _fetch_holder_concentration(
+    codes: list[str],
+) -> dict[str, float | None]:
+    """从 akshare 接口获取股东户数环比，作为条件4的补漏数据源。
+
+    全量获取一次 akshare.stock_zh_a_gdhs()，提取股东户数本次/上次，
+    计算环比变化率。股东户数环比减少（<0），说明筹码集中，疑似主力高控盘。
+
+    数据仅用于本次运行的条件4补漏，不持久化到本地缓存（若需持久化，
+    可写入 buffett_cache.db 的新表 cache_holder）。
+
+    Args:
+        codes: 需要补漏的 6 位裸代码列表。
+
+    Returns:
+        {bare_code: holder_change_pct}，环比变化率（负数表示减少）；
+        无数据时值为 None。
+    """
+    try:
+        import akshare as ak  # noqa: PLC0415
+
+        df = ak.stock_zh_a_gdhs()
+        if df is None or df.empty:
+            return {}
+        result: dict[str, float | None] = {}
+        for _, r in df.iterrows():
+            code = str(r.get("代码", "")).strip()
+            curr = _safe_float(r.get("股东户数-本次"))
+            prev = _safe_float(r.get("股东户数-上次"))
+            if code and curr is not None and prev is not None and prev > 0:
+                result[code] = (curr - prev) / prev
+        # 只返回请求的 codes
+        return {c: result.get(c) for c in codes}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"⚠️ 股东户数接口获取失败（条件4接口补漏跳过）: {exc}")
+        return {}
 
 
 def _load_financial_cfo(
@@ -425,6 +542,9 @@ def screen_five_must(
 ) -> tuple[list[str], dict[str, FiveMustResult]]:
     """对 A股 候选做「五必」筛选。
 
+    全部数据来自本地缓存（kline_cache、share_cap_cache、buffett_cache.db），
+    不调用任何外部接口。本地缺失的数据不强制补齐，仅标记为未通过。
+
     Parameters
     ----------
     codes : list[str]
@@ -438,28 +558,33 @@ def screen_five_must(
         passed_codes: 通过全部 5 条的 6 位代码列表
         details: {code: FiveMustResult} 每只股票的筛选详情
     """
-    # 第 2–4 批：条件 1–2 使用本地 K 线；条件 3–5 先占位，第 4 批串联
+    """对 A股 候选做「五必」筛选。
+
+    本地数据优先（kline_cache、share_cap_cache、buffett_cache.db）；
+    本地缺失的换手率数据，从 akshare 股东户数接口补漏（单次全量获取，
+    仅用于本次运行的条件4判定）。
+
+    Parameters
+    ----------
+    codes : list[str]
+        6 位裸代码列表（如 ["600519", "000858"]）。
+    date_str : str
+        分析日期 YYYY-MM-DD。
+
+    Returns
+    -------
+    (passed_codes, details)
+        passed_codes: 通过全部 5 条的 6 位代码列表
+        details: {code: FiveMustResult} 每只股票的筛选详情
+    """
+    # 第 2–4 批：条件 1–2 使用本地 K 线；条件 3 使用 buffett_cache；
+    # 条件 4 优先用本地 K 线换手率，缺失时从 akshare 股东户数接口补漏；
+    # 条件 5 使用本地 K 线
     results: dict[str, FiveMustResult] = {}
     conn = get_sqlite_conn(get_cache_db_path())
     conn_b = get_sqlite_conn(str(BUFFETT_CACHE_DB))
-    # 股东户数映射：{bare_code: (curr, prev)}，条件 4 使用
-    holder_map: dict[str, tuple[float | None, float | None]] = {}
-    try:
-        import akshare as ak  # noqa: PLC0415
-
-        df_holder = ak.stock_zh_a_gdhs()
-        if df_holder is not None and not df_holder.empty:
-            for _, r in df_holder.iterrows():
-                code = str(r.get("代码", "")).strip()
-                curr = r.get("股东户数-本次")
-                prev = r.get("股东户数-上次")
-                if code:
-                    holder_map[code] = (
-                        _safe_float(curr),
-                        _safe_float(prev),
-                    )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"⚠️ 股东户数获取失败（条件4将标记为未通过）: {exc}")
+    # 需接口补漏的股票代码（本地无换手率数据）
+    need_holder: list[str] = []
     try:
         for code in codes:
             ticker = normalize_ticker_key(code)
@@ -496,15 +621,23 @@ def screen_five_must(
             result.net_profit_ttm = net_profit_ttm
             result.operating_cash_flow = cfo_val
 
-            # 条件 4：筹码集中（股东户数环比减少）
-            holder_curr = holder_map.get(bare, (None, None))[0]
-            holder_prev = holder_map.get(bare, (None, None))[1]
-            ok4, reason4, change_pct = _eval_cond4_concentration(holder_curr, holder_prev)
-            result.cond4_concentration = ok4
-            result.cond4_reason = reason4
-            result.holder_count = holder_curr
-            result.holder_count_prev = holder_prev
-            result.holder_change_pct = change_pct
+            # 条件 4：筹码集中（优先本地换手率，缺失时 akshare 接口补漏）
+            turnover_20d, market_cap_yi, share_cap_wan = _compute_turnover_and_cap(
+                conn, bare, df
+            )
+            if turnover_20d is not None:
+                ok4, reason4, turnover_rate = _eval_cond4_concentration(turnover_20d)
+                result.cond4_concentration = ok4
+                result.cond4_reason = reason4
+                result.turnover_rate_20d = turnover_rate
+                result.market_cap_yi = market_cap_yi
+                result.share_cap_wan = share_cap_wan
+            else:
+                # 本地无换手率数据，标记需接口补漏
+                need_holder.append(bare)
+                result.turnover_rate_20d = None
+                result.market_cap_yi = market_cap_yi
+                result.share_cap_wan = share_cap_wan
 
             # 条件 5：日K多头排列且向上突破
             ok5, reason5, ma5, ma10, ma20, ma60, high_20 = _eval_cond5_breakout(
@@ -519,11 +652,28 @@ def screen_five_must(
             result.high_20d = high_20
 
             results[bare] = result
+
+        # 接口补漏：批量获取股东户数环比
+        holder_change_map: dict[str, float | None] = {}
+        if need_holder:
+            logger.info(f"🔄 条件4接口补漏：{len(need_holder)} 只本地无换手率数据，调用 akshare 股东户数接口")
+            holder_change_map = _fetch_holder_concentration(need_holder)
+            logger.info(f"🔄 条件4接口补漏完成：返回 {sum(1 for v in holder_change_map.values() if v is not None)} 只有效数据")
+
+        # 应用接口补漏结果到条件4
+        for bare in need_holder:
+            result = results[bare]
+            holder_change = holder_change_map.get(bare)
+            ok4, reason4, _ = _eval_cond4_concentration_from_holder(holder_change)
+            result.cond4_concentration = ok4
+            result.cond4_reason = reason4
+            if holder_change is not None:
+                result.turnover_rate_20d = holder_change  # 复用字段存储环比变化率
     finally:
         conn_b.close()
         conn.close()
 
-    # 统计通过规则（条件 4–5 暂不计入，第 4 批串联）
+    # 统计通过规则（全部5条）
     passed_codes: list[str] = []
     for code, result in results.items():
         fail_reasons: list[str] = []

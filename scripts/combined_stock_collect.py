@@ -227,10 +227,14 @@ def _codes_from_fivemust(path: Path) -> set[str]:
         with open(path, encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                code6 = (row.get("code") or "").strip()
+                raw = (row.get("code") or "").strip()
+                code6 = raw.split(".")[-1] if "." in raw else raw
                 if len(code6) != 6 or not code6.isdigit():
                     continue
                 if is_bse_code(code6):
+                    continue
+                # 只读取 passed=True 的股票，避免汇集线命中数虚高
+                if str(row.get("passed") or "").strip().lower() != "true":
                     continue
                 codes.add(code6)
     except (OSError, csv.Error):
