@@ -332,44 +332,44 @@ def screen_a_stock_candidates(
     try:
         for code in codes:
             ticker = normalize_ticker_key(code)
-        bare = strip_ticker_prefix(ticker)
+            bare = strip_ticker_prefix(ticker)
 
-        meta = metadata.get(ticker) or metadata.get(bare) or {}
-        name = str(meta.get("name") or "")
-        market_cap = meta.get("market_cap")
-        pe_ttm = meta.get("pe_ttm")
-        pb = meta.get("pb")
-        turnover_rate = meta.get("turnover_rate") or meta.get("turnover_rate_12m_avg")
+            meta = metadata.get(ticker) or metadata.get(bare) or {}
+            name = str(meta.get("name") or "")
+            market_cap = meta.get("market_cap")
+            pe_ttm = meta.get("pe_ttm")
+            pb = meta.get("pb")
+            turnover_rate = meta.get("turnover_rate") or meta.get("turnover_rate_12m_avg")
 
-        # 股票类型判断
-        is_etf = is_etf_ticker(ticker)
-        is_bse = is_bse_code(bare)
-        is_st = bool(meta.get("is_st")) or is_st_name(name)
+            # 股票类型判断
+            is_etf = is_etf_ticker(ticker)
+            is_bse = is_bse_code(bare)
+            is_st = bool(meta.get("is_st")) or is_st_name(name)
 
-        # 从 K 线读取：完整历史（用于上市时长）及最近 30 日窗口（用于流动性/停牌）
-        df_full = _load_kline_full(conn, ticker)
-        listing_days = int(len(df_full)) if df_full is not None else None
-        kline = _window_kline(df_full, date_str, days=30)
-        tech = _compute_technical_from_kline(kline)
+            # 从 K 线读取：完整历史（用于上市时长）及最近 30 日窗口（用于流动性/停牌）
+            df_full = _load_kline_full(conn, ticker)
+            listing_days = int(len(df_full)) if df_full is not None else None
+            kline = _window_kline(df_full, date_str, days=30)
+            tech = _compute_technical_from_kline(kline)
 
-        result = AStockScreenResult(
-            code=code,
-            name=name,
-            close=tech.get("close"),
-            market_cap=float(market_cap) if isinstance(market_cap, (int, float)) else None,
-            pe_ttm=float(pe_ttm) if isinstance(pe_ttm, (int, float)) else None,
-            pb=float(pb) if isinstance(pb, (int, float)) else None,
-            turnover_20d_avg=tech.get("turnover_20d_avg"),
-            turnover_rate_12m_avg=(
-                float(turnover_rate) if isinstance(turnover_rate, (int, float)) else None
-            ),
-            is_st=is_st,
-            is_etf=is_etf,
-            is_bse=is_bse,
-            listing_days=listing_days,
-            suspension_days_30d=tech.get("suspension_days_30d", 0),
-        )
-        results[code] = result
+            result = AStockScreenResult(
+                code=code,
+                name=name,
+                close=tech.get("close"),
+                market_cap=float(market_cap) if isinstance(market_cap, (int, float)) else None,
+                pe_ttm=float(pe_ttm) if isinstance(pe_ttm, (int, float)) else None,
+                pb=float(pb) if isinstance(pb, (int, float)) else None,
+                turnover_20d_avg=tech.get("turnover_20d_avg"),
+                turnover_rate_12m_avg=(
+                    float(turnover_rate) if isinstance(turnover_rate, (int, float)) else None
+                ),
+                is_st=is_st,
+                is_etf=is_etf,
+                is_bse=is_bse,
+                listing_days=listing_days,
+                suspension_days_30d=tech.get("suspension_days_30d", 0),
+            )
+            results[code] = result
     finally:
         conn.close()
 
