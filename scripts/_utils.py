@@ -362,6 +362,25 @@ def is_etf_ticker(ticker: str) -> bool:
     return False
 
 
+def market_key(ticker: str) -> str:
+    """把 ticker 归类为市场键（各数据同步脚本统一引用，避免各自维护一套判断）。
+
+    Args:
+        ticker: 带交易所前缀的 ticker（如 ``sh.600519``）或 6 位裸代码。
+
+    Returns:
+        ``"hk"`` 港股 / ``"bse"`` 北交所 / ``"etf"`` ETF / ``"a"`` A 股。
+    """
+    upper = ticker.upper()
+    if upper.startswith("HK."):
+        return "hk"
+    if upper.startswith("BJ.") or is_bse_code(ticker.split(".")[-1]):
+        return "bse"
+    if is_etf_ticker(ticker):
+        return "etf"
+    return "a"
+
+
 def get_all_tickers() -> list[str]:
     """从 SQLite 缓存数据库读取所有不重复的 ticker 列表。
 

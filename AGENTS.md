@@ -443,7 +443,7 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 |------|------|
 | `full_history_sync.py` | 全量历史同步（2020-01-01 起，16 并发，~22 分钟完成 4893 只） |
 | `retry_missing_history.py` | 重试缺失历史的股票（16 并发） |
-| `fill_missing_and_today.py` | 补齐失败股票历史 + 同步今日增量（8 并发） |
+| `fill_missing_and_today.py` | 补齐失败股票历史 + 同步今日增量（8 并发）；`--markets a` / `--markets hk` 可按市场分段拉取（A股 → 港股 → ETF） |
 | `check_data_integrity.py` | 数据完整性检查（重复/空数据/解码验证） |
 | `cleanup_duplicates.py` | 清理同一 ticker 的多条记录（保留最长；删除前自动备份） |
 | `backup_cache.py` | 核心数据备份（SQLite 在线快照 + 原子写入；按族保留备份，未变化自动跳过） |

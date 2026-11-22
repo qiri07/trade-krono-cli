@@ -11,6 +11,7 @@
     uv run python scripts/fill_missing_and_today.py --dry-run
     uv run python scripts/fill_missing_and_today.py --no-incremental
     uv run python scripts/fill_missing_and_today.py --no-backup
+    uv run python scripts/fill_missing_and_today.py --markets a    # 仅 A 股（再 hk / ETF 分段跑）
 """
 
 from __future__ import annotations

@@ -517,6 +517,8 @@ class TestRunCliArgs:
                 "2",
                 "--retry-delay",
                 "5",
+                "--markets",
+                "a",
             ]
         )
 
@@ -527,6 +529,7 @@ class TestRunCliArgs:
             "backup": False,
             "max_retries": 2,
             "retry_delay": 5.0,
+            "markets": frozenset({"a"}),
         }
 
     def test_run_cli_defaults_when_no_flags(self, monkeypatch) -> None:
@@ -542,6 +545,7 @@ class TestRunCliArgs:
         assert captured["backup"] is True
         assert captured["max_retries"] == 3
         assert captured["retry_delay"] == 10.0
+        assert captured["markets"] == frozenset({"all"})
 
     def test_compat_module_main_entry_uses_run_cli(self, monkeypatch) -> None:
         """以脚本方式运行兼容层时走 run_cli，而不是裸 main()（否则 argv 被丢弃）。"""

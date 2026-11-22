@@ -18,6 +18,7 @@ from scripts._utils import (
     get_sqlite_conn,
     is_bse_code,
     is_etf_ticker,
+    market_key,
 )
 from scripts.fill_missing.constants import CACHE_DB, FETCH_TIMEOUT, WORKERS
 from scripts.fill_missing.dates import get_expected_date
@@ -57,6 +58,60 @@ def _is_eligible_ticker(ticker: str) -> bool:
     return not is_etf_ticker(ticker) and not is_bse_code(ticker.split(".")[-1])
 
 
+# --markets 可选取值 → 展示名（"all" 表示本脚本可拉取的全部市场）
+_MARKET_LABELS: dict[str, str] = {
+    "a": "A股",
+    "hk": "港股",
+    "etf": "ETF",
+    "bse": "北交所",
+}
+
+
+def parse_markets(raw: str) -> frozenset[str]:
+    """解析 ``--markets`` 取值（逗号分隔，如 ``a`` / ``a,hk`` / ``all``）。
+
+    Args:
+        raw: 命令行原始字符串。
+
+    Returns:
+        市场键集合；``{"all"}`` 表示不限制。
+
+    Raises:
+        ValueError: 出现不支持的市场键。
+    """
+    tokens = {t.strip().lower() for t in raw.split(",") if t.strip()}
+    if not tokens or "all" in tokens:
+        return frozenset({"all"})
+    unknown = tokens - set(_MARKET_LABELS)
+    if unknown:
+        raise ValueError(
+            f"不支持的 --markets 取值: {sorted(unknown)}（可选 all/a/hk/etf/bse）"
+        )
+    return frozenset(tokens)
+
+
+def _markets_arg(raw: str) -> frozenset[str]:
+    """argparse 类型转换：把 ``--markets`` 字符串转成市场键集合。"""
+    try:
+        return parse_markets(raw)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from e
+
+
+def _in_market_scope(ticker: str, markets: frozenset[str] | None) -> bool:
+    """判断 ticker 是否落在 ``--markets`` 指定的市场范围内。"""
+    if not markets or "all" in markets:
+        return True
+    return market_key(ticker) in markets
+
+
+def _market_scope_label(markets: frozenset[str] | None) -> str:
+    """生成市场范围的中文说明（用于日志）。"""
+    if not markets or "all" in markets:
+        return "全部可拉取市场（A股 + 港股，ETF/北交所另由专属脚本处理）"
+    return " + ".join(_MARKET_LABELS[m] for m in sorted(markets))
+
+
 def main(
     plan_path: str | None = None,
     dry_run: bool = False,
@@ -64,6 +119,7 @@ def main(
     backup: bool = True,
     max_retries: int = 3,
     retry_delay: float = 10.0,
+    markets: frozenset[str] | None = None,
 ) -> None:
     """主流程：补齐失败股票历史数据 + 今日增量同步。
 
@@ -74,7 +130,13 @@ def main(
         backup: 写入前是否自动备份核心数据文件（默认 True）。
         max_retries: 单只股票拉取失败后的最大重试次数（默认 3 次）。
         retry_delay: 单只股票重试前的等待间隔（秒，默认 10 秒）。
+        markets: 市场范围（``{"all"}`` / ``{"a"}`` / ``{"hk"}`` 等）；缺省不限，
+            用于按「A股 → 港股 → ETF」顺序分段拉取。
     """
+    scope = markets or frozenset({"all"})
+    print(f"ℹ️  市场范围: {_market_scope_label(scope)}")
+    if "etf" in scope:
+        print("   ⚠️  ETF 不在本脚本拉取范围，请改用 scripts/etf_history_sync.py")
 
     def _fetch_with_retry(
         fetch_fn,
@@ -119,8 +181,12 @@ def main(
     # 港股由 akshare_hk 逐只拉取，单只较慢且常需重试，但用户明确要求补拉，
     # 故放行港股；北交所（bj.）保持剔除，保持与选股流程一致。
     n_plan = len(plan_failed) + len(plan_need_today)
-    plan_failed = [t for t in plan_failed if _is_eligible_ticker(t)]
-    plan_need_today = [t for t in plan_need_today if _is_eligible_ticker(t)]
+    plan_failed = [
+        t for t in plan_failed if _is_eligible_ticker(t) and _in_market_scope(t, scope)
+    ]
+    plan_need_today = [
+        t for t in plan_need_today if _is_eligible_ticker(t) and _in_market_scope(t, scope)
+    ]
     if skipped := n_plan - len(plan_failed) - len(plan_need_today):
         print(f"ℹ️  剔除 {skipped} 只 ETF/北交所（不在本脚本拉取范围）")
 
@@ -147,8 +213,10 @@ def main(
     failed_tickers = plan_failed if plan_path else get_failed_tickers()
     failed_before = len(failed_tickers)
     # ETF 不在本脚本拉取范围（由 etf_history_sync.py 统一拉取）；
-    # 港股放行（用户要求补拉港股数据）；北交所保持剔除。
-    failed_tickers = [t for t in failed_tickers if _is_eligible_ticker(t)]
+    # 港股放行（用户要求补拉港股数据）；北交所保持剔除；--markets 再收窄市场范围。
+    failed_tickers = [
+        t for t in failed_tickers if _is_eligible_ticker(t) and _in_market_scope(t, scope)
+    ]
     # 增量跳过：跳过已有足够历史数据的 ticker（避免中断重启后重复拉取）
 
     failed_tickers = [t for t in failed_tickers if not _has_sufficient_history(t)]
@@ -158,7 +226,10 @@ def main(
     retry_failed = [
         t
         for t in failed_tickers_cache
-        if t not in completed_tickers and t not in failed_tickers and _is_eligible_ticker(t)
+        if t not in completed_tickers
+        and t not in failed_tickers
+        and _is_eligible_ticker(t)
+        and _in_market_scope(t, scope)
     ]
     if retry_failed:
         failed_tickers.extend(retry_failed)
@@ -231,7 +302,11 @@ def main(
         ORDER BY ticker
     """
     )
-    need_today_from_db = [r[0] for r in cur.fetchall() if _is_eligible_ticker(r[0])]
+    need_today_from_db = [
+        r[0]
+        for r in cur.fetchall()
+        if _is_eligible_ticker(r[0]) and _in_market_scope(r[0], scope)
+    ]
     conn.close()
 
     # 合并计划中的 need_today 与数据库动态查询结果（取并集，避免计划缺失导致漏补）
@@ -239,16 +314,12 @@ def main(
     if plan_path:
         need_today_set.update(plan_need_today)
 
-    # 按市场前缀排序：优先处理 A 股（sh./sz.），然后是北交所（bj.），最后是港股（hk.）
-    # 避免按字典序导致港股（hk.*）排在最前，A 股数据长时间无法拉取
+    # 按市场排序：A股（sh./sz.）优先，其次北交所，最后港股；
+    # 批与批串行处理，因此「A股全部落库后才会开始拉港股」是有保证的。
+    _market_order = {"a": 0, "bse": 1, "etf": 2, "hk": 3}
+
     def _market_sort_key(t: str) -> tuple[int, str]:
-        if t.startswith("sh."):
-            return (0, t)
-        if t.startswith("sz."):
-            return (1, t)
-        if t.startswith("bj."):
-            return (2, t)
-        return (3, t)  # hk. 及其他
+        return (_market_order.get(market_key(t), 9), t)
 
     need_today = sorted(need_today_set, key=_market_sort_key)
 
@@ -419,6 +490,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=10.0,
         help="单只股票重试前的等待间隔（秒，默认 10 秒）",
     )
+    parser.add_argument(
+        "--markets",
+        type=_markets_arg,
+        default=frozenset({"all"}),
+        metavar="RANGE",
+        help=(
+            "拉取市场范围：all（默认，A股+港股）/ a（仅A股）/ hk（仅港股），"
+            "可逗号组合如 a,hk；ETF 请用 scripts/etf_history_sync.py"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -439,6 +520,7 @@ def run_cli(argv: list[str] | None = None) -> None:
         backup=not args.no_backup,
         max_retries=args.max_retries,
         retry_delay=args.retry_delay,
+        markets=args.markets,
     )
 
 
