@@ -40,6 +40,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any  # 行情/K 线字段值类型混杂（float/int/str/None），Any 为合理
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import pandas as pd
 from loguru import logger
 
