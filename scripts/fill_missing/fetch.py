@@ -14,9 +14,12 @@ import pandas as pd
 
 from scripts.fill_missing.constants import FETCH_TIMEOUT as _DEFAULT_FETCH_TIMEOUT
 from scripts.fill_missing.constants import INCREMENTAL_LOOKBACK_DAYS, START_DATE
-from scripts.fill_missing.dates import get_expected_date, get_today_date
+from scripts.fill_missing.dates import get_expected_date
 from trade_krono_cli.cache import get_cache
 from trade_krono_cli.data_providers.base import KlineData
+
+# 读取库内已有记录时的上界（远未来），确保所有历史行都参与并集合并
+_READ_ALL_END_DATE = "9999-12-31"
 
 
 def _fetch_kline_provider(
@@ -69,6 +72,39 @@ def _fetch_kline_provider(
     return (result, error, False)
 
 
+def _merge_with_cached(cache: Any, ticker: str, df: pd.DataFrame) -> pd.DataFrame:
+    """把新拉取的 K 线与库内已有历史按 ``timestamps`` 做并集合并。
+
+    同一交易日以新拉取的数据为准（``keep="last"``），避免多源复权口径混入时
+    保留旧值；库内没有记录时直接返回新数据。合并结果是并集，因此数据源返回的
+    序列比库内更短（源头滞后 / 停牌）时不会丢掉已有交易日。
+
+    Args:
+        cache: 缓存实例（需实现 ``get_kline``）。
+        ticker: 股票标准化键（如 sh.600519）。
+        df: 新拉取的 K 线 DataFrame（需含 ``timestamps`` 列）。
+
+    Returns:
+        按 ``timestamps`` 升序、已去重的合并结果。
+    """
+    fresh = df.copy()
+    fresh["timestamps"] = pd.to_datetime(fresh["timestamps"], format="mixed")
+
+    # 上界取远未来，确保库内任何已有记录都参与合并（含历史脏数据 end 超前的情况）
+    existing = cache.get_kline(ticker, START_DATE, _READ_ALL_END_DATE, "d", "1")
+    if existing is None or len(existing) == 0:
+        return fresh.sort_values("timestamps").reset_index(drop=True)
+
+    cached = existing.copy()
+    cached["timestamps"] = pd.to_datetime(cached["timestamps"], format="mixed")
+    return (
+        pd.concat([cached, fresh], ignore_index=True)
+        .drop_duplicates(subset=["timestamps"], keep="last")
+        .sort_values("timestamps")
+        .reset_index(drop=True)
+    )
+
+
 def fetch_full_range(
     factory: Any,
     ticker: str,
@@ -77,6 +113,10 @@ def fetch_full_range(
 ) -> tuple[str, int, str]:
     """带超时的全量历史数据拉取（provider 级超时后自动降级尝试下一个 provider）。
 
+    终点取「应已落库的最近交易日」，避免盘中把未收盘的当日 bar 写成正式日线；
+    写入时与库内已有历史做并集合并（见 :func:`_merge_with_cached`），
+    因此数据源本身滞后、返回序列比库内更短时也不会丢掉已有交易日。
+
     Args:
         factory: DataProviderFactory 实例。
         ticker: 股票标准化键（如 sh.600519）。
@@ -84,11 +124,15 @@ def fetch_full_range(
         fetch_timeout: 单 provider 拉取超时（秒）。
 
     Returns:
-        (provider_name, 记录数, 日期范围) 元组；全部失败时返回
+        (provider_name, 合并后记录数, 合并后日期范围) 元组；全部失败时返回
         ("failed", 0, 错误信息)。
     """
     result_container: list[tuple[str, int, str]] = []
     error_container: list[str] = []
+
+    # 终点取「应已落库的最近交易日」：盘中/开盘前运行时当日 K 线尚未完成，
+    # 按原始今日拉取会把盘中未收盘的 bar 当成正式日线写入。
+    end_date = get_expected_date()
 
     def _fetch() -> None:
         for provider_name in provider_chain:
@@ -97,7 +141,7 @@ def fetch_full_range(
                 ticker,
                 provider_name,
                 START_DATE,
-                get_today_date(),
+                end_date,
                 fetch_timeout=fetch_timeout,
             )
             if timed_out:
@@ -114,20 +158,24 @@ def fetch_full_range(
                 continue
             # ETF 无复权概念，缓存统一按 adjustflag='1' 存储
             cache = get_cache()
-            ts = pd.to_datetime(df["timestamps"])
+            # 与库内已有历史做并集合并，而非直接覆盖：
+            # 数据源本身滞后时（港股 sina、停牌股等），其返回序列的最新日可能早于
+            # 库内已有记录，直接覆盖会让该 ticker 的 end 倒退回更早日期，丢掉新数据。
+            combined = _merge_with_cached(cache, ticker, df)
             cache.set_kline(
                 ticker,
-                ts.min().strftime("%Y-%m-%d"),
-                ts.max().strftime("%Y-%m-%d"),
+                combined["timestamps"].min().strftime("%Y-%m-%d"),
+                combined["timestamps"].max().strftime("%Y-%m-%d"),
                 "d",
-                df,
+                combined,
                 ttl=0.0,
             )
             result_container.append(
                 (
                     provider_name,
-                    len(df),
-                    f"{ts.min().strftime('%Y-%m-%d')}~{ts.max().strftime('%Y-%m-%d')}",
+                    len(combined),
+                    f"{combined['timestamps'].min().strftime('%Y-%m-%d')}"
+                    f"~{combined['timestamps'].max().strftime('%Y-%m-%d')}",
                 )
             )
             return
@@ -200,22 +248,9 @@ def fetch_today_incremental(
                 continue
             cache = get_cache()
             # 把新拉取的增量 K 线追加到现有历史行，而非新建独立记录：
-            # 读取该 ticker 从 START_DATE 起至预期交易日的全部 K 线（含历史行与已有今日行），
-            # 与增量数据合并去重后写回单条记录。
-            combined = df
-            existing = cache.get_kline(ticker, START_DATE, end_date, "d", "1")
-            if existing is not None and len(existing) > 0:
-                # 统一 timestamps 为 datetime，避免 str 与 datetime64 混型导致排序崩溃
-                existing = existing.copy()
-                existing["timestamps"] = pd.to_datetime(existing["timestamps"])
-                df = df.copy()
-                df["timestamps"] = pd.to_datetime(df["timestamps"])
-                combined = (
-                    pd.concat([existing, df], ignore_index=True)
-                    .drop_duplicates(subset=["timestamps"], keep="last")
-                    .sort_values("timestamps")
-                    .reset_index(drop=True)
-                )
+            # 读取该 ticker 从 START_DATE 起的全部 K 线（含历史行与已有今日行），
+            # 与增量数据并集合并去重后写回单条记录。
+            combined = _merge_with_cached(cache, ticker, df)
             cache.set_kline(
                 ticker,
                 combined["timestamps"].min().strftime("%Y-%m-%d"),
