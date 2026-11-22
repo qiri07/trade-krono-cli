@@ -186,24 +186,30 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
    + ETF 同步   → uv run python scripts/etf_history_sync.py（默认增量 / --full 全量 7 年）
    + 元数据刷新 → uv run python scripts/fetch_reference_data.py（TTL 24h：metadata.json 超过 24h 未更新才全量重拉 PE/PB/行业，
                   否则秒级跳过；daily_flow.sh 第 1 步已内置。全量约 6954 只/50 分钟，部分 --tickers 拉取为合并模式不覆盖全量）
-2. 巴菲特筛选   → tests/buffett_screen_parallel.py（已过滤 ST / 北交所）
-3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股；含 ETF 纯技术面）
-4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股；含 ETF 纯技术面）
-5. 白名单分析   → python -m scripts.daily_analysis（已过滤 ST / 北交所）
+   ★ 前置股票池 → uv run python scripts/universe_filter.py（获取数据后、所有筛选前；
+                  输出 universe_YYYYMMDD.json，ST/北交所/ETF/次新/停牌/低价/低流动性/市值<20亿 统一硬剔除）
+2. 巴菲特筛选   → tests/buffett_screen_parallel.py（已过滤 ST / 北交所；前置股票池已前移市值/流动性/停牌硬门槛）
+3. 三线共振     → scripts/multi_line_resonance.py（已过滤 ST / 北交所 / 港股；ETF 由前置池统一剔除）
+4. 多头排列     → scripts/multi_scan.py（已过滤 ST / 北交所 / 港股；ETF 由前置池统一剔除）
+5. 白名单分析   → python -m scripts.daily_analysis（已过滤 ST / 北交所；前置池再剔除 ETF/次新/停牌/低价/低流动性/市值）
 6. 双均线金叉   → scripts/double_ma_golden_cross.py（默认完整模式含 ROE+净利润；--lite 仅技术分析；
-                  已过滤 ST / 北交所；ETF 以纯技术面参与，豁免 PE/ROE/净利润门槛）
+                  前置池已统一剔除 ST / 北交所 / ETF / 次新 / 停牌 / 低价 / 低流动性 / 小市值）
 7. AI 核实      → Nemotron 3.5 Super VL 120B A12B（NVIDIA/OpenRouter API）
 8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
 9. 综合交集汇总 → scripts/combined_stock_analysis.py（多线共振交集 + 技术面 + 基本面 + AI + 飞书汇总 + 逐只）
-10. MACD+均线筛选 → scripts/macd_ma_screener.py（MA5>MA13 + MACD DIF>0 + 剔ST/昨日涨停/市值<50亿/PE∈(0,30)；
-                  结果作为第9步 "macd_ma" 来源线参与交集，已过滤 ST/北交所/港股/ETF）
+10. MACD+均线筛选 → scripts/macd_ma_screener.py（MA5>MA13 + MACD DIF>0 + 剔ST/昨日涨停/PE∈(0,30)；
+                  前置池已统一剔除 ST / 北交所 / ETF / 次新 / 停牌 / 低价 / 低流动性 / 市值<20亿）
 11. 盘中扫描   → scripts/intraday_scan.py（盘中可选，分钟 K 线检测金叉/多头/MACD/三线共振，见「盘中扫描」节）
 ```
 
-> **注意**：各筛选脚本均已内置 ST / 北交所（BSE）/ 港股过滤，逐只飞书推送逻辑已移除，
-> 仅保留汇总推送 + AI 核实。ST / BSE 关键词与代码前缀统一维护在 `scripts/_utils.py`。
+> **注意**：前置股票池（`scripts/universe_filter.py`）在获取数据后、所有筛选脚本前执行，输出
+> `outputs/results/universe_YYYYMMDD.json`；各选股脚本通过 `apply_universe_filter()` 求交集，快照缺失时
+> 回退原有逻辑（灰度可控）。前置池统一剔除：
+> 港股 / 北交所 / ETF / ST-*ST-退市 / 次新（上市<30天） / 停牌（近30日停牌>5天或行情滞后>5自然日）
+> / 低价（<1元） / 小市值（<20亿元，腾讯行情，缺失不剔除仅计数） / 低流动性（近20日日均成交额<5000万）。
+> 不再在汇集阶段（combined）重复做 A股筛选硬过滤。
 
-### ETF 数据支持（2026-10-21 起，ETF 前缀规则已修 2026-11-11）
+### 前置股票池过滤（`scripts/universe_filter.py`）
 
 - **归一化**：ETF 代码（沪市 `5x` 段 → `sh.<code>`，深市 `159/156/158` → `sz.<code>`）与普通股票统一前缀，
   由 `scripts/_utils.py::is_etf_ticker()` / `normalize_ticker_key()` 识别；
@@ -444,6 +450,7 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `full_history_sync.py` | 全量历史同步（2020-01-01 起，16 并发，~22 分钟完成 4893 只） |
 | `retry_missing_history.py` | 重试缺失历史的股票（16 并发） |
 | `fill_missing_and_today.py` | 补齐失败股票历史 + 同步今日增量（8 并发）；`--markets a` / `--markets hk` 可按市场分段拉取（A股 → 港股 → ETF） |
+| `universe_filter.py` | 统一前置股票池过滤（ST/北交所/ETF/次新/停牌/低价/低流动性/市值≥20亿），输出 outputs/results/universe_YYYYMMDD.json，供各选股脚本在扫描前求交集 |
 | `check_data_integrity.py` | 数据完整性检查（重复/空数据/解码验证） |
 | `cleanup_duplicates.py` | 清理同一 ticker 的多条记录（保留最长；删除前自动备份） |
 | `backup_cache.py` | 核心数据备份（SQLite 在线快照 + 原子写入；按族保留备份，未变化自动跳过） |

@@ -49,6 +49,7 @@ from scripts._utils import (
 )
 from scripts.daily_analysis import ai_verify
 from scripts.feishu_utils import load_config, send_notification
+from scripts.universe_filter import apply_universe_filter
 
 # ── 路径常量 ─────────────────────────────────────────────────────────────────
 
@@ -491,6 +492,12 @@ def main() -> None:
     if not tickers:
         logger.error("❌ 未找到任何股票，退出")
         sys.exit(1)
+
+    # ── 前置统一股票池过滤（ST/北交所/ETF/次新/停牌/低价/低流动性/市值） ──
+    tickers = apply_universe_filter(tickers, date_str, label="三线共振")
+    if not tickers:
+        logger.warning("⚠️  前置股票池过滤后无剩余标的，退出")
+        sys.exit(0)
 
     # 扫描
     results = _run_scan(tickers, db_path, workers=args.workers)

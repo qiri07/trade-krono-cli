@@ -15,6 +15,7 @@ from scripts.daily_analysis.whitelist import (
     _get_merged_whitelist,
 )
 from scripts.feishu_utils import push_feishu
+from scripts.universe_filter import apply_universe_filter
 from trade_krono_cli.cli_commands._core_helpers import _load_env
 
 
@@ -38,6 +39,11 @@ def run_analysis(date: str, tickers_str: str) -> None:
             tickers_with_prefix.append(f"sz.{code}")
 
     tickers_with_prefix = _filter_bse_st(tickers_with_prefix)
+
+    # ── 前置统一股票池过滤（ST/北交所/ETF/次新/停牌/低价/低流动性/市值） ──
+    tickers_with_prefix = apply_universe_filter(
+        tickers_with_prefix, date, label="白名单分析", keep_hk=True
+    )
 
     logger.info(f"📊 白名单分析：{tickers_with_prefix}  日期={date}")
 

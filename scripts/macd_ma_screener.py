@@ -53,6 +53,7 @@ from scripts._utils import (
 from scripts.indicators import calc_ma as _indicators_calc_ma
 from scripts.indicators import calc_macd_dif as _indicators_calc_macd_dif
 from scripts.stock_name_cache import resolve_stock_names
+from scripts.universe_filter import apply_universe_filter
 
 # ── 常量 ──────────────────────────────────────────────────────────────────────
 _RESULTS = Path("outputs/results")
@@ -504,8 +505,14 @@ def run(
     # 技术面扫描（按 date_str 截断 K 线，保证判定基于 --date 而非缓存最后日期）
     candidates, skipped = _scan_all(db_path, st_set, name_map, date_str)
     logger.info(f"📊 技术面通过 {len(candidates)} 只，剔除明细：{skipped}")
+
+    # ── 前置统一股票池过滤（ST/北交所/ETF/次新/停牌/低价/低流动性/市值） ──
+    cand_tickers = [str(r["ticker"]) for r in candidates]
+    cand_tickers = apply_universe_filter(cand_tickers, date_str, label="MACD+均线")
+    cand_set = set(cand_tickers)
+    candidates = [r for r in candidates if str(r["ticker"]) in cand_set]
     if not candidates:
-        logger.warning("无技术面通过的股票，直接退出")
+        logger.warning("⚠️  前置股票池过滤后无剩余标的，直接退出")
         _write_result(date_str, [], top_n)
         return []
 

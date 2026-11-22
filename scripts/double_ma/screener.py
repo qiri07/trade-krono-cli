@@ -15,6 +15,7 @@ import pandas as pd
 from loguru import logger
 
 from scripts._utils import (
+    expected_trading_day,
     fetch_hk_pe_snapshot,
     get_all_tickers,
     get_cache_db_path,
@@ -37,6 +38,7 @@ from scripts.double_ma.pe import _fill_pe_and_industry
 from scripts.double_ma.roe import fetch_roe_from_api, load_profit_from_cache, load_roe_from_cache
 from scripts.double_ma.utils import _limit_pct, calc_ma_ratio, calc_macd
 from scripts.indicators import calc_ma as _indicators_calc_ma
+from scripts.universe_filter import apply_universe_filter
 
 
 def process_ticker(
@@ -229,6 +231,11 @@ def run_lite(
 
     all_tickers = get_all_tickers()
     logger.info(f"总股票数: {len(all_tickers)}")
+
+    # ── 前置统一股票池过滤（ST/北交所/ETF/次新/停牌/低价/低流动性/市值） ──
+    _date_str = expected_trading_day()
+    all_tickers = apply_universe_filter(all_tickers, _date_str, label="双均线")
+    logger.info(f"前置过滤后待扫描: {len(all_tickers)} 只")
 
     results: list[dict] = []
     skipped_no_data = 0

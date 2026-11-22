@@ -95,6 +95,7 @@ class RealtimeQuote:
     """
 
     ticker: str = ""
+    name: str = ""  # 股票名称（部分数据源不提供，默认空）
     price: float | None = None  # 当前价（元）
     pe: float | None = None  # 市盈率（动态）
     pb: float | None = None  # 市净率

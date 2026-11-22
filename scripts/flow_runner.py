@@ -219,11 +219,19 @@ STEPS: list[Step] = [
         depends_on=["sync"],
     ),
     Step(
+        name="universe",
+        description="统一前置股票池过滤（ST/北交所/ETF/次新/停牌/低价/低流动性/市值）",
+        command=["uv", "run", "python", "scripts/universe_filter.py"],
+        enabled_by_default=True,
+        depends_on=["metadata"],
+        timeout=1800,
+    ),
+    Step(
         name="buffett",
         description="巴菲特六闸门筛选（并行版）",
         command=["uv", "run", "python", "tests/buffett_screen_parallel.py"],
         enabled_by_default=True,
-        depends_on=["sync"],
+        depends_on=["universe"],
         timeout=5400,
     ),
     Step(
@@ -231,7 +239,7 @@ STEPS: list[Step] = [
         description="三线共振扫描（multi_line_resonance.py）",
         command=["uv", "run", "python", "scripts/multi_line_resonance.py"],
         enabled_by_default=True,
-        depends_on=["sync"],
+        depends_on=["universe"],
         timeout=7200,
     ),
     Step(
@@ -239,7 +247,7 @@ STEPS: list[Step] = [
         description="多头排列扫描（multi_scan.py）",
         command=["uv", "run", "python", "scripts/multi_scan.py"],
         enabled_by_default=True,
-        depends_on=["sync"],
+        depends_on=["universe"],
         timeout=7200,
     ),
     Step(
@@ -247,7 +255,7 @@ STEPS: list[Step] = [
         description="白名单分析 + AI 核实 + 飞书推送（scripts.daily_analysis）",
         command=["uv", "run", "python", "-m", "scripts.daily_analysis"],
         enabled_by_default=True,
-        depends_on=["sync", "buffett"],
+        depends_on=["universe", "buffett"],
         timeout=3600,
     ),
     Step(
@@ -255,7 +263,7 @@ STEPS: list[Step] = [
         description="双均线金叉筛选（完整模式）",
         command=["uv", "run", "python", "scripts/double_ma_golden_cross.py"],
         enabled_by_default=True,
-        depends_on=["sync"],
+        depends_on=["universe"],
     ),
     Step(
         name="macd_ma",
@@ -269,7 +277,7 @@ STEPS: list[Step] = [
             str(PUSH_FLAG),
         ],
         enabled_by_default=True,
-        depends_on=["sync"],
+        depends_on=["universe"],
     ),
     Step(
         name="czsc",
@@ -281,7 +289,7 @@ STEPS: list[Step] = [
             str(PUSH_FLAG),
         ],
         enabled_by_default=True,
-        depends_on=["sync"],
+        depends_on=["universe"],
         timeout=3600,
     ),
     Step(
@@ -289,14 +297,14 @@ STEPS: list[Step] = [
         description="盘中技术信号扫描（intraday_scan.py，不推送）",
         command=["uv", "run", "python", "scripts/intraday_scan.py", "--push", "0"],
         enabled_by_default=True,
-        depends_on=["sync"],
+        depends_on=["universe"],
     ),
     Step(
         name="sixdim",
         description="六维选股（逻辑>估值>位置>趋势>股东人数>量价，six_dim_screen.py）",
         command=["uv", "run", "python", "-m", "scripts.six_dim_screen", "--push", str(PUSH_FLAG)],
         enabled_by_default=True,
-        depends_on=["sync"],
+        depends_on=["universe"],
         timeout=7200,
     ),
     Step(
@@ -309,6 +317,8 @@ STEPS: list[Step] = [
             "scripts/combined_stock_analysis.py",
             "--min-sources",
             "3",
+            "--a-stock-screen",
+            "1",
             "--push",
             str(PUSH_FLAG),
             "--per-stock-push",

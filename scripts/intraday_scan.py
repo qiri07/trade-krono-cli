@@ -62,6 +62,7 @@ from scripts.daily_analysis.names import _get_stock_name as _da_get_stock_name
 from scripts.feishu_utils import load_config, send_notification
 from scripts.indicators import calc_ma, calc_macd_dif_series
 from scripts.stock_name_cache import resolve_stock_names
+from scripts.universe_filter import apply_universe_filter
 
 # 项目根目录（供结果目录使用）
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -583,10 +584,10 @@ def main() -> None:
     else:
         tickers = _load_whitelist()
 
+    # ── 前置统一股票池过滤（ST/北交所/ETF/次新/停牌/低价/低流动性/市值） ──
+    tickers = apply_universe_filter(tickers, label="盘中扫描")
     if not tickers:
-        console.print(
-            "[yellow]⚠️ 白名单为空，请检查 outputs/results/buffett_dynamic_whitelist.txt[/yellow]"
-        )
+        console.print("[yellow]⚠️ 前置股票池过滤后无剩余标的，退出[/yellow]")
         return
 
     logger.info(f"扫描范围：{len(tickers)} 只 | 模式：{args.mode} | min-signals={args.min_signals}")

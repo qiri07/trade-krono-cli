@@ -49,6 +49,9 @@ _TENCENT_HOST_COOLDOWN_SEC = 120.0
 _TENTINEL_MINUTES: frozenset[str] = frozenset({"m1", "m5", "m15", "m30", "m60"})
 _TENTINEL_SPAN_DAYS: dict[str, int] = {"day": 700, "week": 3650, "month": 18250}
 _SH_INDEX: frozenset[str] = frozenset({"000300", "000905", "000016", "000688", "000852", "000010"})
+# 批量行情：单次请求最多 60 只代码（腾讯接口实测可承载），批间隔防触发限流
+_QUOTE_BATCH_SIZE: int = 60
+_QUOTE_BATCH_INTERVAL_SEC: float = 0.2
 _PERIOD_MAP: dict[str, str] = {
     "d": "day",
     "day": "day",
@@ -137,6 +140,52 @@ def _tencent_src_date(value: Any) -> str:
         return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
     except ValueError as exc:
         raise RuntimeError(f"tencent 来源返回无法识别的日期: {value!r}") from exc
+
+
+def _iter_quote_blocks(data: str) -> list[tuple[str, list[str]]]:
+    """把腾讯行情响应拆成 ``[(代码, 字段列表), ...]``。
+
+    Args:
+        data: ``_tencent_http_get`` 返回的原始文本（形如 ``v_sh600519="1~..."``）。
+
+    Returns:
+        ``(腾讯代码, '~' 分隔的字段列表)`` 列表；格式异常的行直接跳过。
+    """
+    blocks: list[tuple[str, list[str]]] = []
+    for line in data.strip().split(";"):
+        stripped = line.strip().rstrip(";").strip()
+        if not stripped or "=" not in stripped or '"' not in stripped:
+            continue
+        key = stripped.split("=", 1)[0].split("_")[-1].strip().lower()
+        parts = stripped.split('"')
+        if len(parts) < 2 or not key:
+            continue
+        blocks.append((key, parts[1].split("~")))
+    return blocks
+
+
+def _quote_from_values(vals: list[str], ticker: str) -> RealtimeQuote | None:
+    """把腾讯行情字段列表转成 :class:`RealtimeQuote`。
+
+    Args:
+        vals: ``~`` 分隔的腾讯行情字段（不短于 53 项）。
+        ticker: 归一化 ticker（用于回填 ``RealtimeQuote.ticker``）。
+
+    Returns:
+        字段不足（停牌/退市/格式变化）时返回 None。
+    """
+    if len(vals) < 53:
+        return None
+    return RealtimeQuote(
+        ticker=ticker,
+        name=vals[1].strip(),
+        price=_tencent_num(vals[3]),
+        pe=_tencent_num(vals[39]),
+        pb=_tencent_num(vals[46]),
+        market_cap=_tencent_num(vals[45]),
+        turnover=_tencent_num(vals[38]),
+        source="tencent",
+    )
 
 
 class TencentProvider(DataProvider):
@@ -353,48 +402,58 @@ class TencentProvider(DataProvider):
         prefixed = self._to_tencent_symbol(ticker)
         url = f"https://qt.gtimg.cn/q={prefixed}"
         data = _tencent_http_get(url, None)
-        quote: dict[str, Any] | None = None
-        for line in data.strip().split(";"):
-            stripped = line.strip().rstrip(";").strip()
-            if not stripped or "=" not in stripped or '"' not in stripped:
+        for key, vals in _iter_quote_blocks(data):
+            if key == prefixed:
+                return _quote_from_values(vals, ticker)
+        return None
+
+    def fetch_quotes_batch(
+        self,
+        tickers: list[str],
+        max_workers: int = 8,
+    ) -> dict[str, RealtimeQuote]:
+        """批量获取实时行情（单次 HTTP 最多 60 只，避免逐票请求）。
+
+        腾讯 ``qt.gtimg.cn/q=`` 支持逗号分隔的多代码查询，本方法把 ticker
+        按 60 只分批请求，一次解析整批行情，供市值/名称/PE 等全市场前置
+        过滤使用。``max_workers`` 仅为与基类签名兼容，批内串行（腾讯对
+        并发不友好，且批大小已足够摊薄请求数）。
+
+        Args:
+            tickers: 股票代码列表（``sh.600519`` / ``sz.000858``，北交所自动跳过）。
+            max_workers: 保留参数，未使用。
+
+        Returns:
+            成功获取的 ticker → :class:`RealtimeQuote` 映射；单批失败时跳过该批。
+        """
+        del max_workers  # 批内串行，保留参数仅为兼容基类签名
+
+        symbol_to_ticker: dict[str, str] = {}
+        for ticker in tickers:
+            try:
+                symbol_to_ticker[self._to_tencent_symbol(ticker)] = ticker
+            except ValueError:
                 continue
-            key = stripped.split("=", 1)[0].split("_")[-1]
-            if key != prefixed:
+
+        results: dict[str, RealtimeQuote] = {}
+        symbols = list(symbol_to_ticker)
+        for start in range(0, len(symbols), _QUOTE_BATCH_SIZE):
+            chunk = symbols[start : start + _QUOTE_BATCH_SIZE]
+            url = f"https://qt.gtimg.cn/q={','.join(chunk)}"
+            try:
+                data = _tencent_http_get(url, None)
+            except RuntimeError as exc:
+                logger.warning(f"tencent 批量行情请求失败（第 {start // _QUOTE_BATCH_SIZE + 1} 批）: {exc}")
                 continue
-            parts = stripped.split('"')
-            if len(parts) < 2:
-                continue
-            value = parts[1]
-            vals = value.split("~")
-            if len(vals) < 53:
-                continue
-            price = _tencent_num(vals[3]) or 0.0
-            last_close = _tencent_num(vals[4]) or 0.0
-            amount_wan = _tencent_num(vals[37]) or 0.0
-            quote = {
-                "ticker": ticker,
-                "name": vals[1],
-                "price": price,
-                "last_close": last_close,
-                "amount_wan": amount_wan,
-                "pe": _tencent_num(vals[39]),
-                "pb": _tencent_num(vals[46]),
-                "market_cap": _tencent_num(vals[45]),
-                "turnover": _tencent_num(vals[38]),
-                "is_stale": amount_wan == 0 and price > 0 and price == last_close,
-            }
-            break
-        if quote is None:
-            return None
-        return RealtimeQuote(
-            ticker=ticker,
-            price=quote["price"],
-            pe=quote["pe"],
-            pb=quote["pb"],
-            market_cap=quote["market_cap"],
-            turnover=quote["turnover"],
-            source=self.name,
-        )
+            for key, vals in _iter_quote_blocks(data):
+                tk = symbol_to_ticker.get(key)
+                if tk is None:
+                    continue
+                quote = _quote_from_values(vals, tk)
+                if quote is not None:
+                    results[tk] = quote
+            time.sleep(_QUOTE_BATCH_INTERVAL_SEC)
+        return results
 
     def fetch_metadata(self, ticker: str) -> StockMetadata | None:
         """腾讯不提供完整基本面元数据，返回 None。"""

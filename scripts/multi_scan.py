@@ -36,6 +36,7 @@ from scripts._utils import (
 )
 from scripts.daily_analysis import _load_env, analyze_stock
 from scripts.feishu_utils import load_config, send_notification
+from scripts.universe_filter import apply_universe_filter
 from scripts.valuation import _safe_float, evaluate_valuation
 from trade_krono_cli.config import get_settings
 
@@ -469,6 +470,12 @@ def main() -> None:
 
     # 获取所有A股代码
     tickers = get_astock_tickers(db_path, logger.info)
+
+    # ── 前置统一股票池过滤（ST/北交所/ETF/次新/停牌/低价/低流动性/市值） ──
+    tickers = apply_universe_filter(tickers, args.date, label="多头排列")
+    if not tickers:
+        logger.warning("⚠️  前置股票池过滤后无剩余标的，退出")
+        sys.exit(0)
 
     # 扫描多头排列股票
     results = scan_multi_head_stocks(tickers, max_workers=args.workers, top_n=args.top)
