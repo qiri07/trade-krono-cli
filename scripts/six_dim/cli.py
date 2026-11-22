@@ -33,8 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--top",
         type=int,
-        default=10,
-        help="推荐前 N 只（0 表示输出全部通过门槛的股票）",
+        default=0,
+        help="推荐前 N 只（0 表示输出全部通过门槛的股票，默认不限制）",
     )
     parser.add_argument(
         "--min-cap",

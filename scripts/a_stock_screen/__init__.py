@@ -8,11 +8,16 @@
   2. 流动性与市值过滤（近20日日均成交额、近12月日均换手率、总市值）
   3. 异常标的过滤（最新股价）
 
+五必筛选（适用于流程之外的独立筛选）：
+  - scripts.a_stock_screen.fivemust.screen_five_must
+  - scripts.a_stock_screen.fivemust.FiveMustResult
+
 用法：
     from scripts.a_stock_screen.screener import screen_a_stock_candidates
     passed, details = screen_a_stock_candidates(codes, date_str)
 """
 
+from scripts.a_stock_screen.fivemust import FiveMustResult, screen_five_must
 from scripts.a_stock_screen.screener import (
     AStockScreenResult,
     count_passed_rules,
@@ -21,6 +26,8 @@ from scripts.a_stock_screen.screener import (
 
 __all__ = [
     "AStockScreenResult",
+    "FiveMustResult",
     "count_passed_rules",
     "screen_a_stock_candidates",
+    "screen_five_must",
 ]

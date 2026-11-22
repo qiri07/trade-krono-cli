@@ -32,7 +32,9 @@ from loguru import logger
 from scripts._utils import expected_trading_day, get_all_tickers, load_metadata_index
 from scripts.a_stock_screen import (
     AStockScreenResult,
+    FiveMustResult,
     screen_a_stock_candidates,
+    screen_five_must,
 )
 
 # 复用 AStockScreenResult 的字段做表头展示
@@ -50,6 +52,39 @@ _OUTPUT_FIELDS: list[str] = [
     "is_st",
     "is_etf",
     "is_bse",
+    "pass_count",
+    "total_rules",
+    "fail_reasons",
+    "passed",
+]
+
+# 五必筛选结果展示字段
+_FIVEMUST_FIELDS: list[str] = [
+    "code",
+    "name",
+    "close",
+    "price_percentile",
+    "cond1_history_low",
+    "cond1_reason",
+    "volatility_20d",
+    "return_5d",
+    "cond2_bottom_solid",
+    "cond2_reason",
+    "roe",
+    "roe_excl",
+    "cond3_performance",
+    "cond3_reason",
+    "holder_count",
+    "holder_change_pct",
+    "cond4_concentration",
+    "cond4_reason",
+    "ma5",
+    "ma10",
+    "ma20",
+    "ma60",
+    "high_20d",
+    "cond5_breakout",
+    "cond5_reason",
     "pass_count",
     "total_rules",
     "fail_reasons",
@@ -142,6 +177,11 @@ def main() -> None:
         action="store_true",
         help="不推送飞书",
     )
+    parser.add_argument(
+        "--fivemust",
+        action="store_true",
+        help="启用「五必」筛选（历史低位/底部扎实/业绩优秀/筹码集中/日K多头突破），代替常规硬过滤",
+    )
     args = parser.parse_args()
 
     date_str = args.date or expected_trading_day()
@@ -157,6 +197,13 @@ def main() -> None:
 
     logger.info(f"📋 待筛选股票数量: {len(codes)} 只")
 
+    if args.fivemust:
+        _run_fivemust(codes, date_str, args)
+        return
+
+    # ──────────────────────────────────────────────────────────
+    # 常规硬过滤分支
+    # ──────────────────────────────────────────────────────────
     # 加载元数据
     meta = load_metadata_index()
 
@@ -164,14 +211,14 @@ def main() -> None:
     passed_codes, details = screen_a_stock_candidates(codes, date_str, metadata=meta)
 
     # 统计并排序全部结果（按 pass_count 降序、fail_reasons 长度升序）
-    results: list[AStockScreenResult] = list(details.values())
-    results.sort(key=lambda r: (-r.pass_count, len(r.fail_reasons)))
+    hard_results: list[AStockScreenResult] = list(details.values())
+    hard_results.sort(key=lambda r: (-r.pass_count, len(r.fail_reasons)))
 
     # 按最小通过比例过滤
     min_rate = args.min_pass_rate
     filtered = [
         r
-        for r in results
+        for r in hard_results
         if r.total_rules == 0 or (r.pass_count / r.total_rules) >= min_rate
     ]
 
@@ -182,7 +229,7 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("A股筛选结果摘要")
     logger.info("=" * 60)
-    logger.info(f"候选股票总数: {len(results)} 只")
+    logger.info(f"候选股票总数: {len(hard_results)} 只")
     logger.info(f"通过所有规则: {len(passed)} 只")
     logger.info(f"满足最小通过比例({min_rate:.0%}): {len(filtered)} 只")
     logger.info("=" * 60)
@@ -245,6 +292,93 @@ def main() -> None:
             logger.warning(f"⚠️ 飞书推送失败: {e}")
 
     logger.info("✅ A股筛选完成")
+
+
+def _run_fivemust(codes: list[str], date_str: str, args: argparse.Namespace) -> None:
+    """执行「五必」筛选并输出结果（打印 / CSV / 飞书）。"""
+    # ──────────────────────────────────────────────────────────
+    # 「五必」筛选分支
+    # ──────────────────────────────────────────────────────────
+    logger.info("🔍 五必筛选启动（历史低位/底部扎实/业绩优秀/筹码集中/日K多头突破）")
+    passed_codes, fivemust_details = screen_five_must(codes, date_str)
+
+    results: list[FiveMustResult] = list(fivemust_details.values())
+    results.sort(key=lambda r: (-r.pass_count, len(r.fail_reasons)))
+    passed = [r for r in results if r.passed]
+    top_results = results[: args.top] if args.top > 0 else results
+
+    # 始终写入固定文件名，供综合选股汇集（combined_stock_analysis）读取
+    from trade_krono_cli.config import get_settings  # noqa: PLC0415
+
+    _results_dir = Path(get_settings().results_dir)
+    _dc = date_str.replace("-", "")
+    default_output = _results_dir / f"fivemust_screen_{_dc}.csv"
+
+    logger.info("=" * 60)
+    logger.info("五必筛选结果摘要")
+    logger.info("=" * 60)
+    logger.info(f"候选股票总数: {len(results)} 只")
+    logger.info(f"通过全部5条: {len(passed)} 只")
+    logger.info("=" * 60)
+
+    if top_results:
+        logger.info("\n📋 五必筛选通过股票明细:")
+        for i, r in enumerate(top_results, 1):
+            cap = (
+                f"{r.market_cap / 1e8:.0f}亿"
+                if r.market_cap is not None
+                else "N/A"
+            )
+            logger.info(
+                f"  {i:3d}. {r.code} {r.name:<12} "
+                f"收盘={r.close} "
+                f"市值={cap} "
+                f"分位={r.price_percentile} "
+                f"ROE={r.roe} "
+                f"户数变={r.holder_change_pct} "
+                f"MA5={r.ma5:.2f} "
+                f"规则={r.pass_count}/{r.total_rules} "
+                f"通过={'是' if r.passed else '否'}"
+            )
+            if r.fail_reasons:
+                logger.info(f"         失败原因: {'; '.join(r.fail_reasons)}")
+
+    # 保存到 CSV（始终写固定路径；--output 可额外指定另一路径）
+    import pandas as pd
+
+    df = pd.DataFrame([r.to_dict() for r in results])
+    exist_cols = [c for c in _FIVEMUST_FIELDS if c in df.columns]
+    df = df[exist_cols]
+    df.to_csv(default_output, index=False, encoding="utf-8-sig")
+    logger.info(f"💾 五必结果已写入: {default_output}（{len(results)} 只）")
+    if args.output and args.output != str(default_output):
+        df.to_csv(args.output, index=False, encoding="utf-8-sig")
+        logger.info(f"💾 五必结果已额外写入: {args.output}")
+
+    # 飞书推送
+    if not args.no_push and passed:
+        try:
+            from scripts.feishu_utils import push_feishu
+
+            lines = [
+                f"📈 **A股五必筛选结果**（共 {len(passed)} 只通过全部5条）\n"
+            ]
+            for r in top_results[:20]:
+                lines.append(
+                    f"  {r.code} {r.name[:10]:<10} "
+                    f"收盘={r.close} "
+                    f"分位={r.price_percentile} "
+                    f"ROE={r.roe} "
+                    f"户数变={r.holder_change_pct} "
+                    f"MA5={r.ma5:.2f} "
+                    f"规则={r.pass_count}/{r.total_rules}"
+                )
+            push_feishu("text", content="\n".join(lines), title="A股五必筛选结果")
+            logger.info("✅ 飞书推送成功")
+        except Exception as e:
+            logger.warning(f"⚠️ 飞书推送失败: {e}")
+
+    logger.info("✅ 五必筛选完成")
 
 
 if __name__ == "__main__":

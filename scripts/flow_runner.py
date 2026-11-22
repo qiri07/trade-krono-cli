@@ -308,6 +308,25 @@ STEPS: list[Step] = [
         timeout=7200,
     ),
     Step(
+        name="fivemust",
+        description="五必筛选（历史低位/底部扎实/业绩优秀/筹码集中/日K多头突破，a_stock_screen/cli.py --fivemust）",
+        command=[
+            "uv",
+            "run",
+            "python",
+            "scripts/a_stock_screen/cli.py",
+            "--all",
+            "--date",
+            expected_trading_day(),
+            "--fivemust",
+            "--push",
+            str(PUSH_FLAG),
+        ],
+        enabled_by_default=True,
+        depends_on=["universe"],
+        timeout=7200,
+    ),
+    Step(
         name="combined",
         description="综合选股交集汇总（combined_stock_analysis.py，含回测 + 飞书推送）",
         command=[
@@ -342,6 +361,7 @@ STEPS: list[Step] = [
             "czsc",
             "intraday",
             "sixdim",
+            "fivemust",
         ],
         timeout=10800,
     ),
@@ -352,6 +372,14 @@ STEPS: list[Step] = [
         enabled_by_default=EXPORT,
         depends_on=["sync"],
         timeout=3600,
+    ),
+    Step(
+        name="export_obsidian",
+        description="每日结果导出到 Obsidian 知识库（export_obsidian_results.py）",
+        command=["uv", "run", "python", "scripts/export_obsidian_results.py"],
+        enabled_by_default=True,
+        depends_on=["combined"],
+        timeout=600,
     ),
 ]
 
