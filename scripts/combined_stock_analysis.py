@@ -151,8 +151,8 @@ def main() -> None:
     parser.add_argument(
         "--min-sources",
         type=int,
-        default=2,
-        help="最少命中几条选股线才进入交集池（默认 2）",
+        default=4,
+        help="最少命中几条选股线才进入交集池（默认 4）",
     )
     parser.add_argument(
         "--a-stock-screen",

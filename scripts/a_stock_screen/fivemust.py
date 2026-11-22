@@ -576,13 +576,30 @@ def screen_five_must(
     results: dict[str, FiveMustResult] = {}
     conn = get_sqlite_conn(get_cache_db_path())
     conn_b = get_sqlite_conn(str(BUFFETT_CACHE_DB))
+    # 加载股票名称映射（从 cache_valuations 表）
+    name_map: dict[str, str] = {}
+    try:
+        name_rows = conn_b.execute(
+            "SELECT key, data FROM cache_valuations"
+        ).fetchall()
+        for key, data in name_rows:
+            try:
+                val_data = json.loads(data) if isinstance(data, str) else data
+                if isinstance(val_data, dict) and val_data.get("name"):
+                    # key 格式: val_600000.SH
+                    bare_code = key.replace("val_", "").replace(".SH", "").replace(".SZ", "")
+                    name_map[bare_code] = val_data["name"]
+            except (json.JSONDecodeError, TypeError):
+                continue
+    except Exception:
+        pass
     # 需接口补漏的股票代码（本地无换手率数据）
     need_holder: list[str] = []
     try:
         for code in codes:
             ticker = normalize_ticker_key(code)
             bare = strip_ticker_prefix(ticker)
-            result = FiveMustResult(code=code)
+            result = FiveMustResult(code=code, name=name_map.get(bare, ""))
 
             df = _load_kline_to_date(conn, ticker, date_str)
 
