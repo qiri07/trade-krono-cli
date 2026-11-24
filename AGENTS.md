@@ -47,10 +47,14 @@ uv run python scripts/combined_stock_analysis.py          # 第9步：多线共�
 uv run python scripts/export_shared_data.py --format all --dest /run/media/onai/MyDisk/Work/shared_data  # 导出共享数据
 uv run python scripts/export_vnpy_data.py              # 导出 vnpy 格式
 bash scripts/post_sync_export.sh                       # 同步后一键导出所有格式
-bash scripts/daily_flow.sh                             # 一键执行今日投研流程（调度 scripts/flow_runner.py run --all：check→sync→sync_etf→metadata→buffett→resonance→multi_head→whitelist→double_ma→macd_ma→combined→intraday；不含数据导出；支持 RESUME=1 断点续传）
-uv run python scripts/pipeline_entry.py daily          # 等价，统一入口（支持 --no-push/--no-sync/--skip-etf/--export/--resume/--force/--dry-run）
+bash scripts/daily_flow.sh                             # 一键执行今日投研流程（调度 scripts/flow_runner.py run --all，含港股 sync_hk/metadata_hk/hk_screen；不含数据导出；支持 RESUME=1 断点续传）
+uv run python scripts/pipeline_entry.py daily          # 等价，统一入口（支持 --no-push/--no-sync/--skip-etf/--skip-hk/--export/--resume/--force/--dry-run）
 uv run python scripts/pipeline_entry.py sixdim         # 六维选股（--date/--top/--push 1/--no-push）
 uv run python scripts/pipeline_entry.py cross          # 流程交集 ∩ 六维选股（--date/--min-sources/--push 1/--no-push）
+uv run python scripts/full_hk_history_sync.py             # 港股 K 线增量同步（默认补到最近交易日；--full 全量重建）
+uv run python scripts/fetch_hk_metadata.py                # 港股元数据/基本面刷新（TTL 增量：行情12h/财务30d/档案365d）
+uv run python scripts/hk_daily_screen.py                  # 港股每日筛选（本地K线+元数据→规则→JSON/CSV→飞书）
+uv run python scripts/pipeline_entry.py hk                # 港股筛选统一入口（--date/--top/--codes/--min-coverage/--no-push）
 uv run ruff check .                  # Lint 检查
 uv run ruff check --fix .            # Lint + 自动修复
 uv run mypy .                        # 类型检查
@@ -325,6 +329,37 @@ uv run python scripts/intraday_scan.py --min-signals 2       # 至少命中 2 �
 uv run python scripts/intraday_scan.py --tickers "600519,000858,510300" --push 1
 ```
 
+### 港股每日筛选（`scripts/hk_screen/` + `scripts/hk_daily_screen.py`）
+
+港股是独立筛选器（无 A 股的多线交集/AI 核实/Kronos 链路），流程为：
+
+```
+full_hk_history_sync.py（增量 K 线，固定 akshare_hk 源）
+  → fetch_hk_metadata.py（hk_metadata 表：行情12h / 财务30d / 档案365d TTL）
+  → hk_daily_screen.py（本地 K 线技术面 + 元数据基本面 → 22 条规则三态判定
+      → 数据完整度门槛 HK_MIN_RULE_COVERAGE=0.6 → JSON 固定落盘 → 飞书）
+```
+
+关键设计（2026-11-24 修复）：
+- **三态语义**：`True/False/None`（未知）。未知不计失败但计入 `coverage`，
+  避免「数据越缺失越容易通过」的 fail-open；`min_coverage` 默认 0.6。
+- **元数据即真相**：`hk_metadata` 表已移除历史 `DEFAULT 0`（会把未知误判为不合格），
+  布尔字段 NULL 表示未知；`fetch_hk_metadata.py` 按 TTL 增量写，
+  只覆盖实际取到的列，不会冲掉其他字段。
+- **财务来源**：`stock_hk_security_profile_em`（上市/港股通/标的类型）、
+  `stock_financial_hk_analysis_indicator_em`（年报 ROE/毛利率/负债率/现金流/营收）、
+  `stock_hk_financial_indicator_em`（PE/PB/市值/股息率）、`stock_hk_dividend_payout_em`（连续派息）。
+  东财快照失败时回退新浪快照（仅名称/价格/成交额）。
+- **时间窗口**：回撤/年化波动率按近 252 交易日，单日涨幅按近 1 年；`--date` 真正驱动 K 线窗口。
+- **固定 JSON 落盘**：`outputs/results/hk_screen_YYYYMMDD.json`（全量结果 + 通过率 + 完整度）。
+
+```bash
+uv run python scripts/full_hk_history_sync.py --end 2026-11-24      # 增量
+uv run python scripts/fetch_hk_metadata.py --limit 20                # 小样本验证
+uv run python scripts/hk_daily_screen.py --top 20 --no-push
+uv run python scripts/hk_daily_screen.py --require-hk-connect --min-coverage 0.8
+```
+
 ### 六维选股（`scripts/six_dim_screen.py`）
 
 按「逻辑 > 估值 > 位置 > 趋势 > 股东人数 > 量价」的优先级选股：前两维为硬门槛，
@@ -355,6 +390,26 @@ JSON 记录 `rank_basis` / `tier_width` / `dim_priority` / `funnel` / `total_pas
 便于事后核对排序口径；`--top` 只截断输出，`total_passed` 仍为门槛通过总数。
 注意：MD/飞书卡片中的「综合」列是加权分，仅在六维同档时决定名次，该列**不一定单调递减**。
 
+### 缠论信号全市场选股（`scripts/czsc_universe_signal_scan.py`）
+
+缠论选股按「笔向上 + 均线多头 + 非跌停」的条件扫描全市场。**默认不包括 ETF，只选 A 股（沪深）**，全链路均已剔除 ETF：
+
+| 层 | 处理 |
+|----|------|
+| DB→parquet 转换 | SQL 过滤 `ticker not like 'sh.5%' / sz.159% / sz.156% / sz.158%`，不再产出 ETF parquet 文件（节省存储） |
+| 信号扫描 | `run_screen()` 过滤 `is_etf_ticker()`，只扫描 A 股 parquet |
+| 覆盖度统计 | `daily_coverage()` 同步剔除 ETF，不计入 active 标的数 |
+| 输出 CSV / 飞书推送 | 只包含 A 股（沪深），不含 ETF |
+
+```bash
+uv run python scripts/czsc_universe_signal_scan.py              # 全市场缠论信号扫描（默认不含 ETF）
+uv run python scripts/czsc_universe_signal_scan.py --scan-only  # 仅扫描，不转换 DB
+uv run python scripts/czsc_universe_signal_scan.py --push       # 推送飞书
+uv run bash scripts/czsc_full_scan.sh                           # 全流程包装脚本（转换+扫描+推送）
+```
+
+结果落盘 `outputs/czsc_signal_scan/matched_bi_ma_YYYYMMDD.csv` / `matched_third_buy_YYYYMMDD.csv`，以及汇总 `summary_YYYYMMDD.json`。
+
 ### 一键全流程（`scripts/daily_flow.sh`）
 
 ```bash
@@ -362,6 +417,7 @@ bash scripts/daily_flow.sh              # 全流程（含飞书推送，不含�
 NO_PUSH=1 bash scripts/daily_flow.sh    # 跳过所有飞书推送
 NO_SYNC=1 bash scripts/daily_flow.sh    # 跳过第 1 步数据同步
 SKIP_ETF=1 bash scripts/daily_flow.sh   # 跳过 ETF 同步
+SKIP_HK=1 bash scripts/daily_flow.sh    # 跳过港股同步/元数据/筛选 3 个 step
 EXPORT=1 bash scripts/daily_flow.sh     # 额外执行共享数据导出
 DRY_RUN=1 bash scripts/daily_flow.sh    # 只打印不执行
 RESUME=1 bash scripts/daily_flow.sh    # 断点续传：跳过已成功 step，从失败处继续
@@ -459,6 +515,7 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `etf_history_sync.py` | ETF K 线同步（akshare 同花顺发现全市场 ~1409 只，baostock 拉取；`--full` 全量 / `--codes` 指定；单只拉取 18s 超时兜底防 baostock 挂起，批次级 `wait=False` 不阻塞） |
 | `intraday_scan.py` | 盘中技术信号扫描（akshare 分钟 K 线 + 腾讯实时价；金叉/多头/MACD/三线共振，`--mode` 选类型，`--min-signals` 过滤，`--push` 飞书） |
 | `six_dim_screen.py` | 六维选股（逻辑>估值>位置>趋势>股东人数>量价；前两维硬门槛，后四维递减权重打分，输出前 N 只 + JSON/MD 报告） |
+| `czsc_universe_signal_scan.py` | 缠论信号全市场选股（笔向上+均线多头+非跌停；**默认不包括 ETF，只选 A 股（沪深）**；DB→parquet 转换、信号扫描、覆盖度统计均已剔除 ETF） |
 | `combined_stock_report.py` | 综合选股交集重放（复用 collect/intersect/cards，按日期重算交集并生成/推送汇总卡片，`--no-push` 仅落盘） |
 | `cross_screen_report.py` | 流程交集 ∩ 六维选股 交叉验证（`--date/--min-sources/--no-push`，输出逐只六维+估值+位置+筹码+量价并推送） |
 | `pipeline_entry.py` | 统一投研流程编排入口（`daily` 每日全流程 / `sixdim` 六维选股 / `cross` 流程∩六维交集，参数透传、退出码透传） |
