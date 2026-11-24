@@ -1,308 +1,332 @@
 #!/usr/bin/env python3
-"""批量获取港股基本面元数据并存入本地数据库。
+"""批量获取港股基本面元数据并写入本地 ``hk_metadata`` 表。
 
-从 akshare 获取港股实时行情（包含 PE/PB/市值/换手率等），
-并写入 pipeline_cache.db 的 hk_metadata 表，供筛选脚本本地读取。
+数据来源与刷新策略：
+
+==================  ==========================================  =====================
+字段类别            来源                                        TTL
+==================  ==========================================  =====================
+行情/估值/市值      ``akshare.stock_hk_spot_em`` 全市场快照      ``--spot-ttl-hours``(12h)
+上市信息/港股通      ``stock_hk_security_profile_em``            ``--profile-ttl-days``(365d)
+财务/分红           ``stock_financial_hk_analysis_indicator_em`` ``--financial-ttl-days``(30d)
+                    ``stock_hk_financial_indicator_em``
+                    ``stock_hk_dividend_payout_em``
+==================  ==========================================  =====================
+
+技术指标（成交额、回撤、波动率、换手率等）**不在此写入**，由
+``scripts/hk_screen/data_fetcher.py`` 在读取时从本地 K 线实时计算，
+避免把「当日值」误存成「12 个月均值」。
 
 用法：
-    uv run python scripts/fetch_hk_metadata.py              # 全量获取所有港股元数据
-    uv run python scripts/fetch_hk_metadata.py --codes "00700,00941"  # 指定股票
-    uv run python scripts/fetch_hk_metadata.py --force      # 强制重新获取已有数据
+    uv run python scripts/fetch_hk_metadata.py                     # 全量（按 TTL 增量）
+    uv run python scripts/fetch_hk_metadata.py --codes "00700,00941"
+    uv run python scripts/fetch_hk_metadata.py --force             # 忽略 TTL 全量刷新
+    uv run python scripts/fetch_hk_metadata.py --skip-financial    # 只刷行情快照
+    uv run python scripts/fetch_hk_metadata.py --limit 20          # 只处理前 20 只（调试）
 """
 
 from __future__ import annotations
 
 import argparse
-import sqlite3
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
+from typing import Any  # 快照行/财务记录值类型混杂，Any 为合理
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from typing import Any
-
 from loguru import logger
 
-from scripts._utils import get_cache_db_path
+from scripts._utils import get_cache_db_path, get_sqlite_conn
+from scripts.hk_screen.constants import HK_METADATA_FINANCIAL_TTL_DAYS
+from scripts.hk_screen.data_fetcher import get_hk_connect_stocks
+from scripts.hk_screen.fundamentals import fetch_hk_fundamentals
+from scripts.hk_screen.metadata_store import (
+    ensure_hk_metadata_table,
+    has_financial_data,
+    has_profile_data,
+    is_stale,
+    is_stale_hours,
+    read_hk_metadata,
+    upsert_hk_metadata,
+)
+from trade_krono_cli.cli_commands.core import _load_env
 
 CACHE_DB = get_cache_db_path()
 
 
 def get_hk_ticker_list_from_cache() -> list[str]:
-    """从本地缓存获取所有港股 ticker。"""
-    conn = sqlite3.connect(str(CACHE_DB))
-    rows = conn.execute(
-        "SELECT DISTINCT ticker FROM kline_cache WHERE ticker LIKE 'hk.%' ORDER BY ticker"
-    ).fetchall()
-    conn.close()
+    """从本地 K 线缓存读取所有港股 ticker（按代码升序）。
+
+    Returns:
+        港股 ticker 列表，如 ``["hk.00700", ...]``。
+    """
+    if not CACHE_DB.exists():
+        logger.error(f"❌ 缓存数据库不存在: {CACHE_DB}")
+        return []
+    conn = get_sqlite_conn(CACHE_DB, readonly=True)
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT ticker FROM kline_cache WHERE ticker LIKE 'hk.%' ORDER BY ticker"
+        ).fetchall()
+    finally:
+        conn.close()
     return [r[0] for r in rows]
 
 
-def create_metadata_table(conn: sqlite3.Connection) -> None:
-    """创建 hk_metadata 表（如果不存在）。"""
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS hk_metadata (
-            ticker TEXT PRIMARY KEY,
-            name TEXT,
-            industry TEXT,
-            pe_ttm REAL,
-            pb REAL,
-            dividend_yield REAL,
-            market_cap REAL,
-            turnover_20d_avg REAL,
-            turnover_rate_12m_avg REAL,
-            listing_date TEXT,
-            listing_days INTEGER,
-            is_hk_connect INTEGER DEFAULT 0,
-            is_hkd INTEGER DEFAULT 1,
-            is_common_stock INTEGER DEFAULT 1,
-            suspension_days_30d INTEGER DEFAULT 0,
-            has_risk_warning INTEGER DEFAULT 0,
-            debt_to_asset REAL,
-            non_gaap_profit_2y INTEGER DEFAULT 0,
-            clean_audit_2y INTEGER DEFAULT 0,
-            operating_cashflow_3y INTEGER DEFAULT 0,
-            revenue_growth_3y INTEGER DEFAULT 0,
-            gross_margin REAL,
-            avg_roe_3y REAL,
-            top_shareholder_pct REAL,
-            max_drawdown_12m REAL,
-            rights_issues_12m INTEGER DEFAULT 0,
-            price REAL,
-            drawdown_from_high REAL,
-            single_day_spike_1y REAL,
-            dividend_3y INTEGER DEFAULT 0,
-            payout_ratio REAL,
-            annualized_volatility_12m REAL,
-            fcf_to_net_profit REAL,
-            updated_at TEXT DEFAULT (datetime('now'))
-        )
+def fetch_hk_spot_map(retries: int = 3) -> dict[str, Any]:  # 快照行为 Series，类型混杂
+    """获取全市场港股行情快照。
+
+    Args:
+        retries: 失败重试次数。
+
+    Returns:
+        ``{5位代码: 行情行}``；全部失败时返回空字典。
     """
-    )
-    conn.commit()
+    import time
 
-
-def fetch_hk_spot_data() -> dict:
-    """从 akshare 获取全市场港股实时行情。
-
-    Returns
-    -------
-    dict
-        代码 -> 行情数据的映射
-    """
     import akshare as ak
 
-    logger = __import__("loguru").logger
+    def _index(df: Any) -> dict[str, Any]:  # 快照行类型混杂
+        """按 5 位代码建立索引。"""
+        spot_map: dict[str, Any] = {}
+        for _, row in df.iterrows():
+            code = str(row.get("代码", "")).zfill(5)
+            if code:
+                spot_map[code] = row
+        return spot_map
 
-    for attempt in range(5):
+    # 主源：东方财富（含 PE/PB/市值/股息率）
+    for attempt in range(retries):
         try:
             df = ak.stock_hk_spot_em()
             if df is not None and not df.empty:
-                logger.info(f"✅ 获取到 {len(df)} 只港股实时行情")
-                result: dict = {}
-                for _, r in df.iterrows():
-                    code = str(r.get("代码", "")).zfill(5)
-                    if code:
-                        result[code] = r
-                return result
-        except Exception as e:
-            logger.warning(f"获取全市场行情失败（第{attempt + 1}次）: {e}")
-            import time as _time
+                spot_map = _index(df)
+                logger.info(f"✅ 获取到 {len(spot_map)} 只港股行情快照（东财）")
+                return spot_map
+        except Exception as e:  # akshare 网络层异常类型不稳定
+            logger.warning(f"东财港股快照失败（第{attempt + 1}次）: {e}")
+            time.sleep(3)
 
-            _time.sleep(3)
+    # 备用源：新浪（仅名称/价格/成交额，不含估值字段）
+    try:
+        df = ak.stock_hk_spot()
+        if df is not None and not df.empty:
+            spot_map = _index(df)
+            logger.warning(f"⚠️  东财快照不可用，已回退新浪快照（{len(spot_map)} 只，无 PE/PB/市值）")
+            return spot_map
+    except Exception as e:  # akshare 网络层异常类型不稳定
+        logger.warning(f"新浪港股快照也失败: {e}")
 
-    logger.error("❌ 无法获取港股实时行情")
+    logger.error("❌ 无法获取港股行情快照（行情/估值字段将保持原值）")
     return {}
 
 
-def store_metadata(
-    conn: sqlite3.Connection,
+def _safe_float(val: Any) -> float | None:  # 输入为 DataFrame 单元格，类型混杂
+    """安全转换为 float；None/NaN/非数值返回 None。"""
+    if val is None:
+        return None
+    try:
+        f = float(val)
+    except (TypeError, ValueError):
+        return None
+    if f != f:  # NaN
+        return None
+    return f
+
+
+def build_spot_record(
     ticker: str,
-    name: str,
-    industry: str,
-    pe_ttm: float | None,
-    pb: float | None,
-    dividend_yield: float | None,
-    market_cap: float | None,
-    turnover_20d_avg: float | None,
-    turnover_rate_12m_avg: float | None,
-    listing_date: str | None,
-    listing_days: int | None,
-    is_hk_connect: bool,
-    is_hkd: bool,
-    is_common_stock: bool,
-    suspension_days_30d: int,
-    has_risk_warning: bool,
-    debt_to_asset: float | None,
-    non_gaap_profit_2y: bool,
-    clean_audit_2y: bool,
-    operating_cashflow_3y: bool,
-    revenue_growth_3y: bool,
-    gross_margin: float | None,
-    avg_roe_3y: float | None,
-    top_shareholder_pct: float | None,
-    max_drawdown_12m: float | None,
-    rights_issues_12m: int,
-    price: float | None,
-    drawdown_from_high: float | None,
-    single_day_spike_1y: float | None,
-    dividend_3y: bool,
-    payout_ratio: float | None,
-    annualized_volatility_12m: float | None,
-    fcf_to_net_profit: float | None,
-) -> None:
-    """将单只港股元数据写入数据库。"""
-    conn.execute(
-        """
-        INSERT OR REPLACE INTO hk_metadata (
-            ticker, name, industry, pe_ttm, pb, dividend_yield, market_cap,
-            turnover_20d_avg, turnover_rate_12m_avg, listing_date, listing_days,
-            is_hk_connect, is_hkd, is_common_stock, suspension_days_30d,
-            has_risk_warning, debt_to_asset, non_gaap_profit_2y, clean_audit_2y,
-            operating_cashflow_3y, revenue_growth_3y, gross_margin, avg_roe_3y,
-            top_shareholder_pct, max_drawdown_12m, rights_issues_12m,
-            price, drawdown_from_high, single_day_spike_1y,
-            dividend_3y, payout_ratio, annualized_volatility_12m,
-            fcf_to_net_profit, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        """,
-        (
-            ticker, name, industry, pe_ttm, pb, dividend_yield, market_cap,
-            turnover_20d_avg, turnover_rate_12m_avg, listing_date, listing_days,
-            int(is_hk_connect), int(is_hkd), int(is_common_stock),
-            suspension_days_30d, int(has_risk_warning), debt_to_asset,
-            int(non_gaap_profit_2y), int(clean_audit_2y),
-            int(operating_cashflow_3y), int(revenue_growth_3y),
-            gross_margin, avg_roe_3y, top_shareholder_pct, max_drawdown_12m,
-            rights_issues_12m, price, drawdown_from_high, single_day_spike_1y,
-            int(dividend_3y), payout_ratio, annualized_volatility_12m,
-            fcf_to_net_profit,
-        ),
-    )
+    row: Any,  # 快照行为 pandas Series
+    hk_connect: set[str] | None,
+    now_str: str,
+) -> dict[str, Any]:  # 值类型混杂
+    """把一行快照转换为 ``hk_metadata`` 记录。
+
+    Args:
+        ticker: ``hk.00700`` 形式。
+        row: akshare 快照行。
+        hk_connect: 港股通集合；``None`` 表示未知（不写入该列）。
+        now_str: 当前时间戳字符串。
+
+    Returns:
+        仅含行情/估值字段的记录（技术指标交由 data_fetcher 计算）。
+    """
+    record: dict[str, Any] = {"ticker": ticker, "updated_at": now_str}
+    name = str(row.get("中文名称") or "").strip()
+    if name:
+        record["name"] = name
+    # 只写入真正取到的字段：None 不落库，避免用「空」覆盖已有估值（如财务接口已填 PE）
+    for column, key in (
+        ("pe_ttm", "市盈率"),
+        ("pb", "市净率"),
+        ("dividend_yield", "股息率"),
+        ("market_cap", "总市值"),
+        ("price", "最新价"),
+    ):
+        value = _safe_float(row.get(key))
+        if value is not None:
+            record[column] = value
+    if hk_connect is not None:
+        record["is_hk_connect"] = ticker in hk_connect
+    return record
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="批量获取港股基本面元数据并存入本地数据库")
+def main() -> int:
+    """同步港股元数据。
+
+    Returns:
+        进程退出码（0 成功，1 部分/全部失败）。
+    """
+    parser = argparse.ArgumentParser(description="批量获取港股基本面元数据并写入本地数据库")
     parser.add_argument(
         "--codes",
         default=None,
         help="指定港股代码，逗号分隔，如 00700,00941（不含 hk. 前缀）",
     )
+    parser.add_argument("--force", action="store_true", help="忽略 TTL，强制刷新全部字段")
+    parser.add_argument("--skip-financial", action="store_true", help="只刷新行情快照")
     parser.add_argument(
-        "--force",
-        action="store_true",
-        help="强制重新获取已有数据",
+        "--financial-ttl-days",
+        type=int,
+        default=HK_METADATA_FINANCIAL_TTL_DAYS,
+        help=f"财务字段刷新周期（天，默认 {HK_METADATA_FINANCIAL_TTL_DAYS}）",
     )
+    parser.add_argument(
+        "--profile-ttl-days",
+        type=int,
+        default=365,
+        help="上市信息/港股通刷新周期（天，默认 365）",
+    )
+    parser.add_argument(
+        "--spot-ttl-hours",
+        type=int,
+        default=12,
+        help="行情/估值快照刷新周期（小时，默认 12）",
+    )
+    parser.add_argument("--workers", type=int, default=2, help="财务拉取并发数（默认 2）")
+    parser.add_argument("--limit", type=int, default=0, help="只处理前 N 只（0=全部）")
     args = parser.parse_args()
 
-    # 获取股票列表
+    _load_env()
+
     if args.codes:
         codes = [c.strip() for c in args.codes.split(",") if c.strip()]
         tickers = [f"hk.{c.zfill(5)}" for c in codes]
     else:
         tickers = get_hk_ticker_list_from_cache()
 
+    if args.limit > 0:
+        tickers = tickers[: args.limit]
     if not tickers:
         logger.error("❌ 没有找到任何港股 ticker")
-        sys.exit(1)
+        return 1
 
-    logger.info(f"📊 待获取元数据的港股数量: {len(tickers)} 只")
+    logger.info(f"📊 待处理港股: {len(tickers)} 只")
 
-    # 创建元数据表
-    conn = sqlite3.connect(str(CACHE_DB))
-    create_metadata_table(conn)
-
-    # 获取全市场实时行情
-    spot_map = fetch_hk_spot_data()
-
-    success_count = 0
-    fail_count = 0
-
-    for i, ticker in enumerate(tickers, 1):
-        symbol = ticker.replace("hk.", "")
-
-        # 检查是否已有数据且不强制更新
-        if not args.force:
-            existing = conn.execute(
-                "SELECT ticker FROM hk_metadata WHERE ticker = ?", (ticker,)
-            ).fetchone()
-            if existing:
-                continue
-
-        row = spot_map.get(symbol)
-        if row is None:
-            fail_count += 1
-            continue
-
-        try:
-            store_metadata(
-                conn=conn,
-                ticker=ticker,
-                name=str(r.get("中文名称", "")) if (r := row) is not None else "",
-                industry="",  # 本地暂无行业数据
-                pe_ttm=_safe_float(r.get("市盈率")),
-                pb=_safe_float(r.get("市净率")),
-                dividend_yield=_safe_float(r.get("股息率")),
-                market_cap=_safe_float(r.get("总市值")),
-                turnover_20d_avg=_safe_float(r.get("成交额")),
-                turnover_rate_12m_avg=_safe_float(r.get("换手率")),
-                listing_date=None,
-                listing_days=None,
-                is_hk_connect=False,  # 需要另行获取港股通名单
-                is_hkd=True,
-                is_common_stock=True,
-                suspension_days_30d=0,
-                has_risk_warning=False,
-                debt_to_asset=None,
-                non_gaap_profit_2y=False,
-                clean_audit_2y=False,
-                operating_cashflow_3y=False,
-                revenue_growth_3y=False,
-                gross_margin=None,
-                avg_roe_3y=None,
-                top_shareholder_pct=None,
-                max_drawdown_12m=None,
-                rights_issues_12m=0,
-                price=_safe_float(r.get("最新价")),
-                drawdown_from_high=None,
-                single_day_spike_1y=None,
-                dividend_3y=False,
-                payout_ratio=None,
-                annualized_volatility_12m=None,
-                fcf_to_net_profit=None,
-            )
-            success_count += 1
-        except Exception as e:
-            fail_count += 1
-            logger.debug(f"存储 {ticker} 元数据失败: {e}")
-
-        if i % 100 == 0:
-            conn.commit()
-            logger.info(f"  已处理 {i}/{len(tickers)} 只（成功: {success_count}, 失败: {fail_count}）")
-
-    conn.commit()
-    conn.close()
-
-    logger.info(
-        f"✅ 港股元数据同步完成！成功 {success_count} 只，失败 {fail_count} 只，总计 {len(tickers)} 只"
-    )
-
-
-def _safe_float(val: Any) -> float | None:
-    if val is None:
-        return None
+    conn = get_sqlite_conn(CACHE_DB)
+    ok = fail = 0
     try:
-        f = float(val)
-        import pandas as pd
+        ensure_hk_metadata_table(conn)
+        existing = read_hk_metadata(conn, tickers)
+        now = datetime.now()
+        now_str = now.strftime("%Y-%m-%d %H:%M:%S")
 
-        if pd.isna(f):
-            return None
-        return f
-    except (TypeError, ValueError):
-        return None
+        # ── 1. 行情/估值快照（单次全市场请求）──────────────────────────
+        need_spot = args.force or any(
+            is_stale_hours(existing.get(t, {}).get("updated_at"), args.spot_ttl_hours)
+            for t in tickers
+        )
+        if need_spot:
+            hk_connect = get_hk_connect_stocks()
+            if hk_connect is None:
+                logger.warning("⚠️  港股通名单不可用，is_hk_connect 保持原值/未知")
+            spot_map = fetch_hk_spot_map()
+            written = 0
+            name_rows: list[tuple[str, str]] = []
+            for ticker in tickers:
+                row = spot_map.get(ticker.replace("hk.", ""))
+                if row is None:
+                    continue
+                upsert_hk_metadata(conn, build_spot_record(ticker, row, hk_connect, now_str))
+                name = str(row.get("中文名称") or "").strip()
+                if name:
+                    name_rows.append((ticker, name))
+                written += 1
+            # 名称同步到本地缓存，筛选链路零延迟、不联网
+            try:
+                from scripts.stock_name_cache import (
+                    batch_write_stock_name_cache,
+                    ensure_stock_name_table,
+                )
+
+                ensure_stock_name_table(conn)
+                batch_write_stock_name_cache(conn, name_rows)
+                logger.info(f"✅ 股票名称缓存写入 {len(name_rows)} 只港股")
+            except Exception as e:  # 名称缓存非关键路径
+                logger.warning(f"⚠️  港股名称缓存写入失败: {e}")
+            conn.commit()
+            logger.info(f"✅ 行情/估值写入 {written} 只")
+        else:
+            logger.info("✅ 行情快照仍在 TTL 内，跳过")
+
+        # ── 2. 档案 + 财务（逐只）─────────────────────────────────────
+        if args.skip_financial:
+            logger.info("⏭️  --skip-financial：跳过档案/财务刷新")
+            return 0
+
+        targets: list[str] = []
+        for ticker in tickers:
+            meta = existing.get(ticker)
+            if args.force:
+                targets.append(ticker)
+                continue
+            need_profile = not has_profile_data(meta) or is_stale(
+                (meta or {}).get("profile_updated_at"), args.profile_ttl_days
+            )
+            need_financial = not has_financial_data(meta) or is_stale(
+                (meta or {}).get("financial_updated_at"), args.financial_ttl_days
+            )
+            if need_profile or need_financial:
+                targets.append(ticker)
+
+        logger.info(f"📊 需刷新档案/财务: {len(targets)} 只")
+        if not targets:
+            return 0
+
+        def _work(ticker: str) -> tuple[str, dict[str, Any] | None]:  # 财务记录值混杂
+            """拉取单只港股档案 + 财务（线程内只取数，不写库）。"""
+            try:
+                data = fetch_hk_fundamentals(ticker.replace("hk.", ""))
+            except Exception as e:  # 单只失败不阻断整体
+                logger.warning(f"  ❌ {ticker} 基本面获取失败: {e}")
+                return ticker, None
+            return ticker, data
+
+        with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
+            futures = {pool.submit(_work, t): t for t in targets}
+            for i, future in enumerate(as_completed(futures), 1):
+                ticker, data = future.result()
+                if data is None:
+                    fail += 1
+                    continue
+                record: dict[str, Any] = {"ticker": ticker, **data}
+                record["profile_updated_at"] = now_str
+                record["financial_updated_at"] = now_str
+                upsert_hk_metadata(conn, record)
+                ok += 1
+                if i % 50 == 0:
+                    conn.commit()
+                    logger.info(f"  已处理 {i}/{len(targets)}（成功 {ok}，失败 {fail}）")
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    logger.info(f"✅ 港股元数据同步完成：成功 {ok} 只，失败 {fail} 只，候选 {len(tickers)} 只")
+    return 0 if fail == 0 or ok > 0 else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

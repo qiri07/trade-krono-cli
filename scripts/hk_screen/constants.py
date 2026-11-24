@@ -99,6 +99,18 @@ HK_QUALITY_RULES = {
     "max_pe_ttm": 15.0,
 }
 
+# ════════════════════════════════════════════════════════════════════════════════
+# 数据完整度门槛
+# ════════════════════════════════════════════════════════════════════════════════
+
+# 已评估规则数 / 全部规则数 的最小比例。
+# 低于该比例说明基本面数据大面积缺失，结论不可信，应判为不通过（fail-closed），
+# 而不是因为「缺数据所以不失败」而白送通过（fail-open）。
+HK_MIN_RULE_COVERAGE = 0.6
+
+# hk_metadata 财务字段的刷新周期（天）。年报季度更新，30 天足够。
+HK_METADATA_FINANCIAL_TTL_DAYS = 30
+
 # 所有硬过滤规则的合并配置（便于遍历）
 ALL_HARD_FILTER_RULES: dict[str, dict] = {
     "trade": HK_TRADE_RULES,
@@ -142,5 +154,9 @@ OUTPUT_COLUMNS = [
     "annualized_volatility_12m",
     "fcf_to_net_profit",
     "pass_count",
+    "total_rules",
+    "unknown_count",
+    "coverage",
     "fail_reasons",
+    "passed",
 ]

@@ -57,6 +57,7 @@ DRY_RUN = os.getenv("DRY_RUN", "0") == "1"
 NO_PUSH = os.getenv("NO_PUSH", "0") == "1"
 NO_SYNC = os.getenv("NO_SYNC", "0") == "1"
 SKIP_ETF = os.getenv("SKIP_ETF", "0") == "1"
+SKIP_HK = os.getenv("SKIP_HK", "0") == "1"
 EXPORT = os.getenv("EXPORT", "0") == "1"
 
 PUSH_FLAG = 0 if NO_PUSH else 1
@@ -190,7 +191,7 @@ STEPS: list[Step] = [
     ),
     Step(
         name="sync",
-        description="K 线增量补拉（fill_missing_and_today.py + etf_history_sync.py）",
+        description="K 线增量补拉（仅 A 股沪深，fill_missing_and_today.py --markets a）",
         command=[
             "uv",
             "run",
@@ -198,6 +199,8 @@ STEPS: list[Step] = [
             "scripts/fill_missing_and_today.py",
             "--plan",
             f"outputs/results/sync_plan_{time.strftime('%Y%m%d')}.json",
+            "--markets",
+            "a",
         ],
         enabled_by_default=not NO_SYNC,
         depends_on=["check", "backup"],
@@ -205,9 +208,9 @@ STEPS: list[Step] = [
     ),
     Step(
         name="sync_etf",
-        description="ETF K 线同步（etf_history_sync.py，增量）",
+        description="ETF K 线同步（etf_history_sync.py，增量）——默认禁用，需 --enable sync_etf 显式开启",
         command=["uv", "run", "python", "scripts/etf_history_sync.py"],
-        enabled_by_default=(not NO_SYNC and not SKIP_ETF),
+        enabled_by_default=False,
         depends_on=["sync"],
         timeout=7200,
     ),
@@ -325,6 +328,45 @@ STEPS: list[Step] = [
         enabled_by_default=True,
         depends_on=["universe"],
         timeout=7200,
+    ),
+    Step(
+        name="sync_hk",
+        description="港股 K 线增量同步（full_hk_history_sync.py，补到最近交易日）",
+        command=[
+            "uv",
+            "run",
+            "python",
+            "scripts/full_hk_history_sync.py",
+            "--end",
+            expected_trading_day(),
+        ],
+        enabled_by_default=not NO_SYNC and not SKIP_HK,
+        depends_on=["check", "backup"],
+        timeout=7200,
+    ),
+    Step(
+        name="metadata_hk",
+        description="港股基本面元数据刷新（fetch_hk_metadata.py，按 TTL 增量）",
+        command=["uv", "run", "python", "scripts/fetch_hk_metadata.py"],
+        enabled_by_default=not SKIP_HK,
+        depends_on=["sync_hk"],
+        timeout=7200,
+    ),
+    Step(
+        name="hk_screen",
+        description="港股每日筛选（hk_daily_screen.py，含 JSON 落盘 + 飞书推送）",
+        command=[
+            "uv",
+            "run",
+            "python",
+            "scripts/hk_daily_screen.py",
+            "--date",
+            expected_trading_day(),
+            *(["--no-push"] if PUSH_FLAG == 0 else []),
+        ],
+        enabled_by_default=not SKIP_HK,
+        depends_on=["sync_hk", "metadata_hk"],
+        timeout=1800,
     ),
     Step(
         name="combined",

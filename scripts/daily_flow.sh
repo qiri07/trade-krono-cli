@@ -2,11 +2,12 @@
 # daily_flow.sh — 一键执行每日投研流程（薄壳，实际调度在 scripts/flow_runner.py）
 #
 # 用法（与历史保持兼容，env flag 透传给 flow_runner）：
-#   bash scripts/daily_flow.sh                 # 默认：全部 14 个 step 串行（export 默认禁用）
+#   bash scripts/daily_flow.sh                 # 默认：全部启用 step 串行（export 默认禁用）
 #   DRY_RUN=1 bash scripts/daily_flow.sh       # 只打印不执行
 #   NO_PUSH=1 bash scripts/daily_flow.sh        # 跳过飞书推送（PUSH_FLAG=0）
 #   NO_SYNC=1 bash scripts/daily_flow.sh        # 跳过数据同步类 step
 #   SKIP_ETF=1 bash scripts/daily_flow.sh       # 跳过 ETF 同步
+#   SKIP_HK=1 bash scripts/daily_flow.sh        # 跳过港股同步/元数据/筛选
 #   EXPORT=1 bash scripts/daily_flow.sh         # 额外执行共享数据导出
 #   RESUME=1 bash scripts/daily_flow.sh        # 断点续传：跳过已成功 step，从失败处继续
 #   FORCE=1 bash scripts/daily_flow.sh         # 强制执行所有步骤（即使今日增量数据 < 5000 也执行选股）
@@ -24,6 +25,7 @@ export DRY_RUN="${DRY_RUN:-0}"
 export NO_PUSH="${NO_PUSH:-0}"
 export NO_SYNC="${NO_SYNC:-0}"
 export SKIP_ETF="${SKIP_ETF:-0}"
+export SKIP_HK="${SKIP_HK:-0}"
 export EXPORT="${EXPORT:-0}"
 export RESUME="${RESUME:-0}"
 export FORCE="${FORCE:-0}"

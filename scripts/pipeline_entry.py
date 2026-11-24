@@ -8,6 +8,7 @@ CLI，每个子命令对应一个独立流程，参数透传、退出码透传�
   uv run python scripts/pipeline_entry.py daily  [env 标志]          # 每日全流程（daily_flow.sh）
   uv run python scripts/pipeline_entry.py sixdim [六维参数]           # 六维选股（six_dim_screen.py）
   uv run python scripts/pipeline_entry.py cross  [交集参数]           # 流程交集 ∩ 六维选股（cross_screen_report.py）
+  uv run python scripts/pipeline_entry.py hk     [港股参数]            # 港股每日筛选（hk_daily_screen.py）
 
 三个子命令共用：
   --date YYYY-MM-DD   目标日期（缺省：daily 用今日；六维/交集用最近交易日）
@@ -48,7 +49,7 @@ def _run(command: list[str], env: dict[str, str] | None = None) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="统一投研流程编排入口（每日流程 / 六维选股 / 流程∩六维交集）"
+        description="统一投研流程编排入口（每日流程 / 六维选股 / 流程∩六维交集 / 港股筛选）"
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -60,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_daily.add_argument("--no-push", action="store_true", help="跳过飞书推送（NO_PUSH=1）")
     p_daily.add_argument("--no-sync", action="store_true", help="跳过数据同步类 step（NO_SYNC=1）")
     p_daily.add_argument("--skip-etf", action="store_true", help="跳过 ETF 同步（SKIP_ETF=1）")
+    p_daily.add_argument("--skip-hk", action="store_true", help="跳过港股同步/元数据/筛选（SKIP_HK=1）")
     p_daily.add_argument("--export", action="store_true", help="额外执行共享数据导出（EXPORT=1）")
     p_daily.add_argument("--resume", action="store_true", help="断点续传（RESUME=1）")
     p_daily.add_argument("--force", action="store_true", help="强制执行所有步骤（FORCE=1）")
@@ -103,6 +105,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_cross.set_defaults(func=_cmd_cross)
 
+    # ──────────────────────────────────────────────────────────────────
+    # hk：港股每日筛选
+    # ──────────────────────────────────────────────────────────────────
+    p_hk = sub.add_parser("hk", help="港股每日筛选（scripts/hk_daily_screen.py）")
+    p_hk.add_argument("--date", default=None, help="分析日期 YYYY-MM-DD（缺省最近交易日）")
+    p_hk.add_argument("--top", type=int, default=0, help="只输出前 N 名（0=全部）")
+    p_hk.add_argument("--min-pass-rate", type=float, default=None, help="规则最小通过比例")
+    p_hk.add_argument("--min-coverage", type=float, default=None, help="数据完整度门槛")
+    p_hk.add_argument("--codes", default=None, help="指定代码，逗号分隔")
+    p_hk.add_argument("--limit", type=int, default=0, help="只处理前 N 只（0=全部）")
+    p_hk.add_argument(
+        "--require-hk-connect", action="store_true", help="强制要求港股通资格"
+    )
+    p_hk.add_argument("--output", default=None, help="额外输出 CSV 路径")
+    p_hk.add_argument("--no-push", action="store_true", help="跳过飞书推送")
+    p_hk.set_defaults(func=_cmd_hk)
+
     return parser
 
 
@@ -117,6 +136,8 @@ def _cmd_daily(args: argparse.Namespace) -> int:
         env["NO_SYNC"] = "1"
     if args.skip_etf:
         env["SKIP_ETF"] = "1"
+    if args.skip_hk:
+        env["SKIP_HK"] = "1"
     if args.export:
         env["EXPORT"] = "1"
     if args.resume:
@@ -178,6 +199,30 @@ def _cmd_cross(args: argparse.Namespace) -> int:
         cmd.append("--no-push")
     if args.out is not None:
         cmd += ["--out", args.out]
+    return _run(cmd)
+
+
+def _cmd_hk(args: argparse.Namespace) -> int:
+    """转发到港股筛选脚本。"""
+    cmd = ["uv", "run", "python", "scripts/hk_daily_screen.py"]
+    if args.date is not None:
+        cmd += ["--date", args.date]
+    if args.top > 0:
+        cmd += ["--top", str(args.top)]
+    if args.min_pass_rate is not None:
+        cmd += ["--min-pass-rate", str(args.min_pass_rate)]
+    if args.min_coverage is not None:
+        cmd += ["--min-coverage", str(args.min_coverage)]
+    if args.codes:
+        cmd += ["--codes", args.codes]
+    if args.limit > 0:
+        cmd += ["--limit", str(args.limit)]
+    if args.require_hk_connect:
+        cmd.append("--require-hk-connect")
+    if args.output:
+        cmd += ["--output", args.output]
+    if args.no_push:
+        cmd.append("--no-push")
     return _run(cmd)
 
 
