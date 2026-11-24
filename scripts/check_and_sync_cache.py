@@ -242,6 +242,40 @@ def run_targeted_repair(tickers: list[str], dry_run: bool = False) -> bool:
         return False
 
 
+def run_hk_repair(dry_run: bool = False) -> bool:
+    """对滞后的港股执行增量补拉（委托 fill_bj_hk.py --markets hk）。
+
+    Args:
+        dry_run: 仅打印命令，不实际执行。
+
+    Returns:
+        True 表示补拉成功（或无需补拉）。
+    """
+    cmd = [
+        "uv",
+        "run",
+        "python",
+        "scripts/fill_bj_hk.py",
+        "--markets",
+        "hk",
+        "--target",
+        get_expected_date(),
+    ]
+    logger.info(f"🔧 定向补拉港股（{' '.join(cmd)}）")
+    if dry_run:
+        logger.info(f"[dry-run] 将执行: {' '.join(cmd)}")
+        return True
+    try:
+        result = subprocess.run(cmd, cwd=str(PROJECT_ROOT), timeout=7200)
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        logger.error("港股定向补拉超时（>2h）")
+        return False
+    except OSError as e:
+        logger.error(f"港股定向补拉启动失败: {e}")
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="每日数据缓存检查与同步")
     parser.add_argument("--dry-run", action="store_true", help="仅检查，不执行同步")
@@ -290,8 +324,14 @@ def main() -> int:
 
     # 全局滞后 → 全量同步；仅个别标的滞后 → 定向补拉
     if latest_date and latest_date >= expected_date:
+        hk_repairs = [t for cat, tks in stale.items() if cat == "港股" for t in tks]
         repairs = [t for cat, tks in stale.items() if cat != "港股" for t in tks]
-        return 0 if run_targeted_repair(repairs, dry_run=False) else 1
+        ok = True
+        if repairs:
+            ok = run_targeted_repair(repairs, dry_run=False) and ok
+        if hk_repairs:
+            ok = run_hk_repair(dry_run=False) and ok
+        return 0 if ok else 1
 
     # 执行同步（带多源 fallback）
     success = run_sync_with_fallback(dry_run=False)

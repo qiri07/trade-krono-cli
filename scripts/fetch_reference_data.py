@@ -23,9 +23,12 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 import sys
 import threading
 import time
+import urllib.parse
+import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -125,8 +128,118 @@ def _fetch_akshare_all_metadata() -> dict[str, dict]:
         logger.info(f"✅ akshare 元数据映射完成: {len(result)} 只")
         return result
     except Exception as e:
-        logger.warning(f"⚠️  akshare 批量获取元数据失败: {e}")
-        return {}
+        logger.warning(f"⚠️  akshare 批量获取元数据失败: {e}，尝试 urllib 降级直连 push2.eastmoney.com")
+        return _fetch_metadata_urllib()
+
+
+def _fetch_metadata_urllib() -> dict[str, dict]:
+    """用 urllib 直连东方财富 push2 接口，获取全量 A 股名称、PE/PB、总市值。
+
+    当 akshare 的 requests 客户端被远程服务器拦截（RemoteDisconnected）时，
+    作为降级方案。使用 push2.eastmoney.com（而非 82.push2.eastmoney.com），
+    该域名在当前网络环境下可直连。
+
+    分页拉取（pz=100），每页间隔短暂休眠避免频率限制，直到全部
+    total 只股票获取完毕。
+
+    Returns:
+        {归一化 ticker: metadata dict}，失败时返回空 dict。
+    """
+    base = "https://push2.eastmoney.com/api/qt/clist/get"
+    base_params = {
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f12",
+        "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23",
+        "fields": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f22,f11,f62,f128,f136,f115,f152",
+    }
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+        ),
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        "Referer": "https://quote.eastmoney.com/",
+    }
+    ctx = ssl.create_default_context()
+
+    result: dict[str, dict] = {}
+    pn = 1
+    max_retries = 3
+    while True:
+        params = dict(base_params)
+        params["pn"] = str(pn)
+        params["pz"] = "100"
+        url = base + "?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(url, headers=headers)  # noqa: S310 - 仅访问配置中的可信 HTTP API
+
+        fetched = False
+        for attempt in range(max_retries):
+            try:
+                with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:  # noqa: S310 - URL 来源受控
+                    data = json.loads(resp.read().decode("utf-8"))
+                fetched = True
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.debug(f"⚠️  urllib 第 {pn} 页第 {attempt + 1} 次尝试失败: {e}，重试中")
+                    time.sleep(1.0 * (attempt + 1))
+                else:
+                    logger.warning(f"⚠️  urllib 第 {pn} 页多次重试后仍失败: {e}")
+                    break
+
+        if not fetched:
+            break
+
+        diff = data.get("data", {}).get("diff", [])
+        if not diff:
+            break
+
+        for row in diff:
+            code = str(row.get("f12", "")).strip()
+            name = str(row.get("f14", "")).strip()
+            if not code:
+                continue
+            # akshare 返回的是 6 位裸代码，添加交易所前缀（北交所暂不处理）
+            if code.startswith("6"):
+                ticker = f"sh.{code}"
+            elif code.startswith("0") or code.startswith("3"):
+                ticker = f"sz.{code}"
+            else:
+                continue
+
+            pe_ttm = row.get("f9")
+            pb = row.get("f23")
+
+            result[ticker] = {
+                "ticker": ticker,
+                "name": name,
+                "industry": None,
+                "pe_ttm": (
+                    float(pe_ttm)
+                    if pe_ttm not in (None, "", "-")
+                    else None
+                ),
+                "pb": float(pb) if pb not in (None, "", "-") else None,
+                "ipo_date": None,
+                "out_date": None,
+                "is_st": False,
+                "source": "eastmoney",
+            }
+
+        total = data.get("data", {}).get("total", 0)
+        if len(result) >= total:
+            break
+        pn += 1
+        # 同 akshare：分页间短暂休眠，避免触发东方财富频率限制
+        time.sleep(0.6)
+
+    logger.info(f"✅ urllib 元数据映射完成: {len(result)} 只")
+    return result
 
 
 # ════════════════════════════════════════════════════════════════════════════════

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """全市场三周期 MACD 共振筛选 + 分析 + 飞书推送。
 
-筛选逻辑（三线共振"向上"）：
-  - 日线 MACD DIF > 0 且 DIF 较前一交易日上升
-  - 周线 MACD DIF > 0 且 DIF 较前一周上升
-  - 月线 MACD DIF > 0 且 DIF 较前一月上升
-  即三周期动能均处于零轴上方且仍在抬升，排除 DIF 已拐头向下的假共振。
+筛选逻辑（三线共振"向上或走平"）：
+  - 日线 MACD DIF > 0 且 DIF 较前一交易日不下降（上升或走平）
+  - 周线 MACD DIF > 0 且 DIF 较前一周不下降（上升或走平）
+  - 月线 MACD DIF > 0 且 DIF 较前一月不下降（上升或走平）
+  即三周期动能均处于零轴上方且未拐头向下，允许 DIF 走平，排除 DIF 已拐头向下的假共振。
 
 用法：
   uv run python scripts/multi_line_resonance.py
@@ -294,10 +294,10 @@ def _compute_macd_for_ticker(ticker: str, db_path: Path) -> dict[str, Any] | Non
     except Exception:
         pass
 
-    # 三线共振"向上"：各周期 DIF > 0 且 DIF 较上期上升
-    d_ok = not pd.isna(d_macd) and d_macd > 0 and d_macd > d_macd_prev
-    w_ok = not pd.isna(w_macd) and w_macd > 0 and w_macd > w_macd_prev
-    m_ok = not pd.isna(m_macd) and m_macd > 0 and m_macd > m_macd_prev
+    # 三线共振"向上或走平"：各周期 DIF > 0 且 DIF 较上期不下降（上升或走平）
+    d_ok = not pd.isna(d_macd) and d_macd > 0 and d_macd >= d_macd_prev
+    w_ok = not pd.isna(w_macd) and w_macd > 0 and w_macd >= w_macd_prev
+    m_ok = not pd.isna(m_macd) and m_macd > 0 and m_macd >= m_macd_prev
 
     if not (d_ok and w_ok and m_ok):
         return None
@@ -414,7 +414,7 @@ def _build_summary_card(results: list[dict[str, Any]], date: str, ai_result: dic
 
     lines.append("---")
     lines.append(
-        "筛选条件：日/周/月 MACD DIF>0 且 DIF 较上期上升（三线共振向上），PE>0，非ST，评分≥50"
+        "筛选条件：日/周/月 MACD DIF>0 且 DIF 较上期不下降（三线共振向上/走平），PE>0，非ST，评分≥50"
     )
     lines.append(f"数据日期：{date}")
     return "\n".join(lines)

@@ -530,6 +530,44 @@ class DataProviderFactory:
         logger.warning(f"❌ 所有 Provider 均无法获取 K 线: {ticker}")
         return None
 
+    def fetch_kline_from_provider(
+        self,
+        provider_name: str,
+        ticker: str,
+        start_date: str,
+        end_date: str,
+        frequency: str = "d",
+        adjustflag: str = "1",
+    ) -> KlineData | None:
+        """从指定 Provider 拉取 K 线（带限流 + 指数退避重试），不做降级。
+
+        用于「该市场只有唯一有效数据源」的场景（如港股 ``akshare_hk``），
+        避免默认降级链对其他市场源发起无效请求。
+
+        Args:
+            provider_name: Provider 名称，如 ``"akshare_hk"``。
+            ticker: 标准化 ticker，如 ``"hk.00700"``。
+            start_date: 起始日期 ``YYYY-MM-DD``。
+            end_date: 结束日期 ``YYYY-MM-DD``。
+            frequency: K 线周期，默认日线。
+            adjustflag: 复权方式，默认 ``"1"``（后复权）。
+
+        Returns:
+            :class:`KlineData`；Provider 不可用或无数据时返回 ``None``。
+        """
+        provider = self.get_provider(provider_name)
+        if provider is None or not provider.supports_kline:
+            logger.warning(f"{provider_name}: Provider 不可用或不支持 K 线")
+            return None
+
+        wait_time = self._rate_limiter.acquire(provider_name)
+        if wait_time > 0:
+            time.sleep(wait_time)
+
+        return self._fetch_kline_with_retry(
+            provider, provider_name, ticker, start_date, end_date, frequency, adjustflag
+        )
+
     def fetch_quote(self, ticker: str) -> RealtimeQuote | None:
         """获取实时行情，按优先级尝试各 Provider。
 

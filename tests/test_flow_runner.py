@@ -420,7 +420,8 @@ class TestUnifiedBackup:
         monkeypatch.setattr(fr, "run_step", _fake_run_step)
         monkeypatch.setattr(fr, "save_checkpoint", lambda s: None)
 
-        assert fr.cmd_run(step=None, all_steps=True, force=True) == 0
+        # sync_etf 现在默认禁用，需显式 --enable sync_etf 才会执行
+        assert fr.cmd_run(step=None, all_steps=True, enable=["sync_etf"], force=True) == 0
         assert seen["sync"][-1] == "--no-backup"
         assert seen["sync_etf"][-1] == "--no-backup"
         assert "--no-backup" not in seen["buffett"]

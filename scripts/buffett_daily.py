@@ -37,9 +37,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger
 
-from scripts._utils import is_st_name
 from scripts.daily_analysis import analyze_stock
 from scripts.feishu_utils import push_feishu as _push_via_feishu_cli
+from scripts.universe_filter import apply_universe_filter
 from tests.buffett_cache import cache_clean, init_cache, load_all_cache, save_cache_to_db
 from tests.buffett_screening import (
     _CONCURRENCY,
@@ -328,16 +328,12 @@ def _run_full_screen(
         elapsed_list = time.time() - t0
         logger.info(f"  获取 {len(stocks)} 只股票（{elapsed_list:.1f}s）")
 
-        filtered: list[dict] = []
-        for s in stocks:
-            name = s.get("name", "")
-            code = s.get("ticker", "")
-            if is_st_name(name):
-                continue
-            if code.startswith(("000", "399")):
-                continue
-            filtered.append(s)
-        logger.info(f"  过滤后 {len(filtered)} 只（排除ST/次新）")
+        # 统一使用前置股票池过滤（剔除 ST/北交所/ETF/次新/停牌/低价/低流动性/小市值）
+        ticker_list = [s.get("ticker", "") for s in stocks if s.get("ticker")]
+        filtered_tickers = apply_universe_filter(ticker_list, date_str, label="巴菲特筛选")
+        filtered_set = set(filtered_tickers)
+        filtered = [s for s in stocks if s.get("ticker", "") in filtered_set]
+        logger.info(f"  过滤后 {len(filtered)} 只（统一前置股票池）")
 
         # 2. 批量获取估值快照
         logger.info("  获取估值数据...")

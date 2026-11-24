@@ -390,7 +390,8 @@ def _compute_turnover_and_cap(
         return None, None, share_cap_wan
     close = float(closes.iloc[-1])
     avg_amount_20d = float(amounts.tail(20).mean())  # 元
-    # 总市值（元）= 总股本（万股）× 10000 × 收盘价
+    # 总市值（元）= 总股本（股）× 收盘价
+    # 注：share_cap_cache.total_share_wan 字段名虽含"wan"，但实际存储的是股数（如 600007 约 10 亿股）
     market_cap_yuan = share_cap_wan * close
     if market_cap_yuan <= 0:
         return None, None, share_cap_wan
@@ -695,6 +696,7 @@ def screen_five_must(
         if not result.cond5_breakout and result.cond5_reason:
             fail_reasons.append(result.cond5_reason)
         result.fail_reasons = fail_reasons
+        result.pass_count = result.conditions_passed
         result.passed = (
             result.cond1_history_low
             and result.cond2_bottom_solid

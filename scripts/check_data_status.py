@@ -27,6 +27,7 @@ from scripts._utils import (
     _get_expected_date,
     get_cache_db_path,
     get_sqlite_conn,
+    is_etf_ticker,
 )
 from scripts.fetch_reference_data import (
     METADATA_FILE,
@@ -53,7 +54,7 @@ def _query_kline_status(today: str, expected_date: str) -> dict:
     latest_date = cur.fetchone()[0] or ""
 
     # 历史不足判定：按行内真实 K 线根数统计（而非表行数，每只票通常仅 1 行）
-    failed_tickers = get_insufficient_history_tickers(CACHE_DB)
+    failed_tickers = [t for t in get_insufficient_history_tickers(CACHE_DB) if not is_etf_ticker(t)]
 
     cur.execute(f"""
         SELECT DISTINCT ticker FROM kline_cache
@@ -64,7 +65,7 @@ def _query_kline_status(today: str, expected_date: str) -> dict:
         AND ticker NOT LIKE 'bj.%'
         ORDER BY ticker
     """)
-    need_today_tickers = [r[0] for r in cur.fetchall()]
+    need_today_tickers = [r[0] for r in cur.fetchall() if not is_etf_ticker(r[0])]
 
     conn.close()
 

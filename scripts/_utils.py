@@ -450,7 +450,10 @@ def is_st_name(name: str, keywords: tuple[str, ...] | None = None) -> bool:
 
 
 def load_metadata_index(
-    cache_dir: Path | None = None, *, include_bare_keys: bool = True
+    cache_dir: Path | None = None,
+    *,
+    include_bare_keys: bool = True,
+    include_non_astock: bool = False,
 ) -> dict[str, dict[str, object]]:
     """加载 ``metadata.json`` 并归一化键格式。
 
@@ -461,6 +464,9 @@ def load_metadata_index(
         cache_dir: 缓存目录；缺省用 ``get_settings().cache_dir``，回退 ``outputs/cache``。
         include_bare_keys: 是否额外写入 6 位裸代码键。关闭时仅保留带前缀键，
             与历史 ``load_metadata`` 行为一致（条数统计不会翻倍）。
+        include_non_astock: 是否保留非 A 股（港股/北交所/ETF）键。
+            默认 False，仅保留 A 股（沪深主板/创业板/科创板）键，便于今日流程等
+            A 股专用场景自动过滤。历史遗留的港股/北交所/ETF 元数据键将被忽略。
 
     Returns:
         元数据字典；文件缺失或解析失败时返回空字典。
@@ -481,6 +487,10 @@ def load_metadata_index(
         if not isinstance(value, dict):
             continue
         normalized = normalize_ticker_key(str(key))
+        if not include_non_astock:
+            # 过滤非 A 股：港股、北交所、ETF
+            if normalized.startswith(("hk.", "bj.")) or is_etf_ticker(normalized):
+                continue
         index.setdefault(normalized, value)
         if include_bare_keys:
             index.setdefault(strip_ticker_prefix(normalized), value)

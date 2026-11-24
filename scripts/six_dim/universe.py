@@ -37,35 +37,30 @@ from scripts.six_dim.technical import (
     trend_gate_and_score,
 )
 from scripts.six_dim.valuation import fetch_valuation_history, score_valuation
+from scripts.universe_filter import apply_universe_filter
 
 
-def _load_universe(meta: dict[str, dict[str, object]]) -> dict[str, str]:
-    """从元数据加载股票池（排除 ST/北交所/港股/ETF）。
+def _load_universe(meta: dict[str, dict[str, object]], date_str: str | None = None) -> dict[str, str]:
+    """从元数据加载股票池（排除 ST/北交所/港股/ETF），统一使用前置股票池过滤。
 
     Args:
         meta: 归一化后的元数据字典。
+        date_str: 分析日期，缺省为最近交易日（用于加载前置股票池快照）。
 
     Returns:
         6 位代码 -> 带前缀 ticker 的映射。
     """
-    all_tickers = set(meta.keys())
+    from scripts._utils import expected_trading_day
+
+    date_str = date_str or expected_trading_day()
+    all_tickers = list(meta.keys())
+    # 统一使用前置股票池过滤（剔除 ST/北交所/港股/ETF/次新/停牌/低价/低流动性/小市值）
+    filtered = apply_universe_filter(all_tickers, date_str, label="六维选股")
     universe: dict[str, str] = {}
-    for ticker in all_tickers:
+    for ticker in filtered:
         bare = ticker.split(".")[-1] if "." in ticker else ticker
-        if len(bare) != 6 or not bare.isdigit():
-            continue
-        # 过滤 ST、北交所、港股、ETF
-        val = meta.get(ticker)
-        name = str(val.get("name", "")) if isinstance(val, dict) else ""
-        if any(kw in name for kw in ("ST", "*ST", "退")):
-            continue
-        if bare.startswith(("920", "43", "83", "87")):
-            continue
-        if bare.startswith("5") or bare[:3] in ("159", "156", "158"):
-            continue
-        normalized = normalize_ticker_key(ticker)
-        if normalized and not normalized.startswith(("bj.", "hk.")):
-            universe[bare] = normalized
+        if len(bare) == 6 and bare.isdigit():
+            universe[bare] = ticker
     return universe
 
 
@@ -128,7 +123,7 @@ def screen(
     cache_dir = get_cache_db_path().parent
     buffett_db = cache_dir / "buffett_cache.db"
     meta = load_metadata_index(cache_dir)
-    universe = _load_universe(meta)
+    universe = _load_universe(meta, date_str)
 
     fundamentals = load_fundamentals(buffett_db, date_str)
     spot = fetch_spot_snapshot(cache_dir, date_str) if fetch else {}
