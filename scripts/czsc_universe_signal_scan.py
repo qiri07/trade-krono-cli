@@ -26,7 +26,7 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import CACHE_DB, get_sqlite_conn, is_bse_or_hk
+from scripts._utils import CACHE_DB, get_sqlite_conn, is_bse_or_hk, is_etf_ticker
 from scripts.stock_name_cache import resolve_stock_names
 
 # ── 常量 ─────────────────────────────────────────────────────────
@@ -117,10 +117,12 @@ def db_to_parquet_incremental() -> tuple[int, int]:
     """
     con = get_sqlite_conn(CACHE_DB, readonly=True)
     cur = con.cursor()
-    # 只导出 sh./sz. 的标的，排除 bj.（北交所）和 hk.（港股）
+    # 只导出 sh./sz. 的标的，排除 bj.（北交所）、hk.（港股）和 ETF（沪市 5x、深市 159/156/158）
     rows = cur.execute(
-        "select ticker, data from kline_cache where freq='d' and (ticker like ? or ticker like ?)",
-        ("sh.%", "sz.%"),
+        "select ticker, data from kline_cache where freq='d' "
+        "and (ticker like ? or ticker like ?) "
+        "and ticker not like ? and ticker not like ? and ticker not like ? and ticker not like ?",
+        ("sh.%", "sz.%", "sh.5%", "sz.159%", "sz.156%", "sz.158%"),
     ).fetchall()
     con.close()
 
@@ -215,8 +217,8 @@ def run_screen(
 ) -> dict:
     """跑一遍全市场筛选"""
     paths = sorted(BARS_DIR.glob("*.parquet"))
-    # 过滤掉北交所/港股（bj./hk. 前缀），仅保留 A 股 + ETF
-    paths = [p for p in paths if not is_bse_or_hk(p.stem)]
+    # 过滤掉北交所/港股/ETF（bj./hk./5x-15x 前缀），仅保留 A 股（沪深）
+    paths = [p for p in paths if not is_bse_or_hk(p.stem) and not is_etf_ticker(p.stem)]
     if not paths:
         return {"hits": 0, "total": 0, "hit_symbols": [], "seconds": 0.0}
 
@@ -269,7 +271,7 @@ def daily_coverage(asof: str) -> dict:
     from czsc import Event, Freq, format_standard_kline, generate_czsc_signals
 
     paths = sorted(BARS_DIR.glob("*.parquet"))
-    paths = [p for p in paths if not is_bse_or_hk(p.stem)]
+    paths = [p for p in paths if not is_bse_or_hk(p.stem) and not is_etf_ticker(p.stem)]
     ev = Event.load(CONDITION)
     hits_count = 0
     active_count = 0
