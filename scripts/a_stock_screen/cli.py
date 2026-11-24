@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
@@ -36,9 +37,10 @@ from scripts.a_stock_screen import (
     screen_a_stock_candidates,
     screen_five_must,
 )
+from scripts.universe_filter import apply_universe_filter
 
-# 复用 AStockScreenResult 的字段做表头展示
-_OUTPUT_FIELDS: list[str] = [
+# ── 共享输出逻辑（原 scripts/a_stock_screen/_shared.py，已内联）──
+OUTPUT_FIELDS: list[str] = [
     "code",
     "name",
     "close",
@@ -57,6 +59,157 @@ _OUTPUT_FIELDS: list[str] = [
     "fail_reasons",
     "passed",
 ]
+
+_OUTPUT_FIELDS = OUTPUT_FIELDS
+
+
+def _fmt(val: Any, pct: bool = False) -> str:
+    """安全格式化单元格值。"""
+    if val is None:
+        return "N/A"
+    try:
+        if pct:
+            return f"{float(val):.1%}"
+        if isinstance(val, float):
+            return f"{val:,.2f}"
+        return str(val)
+    except (TypeError, ValueError):
+        return "N/A"
+
+
+def _build_row(r: AStockScreenResult) -> dict[str, str]:
+    """把筛选结果转为展示用的字符串行。"""
+    return {
+        "code": r.code,
+        "name": r.name,
+        "close": _fmt(r.close),
+        "market_cap": (
+            f"{_fmt(r.market_cap / 1e8)}亿" if r.market_cap is not None else "N/A"
+        ),
+        "pe_ttm": _fmt(r.pe_ttm),
+        "pb": _fmt(r.pb),
+        "turnover_20d_avg": (
+            f"{_fmt(r.turnover_20d_avg / 1e4)}万"
+            if r.turnover_20d_avg is not None
+            else "N/A"
+        ),
+        "turnover_rate_12m_avg": _fmt(r.turnover_rate_12m_avg, pct=True),
+        "listing_days": str(r.listing_days) if r.listing_days is not None else "N/A",
+        "suspension_days_30d": (
+            str(r.suspension_days_30d) if r.suspension_days_30d is not None else "N/A"
+        ),
+        "is_st": "是" if r.is_st else "否",
+        "is_etf": "是" if r.is_etf else "否",
+        "is_bse": "是" if r.is_bse else "否",
+        "pass_count": str(r.pass_count),
+        "total_rules": str(r.total_rules),
+        "fail_reasons": r.fail_reasons[0] if r.fail_reasons else "",
+        "passed": "是" if r.passed else "否",
+    }
+
+
+def build_summary_lines(
+    results: list[AStockScreenResult],
+    passed: list[AStockScreenResult],
+    filtered: list[AStockScreenResult],
+    min_pass_rate: float,
+) -> list[str]:
+    """构建摘要文本行列表。"""
+    return [
+        "=" * 60,
+        "A股筛选结果摘要",
+        "=" * 60,
+        f"候选股票总数: {len(results)} 只",
+        f"通过所有规则: {len(passed)} 只",
+        f"满足最小通过比例({min_pass_rate:.0%}): {len(filtered)} 只",
+        "=" * 60,
+    ]
+
+
+def build_detail_lines(top_results: list[AStockScreenResult]) -> list[str]:
+    """构建明细文本行列表。"""
+    lines: list[str] = ["\n📋 筛选通过股票明细:"]
+    for i, r in enumerate(top_results, 1):
+        row = _build_row(r)
+        passed_mark = "是" if r.passed else "否"
+        lines.append(
+            f"  {i:3d}. {row['code']} {row['name']:<12} "
+            f"市值={row['market_cap']} "
+            f"PE={row['pe_ttm']} "
+            f"成交额20d={row['turnover_20d_avg']} "
+            f"换手率12m={row['turnover_rate_12m_avg']} "
+            f"规则={row['pass_count']}/{row['total_rules']} "
+            f"通过={passed_mark}"
+        )
+        if r.fail_reasons:
+            lines.append(f"         失败原因: {'; '.join(r.fail_reasons)}")
+    return lines
+
+
+def export_to_csv(filtered: list[AStockScreenResult], output_path: str) -> None:
+    """把筛选结果保存为 CSV 文件。
+
+    Parameters
+    ----------
+    filtered : list[AStockScreenResult]
+        需要导出的筛选结果列表。
+    output_path : str
+        CSV 文件路径。
+    """
+    import pandas as pd
+
+    df = pd.DataFrame([r.to_dict() for r in filtered])
+    exist_cols = [c for c in OUTPUT_FIELDS if c in df.columns]
+    df = df[exist_cols]
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_path, index=False, encoding="utf-8-sig")
+
+
+def push_to_feishu(
+    passed: list[AStockScreenResult],
+    top_results: list[AStockScreenResult],
+    title: str = "A股筛选结果",
+) -> bool:
+    """通过飞书推送筛选结果。
+
+    Parameters
+    ----------
+    passed : list[AStockScreenResult]
+        通过所有规则的股票列表。
+    top_results : list[AStockScreenResult]
+        需要推送的明细列表（通常取前 20 名）。
+    title : str
+        飞书消息标题。
+
+    Returns
+    -------
+    bool
+        推送是否成功。
+    """
+    from scripts.feishu_utils import push_feishu  # noqa: PLC0415
+
+    lines = [f"📈 **A股筛选结果**（共 {len(passed)} 只通过所有规则）\n"]
+    for r in top_results[:20]:
+        cap = f"{r.market_cap / 1e8:.0f}亿" if r.market_cap is not None else "N/A"
+        pe = f"{r.pe_ttm:.1f}" if r.pe_ttm is not None else "N/A"
+        turnover = (
+            f"{r.turnover_20d_avg / 1e4:.0f}万"
+            if r.turnover_20d_avg is not None
+            else "N/A"
+        )
+        lines.append(
+            f"  {r.code} {r.name[:10]:<10} "
+            f"市值={cap} "
+            f"PE={pe} "
+            f"成交额20d={turnover} "
+            f"规则={r.pass_count}/{r.total_rules}"
+        )
+    try:
+        push_feishu("text", content="\n".join(lines), title=title)
+        return True
+    except Exception:
+        return False
+
 
 # 五必筛选结果展示字段
 _FIVEMUST_FIELDS: list[str] = [
@@ -88,47 +241,6 @@ _FIVEMUST_FIELDS: list[str] = [
     "fail_reasons",
     "passed",
 ]
-
-
-def _fmt(val, pct: bool = False) -> str:
-    """安全格式化单元格值。"""
-    if val is None:
-        return "N/A"
-    try:
-        if pct:
-            return f"{float(val):.1%}"
-        if isinstance(val, float):
-            return f"{val:,.2f}"
-        return str(val)
-    except (TypeError, ValueError):
-        return "N/A"
-
-
-def _build_row(r: AStockScreenResult) -> dict[str, str]:
-    """把筛选结果转为展示用的字符串行。"""
-    return {
-        "code": r.code,
-        "name": r.name,
-        "close": _fmt(r.close),
-        "market_cap": _fmt(r.market_cap / 1e8 if r.market_cap is not None else None) + "亿"
-        if r.market_cap is not None
-        else "N/A",
-        "pe_ttm": _fmt(r.pe_ttm),
-        "pb": _fmt(r.pb),
-        "turnover_20d_avg": _fmt(r.turnover_20d_avg / 1e4 if r.turnover_20d_avg is not None else None) + "万"
-        if r.turnover_20d_avg is not None
-        else "N/A",
-        "turnover_rate_12m_avg": _fmt(r.turnover_rate_12m_avg, pct=True),
-        "listing_days": str(r.listing_days) if r.listing_days is not None else "N/A",
-        "suspension_days_30d": str(r.suspension_days_30d),
-        "is_st": "是" if r.is_st else "否",
-        "is_etf": "是" if r.is_etf else "否",
-        "is_bse": "是" if r.is_bse else "否",
-        "pass_count": str(r.pass_count),
-        "total_rules": str(r.total_rules),
-        "fail_reasons": r.fail_reasons[0] if r.fail_reasons else "",
-        "passed": "是" if r.passed else "否",
-    }
 
 
 def main() -> None:
@@ -196,27 +308,22 @@ def main() -> None:
     logger.info(f"📋 待筛选股票数量: {len(codes)} 只")
 
     if args.fivemust:
-        # 五必筛选仅作用于 A 股（排除港股/北交所/ETF）
-        from scripts._utils import is_bse_code, is_etf_ticker
-
-        a_codes = [
-            c
-            for c in codes
-            if c.startswith(("sh.", "sz."))
-            and not is_bse_code(c.split(".")[-1])
-            and not is_etf_ticker(c)
-        ]
+        # 五必筛选仅作用于 A 股（排除港股/北交所/ETF/次新/停牌/低价/低流动性/小市值）
+        a_codes = apply_universe_filter(codes, date_str, label="五必筛选")
         _run_fivemust(a_codes, date_str, args)
         return
 
     # ──────────────────────────────────────────────────────────
     # 常规硬过滤分支
     # ──────────────────────────────────────────────────────────
+    # 统一使用前置股票池过滤（剔除 ST/北交所/ETF/次新/停牌/低价/低流动性/小市值）
+    filtered_codes = apply_universe_filter(codes, date_str, label="A股筛选")
+
     # 加载元数据
     meta = load_metadata_index()
 
     # 执行筛选
-    passed_codes, details = screen_a_stock_candidates(codes, date_str, metadata=meta)
+    passed_codes, details = screen_a_stock_candidates(filtered_codes, date_str, metadata=meta)
 
     # 统计并排序全部结果（按 pass_count 降序、fail_reasons 长度升序）
     hard_results: list[AStockScreenResult] = list(details.values())
@@ -234,70 +341,25 @@ def main() -> None:
     top_results = filtered[: args.top] if args.top > 0 else filtered
 
     # 打印摘要
-    logger.info("=" * 60)
-    logger.info("A股筛选结果摘要")
-    logger.info("=" * 60)
-    logger.info(f"候选股票总数: {len(hard_results)} 只")
-    logger.info(f"通过所有规则: {len(passed)} 只")
-    logger.info(f"满足最小通过比例({min_rate:.0%}): {len(filtered)} 只")
-    logger.info("=" * 60)
+    for line in build_summary_lines(hard_results, passed, filtered, min_rate):
+        logger.info(line)
 
     if top_results:
-        logger.info("\n📋 筛选通过股票明细:")
-        for i, r in enumerate(top_results, 1):
-            row = _build_row(r)
-            logger.info(
-                f"  {i:3d}. {row['code']} {row['name']:<12} "
-                f"市值={row['market_cap']} "
-                f"PE={row['pe_ttm']} "
-                f"成交额20d={row['turnover_20d_avg']} "
-                f"换手率12m={row['turnover_rate_12m_avg']} "
-                f"规则={row['pass_count']}/{row['total_rules']} "
-                f"通过={'是' if r.passed else '否'}"
-            )
-            if r.fail_reasons:
-                logger.info(f"         失败原因: {'; '.join(r.fail_reasons)}")
+        for line in build_detail_lines(top_results):
+            logger.info(line)
 
     # 保存到 CSV
     if args.output:
-        import pandas as pd
-
-        df = pd.DataFrame([r.to_dict() for r in filtered])
-        # 只保留输出字段
-        exist_cols = [c for c in _OUTPUT_FIELDS if c in df.columns]
-        df = df[exist_cols]
-        df.to_csv(args.output, index=False, encoding="utf-8-sig")
+        export_to_csv(filtered, args.output)
         logger.info(f"💾 结果已保存到: {args.output}（{len(filtered)} 只）")
 
     # 飞书推送（如果启用）
     if not args.no_push and passed:
-        try:
-            from scripts.feishu_utils import push_feishu
-
-            lines = [f"📈 **A股筛选结果**（共 {len(passed)} 只通过所有规则）\n"]
-            for r in top_results[:20]:
-                cap = (
-                    f"{r.market_cap / 1e8:.0f}亿"
-                    if r.market_cap is not None
-                    else "N/A"
-                )
-                pe = f"{r.pe_ttm:.1f}" if r.pe_ttm is not None else "N/A"
-                turnover = (
-                    f"{r.turnover_20d_avg / 1e4:.0f}万"
-                    if r.turnover_20d_avg is not None
-                    else "N/A"
-                )
-                lines.append(
-                    f"  {r.code} {r.name[:10]:<10} "
-                    f"市值={cap} "
-                    f"PE={pe} "
-                    f"成交额20d={turnover} "
-                    f"规则={r.pass_count}/{r.total_rules}"
-                )
-            push_feishu("text", content="\n".join(lines), title="A股筛选结果")
+        ok = push_to_feishu(passed, top_results, title="A股筛选结果")
+        if ok:
             logger.info("✅ 飞书推送成功")
-        except Exception as e:
-            logger.warning(f"⚠️ 飞书推送失败: {e}")
+        else:
+            logger.warning("⚠️ 飞书推送失败")
 
     logger.info("✅ A股筛选完成")
 
