@@ -41,7 +41,7 @@ from scripts.hk_screen import (
     screen_hk_stocks,
 )
 from scripts.hk_screen.constants import HK_MIN_RULE_COVERAGE, OUTPUT_COLUMNS
-from scripts.hk_screen.screener import _fmt_cap, _fmt_pe, _fmt_roe
+from scripts.hk_screen.screener import fmt_cap, fmt_pe, fmt_roe
 from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.config import get_settings
 
@@ -146,9 +146,9 @@ def _push_feishu(
     for r in passed[:20]:
         lines.append(
             f"  {r.ticker} {(r.name or '未知')[:10]:<10} "
-            f"市值={_fmt_cap(r.market_cap)} "
-            f"PE={_fmt_pe(r.pe_ttm)} "
-            f"ROE={_fmt_roe(r.avg_roe_3y)} "
+            f"市值={fmt_cap(r.market_cap)} "
+            f"PE={fmt_pe(r.pe_ttm)} "
+            f"ROE={fmt_roe(r.avg_roe_3y)} "
             f"质量分={compute_quality_score(r):.0f} "
             f"规则={r.pass_count}/{r.total_rules}"
         )
@@ -213,9 +213,9 @@ def main(argv: list[str] | None = None) -> int:
     for i, r in enumerate(top_results, 1):
         logger.info(
             f"  {i:3d}. {r.ticker} {r.name:<20} "
-            f"市值={_fmt_cap(r.market_cap)} "
-            f"PE={_fmt_pe(r.pe_ttm)} "
-            f"ROE={_fmt_roe(r.avg_roe_3y)} "
+            f"市值={fmt_cap(r.market_cap)} "
+            f"PE={fmt_pe(r.pe_ttm)} "
+            f"ROE={fmt_roe(r.avg_roe_3y)} "
             f"质量分={compute_quality_score(r):.0f} "
             f"通过规则={r.pass_count}/{r.total_rules} "
             f"未知={r.unknown_count}"

@@ -26,6 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from loguru import logger
@@ -37,6 +39,7 @@ from scripts.a_stock_screen import (
     screen_a_stock_candidates,
     screen_five_must,
 )
+from scripts.feishu_utils import push_feishu
 from scripts.universe_filter import apply_universe_filter
 
 # ── 共享输出逻辑（原 scripts/a_stock_screen/_shared.py，已内联）──
@@ -59,8 +62,6 @@ OUTPUT_FIELDS: list[str] = [
     "fail_reasons",
     "passed",
 ]
-
-_OUTPUT_FIELDS = OUTPUT_FIELDS
 
 
 def _fmt(val: Any, pct: bool = False) -> str:
@@ -156,13 +157,55 @@ def export_to_csv(filtered: list[AStockScreenResult], output_path: str) -> None:
     output_path : str
         CSV 文件路径。
     """
-    import pandas as pd
-
     df = pd.DataFrame([r.to_dict() for r in filtered])
     exist_cols = [c for c in OUTPUT_FIELDS if c in df.columns]
     df = df[exist_cols]
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False, encoding="utf-8-sig")
+
+
+def _push_feishu_results(
+    results: list,
+    format_line,
+    title: str,
+    empty_lines: list[str] | str = "",
+) -> bool:
+    """统一的飞书推送骨架。
+
+    构建消息行并调用 push_feishu，异常不阻断主流程。
+
+    Parameters
+    ----------
+    results : list
+        通过规则的股票结果列表。
+    format_line : callable
+        把单个结果格式化为一行文本的回调。
+    title : str
+        飞书消息标题。
+    empty_lines : list[str] | str
+        零结果时展示的补充说明（可为字符串或行列表）。
+
+    Returns
+    -------
+    bool
+        推送是否成功。
+    """
+    lines: list[str] = []
+    if results:
+        lines.append(f"📈 **{title}**（共 {len(results)} 只通过全部规则）\n")
+        for r in results[:20]:
+            lines.append(format_line(r))
+    else:
+        lines.append(f"📈 **{title}**（共 {len(results)} 只候选，0 只通过全部规则）\n")
+        if isinstance(empty_lines, list):
+            lines.extend(empty_lines)
+        else:
+            lines.append(empty_lines)
+    try:
+        push_feishu("text", content="\n".join(lines), title=title)
+        return True
+    except Exception:
+        return False
 
 
 def push_to_feishu(
@@ -186,10 +229,8 @@ def push_to_feishu(
     bool
         推送是否成功。
     """
-    from scripts.feishu_utils import push_feishu  # noqa: PLC0415
 
-    lines = [f"📈 **A股筛选结果**（共 {len(passed)} 只通过所有规则）\n"]
-    for r in top_results[:20]:
+    def format_line(r: AStockScreenResult) -> str:
         cap = f"{r.market_cap / 1e8:.0f}亿" if r.market_cap is not None else "N/A"
         pe = f"{r.pe_ttm:.1f}" if r.pe_ttm is not None else "N/A"
         turnover = (
@@ -197,18 +238,15 @@ def push_to_feishu(
             if r.turnover_20d_avg is not None
             else "N/A"
         )
-        lines.append(
+        return (
             f"  {r.code} {r.name[:10]:<10} "
             f"市值={cap} "
             f"PE={pe} "
             f"成交额20d={turnover} "
             f"规则={r.pass_count}/{r.total_rules}"
         )
-    try:
-        push_feishu("text", content="\n".join(lines), title=title)
-        return True
-    except Exception:
-        return False
+
+    return _push_feishu_results(top_results, format_line, title, "")
 
 
 # 五必筛选结果展示字段
@@ -415,8 +453,6 @@ def _run_fivemust(codes: list[str], date_str: str, args: argparse.Namespace) -> 
                 logger.info(f"         失败原因: {'; '.join(r.fail_reasons)}")
 
     # 保存到 CSV（始终写固定路径；--output 可额外指定另一路径）
-    import pandas as pd
-
     df = pd.DataFrame([r.to_dict() for r in results])
     exist_cols = [c for c in _FIVEMUST_FIELDS if c in df.columns]
     df = df[exist_cols]
@@ -428,36 +464,33 @@ def _run_fivemust(codes: list[str], date_str: str, args: argparse.Namespace) -> 
 
     # 飞书推送（即使无股票完全通过，也推送筛选摘要）
     if not args.no_push:
-        try:
-            from scripts.feishu_utils import push_feishu
 
-            if passed:
-                lines = [
-                    f"📈 **A股五必筛选结果**（共 {len(passed)} 只通过全部5条）\n"
-                ]
-                for r in passed[:20]:
-                    ma5_str = f"{r.ma5:.2f}" if r.ma5 is not None else "N/A"
-                    lines.append(
-                        f"  {r.code} {r.name[:10]:<10} "
-                        f"收盘={r.close} "
-                        f"分位={r.price_percentile} "
-                        f"ROE={r.roe} "
-                        f"换手率={r.turnover_rate_20d} "
-                        f"MA5={ma5_str} "
-                        f"规则={r.pass_count}/{r.total_rules}"
-                    )
-            else:
-                lines = [
-                    f"📈 **A股五必筛选结果**（共 {len(results)} 只候选，0 只通过全部5条）",
-                    "条件：历史低位(3年分位≤30%) / 底部扎实(20日波动≤25%+5日涨幅≤15%) / 业绩优秀(ROE≥10%+扣非≥10%+净利>0+现金流>0) / 筹码集中(换手率<1.5%或股东户数环比减少) / 日K多头突破(MA5>MA13+收盘>MA5)",
-                    "",
-                    f"各条件通过数：历史低位 {sum(1 for r in results if r.cond1_history_low)} / 底部扎实 {sum(1 for r in results if r.cond2_bottom_solid)} / 筹码集中 {sum(1 for r in results if r.cond4_concentration)} / 业绩优秀 {sum(1 for r in results if r.cond3_performance)} / 日K多头突破 {sum(1 for r in results if r.cond5_breakout)}",
-                    "⚠️ 无股票同时满足全部 5 个条件，建议放宽条件后重试。",
-                ]
-            push_feishu("text", content="\n".join(lines), title="A股五必筛选结果")
+        def fivemust_format_line(r: FiveMustResult) -> str:
+            ma5_str = f"{r.ma5:.2f}" if r.ma5 is not None else "N/A"
+            return (
+                f"  {r.code} {r.name[:10]:<10} "
+                f"收盘={r.close} "
+                f"分位={r.price_percentile} "
+                f"ROE={r.roe} "
+                f"换手率={r.turnover_rate_20d} "
+                f"MA5={ma5_str} "
+                f"规则={r.pass_count}/{r.total_rules}"
+            )
+
+        empty_lines = [
+            "条件：历史低位(3年分位≤30%) / 底部扎实(20日波动≤25%+5日涨幅≤15%) / 业绩优秀(ROE≥10%+扣非≥10%+净利>0+现金流>0) / 筹码集中(换手率<1.5%或股东户数环比减少) / 日K多头突破(MA5>MA13+收盘>MA5)",
+            "",
+            f"各条件通过数：历史低位 {sum(1 for r in results if r.cond1_history_low)} / 底部扎实 {sum(1 for r in results if r.cond2_bottom_solid)} / 筹码集中 {sum(1 for r in results if r.cond4_concentration)} / 业绩优秀 {sum(1 for r in results if r.cond3_performance)} / 日K多头突破 {sum(1 for r in results if r.cond5_breakout)}",
+            "⚠️ 无股票同时满足全部 5 个条件，建议放宽条件后重试。",
+        ]
+
+        ok = _push_feishu_results(
+            passed, fivemust_format_line, "A股五必筛选结果", empty_lines
+        )
+        if ok:
             logger.info("✅ 飞书推送成功")
-        except Exception as e:
-            logger.warning(f"⚠️ 飞书推送失败: {e}")
+        else:
+            logger.warning("⚠️ 飞书推送失败")
 
     logger.info("✅ 五必筛选完成")
 

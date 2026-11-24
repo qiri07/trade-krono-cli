@@ -389,7 +389,7 @@ def compute_quality_score(result: HKScreenResult) -> float:
     return min(score, 100.0)
 
 
-def _fmt_pe(val: float | None) -> str:
+def fmt_pe(val: float | None) -> str:
     """安全格式化 PE_TTM（None/NaN -> ``N/A``）。"""
     if val is None:
         return "N/A"
@@ -402,7 +402,7 @@ def _fmt_pe(val: float | None) -> str:
     return f"{v:.1f}"
 
 
-def _fmt_roe(val: float | None) -> str:
+def fmt_roe(val: float | None) -> str:
     """安全格式化 ROE（None/NaN -> ``N/A``）。"""
     if val is None:
         return "N/A"
@@ -415,7 +415,7 @@ def _fmt_roe(val: float | None) -> str:
     return f"{v:.1%}"
 
 
-def _fmt_cap(val: float | None) -> str:
+def fmt_cap(val: float | None) -> str:
     """安全格式化总市值（港元 -> 亿）。"""
     if val is None:
         return "N/A"
@@ -499,9 +499,9 @@ def print_screen_summary(results: list[HKScreenResult]) -> None:
         for i, r in enumerate(passed[:10], 1):
             logger.info(
                 f"  {i:2d}. {r.ticker} {r.name:<20} "
-                f"市值={_fmt_cap(r.market_cap)} "
-                f"PE={_fmt_pe(r.pe_ttm)} "
-                f"ROE={_fmt_roe(r.avg_roe_3y)} "
+                f"市值={fmt_cap(r.market_cap)} "
+                f"PE={fmt_pe(r.pe_ttm)} "
+                f"ROE={fmt_roe(r.avg_roe_3y)} "
                 f"质量分={compute_quality_score(r):.0f} "
                 f"通过规则={r.pass_count}/{r.total_rules} "
                 f"未知={r.unknown_count}"
