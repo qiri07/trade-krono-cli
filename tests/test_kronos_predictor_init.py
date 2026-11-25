@@ -8,12 +8,14 @@ DataPreparator / ResultParser / StreamingPredictor / KronosCacheManager，
 
 from __future__ import annotations
 
-from types import ModuleType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from types import ModuleType
+
 from unittest.mock import patch
 
 import pytest
-
-import trade_krono_cli.kronos_predictor as kp_module
 
 
 def _import_module() -> ModuleType:

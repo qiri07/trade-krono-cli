@@ -439,7 +439,7 @@ class TestFetchRealtimeQuote:
 class TestFetchKline:
     """trade_krono_cli.data.fetch_kline 测试（mock 缓存、工厂、baostock）。"""
 
-    def _make_kline_df(self) -> "pd.DataFrame":
+    def _make_kline_df(self) -> "pd.DataFrame":  # noqa: F821 -- pd 仅在方法内局部导入，注解为字符串不求值
         import pandas as pd
 
         return pd.DataFrame(
@@ -651,9 +651,9 @@ class TestFetchLookback:
     @patch("trade_krono_cli.data.fetch_kline_incremental")
     def test_fetch_lookback_insufficient_data(self, mock_incremental) -> None:
         """数据不足 lookback 时抛 RuntimeError。"""
-        from trade_krono_cli.data import fetch_lookback
-
         import pandas as pd
+
+        from trade_krono_cli.data import fetch_lookback
 
         mock_incremental.return_value = pd.DataFrame(
             {
@@ -670,7 +670,7 @@ class TestFetchLookback:
         with pytest.raises(RuntimeError, match="数据不足"):
             fetch_lookback("sh.600519", "2026-08-11", lookback=400)
 
-    def _make_enough_df(self, n: int) -> "pd.DataFrame":
+    def _make_enough_df(self, n: int) -> "pd.DataFrame":  # noqa: F821 -- pd 仅在方法内局部导入，注解为字符串不求值
         import pandas as pd
 
         return pd.DataFrame(
@@ -689,7 +689,7 @@ class TestFetchLookback:
 class TestFetchKlineIncremental:
     """trade_krono_cli.data.fetch_kline_incremental 测试。"""
 
-    def _make_df(self, n: int, start: str = "2026-01-01") -> "pd.DataFrame":
+    def _make_df(self, n: int, start: str = "2026-01-01") -> "pd.DataFrame":  # noqa: F821 -- pd 仅在方法内局部导入，注解为字符串不求值
         import pandas as pd
 
         return pd.DataFrame(
@@ -789,7 +789,7 @@ class TestFetchKlineIncremental:
 class TestMergeKlineDfs:
     """trade_krono_cli.data._merge_kline_dfs 测试。"""
 
-    def _make_df(self, n: int, start: str = "2026-01-01") -> "pd.DataFrame":
+    def _make_df(self, n: int, start: str = "2026-01-01") -> "pd.DataFrame":  # noqa: F821 -- pd 仅在方法内局部导入，注解为字符串不求值
         import pandas as pd
 
         return pd.DataFrame(
@@ -842,8 +842,9 @@ class TestWriteMergedCache:
 
     @patch("trade_krono_cli.data.get_cache")
     def test_write_merged_cache(self, mock_get_cache) -> None:
-        from trade_krono_cli.data import _write_merged_cache
         import pandas as pd
+
+        from trade_krono_cli.data import _write_merged_cache
 
         mock_cache = MagicMock()
         mock_get_cache.return_value = mock_cache

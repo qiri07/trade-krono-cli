@@ -139,8 +139,10 @@ tests/buffett_screening.py         # 筛选域：API 客户端、五闸门逻辑
 tests/check_cache_integrity.py     # 缓存完整性检查工具
 tests/check_cache_quality.py       # 缓存质量分析工具
 tests/test_sync_whitelist.py       # sync-whitelist / sync-universe 单元测试
+tests/test_pipeline_orchestrator.py # CommitteeOrchestrator.run / ReportIndexer.index 单元测试（18 tests）
+tests/test_kronos_predictor_init.py # kronos_predictor/__init__.py 导入与初始化单元测试（9 tests）
 tests/conftest.py                  # 共享 fixture（make_mock_settings）+ pytest_configure/env var 路由 + clear_all_globals hook
-tests/test_*.py                    # 扁平化测试结构：每个源模块对应一个测试文件（2766 个测试）
+tests/test_*.py                    # 扁平化测试结构：每个源模块对应一个测试文件（4256 个测试，4231 通过 / 25 跳过 / 0 失败）
 outputs/                     # 运行时产物（gitignore）
 outputs/cache/               # K 线缓存数据库（pipeline_cache.db，约 588 MB）
 outputs/cache/backups/       # 数据库备份（每次大操作前自动创建）
@@ -588,6 +590,7 @@ uv run python scripts/export_vnpy_data.py
 - 多场景用 `@pytest.mark.parametrize`；测试函数命名描述场景（如 `test_get_user_token_when_expired_returns_none`）
 - 单测试文件超过 500 行时，应按测试类/功能分组拆分为多个文件
 - 禁止在单元测试中发起真实网络请求，必须 mock
+- 覆盖率阈值：全套覆盖率 ≥90%（当前 90.31%），提交前需通过 `uv run pytest --cov=trade_krono_cli` 验证
 
 ## 安全约束（Security）
 - 禁止硬编码任何凭证、API Key、Token
