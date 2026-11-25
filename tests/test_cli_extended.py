@@ -403,7 +403,7 @@ class TestRepoCommands:
             patch("trade_krono_cli.external.status", return_value=[]),
             patch("trade_krono_cli.external.load_lock", return_value={}),
         ):
-            result = runner.invoke(app, ["repo", "repo-doctor"])
+            result = runner.invoke(app, ["repo", "doctor"])
             # 无 repo 时退出非 0
             assert result.exit_code != 0 or "外部 repo" in _strip_ansi(result.output)
 
@@ -427,7 +427,7 @@ class TestRepoCommands:
             ),
             patch("trade_krono_cli.external.load_lock", return_value={}),
         ):
-            result = runner.invoke(app, ["repo", "repo-doctor"])
+            result = runner.invoke(app, ["repo", "doctor"])
             assert result.exit_code != 0
             assert "检测到以下问题" in _strip_ansi(result.output)
 
@@ -437,7 +437,7 @@ class TestRepoCommands:
             patch("trade_krono_cli.external.get_repos", return_value=[]),
             patch("trade_krono_cli.external.update", return_value={}),
         ):
-            result = runner.invoke(app, ["repo", "repo-update"])
+            result = runner.invoke(app, ["repo", "update"])
             assert result.exit_code == 0
 
     def test_repo_pin_success(self, runner) -> None:
@@ -447,7 +447,7 @@ class TestRepoCommands:
         ):
             result = runner.invoke(
                 app,
-                ["repo", "repo-pin", "--name", "tradingagents", "--commit", "abc123def"],
+                ["repo", "pin", "--name", "tradingagents", "--commit", "abc123def"],
             )
             assert result.exit_code == 0
             assert "已 pin" in _strip_ansi(result.output)
@@ -460,7 +460,7 @@ class TestRepoCommands:
         ):
             result = runner.invoke(
                 app,
-                ["repo", "repo-pin", "--name", "nonexistent", "--commit", "abc123"],
+                ["repo", "pin", "--name", "nonexistent", "--commit", "abc123"],
             )
             assert result.exit_code != 0
             assert "未知 repo" in _strip_ansi(result.output)

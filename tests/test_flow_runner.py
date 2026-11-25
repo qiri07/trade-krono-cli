@@ -54,6 +54,20 @@ class TestRegistry:
             assert step is not None
             assert step.timeout == expected
 
+    def test_fivemust_command_never_passes_push_flag(self) -> None:
+        """a_stock_screen/cli.py 只认 --no-push，误传 --push N 会 argparse exit 2。
+
+        该失败曾导致 combined 因前置不可用被跳过，此处加回归护栏。
+        """
+        step = fr.get_step("fivemust")
+        assert step is not None
+        assert "--fivemust" in step.command
+        # --no-push 是合法的；--push（裸）不是，且必须永远不出现
+        assert "--push" not in step.command
+        # NO_PUSH=1（PUSH_FLAG=0）时以 --no-push 结尾；否则不含任何 push 参数
+        if "--no-push" in step.command:
+            assert step.command[-1] == "--no-push"
+
 
 class TestResolveEnabledSteps:
     """resolve_enabled_steps 的 enable/disable 语义。"""
@@ -374,6 +388,57 @@ class TestBuildArgParser:
         # dry-run 下不真正跑子进程，但会打印
         rc = args.func(args)
         assert rc == 0
+
+
+class TestCheckpointStaleCleanup:
+    """非 resume 的 --all 应清掉 checkpoint 里本轮未启用 step 的残留状态。"""
+
+    def test_all_non_resume_drops_disabled_step_residue(
+        self, monkeypatch
+    ) -> None:
+        saved: dict[str, str] = {}
+
+        def _fake_run_step(step, dry_run: bool = False) -> int:
+            return 0
+
+        monkeypatch.setattr(fr, "run_step", _fake_run_step)
+        # 本轮只启用 sync，但当天 checkpoint 残留了旧轮次的 sync_hk: failed
+        monkeypatch.setattr(fr, "load_checkpoint", lambda: {"sync_hk": "failed", "check": "success"})
+        monkeypatch.setattr(
+            fr, "save_checkpoint", lambda s: saved.update(s)
+        )
+        monkeypatch.setattr(
+            fr,
+            "resolve_enabled_steps",
+            lambda **k: [s for s in fr.STEPS if s.name in ("sync",)],
+        )
+
+        assert fr.cmd_run(step=None, all_steps=True, resume=False) == 0
+        # 写回 checkpoint 时，本轮未启用的 sync_hk 不应残留
+        assert "sync_hk" not in saved
+        assert saved.get("sync") == "success"
+
+    def test_all_non_resume_keeps_enabled_step_success(
+        self, monkeypatch
+    ) -> None:
+        """本轮启用的 step 若 checkpoint 已 success，应沿用（避免重跑）。"""
+        saved: dict[str, str] = {}
+
+        def _fake_run_step(step, dry_run: bool = False) -> int:
+            return 0
+
+        monkeypatch.setattr(fr, "run_step", _fake_run_step)
+        monkeypatch.setattr(fr, "load_checkpoint", lambda: {"check": "success", "sync": "success"})
+        monkeypatch.setattr(fr, "save_checkpoint", lambda s: saved.update(s))
+        monkeypatch.setattr(
+            fr,
+            "resolve_enabled_steps",
+            lambda **k: [s for s in fr.STEPS if s.name in ("check", "sync")],
+        )
+
+        fr.cmd_run(step=None, all_steps=True, resume=False)
+        assert saved.get("check") == "success"
+        assert saved.get("sync") == "success"
 
 
 class TestUnifiedBackup:

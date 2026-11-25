@@ -431,3 +431,442 @@ class TestFetchRealtimeQuote:
         assert _safe_float("nan") is None
         assert _safe_float("3.14", default=0.0) == 3.14
         assert _safe_float("", default=0.0) == 0.0
+
+
+# ── fetch_kline / fetch_lookback / fetch_kline_incremental ──────────────────
+
+
+class TestFetchKline:
+    """trade_krono_cli.data.fetch_kline 测试（mock 缓存、工厂、baostock）。"""
+
+    def _make_kline_df(self) -> "pd.DataFrame":
+        import pandas as pd
+
+        return pd.DataFrame(
+            {
+                "timestamps": pd.date_range("2026-01-01", periods=3, freq="D"),
+                "open": [100.0, 101.0, 102.0],
+                "high": [101.0, 102.0, 103.0],
+                "low": [99.0, 100.0, 101.0],
+                "close": [100.5, 101.5, 102.5],
+                "volume": [1e6, 1.1e6, 1.2e6],
+                "amount": [1e8, 1.1e8, 1.2e8],
+            },
+        )
+
+    def _mock_kline_data(self, source: str = "baostock") -> MagicMock:
+        kd = MagicMock()
+        kd.source = source
+        kd.is_empty = False
+        kd.to_dataframe.return_value = self._make_kline_df()
+        return kd
+
+    @patch("trade_krono_cli.data.get_cache")
+    def test_fetch_kline_cache_hit(self, mock_get_cache) -> None:
+        """缓存命中时直接返回缓存数据，不走工厂。"""
+        from trade_krono_cli.data import fetch_kline
+
+        mock_cache = MagicMock()
+        mock_cache.get_kline.return_value = self._make_kline_df()
+        mock_get_cache.return_value = mock_cache
+
+        result = fetch_kline("sh.600519", "2026-01-01", "2026-01-03")
+        assert result is not None
+        assert len(result) == 3
+        mock_cache.get_kline.assert_called_once()
+        mock_cache.set_kline.assert_not_called()
+
+    @patch("trade_krono_cli.data.get_cache")
+    @patch("trade_krono_cli.data.get_data_factory")
+    def test_fetch_kline_factory_success(self, mock_get_factory, mock_get_cache) -> None:
+        """工厂路径成功：返回 DataFrame 并写入缓存。"""
+        from trade_krono_cli.data import fetch_kline
+
+        mock_cache = MagicMock()
+        mock_cache.get_kline.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        mock_factory = MagicMock()
+        mock_factory.fetch_kline.return_value = self._mock_kline_data("akshare")
+        mock_get_factory.return_value = mock_factory
+
+        result = fetch_kline("sh.600519", "2026-01-01", "2026-01-03")
+        assert result is not None
+        assert len(result) == 3
+        mock_cache.set_kline.assert_called_once()
+
+    @patch("trade_krono_cli.data.get_cache")
+    @patch("trade_krono_cli.data.get_data_factory")
+    def test_fetch_kline_factory_returns_none(self, mock_get_factory, mock_get_cache) -> None:
+        """工厂返回 None：回退 baostock 路径。"""
+        from trade_krono_cli.data import fetch_kline
+
+        mock_cache = MagicMock()
+        mock_cache.get_kline.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        mock_factory = MagicMock()
+        mock_factory.fetch_kline.return_value = None
+        mock_get_factory.return_value = mock_factory
+
+        with patch(
+            "trade_krono_cli.data_providers.baostock_provider.BaostockProvider",
+        ) as mock_bsp_cls:
+            mock_bsp = MagicMock()
+            mock_bsp.fetch_kline.return_value = None
+            mock_bsp_cls.return_value = mock_bsp
+
+            result = fetch_kline("sh.600519", "2026-01-01", "2026-01-03")
+            assert isinstance(result, __import__("pandas").DataFrame)
+            assert result.empty
+
+    @patch("trade_krono_cli.data.get_cache")
+    @patch("trade_krono_cli.data.get_data_factory")
+    def test_fetch_kline_factory_exception(self, mock_get_factory, mock_get_cache) -> None:
+        """工厂抛异常：回退 baostock 路径。"""
+        from trade_krono_cli.data import fetch_kline
+
+        mock_cache = MagicMock()
+        mock_cache.get_kline.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        mock_factory = MagicMock()
+        mock_factory.fetch_kline.side_effect = RuntimeError("factory down")
+        mock_get_factory.return_value = mock_factory
+
+        with patch(
+            "trade_krono_cli.data_providers.baostock_provider.BaostockProvider",
+        ) as mock_bsp_cls:
+            mock_bsp = MagicMock()
+            mock_bsp.fetch_kline.return_value = None
+            mock_bsp_cls.return_value = mock_bsp
+
+            result = fetch_kline("sh.600519", "2026-01-01", "2026-01-03")
+            assert result.empty
+
+    @patch("trade_krono_cli.data.get_cache")
+    @patch("trade_krono_cli.data.get_data_factory")
+    def test_fetch_kline_baostock_success(
+        self, mock_get_factory, mock_get_cache
+    ) -> None:
+        """baostock 路径成功：返回 DataFrame。"""
+        from trade_krono_cli.data import fetch_kline
+
+        mock_cache = MagicMock()
+        mock_cache.get_kline.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        mock_factory = MagicMock()
+        mock_factory.fetch_kline.return_value = None
+        mock_get_factory.return_value = mock_factory
+
+        mock_bsp = MagicMock()
+        mock_bsp.fetch_kline.return_value = self._mock_kline_data("baostock")
+        with patch(
+            "trade_krono_cli.data_providers.baostock_provider.BaostockProvider",
+            return_value=mock_bsp,
+        ):
+            result = fetch_kline("sh.600519", "2026-01-01", "2026-01-03")
+            assert result is not None
+            assert len(result) == 3
+
+    @patch("trade_krono_cli.data.get_cache")
+    @patch("trade_krono_cli.data.get_data_factory")
+    def test_fetch_kline_baostock_returns_none(
+        self, mock_get_factory, mock_get_cache
+    ) -> None:
+        """baostock 返回 None：返回空 DataFrame。"""
+        from trade_krono_cli.data import fetch_kline
+
+        mock_cache = MagicMock()
+        mock_cache.get_kline.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        mock_factory = MagicMock()
+        mock_factory.fetch_kline.return_value = None
+        mock_get_factory.return_value = mock_factory
+
+        mock_bsp = MagicMock()
+        mock_bsp.fetch_kline.return_value = None
+        with patch(
+            "trade_krono_cli.data_providers.baostock_provider.BaostockProvider",
+            return_value=mock_bsp,
+        ):
+            result = fetch_kline("sh.600519", "2026-01-01", "2026-01-03")
+            assert result.empty
+
+    @patch("trade_krono_cli.data.get_cache")
+    @patch("trade_krono_cli.data.get_data_factory")
+    def test_fetch_kline_use_cache_false(
+        self, mock_get_factory, mock_get_cache
+    ) -> None:
+        """use_cache=False 跳过缓存读取。"""
+        from trade_krono_cli.data import fetch_kline
+
+        mock_cache = MagicMock()
+        mock_get_cache.return_value = mock_cache
+
+        mock_factory = MagicMock()
+        mock_factory.fetch_kline.return_value = self._mock_kline_data("factory")
+        mock_get_factory.return_value = mock_factory
+
+        fetch_kline("sh.600519", "2026-01-01", "2026-01-03", use_cache=False)
+        mock_cache.get_kline.assert_not_called()
+
+
+class TestFetchLookback:
+    """trade_krono_cli.data.fetch_lookback 测试。"""
+
+    @patch("trade_krono_cli.data.validate_data_freshness")
+    @patch("trade_krono_cli.data.fetch_kline_incremental")
+    def test_fetch_lookback_daily(
+        self, mock_incremental, mock_validate
+    ) -> None:
+        """日频：start_date = end_date - lookback*2 - buffer。"""
+        from trade_krono_cli.data import fetch_lookback
+
+        mock_incremental.return_value = self._make_enough_df(500)
+
+        fetch_lookback("sh.600519", "2026-08-11", lookback=400, frequency="d")
+        call_args = mock_incremental.call_args
+        assert call_args is not None
+        # 日频：lookback * 2 + buffer = 400*2 + 60 = 860 天前 → 2024-04-03
+        assert call_args.args[1] == "2024-04-03"
+
+    @patch("trade_krono_cli.data.validate_data_freshness")
+    @patch("trade_krono_cli.data.fetch_kline_incremental")
+    def test_fetch_lookback_intraday(
+        self, mock_incremental, mock_validate
+    ) -> None:
+        """非日频：start_date = end_date - lookback//48 - 10。"""
+        from trade_krono_cli.data import fetch_lookback
+
+        mock_incremental.return_value = self._make_enough_df(500)
+
+        fetch_lookback("sh.600519", "2026-08-11", lookback=400, frequency="5min")
+        call_args = mock_incremental.call_args
+        # 5min：lookback // 48 + 10 = 400 // 48 + 10 = 8 + 10 = 18 天前
+        assert call_args.args[1] == "2026-07-24"
+
+    @patch("trade_krono_cli.data.fetch_kline_incremental")
+    def test_fetch_lookback_insufficient_data(self, mock_incremental) -> None:
+        """数据不足 lookback 时抛 RuntimeError。"""
+        from trade_krono_cli.data import fetch_lookback
+
+        import pandas as pd
+
+        mock_incremental.return_value = pd.DataFrame(
+            {
+                "timestamps": pd.date_range("2026-01-01", periods=5, freq="D"),
+                "open": [100.0] * 5,
+                "high": [101.0] * 5,
+                "low": [99.0] * 5,
+                "close": [100.0] * 5,
+                "volume": [1e6] * 5,
+                "amount": [1e8] * 5,
+            },
+        )
+
+        with pytest.raises(RuntimeError, match="数据不足"):
+            fetch_lookback("sh.600519", "2026-08-11", lookback=400)
+
+    def _make_enough_df(self, n: int) -> "pd.DataFrame":
+        import pandas as pd
+
+        return pd.DataFrame(
+            {
+                "timestamps": pd.date_range("2026-01-01", periods=n, freq="D"),
+                "open": [100.0] * n,
+                "high": [101.0] * n,
+                "low": [99.0] * n,
+                "close": [100.0] * n,
+                "volume": [1e6] * n,
+                "amount": [1e8] * n,
+            },
+        )
+
+
+class TestFetchKlineIncremental:
+    """trade_krono_cli.data.fetch_kline_incremental 测试。"""
+
+    def _make_df(self, n: int, start: str = "2026-01-01") -> "pd.DataFrame":
+        import pandas as pd
+
+        return pd.DataFrame(
+            {
+                "timestamps": pd.date_range(start, periods=n, freq="D"),
+                "open": [100.0] * n,
+                "high": [101.0] * n,
+                "low": [99.0] * n,
+                "close": [100.0] * n,
+                "volume": [1e6] * n,
+                "amount": [1e8] * n,
+            },
+        )
+
+    @patch("trade_krono_cli.data.get_cache")
+    @patch("trade_krono_cli.data.fetch_kline")
+    def test_incremental_cache_full_coverage(
+        self, mock_fetch_kline, mock_get_cache
+    ) -> None:
+        """缓存已完整覆盖请求范围：直接返回缓存数据。"""
+        from trade_krono_cli.data import fetch_kline_incremental
+
+        mock_cache = MagicMock()
+        mock_cache.get_cached_date_range.return_value = ("2026-01-01", "2026-08-13")
+        mock_get_cache.return_value = mock_cache
+
+        mock_fetch_kline.return_value = self._make_df(3, "2026-01-01")
+
+        result = fetch_kline_incremental("sh.600519", "2026-01-05", "2026-01-07")
+        assert result is not None
+        assert len(result) == 3
+        # 缓存全覆盖时，fetch_kline 应被调用（use_cache=True 会再次查缓存）
+        mock_fetch_kline.assert_called_once()
+
+    @patch("trade_krono_cli.data.get_cache")
+    @patch("trade_krono_cli.data.fetch_kline")
+    def test_incremental_no_cache_full_fetch(
+        self, mock_fetch_kline, mock_get_cache
+    ) -> None:
+        """无缓存：全量拉取。"""
+        from trade_krono_cli.data import fetch_kline_incremental
+
+        mock_cache = MagicMock()
+        mock_cache.get_cached_date_range.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        mock_fetch_kline.return_value = self._make_df(5, "2026-01-01")
+
+        result = fetch_kline_incremental("sh.600519", "2026-01-01", "2026-01-05")
+        assert result is not None
+        assert len(result) == 5
+        mock_fetch_kline.assert_called_once()
+
+    @patch("trade_krono_cli.data.get_cache")
+    @patch("trade_krono_cli.data.fetch_kline")
+    def test_incremental_cache_expired_refetch_all(
+        self, mock_fetch_kline, mock_get_cache
+    ) -> None:
+        """缓存已过期（cached_end < start_date）：从 start_date 重新拉取。"""
+        from trade_krono_cli.data import fetch_kline_incremental
+
+        mock_cache = MagicMock()
+        mock_cache.get_cached_date_range.return_value = ("2026-01-01", "2026-01-03")
+        mock_get_cache.return_value = mock_cache
+
+        mock_fetch_kline.side_effect = [
+            self._make_df(5, "2026-01-01"),  # new_df (fetch_start=start_date)
+            self._make_df(3, "2026-01-01"),  # old_df
+        ]
+
+        result = fetch_kline_incremental("sh.600519", "2026-01-05", "2026-01-09")
+        assert result is not None
+        # cached_end=2026-01-03 < start_date=2026-01-05，fetch_start=start_date
+        # start_date 作为第 2 个位置参数传入 fetch_kline
+        first_call_args = mock_fetch_kline.call_args_list[0]
+        assert first_call_args.args[1] == "2026-01-05"
+
+    @patch("trade_krono_cli.data.get_cache")
+    @patch("trade_krono_cli.data.fetch_kline")
+    def test_incremental_cache_beyond_end(
+        self, mock_fetch_kline, mock_get_cache
+    ) -> None:
+        """缓存已超出请求范围（cached_end >= end_date）：仅返回请求区间。"""
+        from trade_krono_cli.data import fetch_kline_incremental
+
+        mock_cache = MagicMock()
+        mock_cache.get_cached_date_range.return_value = ("2026-01-01", "2026-01-10")
+        mock_get_cache.return_value = mock_cache
+
+        mock_fetch_kline.return_value = self._make_df(3, "2026-01-05")
+
+        result = fetch_kline_incremental("sh.600519", "2026-01-05", "2026-01-07")
+        assert result is not None
+        assert len(result) == 3
+
+
+class TestMergeKlineDfs:
+    """trade_krono_cli.data._merge_kline_dfs 测试。"""
+
+    def _make_df(self, n: int, start: str = "2026-01-01") -> "pd.DataFrame":
+        import pandas as pd
+
+        return pd.DataFrame(
+            {
+                "timestamps": pd.date_range(start, periods=n, freq="D"),
+                "open": [100.0] * n,
+                "high": [101.0] * n,
+                "low": [99.0] * n,
+                "close": [100.0] * n,
+                "volume": [1e6] * n,
+                "amount": [1e8] * n,
+            },
+        )
+
+    def test_merge_old_none(self) -> None:
+        from trade_krono_cli.data import _merge_kline_dfs
+
+        new_df = self._make_df(3)
+        result = _merge_kline_dfs(None, new_df)
+        assert len(result) == 3
+
+    def test_merge_new_none(self) -> None:
+        from trade_krono_cli.data import _merge_kline_dfs
+
+        old_df = self._make_df(3)
+        result = _merge_kline_dfs(old_df, None)
+        assert len(result) == 3
+
+    def test_merge_both_none(self) -> None:
+        from trade_krono_cli.data import _merge_kline_dfs
+
+        result = _merge_kline_dfs(None, None)
+        assert result.empty
+
+    def test_merge_normal(self) -> None:
+        from trade_krono_cli.data import _merge_kline_dfs
+
+        old_df = self._make_df(5, "2026-01-01")
+        new_df = self._make_df(3, "2026-01-04")
+        result = _merge_kline_dfs(old_df, new_df)
+        # 旧 5 行 + 新 3 行，其中 2026-01-04~06 重叠，新数据优先
+        # 旧数据中早于新数据最大时间 (2026-01-06) 的保留：2026-01-01,02,03
+        # 新数据：2026-01-04,05,06
+        # 合并后：2026-01-01,02,03,04,05,06 → 6 行
+        assert len(result) == 6
+
+
+class TestWriteMergedCache:
+    """trade_krono_cli.data._write_merged_cache 测试。"""
+
+    @patch("trade_krono_cli.data.get_cache")
+    def test_write_merged_cache(self, mock_get_cache) -> None:
+        from trade_krono_cli.data import _write_merged_cache
+        import pandas as pd
+
+        mock_cache = MagicMock()
+        mock_get_cache.return_value = mock_cache
+
+        df = pd.DataFrame(
+            {
+                "timestamps": pd.date_range("2026-01-01", periods=3, freq="D"),
+                "open": [100.0] * 3,
+                "high": [101.0] * 3,
+                "low": [99.0] * 3,
+                "close": [100.0] * 3,
+                "volume": [1e6] * 3,
+                "amount": [1e8] * 3,
+            },
+        )
+
+        _write_merged_cache(
+            mock_cache,
+            "sh.600519",
+            df,
+            "2026-01-01",
+            "2026-01-03",
+            "d",
+            "1",
+        )
+        mock_cache.set_kline.assert_called_once()

@@ -172,7 +172,7 @@ class TestExternalRepoErrors:
             patch("trade_krono_cli.external.status", return_value=[]),
             patch("trade_krono_cli.external.load_lock", return_value={}),
         ):
-            result = runner.invoke(app, ["repo", "repo-doctor"])
+            result = runner.invoke(app, ["repo", "doctor"])
             assert result.exit_code != 0
             assert "未检测到外部 repo" in result.output
 
@@ -192,7 +192,7 @@ class TestExternalRepoErrors:
             patch("trade_krono_cli.external.get_repos", return_value=[pinned_repo]),
             patch("trade_krono_cli.external.update", return_value={}),
         ):
-            result = runner.invoke(app, ["repo", "repo-update"])
+            result = runner.invoke(app, ["repo", "update"])
             assert result.exit_code == 0
             assert "已 pinned，跳过" in _strip_ansi(result.output)
 
@@ -203,7 +203,7 @@ class TestExternalRepoErrors:
         ):
             result = runner.invoke(
                 app,
-                ["repo", "repo-pin", "--name", "fake", "--commit", "abc123"],
+                ["repo", "pin", "--name", "fake", "--commit", "abc123"],
             )
             assert result.exit_code != 0
             assert "未知 repo" in _strip_ansi(result.output)

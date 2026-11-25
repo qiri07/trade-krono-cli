@@ -161,11 +161,11 @@ def test_repo_commands_help(runner) -> None:
 
 
 def test_repo_status_command(runner) -> None:
-    """repo-status 应正常运行（不崩溃）。"""
-    result = runner.invoke(app, ["repo-status"])
+    """repo status 应正常运行（不崩溃）。"""
+    result = runner.invoke(app, ["repo", "status"])
     # 可能因缺少外部 repo 配置而退出非 0，但不应是 help 错误
     output = _strip_ansi(result.output)
-    assert "repo-status" in output or result.exit_code == 0
+    assert "repo" in output or result.exit_code == 0
 
 
 def test_eval_prediction_command_help(runner) -> None:
