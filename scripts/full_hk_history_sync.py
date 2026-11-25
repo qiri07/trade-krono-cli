@@ -208,6 +208,19 @@ def fetch_and_store_hk(
                 else new_df
             )
 
+        # 增量窗口保护：provider（akshare stock_hk_daily）忽略 start_date 返回全量历史，
+        # 正常增量下 new_df 只有「缓存末日之后」的少数几行。若返回行数远超窗口，
+        # 说明源口径漂移（全历史 / 异常长片段），直接写库会把 end 推到不可信的未来。
+        # 窗口上限 31 天：覆盖长假、补同步、长停牌恢复；容忍带 +10 行吸收停牌日的稀疏返回。
+        if (not full) and cached_end is not None:
+            window_days = (pd.Timestamp(end_date) - pd.Timestamp(cached_end)).days
+            if 0 < window_days <= 31 and len(new_df) > window_days + 10:
+                logger.warning(
+                    f"{ticker}: 增量窗口 {window_days}d 但返回 {len(new_df)} 行，"
+                    "疑似源数据异常，跳过本次更新"
+                )
+                return (ticker, False, f"suspicious_window(rows={len(new_df)})")
+
         _write_df(ticker, merged)
         return (ticker, True, f"rows={len(merged)} +new={len(new_df)}")
 

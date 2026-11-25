@@ -68,7 +68,7 @@ class DataPreparator:
         """将 DataFrame 填充到目标长度（前面补最后一行）。"""
         if len(df) >= target_len:
             return df.iloc[-target_len:]
-        pad_rows = pd.concat([df.iloc[[-1]] * (target_len - len(df)), df], ignore_index=True)
+        pad_rows = pd.concat([df.iloc[[-1]]] * (target_len - len(df)) + [df], ignore_index=True)
         return pad_rows.tail(target_len)
 
     @staticmethod

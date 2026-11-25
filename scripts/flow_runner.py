@@ -322,8 +322,8 @@ STEPS: list[Step] = [
             "--date",
             expected_trading_day(),
             "--fivemust",
-            "--push",
-            str(PUSH_FLAG),
+            # a_stock_screen/cli.py 只支持 --no-push（无 --push N）
+            *([] if PUSH_FLAG == 1 else ["--no-push"]),
         ],
         enabled_by_default=True,
         depends_on=["universe"],
@@ -607,10 +607,25 @@ def cmd_run(
         if not targets:
             print("没有可执行的 step（全部被禁用？）")
             return 1
+        # 本轮启用 step 的 name 集合，用于过滤 checkpoint 中不属于本轮的残留状态
+        enabled_names: set[str] = {s.name for s in targets}
         statuses: dict[str, str] = {}
+        # 跨轮脏读修复：非 resume 模式下，清掉 checkpoint 里不属于本轮 targets 的 step
+        # 状态（例如上一轮启用了 sync_hk 本轮 --disable 了它，残留的 failed 会误导）。
+        if not resume:
+            legacy = load_checkpoint()
+            for name in enabled_names:
+                if name in legacy:
+                    statuses[name] = legacy[name]
+            # 丢弃本轮未启用的 step 残留
+            stale = [n for n in legacy if n not in enabled_names]
+            if stale:
+                print(f"  🧹 已清除 checkpoint 中本轮未启用的 step 残留: {sorted(stale)}")
         # 本轮是否已有统一备份：backup step 在本次执行计划内，或当天 checkpoint 已记录成功
         backup_done = any(s.name == BACKUP_STEP_NAME for s in targets)
         if resume:
+            # resume 保留 checkpoint 全部累积状态（含未启用的 step），
+            # 用于 backup 成功判断与断点跳过；不做残留清理。
             statuses = load_checkpoint()
             backup_done = backup_done or statuses.get(BACKUP_STEP_NAME) == "success"
             pending_names = {s.name for s in targets if statuses.get(s.name) != "success"}
@@ -741,7 +756,9 @@ def cmd_run(
         return 2
     rc = run_step(single, dry_run=dry_run)
     if not dry_run:
-        # 单步执行只覆盖当前 step 状态，保留当天已累积的其他 step 记录
+        # 单步执行只覆盖当前 step 状态，保留当天已累积的其他 step 记录。
+        # 跨轮脏读修复：单步 checkpoint 无法知道"本轮启用集合"，但可确保
+        # 当前 step 本身的状态被更新；其他 step 状态沿用（属于合理累积）。
         statuses = load_checkpoint()
         statuses[step] = "success" if rc == 0 else "failed"
         save_checkpoint(statuses)

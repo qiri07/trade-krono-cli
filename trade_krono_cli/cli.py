@@ -68,10 +68,10 @@ from trade_krono_cli.cli_commands import (  # noqa: E402
     warm_cache,
 )
 
-repo_app.command()(repo_status)
-repo_app.command()(repo_doctor)
-repo_app.command()(repo_update)
-repo_app.command()(repo_pin)
+repo_app.command(name="status")(repo_status)
+repo_app.command(name="doctor")(repo_doctor)
+repo_app.command(name="update")(repo_update)
+repo_app.command(name="pin")(repo_pin)
 
 app.command()(run)
 app.command()(ta)
