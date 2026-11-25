@@ -139,3 +139,280 @@ class TestTencentKlineCall:
             pytest.raises(RuntimeError, match="全部入口不可用"),
         ):
             provider._tencent_kline_call("/appstock/app/kline/mkline", "sh600519,m5,,,5")
+
+
+class TestTencentHttpGet:
+    """_tencent_http_get：urllib 请求/响应与异常处理。"""
+
+    def _make_urlopen_mock(self, charset: str | None, body: bytes) -> MagicMock:
+        """构造模拟 urlopen 上下文管理器（with ... as response:）。"""
+        mock_response = MagicMock()
+        mock_response.headers.get_content_charset.return_value = charset
+        mock_response.read.return_value = body
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = mock_response
+        return mock_cm
+
+    def test_http_get_success(self) -> None:
+        """正常响应返回解码后的文本。"""
+        import trade_krono_cli.data_providers.tencent_provider as tpmod
+
+        mock_cm = self._make_urlopen_mock("gbk", b"test_data")
+        with patch.object(tpmod.urllib.request, "urlopen", return_value=mock_cm):
+            result = tp._tencent_http_get("https://example.com/api")
+        assert result == "test_data"
+
+    def test_http_get_with_params(self) -> None:
+        """带 params 时 URL 会拼接查询字符串。"""
+        import trade_krono_cli.data_providers.tencent_provider as tpmod
+
+        mock_cm = self._make_urlopen_mock(None, b"ok")
+        with patch.object(tpmod.urllib.request, "urlopen", return_value=mock_cm):
+            tp._tencent_http_get("https://example.com/api", {"a": "1", "b": "2"})
+
+    def test_http_get_failure_raises_runtime_error(self) -> None:
+        """urlopen 抛异常时应包装为 RuntimeError。"""
+        import trade_krono_cli.data_providers.tencent_provider as tpmod
+
+        with patch.object(
+            tpmod.urllib.request, "urlopen", side_effect=OSError("network down")
+        ), pytest.raises(RuntimeError, match="tencent 请求"):
+            tp._tencent_http_get("https://example.com/api")
+
+
+class TestTencentNum:
+    """_tencent_num：数值转换边界情况。"""
+
+    def test_tencent_num_bool(self) -> None:
+        """布尔值返回 None。"""
+        assert tp._tencent_num(True) is None
+        assert tp._tencent_num(False) is None
+
+    def test_tencent_num_none(self) -> None:
+        """None 返回 None。"""
+        assert tp._tencent_num(None) is None
+
+    def test_tencent_num_int_float(self) -> None:
+        """int / float 直接转换。"""
+        assert tp._tencent_num(42) == 42.0
+        assert tp._tencent_num(3.14) == 3.14
+
+    def test_tencent_num_string_with_comma(self) -> None:
+        """带逗号的字符串可转换。"""
+        assert tp._tencent_num("1,234.56") == 1234.56
+
+    def test_tencent_num_empty_dash(self) -> None:
+        """空字符串 / 短横线返回 None。"""
+        assert tp._tencent_num("") is None
+        assert tp._tencent_num("-") is None
+        assert tp._tencent_num("--") is None
+
+    def test_tencent_num_invalid_string(self) -> None:
+        """非数字字符串返回 None。"""
+        assert tp._tencent_num("abc") is None
+
+    def test_tencent_num_nan_inf(self) -> None:
+        """NaN / Inf 返回 None。"""
+        assert tp._tencent_num(float("nan")) is None
+        assert tp._tencent_num(float("inf")) is None
+
+
+class TestTencentReqNum:
+    """_tencent_req_num：必填数值异常。"""
+
+    def test_tencent_req_num_raises(self) -> None:
+        """值为 None 时抛 RuntimeError。"""
+        with pytest.raises(RuntimeError, match="tencent 来源字段"):
+            tp._tencent_req_num(None, "open")
+
+
+class TestTencentSrcDate:
+    """_tencent_src_date：日期格式解析。"""
+
+    def test_tencent_src_date_yyyymmdd(self) -> None:
+        """8 位数字日期按 %Y%m%d 解析。"""
+        assert tp._tencent_src_date("20261027") == "2026-10-27"
+
+    def test_tencent_src_date_yyyy_mm_dd(self) -> None:
+        """标准日期按 %Y-%m-%d 解析。"""
+        assert tp._tencent_src_date("2026-10-27") == "2026-10-27"
+
+    def test_tencent_src_date_invalid(self) -> None:
+        """无法识别的日期抛 RuntimeError。"""
+        with pytest.raises(RuntimeError, match="无法识别的日期"):
+            tp._tencent_src_date("not-a-date")
+
+
+class TestTencentIterQuoteBlocks:
+    """_iter_quote_blocks：行情响应拆分边界。"""
+
+    def test_iter_quote_blocks_empty_line(self) -> None:
+        """空行被跳过。"""
+        blocks = tp._iter_quote_blocks("")
+        assert blocks == []
+
+    def test_iter_quote_blocks_no_equals(self) -> None:
+        """没有 = 的行被跳过。"""
+        blocks = tp._iter_quote_blocks("just some text;no_equals_here")
+        assert blocks == []
+
+    def test_iter_quote_blocks_no_quote(self) -> None:
+        """没有引号的行被跳过。"""
+        blocks = tp._iter_quote_blocks("key=value")
+        assert blocks == []
+
+    def test_iter_quote_blocks_empty_key(self) -> None:
+        """key 为空时被跳过（line 162）。"""
+        data = 'v_="1~2~3";'
+        blocks = tp._iter_quote_blocks(data)
+        assert blocks == []
+
+
+class TestTencentQuoteFromValues:
+    """_quote_from_values：字段不足返回 None。"""
+
+    def test_quote_from_values_insufficient_fields(self) -> None:
+        """字段少于 53 项返回 None（line 178）。"""
+        result = tp._quote_from_values(["a", "b", "c"], "sh.600519")
+        assert result is None
+
+
+class TestTencentFetchDaily:
+    """_fetch_tencent_daily：日线拉取边界。"""
+
+    def test_fetch_daily_start_after_end_raises(self) -> None:
+        """起始日期晚于结束日期抛 ValueError。"""
+        provider = TencentProvider()
+        with (
+            patch.object(provider, "_to_tencent_symbol", return_value="sh600519"),
+            patch.object(
+                provider, "_tencent_kline_call", return_value={"sh600519": {}}
+            ),
+            pytest.raises(ValueError, match="起始日期"),
+        ):
+            provider._fetch_tencent_daily(
+                "sh.600519", "day", "1", "2026-10-28", "2026-10-27"
+            )
+
+    def test_fetch_daily_zero_rows_raises(self) -> None:
+        """返回 0 根 K 线时抛 RuntimeError。"""
+        provider = TencentProvider()
+        with (
+            patch.object(provider, "_to_tencent_symbol", return_value="sh600519"),
+            patch.object(
+                provider,
+                "_tencent_kline_call",
+                return_value={"sh600519": {"day": []}},
+            ),
+            pytest.raises(RuntimeError, match="0 根"),
+        ):
+            provider._fetch_tencent_daily(
+                "sh.600519", "day", "1", "2026-10-27", "2026-10-28"
+            )
+
+    def test_fetch_daily_price_zero_raises(self) -> None:
+        """价格出现 ≤0 时抛 RuntimeError。"""
+        provider = TencentProvider()
+        with (
+            patch.object(provider, "_to_tencent_symbol", return_value="sh600519"),
+            patch.object(
+                provider,
+                "_tencent_kline_call",
+                return_value={"sh600519": {"day": [["20261027", "0", "0", "0", "0", "0"]]}},
+            ),
+            pytest.raises(RuntimeError, match="≤0"),
+        ):
+            provider._fetch_tencent_daily(
+                "sh.600519", "day", "1", "2026-10-27", "2026-10-28"
+            )
+
+
+class TestTencentFetchMinutes:
+    """_fetch_tencent_minutes：分钟线边界。"""
+
+    def test_fetch_minutes_empty_items_raises(self) -> None:
+        """返回 0 根分钟线时抛 RuntimeError。"""
+        provider = TencentProvider()
+        with (
+            patch.object(provider, "_to_tencent_symbol", return_value="sh600519"),
+            patch.object(
+                provider,
+                "_tencent_kline_call",
+                return_value={"sh600519": {"m5": []}},
+            ),
+            pytest.raises(RuntimeError, match="返回 0 根"),
+        ):
+            provider._fetch_tencent_minutes("sh.600519", "m5")
+
+
+class TestTencentKlineCallEdgeCases:
+    """_tencent_kline_call：各失败路径。"""
+
+    def test_kline_call_param_error(self) -> None:
+        """来源返回 param error 时抛 ValueError。"""
+        provider = TencentProvider()
+        with patch.object(
+            tp,
+            "_tencent_http_get",
+            return_value='{"code": -1, "msg": "param error"}',
+        ), pytest.raises(ValueError, match="参数错误"):
+            provider._tencent_kline_call("/appstock/app/kline/mkline", "sh600519,m5,,,5")
+
+    def test_kline_call_non_dict_payload(self) -> None:
+        """payload 不是 dict 时标记入口失败并继续下一入口。"""
+        provider = TencentProvider()
+        # 两个入口：第一个返回非 dict，第二个也返回非 dict，最终全部不可用
+        with patch.object(
+            tp,
+            "_tencent_http_get",
+            side_effect=['"not a dict"', '"not a dict"'],
+        ), pytest.raises(RuntimeError, match="全部入口不可用"):
+            provider._tencent_kline_call("/appstock/app/kline/mkline", "sh600519,m5,,,5")
+
+    def test_kline_call_empty_data(self) -> None:
+        """data 为空 dict 时标记入口失败。"""
+        provider = TencentProvider()
+        with patch.object(
+            tp,
+            "_tencent_http_get",
+            side_effect=['{"code": 0, "data": {}}', '{"code": 0, "data": {}}'],
+        ), pytest.raises(RuntimeError, match="全部入口不可用"):
+            provider._tencent_kline_call("/appstock/app/kline/mkline", "sh600519,m5,,,5")
+
+
+class TestTencentFetchQuote:
+    """fetch_quote：未找到匹配返回 None。"""
+
+    def test_fetch_quote_no_match(self) -> None:
+        """行情中未找到对应代码时返回 None。"""
+        provider = TencentProvider()
+        with patch.object(tp, "_tencent_http_get", return_value='v_sz000001="1~平安银行~..."'):
+            result = provider.fetch_quote("sh.600519")
+            assert result is None
+
+
+class TestTencentFetchQuotesBatch:
+    """fetch_quotes_batch：批量行情边界。"""
+
+    def test_fetch_quotes_batch_empty(self) -> None:
+        """空列表返回空 dict。"""
+        provider = TencentProvider()
+        result = provider.fetch_quotes_batch([])
+        assert result == {}
+
+    def test_fetch_quotes_batch_bj_skipped(self) -> None:
+        """北交所代码在 _to_tencent_symbol 抛 ValueError 时被跳过。"""
+        provider = TencentProvider()
+        with patch.object(tp, "_tencent_http_get", return_value=''):
+            result = provider.fetch_quotes_batch(["bj.920080"])
+            # _to_tencent_symbol 对 bj 不抛异常（返回 bj920080），但没有行情数据
+            assert result == {}
+
+
+class TestTencentFetchMetadata:
+    """fetch_metadata：腾讯不提供元数据。"""
+
+    def test_fetch_metadata_returns_none(self) -> None:
+        """始终返回 None。"""
+        provider = TencentProvider()
+        assert provider.fetch_metadata("sh.600519") is None

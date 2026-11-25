@@ -9,6 +9,8 @@ import pytest
 
 akshare_available = pytest.importorskip("akshare", reason="akshare not installed")
 
+from trade_krono_cli.data_providers.akshare_provider import AkShareProvider  # noqa: E402
+
 
 class TestAkShareProvider:
     @pytest.fixture
@@ -332,6 +334,207 @@ class TestAkShareProvider:
             patch.object(provider, "_ak", create=True) as mock_ak,
         ):
             mock_ak.stock_zh_a_hist.return_value = pd.DataFrame()
+            assert provider.health_check() is False
+
+
+class TestAkShareEnsureImport:
+    """_ensure_import：导入失败路径。"""
+
+    def test_ensure_import_import_error(self) -> None:
+        """akshare 未安装时抛 RuntimeError。"""
+        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
+
+        AkShareProvider._ak = None
+        try:
+            with (
+                patch(
+                    "builtins.__import__", side_effect=ImportError("No module named 'akshare'")
+                ),
+                pytest.raises(RuntimeError, match="akshare 未安装"),
+            ):
+                AkShareProvider._ensure_import()
+        finally:
+            AkShareProvider._ak = None
+
+
+class TestAkShareFetchKlineImportError:
+    """fetch_kline：ImportError 向上抛出。"""
+
+    def test_fetch_kline_import_error_raises(self) -> None:
+        """_ensure_import 抛 ImportError 时 fetch_kline 向上抛出。"""
+        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
+
+        provider = AkShareProvider()
+        with patch.object(
+            AkShareProvider, "_ensure_import", side_effect=ImportError("no akshare")
+        ), pytest.raises(ImportError):
+            provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+
+
+class TestAkShareFetchQuoteImportError:
+    """fetch_quote：ImportError 向上抛出。"""
+
+    def test_fetch_quote_import_error_raises(self) -> None:
+        """_ensure_import 抛 ImportError 时 fetch_quote 向上抛出。"""
+        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
+
+        provider = AkShareProvider()
+        with patch.object(
+            AkShareProvider, "_ensure_import", side_effect=ImportError("no akshare")
+        ), pytest.raises(ImportError):
+            provider.fetch_quote("sh.600519")
+
+
+class TestAkShareFetchMetadataException:
+    """fetch_metadata：异常处理路径。"""
+
+    def test_fetch_metadata_exception_returns_none(self) -> None:
+        """元数据拉取异常时返回 None（不抛出）。"""
+
+        provider = AkShareProvider()
+        with patch.object(
+            AkShareProvider, "_ensure_import", side_effect=Exception("network error")
+        ):
+            result = provider.fetch_metadata("sh.600519")
+            assert result is None
+
+
+class TestAkShareFetchQuotesBatch:
+    """fetch_quotes_batch：批量行情各分支。"""
+
+    def _make_provider(self) -> AkShareProvider:
+        return AkShareProvider()
+
+    def test_fetch_quotes_batch_empty(self) -> None:
+        """空 tickers 列表返回空 dict。"""
+        provider = self._make_provider()
+        result = provider.fetch_quotes_batch([])
+        assert result == {}
+
+    def test_fetch_quotes_batch_success(self) -> None:
+        """正常批量获取返回行情映射。"""
+        import trade_krono_cli.data_providers.akshare_provider as akmod
+
+        provider = self._make_provider()
+        mock_df = pd.DataFrame(
+            {
+                "代码": ["600519", "000001"],
+                "最新价": [1800.0, 10.0],
+                "市盈率-动态": [35.5, 5.2],
+                "市净率": [9.2, 0.8],
+                "总市值": [2.26e12, 800000],
+                "换手率": [0.5, 1.2],
+            }
+        )
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(
+                akmod.AkShareProvider, "_get_full_market_cache", return_value=mock_df
+            ),
+        ):
+            result = provider.fetch_quotes_batch(["sh.600519", "sz.000001"])
+            assert len(result) == 2
+            assert result["sh.600519"].price == 1800.0
+            assert result["sz.000001"].price == 10.0
+
+    def test_fetch_quotes_batch_cache_none(self) -> None:
+        """缓存为 None 时返回空 dict。"""
+        import trade_krono_cli.data_providers.akshare_provider as akmod
+
+        provider = self._make_provider()
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(
+                akmod.AkShareProvider, "_get_full_market_cache", return_value=None
+            ),
+        ):
+            result = provider.fetch_quotes_batch(["sh.600519"])
+            assert result == {}
+
+    def test_fetch_quotes_batch_exception(self) -> None:
+        """批量行情异常时返回空 dict（不抛出）。"""
+
+        provider = self._make_provider()
+        with patch.object(
+            AkShareProvider, "_ensure_import", side_effect=Exception("fail")
+        ):
+            result = provider.fetch_quotes_batch(["sh.600519"])
+            assert result == {}
+
+
+class TestAkShareFetchMetadataBatch:
+    """fetch_metadata_batch：批量元数据各分支。"""
+
+    def _make_provider(self) -> AkShareProvider:
+        return AkShareProvider()
+
+    def test_fetch_metadata_batch_empty(self) -> None:
+        """空 tickers 列表返回空 dict。"""
+        provider = self._make_provider()
+        result = provider.fetch_metadata_batch([])
+        assert result == {}
+
+    def test_fetch_metadata_batch_success(self) -> None:
+        """正常批量获取返回元数据映射。"""
+        import trade_krono_cli.data_providers.akshare_provider as akmod
+
+        provider = self._make_provider()
+        mock_df = pd.DataFrame(
+            {
+                "代码": ["600519", "000001"],
+                "名称": ["贵州茅台", "平安银行"],
+                "行业": ["饮料制造", "银行"],
+                "市盈率-动态": [21.3, 5.2],
+                "市净率": [6.5, 0.8],
+            }
+        )
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(
+                akmod.AkShareProvider, "_get_full_market_cache", return_value=mock_df
+            ),
+        ):
+            result = provider.fetch_metadata_batch(["sh.600519", "sz.000001"])
+            assert len(result) == 2
+            assert result["sh.600519"].industry == "饮料制造"
+            assert result["sz.000001"].industry == "银行"
+
+    def test_fetch_metadata_batch_cache_none(self) -> None:
+        """缓存为 None 时返回空 dict。"""
+        import trade_krono_cli.data_providers.akshare_provider as akmod
+
+        provider = self._make_provider()
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(
+                akmod.AkShareProvider, "_get_full_market_cache", return_value=None
+            ),
+        ):
+            result = provider.fetch_metadata_batch(["sh.600519"])
+            assert result == {}
+
+    def test_fetch_metadata_batch_exception(self) -> None:
+        """批量元数据异常时返回空 dict（不抛出）。"""
+
+        provider = self._make_provider()
+        with patch.object(
+            AkShareProvider, "_ensure_import", side_effect=Exception("fail")
+        ):
+            result = provider.fetch_metadata_batch(["sh.600519"])
+            assert result == {}
+
+
+class TestAkShareHealthCheckException:
+    """health_check：异常路径。"""
+
+    def test_health_check_exception_returns_false(self) -> None:
+        """_ak.stock_zh_a_hist 抛异常时 health_check 返回 False。"""
+        provider = AkShareProvider()
+        with (
+            patch.object(AkShareProvider, "_ensure_import"),
+            patch.object(provider, "_ak", create=True) as mock_ak,
+        ):
+            mock_ak.stock_zh_a_hist.side_effect = Exception("network error")
             assert provider.health_check() is False
 
 
