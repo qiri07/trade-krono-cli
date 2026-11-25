@@ -26,8 +26,12 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from scripts._utils import CACHE_DB, get_sqlite_conn, is_bse_or_hk, is_etf_ticker
-from scripts.stock_name_cache import resolve_stock_names
+from scripts._utils import CACHE_DB, get_sqlite_conn, is_bse_or_hk, is_etf_ticker, is_st_name
+from scripts.stock_name_cache import (
+    batch_get_cached_stock_names,
+    ensure_stock_name_table,
+    resolve_stock_names,
+)
 
 # ── 常量 ─────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -209,6 +213,34 @@ def screen_one(job: tuple[str, str | None, list[dict], dict]) -> dict:
         return {"symbol": Path(path).stem, "matched": False, "dt": None, "close": None, "signals": {}}
 
 
+def _exclude_st_tickers(tickers: list[str]) -> list[str]:
+    """用本地名称缓存批量剔除 ST/退市标的（统一过滤逻辑）。
+
+    名称未缓存（未知）的 ticker 保守保留，避免误杀；仅当名称明确命中
+    ST/*ST/退市 关键词时剔除。名称缓存表不存在时自动建空表（幂等），
+    因此本函数绝不会因缺表而中断全市场扫描。
+
+    Args:
+        tickers: 带交易所前缀的 ticker 列表。
+
+    Returns:
+        剔除 ST 后的 ticker 列表。
+    """
+    if not tickers:
+        return tickers
+    conn = get_sqlite_conn(CACHE_DB)
+    try:
+        ensure_stock_name_table(conn)
+        name_map = batch_get_cached_stock_names(conn, tickers)
+    finally:
+        conn.close()
+    kept = [t for t in tickers if not is_st_name(name_map.get(t, ""))]
+    dropped = len(tickers) - len(kept)
+    if dropped:
+        logger.info(f"🧹 缠论扫描剔除 ST/退市 {dropped} 只")
+    return kept
+
+
 def run_screen(
     asof: str | None,
     cfg: list[dict[str, object]],
@@ -219,6 +251,8 @@ def run_screen(
     paths = sorted(BARS_DIR.glob("*.parquet"))
     # 过滤掉北交所/港股/ETF（bj./hk./5x-15x 前缀），仅保留 A 股（沪深）
     paths = [p for p in paths if not is_bse_or_hk(p.stem) and not is_etf_ticker(p.stem)]
+    # 统一过滤：剔除 ST/退市（名称走本地 stock_name_cache，零联网；缺表自动建空表）
+    paths = [p for p in paths if p.stem in set(_exclude_st_tickers([p.stem for p in paths]))]
     if not paths:
         return {"hits": 0, "total": 0, "hit_symbols": [], "seconds": 0.0}
 
@@ -272,6 +306,8 @@ def daily_coverage(asof: str) -> dict:
 
     paths = sorted(BARS_DIR.glob("*.parquet"))
     paths = [p for p in paths if not is_bse_or_hk(p.stem) and not is_etf_ticker(p.stem)]
+    # 统一过滤：剔除 ST/退市（名称走本地 stock_name_cache，零联网；缺表自动建空表）
+    paths = [p for p in paths if p.stem in set(_exclude_st_tickers([p.stem for p in paths]))]
     ev = Event.load(CONDITION)
     hits_count = 0
     active_count = 0
