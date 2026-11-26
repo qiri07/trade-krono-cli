@@ -99,9 +99,9 @@ def _make_research_db(tmp_path: Path) -> Path:
     )
     conn.execute(
         "INSERT INTO ta_analysis "
-        "(job_id, ticker, signal, confidence, thesis, risks, error, elapsed) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (job_id, "sh.600519", "BUY", 0.8, "mock", None, None, 1.2),
+        "(job_id, ticker, signal, confidence, thesis, risks, error, elapsed, actual_return_pct) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (job_id, "sh.600519", "BUY", 0.8, "mock", None, None, 1.2, 0.05),
     )
     conn.execute(
         "INSERT INTO decisions (job_id, ticker, decision_json, thesis, risks) VALUES (?,?,?,?,?)",
