@@ -187,8 +187,8 @@ def main() -> None:
     parser.add_argument(
         "--per-stock-limit",
         type=int,
-        default=50,
-        help="逐只推送最多前 N 只（默认 50；<=0 表示不限）",
+        default=10,
+        help="逐只推送最多前 N 只（默认 10；<=0 表示不限）",
     )
     parser.add_argument(
         "--kronos",
