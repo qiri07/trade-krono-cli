@@ -411,6 +411,7 @@ class TestResearchDbLatestTA:
         ta.error = error
         ta.elapsed_sec = 1.0
         ta.investment_decision = None  # 避免 json.dumps 报错
+        ta.actual_return_pct = None  # 避免 sqlite 绑定 MagicMock
         return ta
 
     def test_returns_latest_successful_ta(self, research_db) -> None:
