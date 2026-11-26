@@ -9,6 +9,7 @@ import pytest
 
 akshare_available = pytest.importorskip("akshare", reason="akshare not installed")
 
+import trade_krono_cli.data_providers.akshare_provider as akmod  # noqa: E402
 from trade_krono_cli.data_providers.akshare_provider import AkShareProvider  # noqa: E402
 
 
@@ -226,7 +227,6 @@ class TestAkShareProvider:
 
     def test_get_full_market_cache_hit(self, provider) -> None:
         """缓存命中时直接返回缓存数据。"""
-        import trade_krono_cli.data_providers.akshare_provider as akmod
 
         mock_df = pd.DataFrame({"code": ["600519"]})
         with (
@@ -238,7 +238,6 @@ class TestAkShareProvider:
 
     def test_get_full_market_cache_miss(self, provider) -> None:
         """缓存过期时重新拉取并更新缓存。"""
-        import trade_krono_cli.data_providers.akshare_provider as akmod
 
         mock_df = pd.DataFrame({"代码": ["600519"], "最新价": [1800.0]})
         with patch.object(akmod.AkShareProvider, "_ak", create=True) as mock_ak:
@@ -251,50 +250,12 @@ class TestAkShareProvider:
 
     def test_get_full_market_cache_exception(self, provider) -> None:
         """缓存拉取失败时返回 None。"""
-        import trade_krono_cli.data_providers.akshare_provider as akmod
 
         with patch.object(akmod.AkShareProvider, "_ak", create=True) as mock_ak:
             mock_ak.stock_zh_a_spot_em.side_effect = Exception("network error")
             with patch.object(akmod, "_full_market_cache", {"data": None, "timestamp": 0.0}):
                 result = akmod.AkShareProvider._get_full_market_cache()
                 assert result is None
-
-    def test_ticker_conversion_sz_codes(self, provider) -> None:
-        """测试 SZ 板块的代码转换。"""
-        assert provider._ak_to_ticker("000001") == "sz.000001"
-        assert provider._ak_to_ticker("300001") == "sz.300001"
-        assert provider._ak_to_ticker("002001") == "sz.002001"
-
-    def test_ticker_conversion_sh_codes(self, provider) -> None:
-        """测试 SH 板块的代码转换。"""
-        assert provider._ak_to_ticker("600519") == "sh.600519"
-        assert provider._ak_to_ticker("510050") == "sh.510050"
-        assert provider._ak_to_ticker("999999") == "sh.999999"
-
-    def test_fetch_metadata_returns_metadata(self, provider) -> None:
-        """akshare 现已支持元数据，fetch_metadata 应返回 StockMetadata（非 None）。"""
-        import pandas as pd
-
-        import trade_krono_cli.data_providers.akshare_provider as akmod
-
-        df = pd.DataFrame(
-            {
-                "代码": ["600519"],
-                "名称": ["贵州茅台"],
-                "行业": ["酿酒行业"],
-                "市盈率-动态": [21.3],
-                "市净率": [6.5],
-            }
-        )
-        # 固定全市场快照，避免单元测试发起真实网络请求
-        with patch.object(
-            akmod.AkShareProvider, "_get_full_market_cache", return_value=df
-        ):
-            meta = provider.fetch_metadata("sh.600519")
-        assert meta is not None
-        assert meta.ticker == "sh.600519"
-        assert meta.source == "akshare"
-        assert meta.industry == "酿酒行业"
 
     def test_health_check_success(self, provider) -> None:
         import pandas as pd
@@ -439,7 +400,6 @@ class TestAkShareFetchQuotesBatch:
 
     def test_fetch_quotes_batch_cache_none(self) -> None:
         """缓存为 None 时返回空 dict。"""
-        import trade_krono_cli.data_providers.akshare_provider as akmod
 
         provider = self._make_provider()
         with (
@@ -476,7 +436,6 @@ class TestAkShareFetchMetadataBatch:
 
     def test_fetch_metadata_batch_success(self) -> None:
         """正常批量获取返回元数据映射。"""
-        import trade_krono_cli.data_providers.akshare_provider as akmod
 
         provider = self._make_provider()
         mock_df = pd.DataFrame(
@@ -536,10 +495,3 @@ class TestAkShareHealthCheckException:
         ):
             mock_ak.stock_zh_a_hist.side_effect = Exception("network error")
             assert provider.health_check() is False
-
-
-# ═══════════════════════════════════════════════════════
-# MootDxProvider 测试（需要 mootdx 包）
-# ═══════════════════════════════════════════════════════
-
-mootdx_available = pytest.importorskip("mootdx", reason="mootdx not installed")

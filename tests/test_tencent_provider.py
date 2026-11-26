@@ -401,11 +401,11 @@ class TestTencentFetchQuotesBatch:
         assert result == {}
 
     def test_fetch_quotes_batch_bj_skipped(self) -> None:
-        """北交所代码在 _to_tencent_symbol 抛 ValueError 时被跳过。"""
+        """北交所代码在无行情数据时返回空 dict（不报错）。"""
         provider = TencentProvider()
         with patch.object(tp, "_tencent_http_get", return_value=''):
             result = provider.fetch_quotes_batch(["bj.920080"])
-            # _to_tencent_symbol 对 bj 不抛异常（返回 bj920080），但没有行情数据
+            # _to_tencent_symbol 对 bj 不抛异常（返回 bj920080），只是无匹配行情
             assert result == {}
 
 
