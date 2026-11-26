@@ -12,6 +12,7 @@ from trade_krono_cli.health import (
     health_summary,
     print_health_report,
 )
+from trade_krono_cli.security import _KEY_ENV_MAP
 
 # ── check_llm_api ────────────────────────────────────────────────────────────
 
@@ -26,12 +27,9 @@ def test_check_llm_api_structure() -> None:
 
 def test_check_llm_api_no_keys(monkeypatch) -> None:
     """无任何 API Key 时应标记为失败且提示未配置。"""
-    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
-    monkeypatch.delenv("AGNES_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_COMPATIBLE_API_KEY", raising=False)
+    # 直接遍历 KeyVault 的映射表，新增 provider 时本测试自动覆盖，避免漏删
+    for env_key in _KEY_ENV_MAP.values():
+        monkeypatch.delenv(env_key, raising=False)
     result = check_llm_api()
     assert result.ok is False
     assert "未配置" in result.detail

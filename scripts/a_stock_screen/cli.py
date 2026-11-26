@@ -478,7 +478,7 @@ def _run_fivemust(codes: list[str], date_str: str, args: argparse.Namespace) -> 
             )
 
         empty_lines = [
-            "条件：历史低位(3年分位≤30%) / 底部扎实(20日波动≤25%+5日涨幅≤15%) / 业绩优秀(ROE≥10%+扣非≥10%+净利>0+现金流>0) / 筹码集中(换手率<1.5%或股东户数环比减少) / 日K多头突破(MA5>MA13+收盘>MA5)",
+            "条件：历史低位(3年分位≤30%) / 底部扎实(20日波动≤25%+5日涨幅≤20%) / 业绩优秀(ROE≥10%+扣非≥10%+净利>0+现金流>0) / 筹码集中(换手率<1.5%或股东户数环比减少) / 日K多头突破(MA5>MA13+收盘>MA5)",
             "",
             f"各条件通过数：历史低位 {sum(1 for r in results if r.cond1_history_low)} / 底部扎实 {sum(1 for r in results if r.cond2_bottom_solid)} / 筹码集中 {sum(1 for r in results if r.cond4_concentration)} / 业绩优秀 {sum(1 for r in results if r.cond3_performance)} / 日K多头突破 {sum(1 for r in results if r.cond5_breakout)}",
             "⚠️ 无股票同时满足全部 5 个条件，建议放宽条件后重试。",

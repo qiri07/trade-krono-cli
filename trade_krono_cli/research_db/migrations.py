@@ -88,6 +88,15 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError:
             pass
 
+    # 迁移 ta_analysis.actual_return_pct 列
+    ta_cols = {row[1] for row in conn.execute("PRAGMA table_info(ta_analysis)").fetchall()}
+    if "actual_return_pct" not in ta_cols:
+        try:
+            conn.execute("ALTER TABLE ta_analysis ADD COLUMN actual_return_pct REAL")
+            logger.debug("📐 Schema 迁移: ta_analysis.actual_return_pct")
+        except sqlite3.OperationalError:
+            pass
+
     # 确保其他表存在
     for table in (
         "ta_analysis",

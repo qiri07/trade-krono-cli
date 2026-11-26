@@ -145,6 +145,7 @@ _KEY_ENV_MAP = {
     "minimax": "MINIMAX_API_KEY",
     "agnes": "AGNES_API_KEY",
     "openai_compatible": "OPENAI_COMPATIBLE_API_KEY",
+    "nvidia": "NVIDIA_API_KEY",
 }
 
 
