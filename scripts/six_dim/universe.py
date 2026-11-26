@@ -14,8 +14,8 @@ from typing import Any
 from loguru import logger
 
 from scripts._utils import (
+    get_all_tickers,
     get_cache_db_path,
-    load_metadata_index,
     normalize_ticker_key,
     ticker_to_thscode,
 )
@@ -40,11 +40,15 @@ from scripts.six_dim.valuation import fetch_valuation_history, score_valuation
 from scripts.universe_filter import apply_universe_filter
 
 
-def _load_universe(meta: dict[str, dict[str, object]], date_str: str | None = None) -> dict[str, str]:
-    """从元数据加载股票池（排除 ST/北交所/港股/ETF），统一使用前置股票池过滤。
+def _load_universe(date_str: str | None = None) -> dict[str, str]:
+    """从缓存数据库加载股票池（排除 ST/北交所/港股/ETF），统一使用前置股票池过滤。
+
+    股票池来源为 kline_cache 中全部不重复 ticker，**不依赖 metadata.json 的键**：
+    metadata.json 若未完成全量刷新，其绝大多数条目值为 ``None``，以
+    ``load_metadata_index().keys()`` 为来源会导致股票池萎缩至仅剩少数
+    有元数据的股票，进而使六维选股静默产出 0 只。
 
     Args:
-        meta: 归一化后的元数据字典。
         date_str: 分析日期，缺省为最近交易日（用于加载前置股票池快照）。
 
     Returns:
@@ -53,7 +57,7 @@ def _load_universe(meta: dict[str, dict[str, object]], date_str: str | None = No
     from scripts._utils import expected_trading_day
 
     date_str = date_str or expected_trading_day()
-    all_tickers = list(meta.keys())
+    all_tickers = get_all_tickers()
     # 统一使用前置股票池过滤（剔除 ST/北交所/港股/ETF/次新/停牌/低价/低流动性/小市值）
     filtered = apply_universe_filter(all_tickers, date_str, label="六维选股")
     universe: dict[str, str] = {}
@@ -122,8 +126,7 @@ def screen(
     date_str = date_str or expected_trading_day()
     cache_dir = get_cache_db_path().parent
     buffett_db = cache_dir / "buffett_cache.db"
-    meta = load_metadata_index(cache_dir)
-    universe = _load_universe(meta, date_str)
+    universe = _load_universe(date_str)
 
     fundamentals = load_fundamentals(buffett_db, date_str)
     spot = fetch_spot_snapshot(cache_dir, date_str) if fetch else {}
