@@ -7,10 +7,11 @@
 子模块职责：
   - scripts._utils.constants：共享常量（ST/北交所/ETF 前缀、PE/市值阈值、STOCK_NAMES）
   - scripts._utils.ticker：Ticker 归一化与市场判断
-  - scripts._utils.schedule：交易日判断（expected_trading_day）
   - scripts._utils.metadata：metadata.json 元数据索引与剔除原因
   - scripts._utils.universe：统一股票池过滤引擎
-  - scripts._utils.provider：Provider 链配置（providers.yaml 解析，保留在本模块）
+
+本模块仅做两件事：重导出上述子模块的公共名称，以及定义少量依赖模块自身命名空间
+的本地函数（``expected_trading_day``，需 patch ``scripts._utils.datetime`` 生效）。
 """
 
 from __future__ import annotations
@@ -57,47 +58,12 @@ from scripts._utils.constants import (  # noqa: E402, F401
     STOCK_NAMES,
 )
 
-# ── schedule ──
-from scripts._utils.constants import (  # noqa: E402, F401
-    MARKET_CLOSE_HOUR as _MCH,
-)
-from scripts._utils.constants import (  # noqa: E402, F401
-    MARKET_CLOSE_MINUTE as _MCM,
-)
-
 # ── metadata ──
 from scripts._utils.metadata import (  # noqa: E402, F401
     exclusion_reason,
     get_cache_db_path,
     load_metadata_index,
 )
-
-
-def expected_trading_day(now: datetime | None = None) -> str:
-    """返回此刻应已落库的最近交易日（YYYY-MM-DD）。
-
-    收盘后（>= 15:00）返回当日；盘中返回上一交易日；周末回退到周五。
-    本函数在 ``__init__.py`` 命名空间内直接实现（而非委托 ``schedule.py``），
-    使测试 patch ``scripts._utils.datetime`` 能正确生效。
-
-    Args:
-        now: 用于测试注入的时间，缺省取 ``datetime.now()``。
-
-    Returns:
-        日期字符串，如 ``2026-11-10``。
-    """
-    from datetime import timedelta
-
-    current = now or datetime.now()
-    day = current.date()
-    after_close = (current.hour, current.minute) >= (_MCH, _MCM)
-    if day.weekday() >= 5:  # 周六/周日 → 回退到周五
-        day -= timedelta(days=day.weekday() - 4)
-    elif not after_close:
-        day -= timedelta(days=1)
-    while day.weekday() >= 5:
-        day -= timedelta(days=1)
-    return day.strftime("%Y-%m-%d")
 
 # ── ticker ──
 from scripts._utils.ticker import (  # noqa: E402, F401
@@ -118,6 +84,38 @@ from scripts._utils.universe import (  # noqa: E402, F401
     get_astock_tickers,
     get_sqlite_conn,
 )
+
+# ════════════════════════════════════════════════════════
+# 本地定义（非重导出，需依赖本模块命名空间）
+# ════════════════════════════════════════════════════════
+
+
+def expected_trading_day(now: datetime | None = None) -> str:
+    """返回此刻应已落库的最近交易日（YYYY-MM-DD）。
+
+    收盘后（>= 15:00）返回当日；盘中返回上一交易日；周末回退到周五。
+    本函数在 ``__init__.py`` 命名空间内直接实现（而非委托子模块），
+    使测试 patch ``scripts._utils.datetime`` 能正确生效。
+
+    Args:
+        now: 用于测试注入的时间，缺省取 ``datetime.now()``。
+
+    Returns:
+        日期字符串，如 ``2026-11-10``。
+    """
+    from datetime import timedelta
+
+    current = now or datetime.now()
+    day = current.date()
+    after_close = (current.hour, current.minute) >= (MARKET_CLOSE_HOUR, MARKET_CLOSE_MINUTE)
+    if day.weekday() >= 5:  # 周六/周日 → 回退到周五
+        day -= timedelta(days=day.weekday() - 4)
+    elif not after_close:
+        day -= timedelta(days=1)
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day.strftime("%Y-%m-%d")
+
 
 # ════════════════════════════════════════════════════════
 # Provider 链配置（保留在本模块，未单独拆分子模块）
