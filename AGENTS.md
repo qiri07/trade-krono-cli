@@ -203,7 +203,7 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 7. AI 核实      → Nemotron 3.5 Super VL 120B A12B（NVIDIA/OpenRouter API）
 8. 飞书推送     → scripts/feishu_cli.py（统一入口：buffett / text / daily / ci 模式）
 9. 综合交集汇总 → scripts/combined_stock_analysis.py（多线共振交集 + 技术面 + 基本面 + AI + 飞书汇总 + 逐只）
-10. MACD+均线筛选 → scripts/macd_ma_screener.py（MA5>MA13 + MACD DIF>0 + 剔ST/昨日涨停/PE∈(0,30)；
+10. MACD+均线筛选 → scripts/macd_ma_screener.py（MA5>MA13 + MACD DIF>0 + 剔ST/PE∈(0,30)，保留涨停股；
                   前置池已统一剔除 ST / 北交所 / ETF / 次新 / 停牌 / 低价 / 低流动性 / 市值<20亿）
 11. 盘中扫描   → scripts/intraday_scan.py（盘中可选，分钟 K 线检测金叉/多头/MACD/三线共振，见「盘中扫描」节）
 ```
@@ -599,6 +599,9 @@ uv run python scripts/export_vnpy_data.py
 
 ## 禁止事项（What NOT To Do）
 - 禁止 `pip install` / `poetry` / `virtualenv`；禁止手动编辑 `uv.lock`；禁止 `from module import *`
+- 禁止在测试/试跑中触发真实飞书推送：任何非正式产出的执行必须带 `--no-push`（或 `--push 0`）；
+  测试由 `tests/conftest.py` 的 `_block_feishu_network` 统一拦截 `push_feishu`/`send_feishu`，
+  禁止在测试中绕过该拦截去发真实消息
 - 禁止可变默认参数：`def f(x: list = [])` ❌，改用 `None` 哨兵；禁止裸 `except:`
 - 禁止在库代码中使用 `print()` 调试
 - 禁止在测试中破坏全局状态清理机制（跳过 `clear_all_globals()` 或直接读写 `config._settings`）

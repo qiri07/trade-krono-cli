@@ -19,7 +19,7 @@ from scripts.indicators import calc_macd_dif as _indicators_calc_macd_dif
 
 
 def _limit_pct(bare_code: str) -> float:
-    """涨停幅度（%）：创业板(30)/科创板(68) 20%，主板 10%。"""
+    """涨跌停幅度（%）：创业板(30)/科创板(68) 20%，主板 10%。"""
     return 20.0 if bare_code[:2] in ("30", "68") else 10.0
 
 

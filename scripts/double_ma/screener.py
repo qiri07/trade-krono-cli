@@ -110,19 +110,19 @@ def process_ticker(
     if len(df) < 30:
         return None
 
-    # ── A 股特有过滤：ST 和涨跌停 ──
+    # ── A 股特有过滤：ST 和跌停 ──
     # 港股没有 ST 概念，涨跌停规则也不同，这里只对 A 股和 ETF 应用
     if not is_hk:
         if ticker in st_set:
             return None
 
-        # 排除涨跌停
+        # 排除跌停（保留涨停股）
         latest_close = float(df["close"].iloc[-1])
         prev_close = float(df["close"].iloc[-2])
         chg_pct = (latest_close / prev_close - 1) * 100
         bare = ticker.split(".", 1)[-1] if "." in ticker else ticker
         limit_pct = _limit_pct(bare)
-        if chg_pct >= limit_pct - 0.05 or chg_pct <= -limit_pct + 0.05:
+        if chg_pct <= -limit_pct + 0.05:
             return None
 
     # 日 K 线 MA5 > MA13

@@ -5,7 +5,6 @@
   - 日 MA5 > MA13
   - 日 MACD DIF > 0（0 轴之上）
   - 剔除 ST 股
-  - 剔除昨日涨停股（主板 ≥9.95%，创业板/科创板 ≥19.95%）
   - 剔除小市值（总市值 < 50 亿）
   - 剔除 PE 异常（PE_TTM ≤ 0 或 ≥ 30）
   - 排除北交所 / 港股 / ETF
@@ -77,11 +76,6 @@ def _recent_quarters(anchor_date: str) -> list[str]:
             q = 4
             y -= 1
     return [f"{yy}-{qq}" for yy, qq in seq]
-
-
-def _limit_pct(bare_code: str) -> float:
-    """涨停幅度（%）：创业板(30)/科创板(68) 20%，主板 10%。"""
-    return 20.0 if bare_code[:2] in ("30", "68") else 10.0
 
 
 @dataclass
@@ -375,10 +369,10 @@ def _scan_all(
     name_map: dict[str, str],
     date_str: str,
 ) -> tuple[list[dict[str, object]], dict[str, int]]:
-    """全市场扫描：MA5>MA13 + MACD>0 + 剔 ST + 剔昨日涨停（以 date_str 为基准日）。
+    """全市场扫描：MA5>MA13 + MACD>0 + 剔 ST（以 date_str 为基准日）。
 
-    K 线按 ``date_str`` 截断（仅保留 <= date_str 的 K 线），保证 MA/MACD/涨停
-    判定都基于 ``date_str`` 当天而非缓存最后日期。
+    K 线按 ``date_str`` 截断（仅保留 <= date_str 的 K 线），保证 MA/MACD
+    判定都基于 ``date_str`` 当天而非缓存最后日期。涨停股保留（不剔除）。
 
     Returns
     -------
@@ -444,11 +438,8 @@ def _scan_all(
             skipped["st"] += 1
             continue
 
-        # 4) 剔除昨日涨停（date_str 当日收盘 vs 前日收盘，幅度 >= 涨停 - 0.05%）
+        # 4) 保留涨停股：仅计算当日涨跌幅用于展示，不做剔除
         chg = (close.iloc[-1] / close.iloc[-2] - 1) * 100
-        if chg >= _limit_pct(bare) - 0.05:
-            skipped["limit_up"] += 1
-            continue
 
         is_hk = tk.startswith("hk.")
         results.append(
@@ -477,7 +468,7 @@ def run(
     date_str = date_str or datetime.now().strftime("%Y-%m-%d")
     logger.info("=" * 60)
     logger.info(f"MACD+均线 A 股筛选器启动  日期={date_str}")
-    logger.info(f"  条件：MA5>MA13 + MACD DIF>0 + 剔ST + 剔昨日涨停 + 市值≥{min_cap_yi:.0f}亿 + PE∈(0,30)")
+    logger.info(f"  条件：MA5>MA13 + MACD DIF>0 + 剔ST + 市值≥{min_cap_yi:.0f}亿 + PE∈(0,30)")
     logger.info("=" * 60)
 
     # 数据检查
@@ -615,7 +606,7 @@ def _push_feishu(
     from scripts.feishu_utils import push_feishu
 
     lines = [f"📈 **{date_str} MACD+均线选股**\n"]
-    lines.append(f"共 **{len(results)}** 只符合条件（MA5>MA13 + MACD>0 + 非ST + 非涨停 + 市值≥50亿 + PE∈(0,30)）")
+    lines.append(f"共 **{len(results)}** 只符合条件（MA5>MA13 + MACD>0 + 非ST + 市值≥50亿 + PE∈(0,30)）")
     lines.append("")
     for r in results[:30]:
         cap = r.get("market_cap")

@@ -294,7 +294,7 @@ def collect_source_sets(
       - multi_head: 多头排列 multi_head_{dc}.txt
       - double_ma: 双均线金叉 double_ma_golden_cross_{dd}.json
       - macd_ma: MACD+均线筛选 macd_ma_screener_{dc}.json（第10步，MA5>MA13+MACD>0
-        +剔ST/涨停/小市值/PE异常）
+        +剔ST/小市值/PE异常，保留涨停股）
       - czsc_bi_ma: 缠论-笔向上+均线多头
       - czsc_third_buy: 缠论-三买+笔向上
       - intraday: 盘中共振（从最新的 intraday_scan_YYYYMMDD_HHMM.json 读取）
