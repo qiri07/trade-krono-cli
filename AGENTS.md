@@ -590,7 +590,7 @@ uv run python scripts/export_vnpy_data.py
 - 多场景用 `@pytest.mark.parametrize`；测试函数命名描述场景（如 `test_get_user_token_when_expired_returns_none`）
 - 单测试文件超过 500 行时，应按测试类/功能分组拆分为多个文件
 - 禁止在单元测试中发起真实网络请求，必须 mock
-- 覆盖率阈值：全套覆盖率 ≥90%（当前 90.31%），提交前需通过 `uv run pytest --cov=trade_krono_cli` 验证
+- 覆盖率阈值：全套覆盖率 ≥90%（当前 91.25%），提交前需通过 `uv run pytest --cov=trade_krono_cli` 验证
 
 ## 安全约束（Security）
 - 禁止硬编码任何凭证、API Key、Token
