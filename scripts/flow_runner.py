@@ -470,8 +470,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_run = sub.add_parser("run", help="执行 step（单步或全量串行）")
     p_run.add_argument("--step", default=None, help="执行单个 step（name）")
     p_run.add_argument("--all", action="store_true", help="串行执行全部默认开启 step")
-    p_run.add_argument("--enable", default="", help="强制启用默认关闭 step（逗号分隔）")
-    p_run.add_argument("--disable", default="", help="强制排除 step（逗号分隔）")
+    p_run.add_argument(
+        "--enable",
+        action="append",
+        default=[],
+        help="强制启用默认关闭 step（可重复或逗号分隔，两种写法均可）",
+    )
+    p_run.add_argument(
+        "--disable",
+        action="append",
+        default=[],
+        help="强制排除 step（可重复或逗号分隔，两种写法均可）",
+    )
     p_run.add_argument("--dry-run", action="store_true", help="只打印命令不执行")
     p_run.add_argument(
         "--strict",
@@ -490,8 +500,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     def _run(args: argparse.Namespace) -> int:
-        enable_list = [x for x in args.enable.split(",") if x]
-        disable_list = [x for x in args.disable.split(",") if x]
+        # --enable/--disable 支持重复传参（append），也支持逗号分隔；统一摊平。
+        enable_list = [x for v in args.enable for x in v.split(",") if x]
+        disable_list = [x for v in args.disable for x in v.split(",") if x]
         return cmd_run(
             step=args.step,
             all_steps=args.all,

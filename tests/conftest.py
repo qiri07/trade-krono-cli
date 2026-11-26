@@ -7,8 +7,12 @@ import re
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 from trade_krono_cli.data_providers.base import KlineData, RealtimeQuote, StockMetadata
 from trade_krono_cli.data_providers.factory import reset_data_factory
@@ -30,6 +34,24 @@ def _reset_data_factory():
     reset_data_factory()
     yield
     reset_data_factory()
+
+
+@pytest.fixture(autouse=True)
+def _block_feishu_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """禁止任何测试真实调用飞书接口。
+
+    测试中即便忘记 mock 推送、或误用真实假数据走推送分支，也不会把消息发到
+    真实飞书群。只拦截两个网络发送入口（push_feishu / send_feishu），
+    卡片构建等纯函数不受影响；需要断言推送的测试可自行覆盖这两个名称。
+    """
+    import scripts.feishu_utils as feishu_utils
+
+    def _noop(*args: object, **kwargs: object) -> bool:
+        return True
+
+    monkeypatch.setattr(feishu_utils, "push_feishu", _noop)
+    monkeypatch.setattr(feishu_utils, "send_feishu", _noop)
+    yield
 
 
 @pytest.fixture

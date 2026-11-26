@@ -389,6 +389,49 @@ class TestBuildArgParser:
         rc = args.func(args)
         assert rc == 0
 
+    def test_repeated_disable_flags_all_applied(self, monkeypatch) -> None:
+        """重复传入 --disable 必须全部生效（回归：曾只保留最后一个）。"""
+        captured: dict[str, object] = {}
+
+        def _fake_cmd_run(**kwargs: object) -> int:
+            captured.update(kwargs)
+            return 0
+
+        monkeypatch.setattr(fr, "cmd_run", _fake_cmd_run)
+        parser = fr.build_arg_parser()
+        args = parser.parse_args(
+            [
+                "run",
+                "--all",
+                "--disable",
+                "sync_hk",
+                "--disable",
+                "metadata_hk",
+                "--disable",
+                "hk_screen",
+            ]
+        )
+        assert args.func(args) == 0
+        disable = captured["disable"]
+        assert isinstance(disable, list)
+        assert set(disable) == {"sync_hk", "metadata_hk", "hk_screen"}
+
+    def test_comma_separated_disable_flags(self, monkeypatch) -> None:
+        """--disable 逗号分隔写法仍应被摊平为多个 step。"""
+        captured: dict[str, object] = {}
+
+        def _fake_cmd_run(**kwargs: object) -> int:
+            captured.update(kwargs)
+            return 0
+
+        monkeypatch.setattr(fr, "cmd_run", _fake_cmd_run)
+        parser = fr.build_arg_parser()
+        args = parser.parse_args(["run", "--all", "--disable", "sync_hk,metadata_hk"])
+        assert args.func(args) == 0
+        disable = captured["disable"]
+        assert isinstance(disable, list)
+        assert set(disable) == {"sync_hk", "metadata_hk"}
+
 
 class TestCheckpointStaleCleanup:
     """非 resume 的 --all 应清掉 checkpoint 里本轮未启用 step 的残留状态。"""

@@ -268,13 +268,12 @@ STEPS: list[Step] = [
     Step(
         name="combined",
         description="综合选股交集汇总（combined_stock_analysis.py，含回测 + 飞书推送）",
+        # 刻意不传 --min-sources：沿用脚本默认 4 条口径（如需放宽须显式改此值）
         command=[
             "uv",
             "run",
             "python",
             "scripts/combined_stock_analysis.py",
-            "--min-sources",
-            "3",
             "--a-stock-screen",
             "1",
             "--push",

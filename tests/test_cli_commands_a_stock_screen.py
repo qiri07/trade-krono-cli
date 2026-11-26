@@ -72,7 +72,7 @@ class TestAStockScreen:
         ):
             result = runner.invoke(
                 app,
-                ["a-stock-screen", "--codes", "600519", "--date", "2026-08-11"],
+                ["a-stock-screen", "--codes", "600519", "--date", "2026-08-11", "--no-push"],
             )
             assert result.exit_code == 0
             assert "A股筛选结果摘要" in result.output
@@ -91,7 +91,7 @@ class TestAStockScreen:
         ):
             result = runner.invoke(
                 app,
-                ["a-stock-screen", "--all", "--date", "2026-08-11"],
+                ["a-stock-screen", "--all", "--date", "2026-08-11", "--no-push"],
             )
             assert result.exit_code == 0
             assert "A股筛选结果摘要" in result.output
