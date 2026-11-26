@@ -212,3 +212,105 @@ class TestAdkDataProviderHealthCheck:
         mock_adk.stock_zh_a_hist.side_effect = RuntimeError("boom")
         AdkDataProvider._adk = mock_adk
         assert provider.health_check() is False
+
+
+class TestAdkDataProviderImportError:
+    def test_ensure_import_import_error(self) -> None:
+        """a-stock-data 未安装时 _ensure_import 应抛出 RuntimeError。"""
+        AdkDataProvider._adk = None
+        with (
+            patch("builtins.__import__", side_effect=ImportError("no adk")),
+            pytest.raises(RuntimeError, match="a-stock-data 未安装"),
+        ):
+            AdkDataProvider._ensure_import()
+
+
+class TestAdkDataProviderFetchKlineException:
+    def test_fetch_kline_general_exception_returns_none(self) -> None:
+        """fetch_kline 非 ImportError 异常时应返回 None。"""
+        provider = AdkDataProvider()
+        mock_adk = MagicMock()
+        mock_adk.stock_hist_daily.side_effect = RuntimeError("network error")
+        AdkDataProvider._adk = mock_adk
+
+        result = provider.fetch_kline("sh.600519", "2026-08-01", "2026-08-04")
+        assert result is None
+
+
+class TestAdkDataProviderFetchQuoteException:
+    def test_fetch_quote_general_exception_returns_none(self) -> None:
+        """fetch_quote 非 ImportError 异常时应返回 None。"""
+        provider = AdkDataProvider()
+        mock_adk = MagicMock()
+        mock_adk.stock_zh_a_spot_em.side_effect = RuntimeError("network error")
+        AdkDataProvider._adk = mock_adk
+
+        result = provider.fetch_quote("sh.600519")
+        assert result is None
+
+
+class TestAdkDataProviderFetchMetadataException:
+    def test_fetch_metadata_general_exception_returns_none(self) -> None:
+        """fetch_metadata 非 ImportError 异常时应返回 None。"""
+        provider = AdkDataProvider()
+        mock_adk = MagicMock()
+        mock_adk.stock_zh_a_spot_em.side_effect = RuntimeError("network error")
+        AdkDataProvider._adk = mock_adk
+
+        result = provider.fetch_metadata("sh.600519")
+        assert result is None
+
+
+class TestAdkDataProviderFetchQuotesBatchEdge:
+    def test_fetch_quotes_batch_import_error(self) -> None:
+        """fetch_quotes_batch ImportError 应传播。"""
+        provider = AdkDataProvider()
+        AdkDataProvider._adk = None
+        with patch.object(
+            AdkDataProvider, "_ensure_import", side_effect=ImportError("no adk")
+        ), pytest.raises(ImportError):
+            provider.fetch_quotes_batch(["sh.600519"])
+
+    def test_fetch_quotes_batch_row_exception(self) -> None:
+        """fetch_quotes_batch 单只构建异常应被捕获，不影响其他。"""
+        provider = AdkDataProvider()
+        mock_adk = MagicMock()
+        # 返回两行数据，其中一行会导致构建异常
+        mock_adk.stock_zh_a_spot_em.return_value = pd.DataFrame(
+            {
+                "代码": ["600519", "000858"],
+                "最新价": [1800.5, None],
+                "市盈率-动态": [28.5, 15.0],
+                "市净率": [5.2, 2.0],
+                "总市值": [22600.0, 5000.0],
+                "换手率": [0.3, 0.5],
+            }
+        )
+        AdkDataProvider._adk = mock_adk
+        results = provider.fetch_quotes_batch(["sh.600519", "sz.000858"])
+        # 至少成功获取一只
+        assert "sh.600519" in results
+
+
+class TestAdkDataProviderFetchMetadataBatchEdge:
+    def test_fetch_metadata_batch_empty(self) -> None:
+        provider = AdkDataProvider()
+        assert provider.fetch_metadata_batch([]) == {}
+
+    def test_fetch_metadata_batch_import_error(self) -> None:
+        provider = AdkDataProvider()
+        AdkDataProvider._adk = None
+        with patch.object(
+            AdkDataProvider, "_ensure_import", side_effect=ImportError("no adk")
+        ), pytest.raises(ImportError):
+            provider.fetch_metadata_batch(["sh.600519"])
+
+    def test_fetch_metadata_batch_general_exception(self) -> None:
+        """fetch_metadata_batch 非 ImportError 异常时应返回空 dict。"""
+        provider = AdkDataProvider()
+        mock_adk = MagicMock()
+        mock_adk.stock_zh_a_spot_em.side_effect = RuntimeError("network error")
+        AdkDataProvider._adk = mock_adk
+
+        results = provider.fetch_metadata_batch(["sh.600519"])
+        assert results == {}
