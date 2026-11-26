@@ -806,8 +806,14 @@ Nemotron 3.5 Super VL 通过 NVIDIA API 或 OpenRouter 调用，建议配置适�
 - `MAX_REQUESTS_PER_WINDOW = 40`（每窗口最大请求数，Nemotron 3.5 免费档 60s ≤ 40 次）
 
 **配置建议**：
-- 在 `.env` 中设置 `NVIDIA_API_KEY` 或 `OPENROUTER_API_KEY`
+- 在 `.env` 中设置 `NVIDIA_API_KEY`（或 `OPENROUTER_API_KEY` 用 OpenRouter）
 - 设置 `NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1`（或 `https://openrouter.ai/api/v1`）
-- 设置 `LLM_PROVIDER=nemotron`
+- 设置 `LLM_PROVIDER=openai_compatible`（**注意**：TradingAgents 工厂仅识别 `openai_compatible`，不识别 `nemotron`/`nvidia`；NVIDIA Nemotron 端点为 OpenAI 兼容）
+- 设置 `OPENAI_COMPATIBLE_API_KEY` 为 NVIDIA Key（与 `NEMOTRON_BASE_URL` 指向同一端点，避免 401）
 - 设置 `DEEP_THINK_LLM=nvidia/nemotron-3.5-super-vl-120b-a12b`
 - 设置 `QUICK_THINK_LLM=nvidia/nemotron-3.5-super-vl-120b-a12b`
+
+> provider → API Key 环境变量的映射在三处保持一致，新增 provider 时必须同步更新：
+> - `trade_krono_cli/security.py` → `_KEY_ENV_MAP`
+> - `trade_krono_cli/llm_config.py` → `_PROVIDER_KEY_ENV`
+> - `trade_krono_cli/config_validator.py` → `_PROVIDER_ENV_KEY`
