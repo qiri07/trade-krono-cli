@@ -147,3 +147,115 @@ class TestEFinanceProvider:
         """非 6 位数字代码（如港股）应返回 None。"""
         result = provider.fetch_metadata("hk.00700")
         assert result is None
+
+    def test_ensure_import_import_error(self, provider) -> None:
+        """efinance 未安装时 _ensure_import 应抛出 RuntimeError。"""
+        import sys
+
+        EFinanceProvider._ef = None
+        with (
+            patch.dict(sys.modules, {"efinance": None}),
+            pytest.raises(RuntimeError, match="efinance 未安装"),
+        ):
+            provider._ensure_import()
+
+    def test_fetch_kline_unsupported_ticker_returns_none(self, provider) -> None:
+        """非 6 位数字 ticker（如港股）在 fetch_kline 中应返回 None。"""
+        result = provider.fetch_kline("hk.00700", "2026-01-01", "2026-08-13")
+        assert result is None
+
+    def test_fetch_kline_exception_returns_none(self, provider) -> None:
+        """efinance API 异常时 fetch_kline 应返回 None。"""
+        mock_ef = MagicMock()
+        mock_ef.stock.get_quote_history.side_effect = RuntimeError("network error")
+        EFinanceProvider._ef = mock_ef
+
+        result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+        assert result is None
+
+    def test_fetch_kline_missing_columns_returns_none(self, provider) -> None:
+        """efinance 返回缺少必要列的 DataFrame 时应返回 None。"""
+        mock_ef = MagicMock()
+        mock_ef.stock.get_quote_history.return_value = pd.DataFrame(
+            {"日期": ["2026-01-01"], "开盘": [100.0]}
+        )
+        EFinanceProvider._ef = mock_ef
+
+        result = provider.fetch_kline("sh.600519", "2026-01-01", "2026-08-13")
+        assert result is None
+
+    def test_fetch_quote_unsupported_ticker_returns_none(self, provider) -> None:
+        """非 6 位数字 ticker 在 fetch_quote 中应返回 None。"""
+        result = provider.fetch_quote("hk.00700")
+        assert result is None
+
+    def test_fetch_quote_exception_returns_none(self, provider) -> None:
+        """efinance 实时行情异常时应返回 None。"""
+        mock_ef = MagicMock()
+        mock_ef.stock.get_latest_quote.side_effect = RuntimeError("network error")
+        EFinanceProvider._ef = mock_ef
+
+        result = provider.fetch_quote("sh.600519")
+        assert result is None
+
+    def test_fetch_quote_empty_df_returns_none(self, provider) -> None:
+        """efinance 实时行情返回空 DataFrame 时应返回 None。"""
+        mock_ef = MagicMock()
+        mock_ef.stock.get_latest_quote.return_value = pd.DataFrame()
+        EFinanceProvider._ef = mock_ef
+
+        result = provider.fetch_quote("sh.600519")
+        assert result is None
+
+    def test_fetch_metadata_exception_returns_none(self, provider) -> None:
+        """efinance 基本面异常时应返回 None。"""
+        mock_ef = MagicMock()
+        mock_ef.stock.get_base_info.side_effect = RuntimeError("network error")
+        EFinanceProvider._ef = mock_ef
+
+        result = provider.fetch_metadata("sh.600519")
+        assert result is None
+
+    def test_fetch_metadata_result_none_returns_none(self, provider) -> None:
+        """get_base_info 返回 None 时应返回 None。"""
+        mock_ef = MagicMock()
+        mock_ef.stock.get_base_info.return_value = None
+        EFinanceProvider._ef = mock_ef
+
+        result = provider.fetch_metadata("sh.600519")
+        assert result is None
+
+    def test_fetch_metadata_result_other_returns_none(self, provider) -> None:
+        """get_base_info 返回非 Series/非 DataFrame 时应返回 None。"""
+        mock_ef = MagicMock()
+        mock_ef.stock.get_base_info.return_value = "not a dataframe"
+        EFinanceProvider._ef = mock_ef
+
+        result = provider.fetch_metadata("sh.600519")
+        assert result is None
+
+    def test_get_cell_nan_returns_none(self, provider) -> None:
+        """_get_cell 对 NaN 值应返回 None。"""
+
+        from trade_krono_cli.data_providers.efinance_provider import _get_cell
+
+        assert _get_cell({"a": float("nan")}, "a") is None
+
+    def test_get_cell_missing_key_returns_none(self, provider) -> None:
+        """_get_cell 对缺失键应返回 None。"""
+        from trade_krono_cli.data_providers.efinance_provider import _get_cell
+
+        assert _get_cell({"a": 1}, "b") is None
+
+    def test_get_cell_exception_returns_none(self, provider) -> None:
+        """_get_cell 对没有 .get 的对象应返回 None。"""
+        from trade_krono_cli.data_providers.efinance_provider import _get_cell
+
+        assert _get_cell([1, 2, 3], "a") is None
+
+    def test_pd_to_datetime_safe_exception(self, provider) -> None:
+        """pd_to_datetime_safe 解析失败时应回退到 strptime。"""
+        from trade_krono_cli.data_providers.efinance_provider import pd_to_datetime_safe
+
+        result = pd_to_datetime_safe(["2026-01-01", "2026-01-02"])
+        assert len(result) == 2
