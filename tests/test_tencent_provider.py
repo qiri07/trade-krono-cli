@@ -12,7 +12,13 @@ from trade_krono_cli.data_providers.tencent_provider import TencentProvider
 
 
 def _minute_row(
-    ts: str, open_: float, close: float, high: float, low: float, volume: float, turn: float
+    ts: str,
+    open_: float,
+    close: float,
+    high: float,
+    low: float,
+    volume: float,
+    turn: float,
 ) -> list:
     """构造腾讯分钟 K 线行（[datetime, open, close, high, low, volume, turnover_obj, turnover]）。"""
     return [ts, str(open_), str(close), str(high), str(low), str(volume), {}, str(turn)]
@@ -155,27 +161,21 @@ class TestTencentHttpGet:
 
     def test_http_get_success(self) -> None:
         """正常响应返回解码后的文本。"""
-        import trade_krono_cli.data_providers.tencent_provider as tpmod
-
         mock_cm = self._make_urlopen_mock("gbk", b"test_data")
-        with patch.object(tpmod.urllib.request, "urlopen", return_value=mock_cm):
+        with patch.object(tp.urllib.request, "urlopen", return_value=mock_cm):
             result = tp._tencent_http_get("https://example.com/api")
         assert result == "test_data"
 
     def test_http_get_with_params(self) -> None:
         """带 params 时 URL 会拼接查询字符串。"""
-        import trade_krono_cli.data_providers.tencent_provider as tpmod
-
         mock_cm = self._make_urlopen_mock(None, b"ok")
-        with patch.object(tpmod.urllib.request, "urlopen", return_value=mock_cm):
+        with patch.object(tp.urllib.request, "urlopen", return_value=mock_cm):
             tp._tencent_http_get("https://example.com/api", {"a": "1", "b": "2"})
 
     def test_http_get_failure_raises_runtime_error(self) -> None:
         """urlopen 抛异常时应包装为 RuntimeError。"""
-        import trade_krono_cli.data_providers.tencent_provider as tpmod
-
         with patch.object(
-            tpmod.urllib.request, "urlopen", side_effect=OSError("network down")
+            tp.urllib.request, "urlopen", side_effect=OSError("network down")
         ), pytest.raises(RuntimeError, match="tencent 请求"):
             tp._tencent_http_get("https://example.com/api")
 

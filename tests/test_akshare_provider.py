@@ -15,9 +15,7 @@ from trade_krono_cli.data_providers.akshare_provider import AkShareProvider  # n
 
 class TestAkShareProvider:
     @pytest.fixture
-    def provider(self):
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
+    def provider(self) -> AkShareProvider:
         return AkShareProvider()
 
     def test_name(self, provider) -> None:
@@ -81,12 +79,10 @@ class TestAkShareProvider:
     def test_ensure_import_success(self, provider) -> None:
         """_ensure_import 成功时应设置 _ak 属性。"""
         mock_ak = MagicMock()
-        # 直接重置实例属性，不使用 patch.object
         provider.__class__._ak = None
         with patch.dict("sys.modules", {"akshare": mock_ak}):
             provider._ensure_import()
             assert provider._ak is not None
-        # 恢复
         provider.__class__._ak = None
 
     def test_ensure_import_already_loaded(self, provider) -> None:
@@ -96,7 +92,6 @@ class TestAkShareProvider:
         with patch("builtins.__import__") as mock_import:
             provider._ensure_import()
             mock_import.assert_not_called()
-        # 恢复
         provider.__class__._ak = None
 
     def test_fetch_kline_success(self, provider) -> None:
@@ -112,8 +107,6 @@ class TestAkShareProvider:
                 "成交额": [1e8, 1.2e8],
             },
         )
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with (
             patch.object(AkShareProvider, "_ensure_import"),
             patch.object(provider, "_ak", create=True) as mock_ak,
@@ -132,8 +125,6 @@ class TestAkShareProvider:
 
     def test_fetch_kline_empty_result(self, provider) -> None:
         """fetch_kline 返回空 DataFrame 时应返回 None。"""
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with (
             patch.object(AkShareProvider, "_ensure_import"),
             patch.object(provider, "_ak", create=True) as mock_ak,
@@ -144,8 +135,6 @@ class TestAkShareProvider:
 
     def test_fetch_kline_api_exception(self, provider) -> None:
         """fetch_kline API 异常时应返回 None 而非抛出。"""
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with (
             patch.object(AkShareProvider, "_ensure_import"),
             patch.object(provider, "_ak", create=True) as mock_ak,
@@ -156,8 +145,6 @@ class TestAkShareProvider:
 
     def test_fetch_kline_none_df(self, provider) -> None:
         """fetch_kline API 返回 None 时应返回 None。"""
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with (
             patch.object(AkShareProvider, "_ensure_import"),
             patch.object(provider, "_ak", create=True) as mock_ak,
@@ -178,8 +165,6 @@ class TestAkShareProvider:
                 "换手率": [0.5],
             },
         )
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with (
             patch.object(AkShareProvider, "_ensure_import"),
             patch.object(AkShareProvider, "_get_full_market_cache", return_value=mock_df),
@@ -194,8 +179,6 @@ class TestAkShareProvider:
     def test_fetch_quote_ticker_not_found(self, provider) -> None:
         """fetch_quote 股票不在全市场行情中时应返回 None。"""
         mock_df = pd.DataFrame({"代码": ["000001"], "最新价": [10.0]})
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with (
             patch.object(AkShareProvider, "_ensure_import"),
             patch.object(AkShareProvider, "_get_full_market_cache", return_value=mock_df),
@@ -205,8 +188,6 @@ class TestAkShareProvider:
 
     def test_fetch_quote_cache_return_none(self, provider) -> None:
         """缓存返回 None 时 fetch_quote 应返回 None。"""
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with (
             patch.object(AkShareProvider, "_ensure_import"),
             patch.object(AkShareProvider, "_get_full_market_cache", return_value=None),
@@ -216,18 +197,17 @@ class TestAkShareProvider:
 
     def test_fetch_quote_api_exception(self, provider) -> None:
         """fetch_quote API 异常时应返回 None。"""
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with (
             patch.object(AkShareProvider, "_ensure_import"),
-            patch.object(AkShareProvider, "_get_full_market_cache", side_effect=Exception("fail")),
+            patch.object(
+                AkShareProvider, "_get_full_market_cache", side_effect=Exception("fail")
+            ),
         ):
             result = provider.fetch_quote("sh.600519")
             assert result is None
 
     def test_get_full_market_cache_hit(self, provider) -> None:
         """缓存命中时直接返回缓存数据。"""
-
         mock_df = pd.DataFrame({"code": ["600519"]})
         with (
             patch.object(provider.__class__, "_ak", create=True),
@@ -245,7 +225,6 @@ class TestAkShareProvider:
             with patch.object(akmod, "_full_market_cache", {"data": None, "timestamp": 0.0}):
                 result = akmod.AkShareProvider._get_full_market_cache()
                 assert result is not None
-                # 验证缓存被更新
                 assert akmod._full_market_cache["data"] is not None
 
     def test_get_full_market_cache_exception(self, provider) -> None:
@@ -258,8 +237,6 @@ class TestAkShareProvider:
                 assert result is None
 
     def test_health_check_success(self, provider) -> None:
-        import pandas as pd
-
         mock_df = pd.DataFrame(
             {
                 "日期": ["2026-08-01"],
@@ -271,8 +248,6 @@ class TestAkShareProvider:
                 "成交额": [1e8],
             },
         )
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with (
             patch.object(AkShareProvider, "_ensure_import"),
             patch.object(provider, "_ak", create=True) as mock_ak,
@@ -281,15 +256,11 @@ class TestAkShareProvider:
             assert provider.health_check() is True
 
     def test_health_check_failure(self, provider) -> None:
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with patch.object(AkShareProvider, "_ensure_import", side_effect=Exception("fail")):
             assert provider.health_check() is False
 
     def test_health_check_empty_df(self, provider) -> None:
         """health_check 返回空 DataFrame 时应返回 False。"""
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         with (
             patch.object(AkShareProvider, "_ensure_import"),
             patch.object(provider, "_ak", create=True) as mock_ak,
@@ -303,8 +274,6 @@ class TestAkShareEnsureImport:
 
     def test_ensure_import_import_error(self) -> None:
         """akshare 未安装时抛 RuntimeError。"""
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         AkShareProvider._ak = None
         try:
             with (
@@ -323,8 +292,6 @@ class TestAkShareFetchKlineImportError:
 
     def test_fetch_kline_import_error_raises(self) -> None:
         """_ensure_import 抛 ImportError 时 fetch_kline 向上抛出。"""
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         provider = AkShareProvider()
         with patch.object(
             AkShareProvider, "_ensure_import", side_effect=ImportError("no akshare")
@@ -337,8 +304,6 @@ class TestAkShareFetchQuoteImportError:
 
     def test_fetch_quote_import_error_raises(self) -> None:
         """_ensure_import 抛 ImportError 时 fetch_quote 向上抛出。"""
-        from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
         provider = AkShareProvider()
         with patch.object(
             AkShareProvider, "_ensure_import", side_effect=ImportError("no akshare")
@@ -374,8 +339,6 @@ class TestAkShareFetchQuotesBatch:
 
     def test_fetch_quotes_batch_success(self) -> None:
         """正常批量获取返回行情映射。"""
-        import trade_krono_cli.data_providers.akshare_provider as akmod
-
         provider = self._make_provider()
         mock_df = pd.DataFrame(
             {
@@ -460,7 +423,6 @@ class TestAkShareFetchMetadataBatch:
 
     def test_fetch_metadata_batch_cache_none(self) -> None:
         """缓存为 None 时返回空 dict。"""
-        import trade_krono_cli.data_providers.akshare_provider as akmod
 
         provider = self._make_provider()
         with (
