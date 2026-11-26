@@ -199,7 +199,7 @@ class ResearchAnalytics:
         """获取某股票的最新 TA 分析。"""
         return self.query(
             """
-            SELECT ta.ticker, ta.signal, ta.confidence, ta.thesis, ta.llm_request,
+            SELECT ta.ticker, ta.signal, ta.confidence, ta.thesis,
                    j.date, j.job_id
             FROM v_ta_analysis ta
             JOIN v_jobs j ON ta.job_id = j.job_id
@@ -271,18 +271,22 @@ class ResearchAnalytics:
         return_col : 实际收益列名
 
         """
-        # 注意：DuckDB 的 CORR 是 Pearson，Spearman 需用 rank 包装
+        # 注意：DuckDB 的 CORR 是 Pearson，Spearman 需用 rank 包装。
+        # 窗口函数不能直接嵌套在聚合函数内，先分别排名再求相关系数。
         sql_spearman = f"""
-            SELECT CORR(
-                RANK() OVER (ORDER BY "{score_col}")::DOUBLE,
-                RANK() OVER (ORDER BY "{return_col}")::DOUBLE
-            ) AS spearman_ic,
-            COUNT(*) AS n_stocks
-            FROM v_signals s
-            JOIN v_ta_analysis t ON s.job_id = t.job_id AND s.ticker = t.ticker
-            WHERE s.job_id = ?
-              AND s.{score_col} IS NOT NULL
-              AND t.{return_col} IS NOT NULL
+            WITH ranked AS (
+                SELECT
+                    RANK() OVER (ORDER BY s."{score_col}") AS score_rank,
+                    RANK() OVER (ORDER BY t."{return_col}") AS return_rank
+                FROM v_signals s
+                JOIN v_ta_analysis t ON s.job_id = t.job_id AND s.ticker = t.ticker
+                WHERE s.job_id = ?
+                  AND s."{score_col}" IS NOT NULL
+                  AND t."{return_col}" IS NOT NULL
+            )
+            SELECT CORR(score_rank::DOUBLE, return_rank::DOUBLE) AS spearman_ic,
+                   COUNT(*) AS n_stocks
+            FROM ranked
         """
         result = self.query(sql_spearman, (job_id,))
         if result.empty:
@@ -339,7 +343,7 @@ class ResearchAnalytics:
             "predictions_parquet": "v_predictions",
             "backtest_parquet": "v_backtest",
         }
-        _VALID_VIEWS = frozenset(sources.keys())
+        _VALID_VIEWS = frozenset(sources.values())
         for name, view in sources.items():
             try:
                 if view not in _VALID_VIEWS:

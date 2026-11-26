@@ -62,14 +62,15 @@ CREATE_SCRIPT = """
 
                 -- TA 分析结构化摘要
                 CREATE TABLE IF NOT EXISTS ta_analysis (
-                    job_id         TEXT NOT NULL,
-                    ticker         TEXT NOT NULL,
-                    signal         TEXT,
-                    confidence     REAL,
-                    thesis         TEXT,
-                    risks          TEXT,
-                    error          TEXT,
-                    elapsed        REAL,
+                    job_id           TEXT NOT NULL,
+                    ticker           TEXT NOT NULL,
+                    signal           TEXT,
+                    confidence       REAL,
+                    thesis           TEXT,
+                    risks            TEXT,
+                    error            TEXT,
+                    elapsed          REAL,
+                    actual_return_pct REAL,
                     PRIMARY KEY (job_id, ticker),
                     FOREIGN KEY (job_id) REFERENCES jobs(job_id)
                 );

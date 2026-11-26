@@ -9,7 +9,7 @@ try:
     _HAS_DUCKDB = True
 except ImportError:
     _HAS_DUCKDB = False
-    duckdb = None  # type: ignore[misc]
+    duckdb = None  # type: ignore[assignment,misc]
 
 
 # Expose _HAS_DUCKDB for test patching (backward compat)

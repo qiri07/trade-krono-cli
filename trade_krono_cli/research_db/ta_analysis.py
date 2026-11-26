@@ -36,8 +36,8 @@ class TaAnalysisMixin(ResearchDatabase):
         with self._conn as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO ta_analysis "
-                "(job_id, ticker, signal, confidence, thesis, risks, error, elapsed) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "(job_id, ticker, signal, confidence, thesis, risks, error, elapsed, actual_return_pct) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     job_id,
                     result.ticker,
@@ -47,6 +47,7 @@ class TaAnalysisMixin(ResearchDatabase):
                     risks,
                     result.error,
                     result.elapsed_sec,
+                    getattr(result, "actual_return_pct", None),
                 ),
             )
             conn.commit()
