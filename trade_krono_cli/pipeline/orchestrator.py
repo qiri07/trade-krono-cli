@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from trade_krono_cli.committee import InvestmentCommittee, build_committee_input
 from trade_krono_cli.kronos_runner import KronosForecastResult
 from trade_krono_cli.security import sanitize_for_log
+
+if TYPE_CHECKING:
+    from trade_krono_cli.committee.types import InvestmentCommitteeResult
 
 
 class CommitteeOrchestrator:
@@ -41,7 +44,7 @@ class CommitteeOrchestrator:
         date: str,
         ta_results: list[Any],  # noqa: ANN401 — TAAnalysis 在运行时注入
         kronos_results: list[Any],  # noqa: ANN401 — KronosForecastResult 在运行时注入
-    ) -> None:
+    ) -> list[InvestmentCommitteeResult]:
         """对每只 TA 分析过的股票运行 Investment Committee 审议。
 
         跳过无 final_state（分析失败）或无 agent reports 的股票。
@@ -63,6 +66,7 @@ class CommitteeOrchestrator:
 
         committee = InvestmentCommittee()
         deliberated = 0
+        deliberated_results: list[InvestmentCommitteeResult] = []
 
         for ta in ta_results:
             if ta.error is not None:
@@ -98,6 +102,7 @@ class CommitteeOrchestrator:
                     reasoning=result.reasoning,
                     agent_consensus=result.agent_consensus,
                 )
+                deliberated_results.append(result)
                 deliberated += 1
                 logger.info(
                     f"🏛️  委员会审议完成: {ta.ticker} "
@@ -109,6 +114,8 @@ class CommitteeOrchestrator:
 
         if deliberated:
             logger.info(f"🏛️  委员会审议: {deliberated}/{len(ta_results)} 只股票完成")
+
+        return deliberated_results
 
     @staticmethod
     def _build_kronos_map(

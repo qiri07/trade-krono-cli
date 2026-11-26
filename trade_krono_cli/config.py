@@ -320,6 +320,7 @@ class Settings:
             "MINIMAX_API_KEY",
             "AGNES_API_KEY",
             "NVIDIA_API_KEY",
+            "OPENAI_COMPATIBLE_API_KEY",
             "OPENROUTER_API_KEY",
         ):
             if os.getenv(key):

@@ -144,6 +144,7 @@ def run_step(step: Step, dry_run: bool = False) -> int:
             cwd=str(PROJECT_ROOT),
             shell=False,
             start_new_session=True,
+            env={**os.environ, "TRADE_KRONO_CROSS_PROCESS_RATE_LIMIT": "1"},
         )
         try:
             rc = proc.wait(timeout=step.timeout)

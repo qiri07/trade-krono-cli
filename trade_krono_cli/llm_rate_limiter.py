@@ -1,10 +1,10 @@
-"""Agnes AI API 全局限流器。
+"""Nemotron API 全局限流器。
 
-Agnes 免费版限制：
-- 60 秒内最多 10 次请求
-- 相邻请求最小间隔 1.5 秒
+Nemotron 免费版限制：
+- 60 秒内最多 40 次请求
+- 相邻请求最小间隔 1.0 秒
 
-本模块提供线程安全的滑动窗口限流，所有调用 Agnes API 的脚本都应使用此模块。
+本模块提供线程安全的滑动窗口限流，所有调用 Nemotron API 的脚本都应使用此模块。
 """
 
 from __future__ import annotations
@@ -29,12 +29,13 @@ _request_log: deque[float] = deque()
 
 
 def wait_for_rate_limit() -> None:
-    """等待至满足限流条件。
+    """等待至满足限流条件（进程内版本）。
 
-    规则1：60秒内请求数 < 10
-    规则2：距上次请求 >= 1.5秒
+    规则1：60秒内请求数 < MAX_REQUESTS_PER_WINDOW（40）
+    规则2：距上次请求 >= MIN_REQUEST_DELAY（1.0 秒）
 
-    此函数必须在每次调用 Agnes API 前调用。
+    此函数必须在每次调用 Nemotron API 前调用。
+    多进程场景请使用 wait_for_rate_limit_unified()，它会自动选择跨进程实现。
     """
     with _lock:
         now = time.monotonic()
@@ -242,4 +243,25 @@ def get_cross_process_rate_stats() -> dict[str, object]:
 
 # 导出别名，方便调用方按需选择
 wait_for_rate_limit_global = wait_for_rate_limit_cross_process
+
+
+def wait_for_rate_limit_unified() -> None:
+    """Nemotron API 限流统一入口：自动选择进程内或跨进程实现。
+
+    当环境变量 ``TRADE_KRONO_CROSS_PROCESS_RATE_LIMIT=1``（flow_runner
+    以独立子进程执行 step 时会自动设置）时，使用
+    :func:`wait_for_rate_limit_cross_process`（fcntl 文件锁 + 共享 JSON
+    状态文件），确保多个子进程共享同一 40 次/60秒 全局计数器；
+    否则使用进程内 :func:`wait_for_rate_limit`（threading 锁，无文件 IO）。
+
+    所有 Nemotron LLM 调用点应挂接此函数，替代直接调用
+    wait_for_rate_limit() 或 wait_for_rate_limit_cross_process()。
+
+    Returns:
+        None。在满足限流条件前阻塞，之后直接返回。
+    """
+    if os.getenv("TRADE_KRONO_CROSS_PROCESS_RATE_LIMIT", "0") == "1":
+        wait_for_rate_limit_cross_process()
+    else:
+        wait_for_rate_limit()
 

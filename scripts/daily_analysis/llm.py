@@ -22,11 +22,11 @@ from trade_krono_cli.llm_config import resolve_llm_config
 from trade_krono_cli.llm_rate_limiter import (
     backoff_wait,
     is_quota_exhausted,
-    wait_for_rate_limit_cross_process,
+    wait_for_rate_limit_unified,
 )
 
 # 向后兼容别名：供测试 patch scripts.daily_analysis.llm.wait_for_rate_limit
-wait_for_rate_limit = wait_for_rate_limit_cross_process
+wait_for_rate_limit = wait_for_rate_limit_unified
 
 try:
     from openai import OpenAI
@@ -208,7 +208,7 @@ def ai_verify(stock_results: list[dict], date_str: str) -> dict[str, str]:
         )
 
     def _call_one(prompt: str) -> dict | None:
-        wait_for_rate_limit_cross_process()
+        wait_for_rate_limit()
         for attempt in range(1, 3):
             try:
                 response = client.chat.completions.create(

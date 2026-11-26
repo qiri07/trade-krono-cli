@@ -20,7 +20,7 @@ from urllib.parse import urlencode
 from loguru import logger
 
 from trade_krono_cli.llm_config import resolve_llm_config
-from trade_krono_cli.llm_rate_limiter import wait_for_rate_limit
+from trade_krono_cli.llm_rate_limiter import wait_for_rate_limit_unified
 
 try:
     from openai import OpenAI, RateLimitError
@@ -99,7 +99,7 @@ def _verify_pe_percentile(ticker: str, name: str, pe_ttm: float | None) -> tuple
             return True, "未配置 LLM API Key"
 
         # Nemotron 全局限流：与 daily_analysis / run_ai_verification 共用同一滑动窗口
-        wait_for_rate_limit()
+        wait_for_rate_limit_unified()
         client = OpenAI(api_key=key, base_url=base_url)
         response = client.chat.completions.create(
             model=_llm_model(),
@@ -1287,7 +1287,7 @@ def run_ai_verification(
         )
 
         # Nemotron 全局限流
-        wait_for_rate_limit()
+        wait_for_rate_limit_unified()
         for attempt in range(1, 4):
             try:
                 response = client.chat.completions.create(

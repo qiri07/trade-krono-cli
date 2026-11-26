@@ -218,7 +218,7 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 ### 前置股票池过滤（`scripts/universe_filter.py`）
 
 - **归一化**：ETF 代码（沪市 `5x` 段 → `sh.<code>`，深市 `159/156/158` → `sz.<code>`）与普通股票统一前缀，
-  由 `scripts/_utils.py::is_etf_ticker()` / `normalize_ticker_key()` 识别；
+  由 `scripts/_utils/` 包的 `is_etf_ticker()` / `normalize_ticker_key()` 识别；
   `get_provider_chain()` 对 ETF 路由 baostock 优先（baostock 原生支持 ETF K 线，实测 510300/159915/518880/588000/159949 全部成功）。
   **根因修法**：沪市 ETF 统一按 `code.startswith("5")` → `sh.` 处理（覆盖 50x/51x/52x/53x/55x/56x/57x/58x），
   禁止 `5x` 落入深市 `sz.`（此前 `scripts/buffett_daily.py::_normalize_ticker`、`scripts/daily_analysis/runner.py`、
@@ -617,9 +617,9 @@ uv run python scripts/export_vnpy_data.py
 - 本文件是"活文档"：团队切换工具时必须同 commit 更新
 - 发现 AI 重复犯同一错误时，把对应禁令加入"禁止事项"
 
-## Scripts 共享工具（scripts/_utils.py）
+## Scripts 共享工具（scripts/_utils/）
 
-以下函数已从各脚本提取至 `scripts/_utils.py`，新脚本应从此处导入：
+以下函数已从各脚本提取至 `scripts/_utils/` 包，新脚本应从此处导入：
 
 | 函数 | 用途 |
 |------|------|
@@ -742,7 +742,7 @@ efinance / easyquotation / akshare_hk / adk（a-stock-data/adata），主备降�
 **已落地的本次补充**：
 1. 新增 `trade_krono_cli/data_providers/tencent_provider.py`（腾讯财经 K 线 + 实时行情），注册进 `DataProviderFactory` 默认降级链，作为 baostock/akshare 不可达时的兜底源。
 2. `AkShareProvider.supports_metadata` 由 `False` 改为 `True`，`fetch_metadata` 现可从 `stock_zh_a_spot_em` 全市场快照提取 行业 / PE(PB)/市值，填补 `metadata.json` 的空值。
-3. `scripts/_utils.py` 补全 ETF 前缀段（沪市 `5x` 全段 → `sh.`，深市 `159/156/158` → `sz.`）并新增 `expected_trading_day()` / `get_stale_tickers()` 用于滞后判定与定向补拉。
+3. `scripts/_utils/` 包补全 ETF 前缀段（沪市 `5x` 全段 → `sh.`，深市 `159/156/158` → `sz.`）并新增 `expected_trading_day()` / `get_stale_tickers()` 用于滞后判定与定向补拉。
 4. 清洗 `pipeline_cache.db` 与 `metadata.json` 中错前缀 ETF（`sz.510310/511360/513650/588000/501030` → `sh.*`）。
 5. **限流与重试**：新增 `rate_limiter.py`（`RateLimiter` 单例，滑动窗口）和 `retry_with_backoff.py`（指数退避重试）；`factory.py` 对每个 provider 调用添加指数退避重试、429 冷却、连续失败熔断；`baostock_provider.py` 移除内部 `TokenBucket`，改用 `Semaphore(3)` 允许有限并发。
 6. **批量获取**：`base.py` 新增 `fetch_quotes_batch()` / `fetch_metadata_batch()`（akshare 复用全市场快照缓存，O(1) 请求）；`factory.py` 新增 `fetch_quotes_batch()` / `fetch_metadata_batch()` 按 provider 链合并结果。
@@ -786,9 +786,9 @@ Nemotron 3.5 Super VL 通过 NVIDIA API 或 OpenRouter 调用，建议配置适�
 | 层 | 位置 | 机制 | 状态 |
 |---|---|---|---|
 | ① NVIDIA/OpenRouter 服务端 | `integrate.api.nvidia.com` / `openrouter.ai` | 依据 API Key 套餐限流 | 服务端强制，无法绕过 |
-| ② CLI 脚本 | `trade_krono_cli/llm_rate_limiter.py` | `wait_for_rate_limit()` 线程安全滑动窗口；全仓所有 Nemotron LLM 调用点必须挂接（清单见下） | 仅本项目脚本 |
+| ② CLI 脚本 | `trade_krono_cli/llm_rate_limiter.py` | `wait_for_rate_limit_unified()` 线程安全滑动窗口（单进程）或跨进程 fcntl 文件锁（flow_runner 子步骤）；全仓所有 Nemotron LLM 调用点必须挂接（清单见下） | 仅本项目脚本 |
 
-**第 ② 层挂接点清单（新增 Nemotron LLM 调用时必须挂 `wait_for_rate_limit()`）**：
+**第 ② 层挂接点清单（新增 Nemotron LLM 调用时必须挂 `wait_for_rate_limit_unified()`）**：
 
 | 调用点 | 文件:行 | 用途 |
 |---|---|---|
@@ -797,6 +797,7 @@ Nemotron 3.5 Super VL 通过 NVIDIA API 或 OpenRouter 调用，建议配置适�
 | `_verify_pe_percentile` | `tests/buffett_screening.py:101` | PE 历史分位 LLM 辅助判断（Gate ⑥） |
 
 - 所有挂接点共用同一模块级滑动窗口（`_request_log`），跨脚本、跨线程并发也统一限流
+- flow_runner 以独立子进程执行 step 时会自动设置 `TRADE_KRONO_CROSS_PROCESS_RATE_LIMIT=1`，使 `wait_for_rate_limit_unified()` 切换为跨进程 fcntl 文件锁实现；单进程/测试场景下默认使用进程内实现
 - `committee/__init__.py` 的 `llm_client.chat` 由 pipeline 调用方注入客户端，属离线批处理路径，未挂接
 - `tests/buffett_enhanced_screen.py` 指向 deepseek（非 Nemotron），无需挂接
 

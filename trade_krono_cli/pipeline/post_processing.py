@@ -225,7 +225,11 @@ def run_committee(
     date: str,
     ta_results: list[StockAnalysisResult],
     kronos_results: list,
-) -> None:
-    """对每只 TA 分析过的股票运行 Investment Committee 审议。"""
+) -> list:
+    """对每只 TA 分析过的股票运行 Investment Committee 审议。
+
+    Returns:
+        逐只股票的委员会审议结果列表（供上层构建统一决策使用）。
+    """
     orchestrator = CommitteeOrchestrator(research)
-    orchestrator.run(job_id, date, ta_results, kronos_results)
+    return orchestrator.run(job_id, date, ta_results, kronos_results)

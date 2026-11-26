@@ -326,6 +326,7 @@ def build_unified_decision(
     ta_decision: TADecision | None = None,
     kronos_direction: str | None = None,
     kronos_expected_return: float | None = None,
+    last_close: float | None = None,
     distribution: dict | None = None,
     committee_rec: Signal | None = None,
     committee_confidence: float | None = None,
@@ -340,6 +341,7 @@ def build_unified_decision(
     ta_decision            旧版 TA 决策（可选）
     kronos_direction       "UP"/"DOWN"/"FLAT"
     kronos_expected_return 预期收益率 %
+    last_close             历史最后收盘价，用于 EV 计算（优先于 distribution 中的 predicted_close_final）
     distribution           PredictionDistribution.to_dict() 输出
     committee_rec          委员会推荐
     committee_confidence   委员会置信度
@@ -357,13 +359,13 @@ def build_unified_decision(
         ta_reasoning=ta_decision.thesis[:200] if ta_decision else "",
         kronos_direction=kronos_direction,
         kronos_expected_return=kronos_expected_return,
+        last_close=last_close if last_close is not None else d.get("predicted_close_final"),
         direction_score=d.get("direction_score"),
         p10=d.get("p10"),
         p25=d.get("p25"),
         p50=d.get("p50"),
         p75=d.get("p75"),
         p90=d.get("p90"),
-        last_close=d.get("predicted_close_final"),
         committee_rec=committee_rec,
         committee_confidence=committee_confidence,
         bull_case=bull_case,
