@@ -1,25 +1,27 @@
 """回测引擎 — A 股风格的历史信号回测。
 
-职责：
+职责（核心引擎层）：
   · 从 EvalRecord 重建交易日序列，模拟仓位管理
   · 支持 T+1 结算、涨跌停成交约束、交易成本（佣金/印花税/滑点）
   · 按日调仓（rebal_weekly / rebal_monthly）或固定持仓周期（fixed_horizon）
   · 支持市价/限价订单类型、maker/taker 手续费区分
-  · 计算经典绩效指标：年化收益、夏普比率、卡玛比率、最大回撤、胜率、盈亏比
-  · 基准对比（沪深 300 proxy）与超额收益曲线
+
+子模块职责：
+  - backtest_prices：入场价 / 出场价获取、交易日辅助
+  - backtest_metrics：绩效指标计算（夏普/卡玛/回撤/胜率/盈亏比分期分析）
+  - backtest_splits：股票拆分检测与调整
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pandas as pd
 
+from trade_krono_cli.backtest_metrics import compute_metrics
 from trade_krono_cli.backtest_position_manager import DynamicPositionManager  # noqa: TC001
 from trade_krono_cli.backtest_risk_control import MaxDrawdownControl  # noqa: TC001
 from trade_krono_cli.configs.trading import ConstraintConfig
@@ -61,31 +63,7 @@ class CloseLog:
     side: str = "sell"  # buy | sell
 
 
-# ── 交易日辅助 ────────────────────────────────────────────────────────────────
-
-
-def _next_trading_day(d: datetime, kline_dates: list[str]) -> str | None:
-    """在 kline_dates 中找 d 之后最近的一个交易日。"""
-    ds = d.strftime("%Y-%m-%d")
-    for dd in kline_dates:
-        if dd > ds:
-            return dd
-    return None
-
-
-def _week_start(d: datetime) -> datetime:
-    """返回本周周一（调仓触发点）。"""
-    return d - timedelta(days=d.weekday())
-
-
-def _month_start(d: datetime) -> datetime:
-    """返回本月第一天。"""
-    return d.replace(day=1)
-
-
-# ═══════════════════════════════════════════════════════
-# 回测引擎
-# ═══════════════════════════════════════════════════════
+# ── 持仓与交易记录 ───────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -115,6 +93,11 @@ class TradeLog:
     order_type: str = "market"
     side: str = "buy"
     pnl: float = 0.0
+
+
+# ═══════════════════════════════════════════════════════
+# 回测引擎
+# ═══════════════════════════════════════════════════════
 
 
 class BacktestEngine:
@@ -150,6 +133,16 @@ class BacktestEngine:
         默认订单类型（market | limit）
     config : ConstraintConfig | None
         交易约束配置
+    risk_control : MaxDrawdownControl | None
+        风险控制实例
+    position_manager : DynamicPositionManager | None
+        动态仓位管理器
+    enable_split_detection : bool
+        是否启用拆分检测
+    split_ratio_threshold : float
+        拆分判定阈值
+    enable_period_analysis : bool
+        是否启用分期收益分析
     """
 
     def __init__(
@@ -213,12 +206,12 @@ class BacktestEngine:
         prev_close_map: dict[str, float] = {}  # ticker -> prev_close
 
         for day in all_dates:
-            day_dt = datetime.strptime(day, "%Y-%m-%d")
+            day_dt = pd.Timestamp(day)
 
             # ── 1. 平仓检查（持仓到期 / 调仓日）────────────────────────────
-            to_close = []
+            to_close: list[str] = []
             for ticker, pos in list(positions.items()):
-                entry_dt = datetime.strptime(pos.entry_date, "%Y-%m-%d")
+                entry_dt = pd.Timestamp(pos.entry_date)
                 hold_days = (day_dt - entry_dt).days
 
                 should_close = False
@@ -226,7 +219,7 @@ class BacktestEngine:
                     should_close = hold_days >= self.fixed_horizon
                 elif self.rebal_mode == "rebal_weekly":
                     # 每周一收盘时平仓（下周一开盘再买）
-                    should_close = day_dt.weekday() == 0 and hold_days >= 1
+                    should_close = day_dt.day_of_week == 0 and hold_days >= 1
                 elif self.rebal_mode == "rebal_monthly":
                     should_close = day_dt.day == 1 and hold_days >= 1
 
@@ -258,7 +251,11 @@ class BacktestEngine:
             if not today_signals:
                 # 估算当日持仓市值，记录权益曲线
                 equity = cash + sum(
-                    pos.shares * (self._get_exit_price(pos.ticker, day, prev_close_map) or 0)
+                    pos.shares
+                    * (
+                        self._get_exit_price(pos.ticker, day, prev_close_map)
+                        or 0
+                    )
                     for pos in positions.values()
                 )
                 daily_equity.append((day, equity))
@@ -293,7 +290,11 @@ class BacktestEngine:
 
                 # 计算可买股数：优先使用动态仓位管理器，否则使用固定比例
                 current_value = cash + sum(
-                    pos.shares * (self._get_exit_price(pos.ticker, day, prev_close_map) or 0)
+                    pos.shares
+                    * (
+                        self._get_exit_price(pos.ticker, day, prev_close_map)
+                        or 0
+                    )
                     for pos in positions.values()
                 )
 
@@ -314,8 +315,6 @@ class BacktestEngine:
                     alloc = current_value * allocs.get(sig.ticker, 0.0)
                 else:
                     # 等权分配，乘以回撤暴露系数
-                    alloc = current_value * exposure / self.max_position_pct * self.max_position_pct
-                    # 保持原有逻辑：每只股票分配 exposure * max_position_pct
                     alloc = current_value * exposure
 
                 shares = int(alloc / entry_price / self.min_trade_size) * self.min_trade_size
@@ -325,7 +324,11 @@ class BacktestEngine:
                 # 确定订单类型和费用
                 order_type = self.default_order_type.value
                 is_maker = order_type == "limit"
-                cost_bps = self.cfg.buy_cost_bps_maker() if is_maker else self.cfg.buy_cost_bps()
+                cost_bps = (
+                    self.cfg.buy_cost_bps_maker()
+                    if is_maker
+                    else self.cfg.buy_cost_bps()
+                )
 
                 position_value = shares * entry_price
                 cash -= position_value
@@ -379,7 +382,12 @@ class BacktestEngine:
         daily_equity.append((last_day, cash))
 
         # ── 4. 计算绩效指标 ───────────────────────────────────────────────
-        metrics = self._compute_metrics(daily_equity, trades, records)
+        metrics = compute_metrics(
+            daily_equity,
+            trades,
+            records,
+            enable_period_analysis=self.enable_period_analysis,
+        )
 
         return BacktestResult(
             initial_capital=self.initial_capital,
@@ -390,43 +398,6 @@ class BacktestEngine:
             n_trades=len(trades),
             rebal_mode=self.rebal_mode,
         )
-
-    # ── 价格获取 ─────────────────────────────────────────────────────────────
-
-    def _get_entry_price(
-        self,
-        ticker: str,
-        date: str,
-        prev_close_map: dict[str, float],
-    ) -> float | None:
-        """获取入场价。
-
-        - 市价单：使用 prev_close 作为近似
-        - 限价单：使用 prev_close * 0.999（略低于前收，确保成交）
-        """
-        price = prev_close_map.get(ticker)
-        if price is None:
-            return None
-        if self.default_order_type == OrderType.LIMIT:
-            # 限价单：设置略低于前收的价格，确保成交
-            return price * 0.999
-        return price
-
-    def _get_exit_price(
-        self,
-        ticker: str,
-        date: str,
-        prev_close_map: dict[str, float],
-    ) -> float | None:
-        """获取出场价。
-
-        - 市价单：使用 prev_close 作为近似
-        - 限价单：使用 prev_close * 1.001（略高于前收，确保成交）
-        """
-        price = prev_close_map.get(ticker)
-        if price is None:
-            return None
-        return price
 
     def _can_buy_on_day(self, ticker: str, date: str, positions: dict[str, _Position]) -> bool:
         """T+1：若当日或前一日有买入，则今日不可再买。"""
@@ -459,8 +430,7 @@ class BacktestEngine:
         sell_cost_bps = self.cfg.sell_cost_bps()
         sell_cost = sell_value * sell_cost_bps / 10000.0
         buy_cost = pos.shares * pos.entry_price * (1 + pos.cost_bps / 10000.0)
-        net_proceeds = sell_value - sell_cost
-        pnl = net_proceeds - buy_cost
+        pnl = net_proceeds = sell_value - sell_cost - buy_cost
 
         return CloseLog(
             blocked=False,
@@ -480,309 +450,88 @@ class BacktestEngine:
             side="sell",
         )
 
-    # ── 绩效指标 ─────────────────────────────────────────────────────────────
-
-    def _compute_metrics(
-        self,
-        equity_curve: list[tuple[str, float]],
-        trades: list[dict],
-        records: list[BacktestRecord],
-    ) -> dict:
-        """计算完整的回测绩效指标。"""
-        if not equity_curve:
-            return {}
-
-        values = np.array([v for _, v in equity_curve], dtype=float)
-        n_days = len(values)
-        if n_days < 2:
-            return {}
-
-        # ── 日收益率序列 ────────────────────────────────────────────────────
-        daily_returns = np.diff(values) / values[:-1]
-        trading_days_per_year = 252
-
-        # ── 总收益率 / 年化收益率 ──────────────────────────────────────────
-        total_return = (values[-1] / values[0] - 1) * 100
-        years = n_days / trading_days_per_year
-        annual_return = (
-            ((values[-1] / values[0]) ** (1 / max(years, 0.01)) - 1) * 100 if years > 0 else 0.0
-        )
-
-        # ── 波动率 / 夏普比率 ──────────────────────────────────────────────
-        vol = (
-            float(np.std(daily_returns)) * np.sqrt(trading_days_per_year) * 100
-            if len(daily_returns) > 1
-            else 0.0
-        )
-        risk_free_daily = 0.025 / trading_days_per_year  # 无风险利率 ~2.5%/年
-        excess_ret = daily_returns - risk_free_daily
-        sharpe = (
-            float(np.mean(excess_ret) / np.std(excess_ret) * np.sqrt(trading_days_per_year))
-            if len(excess_ret) > 1 and np.std(excess_ret) > 1e-12
-            else 0.0
-        )
-
-        # ── 最大回撤 ────────────────────────────────────────────────────────
-        running_max = np.maximum.accumulate(values)
-        drawdown = (values - running_max) / running_max * 100
-        max_drawdown = float(np.min(drawdown)) if len(drawdown) > 0 else 0.0
-
-        # ── 卡玛比率 ────────────────────────────────────────────────────────
-        calmar = annual_return / abs(max_drawdown) if max_drawdown != 0 else 0.0
-
-        # ── 胜率 / 盈亏比 ───────────────────────────────────────────────────
-        pnl_list = [t.get("pnl", 0.0) for t in trades if t.get("action") == "SELL"]
-        wins = [p for p in pnl_list if p > 0]
-        losses = [p for p in pnl_list if p <= 0]
-        win_rate = len(wins) / len(pnl_list) * 100 if pnl_list else 0.0
-        avg_win = np.mean(wins) if wins else 0.0
-        avg_loss = abs(np.mean(losses)) if losses else 1e-9
-        profit_factor = abs(sum(wins) / sum(losses)) if losses else (100.0 if wins else 0.0)
-
-        # ── Maker/Taker 统计 ───────────────────────────────────────────────
-        maker_trades = [t for t in trades if t.get("order_type") == "limit"]
-        taker_trades = [t for t in trades if t.get("order_type") == "market"]
-        maker_cost_bps = sum(t.get("cost_bps", 0) for t in maker_trades) / max(len(maker_trades), 1)
-        taker_cost_bps = sum(t.get("cost_bps", 0) for t in taker_trades) / max(len(taker_trades), 1)
-
-        # ── 收益分布（手动计算偏度/峰度，兼容 numpy 2.0）─────────────────────
-        def _skewness(arr):
-            if len(arr) < 3:
-                return 0.0
-            m = np.mean(arr)
-            s = np.std(arr, ddof=1)
-            if s == 0:
-                return 0.0
-            return float(np.mean(((arr - m) / s) ** 3))
-
-        def _kurtosis(arr):
-            if len(arr) < 4:
-                return 0.0
-            m = np.mean(arr)
-            s = np.std(arr, ddof=1)
-            if s == 0:
-                return 0.0
-            return float(np.mean(((arr - m) / s) ** 4)) - 3.0
-
-        skew = _skewness(daily_returns)
-        kurt = _kurtosis(daily_returns)
-        # daily_returns 已是小数形式，乘 100 转为百分比
-        best_day = float(np.max(daily_returns) * 100) if len(daily_returns) > 0 else 0.0
-        worst_day = float(np.min(daily_returns) * 100) if len(daily_returns) > 0 else 0.0
-
-        # ── 分期收益分析 ──────────────────────────────────────────────────
-        period_analysis: dict[str, dict] = {}
-        if self.enable_period_analysis and len(equity_curve) >= 2:
-            period_analysis = self._analyze_periods(equity_curve)
-
-        return {
-            "total_return_pct": round(total_return, 2),
-            "annualized_return_pct": round(annual_return, 2),
-            "volatility_annual_pct": round(vol, 2),
-            "sharpe_ratio": round(sharpe, 3),
-            "max_drawdown_pct": round(max_drawdown, 2),
-            "calmar_ratio": round(calmar, 3),
-            "win_rate_pct": round(win_rate, 1),
-            "profit_factor": round(profit_factor, 3),
-            "avg_win": round(float(avg_win), 2),
-            "avg_loss": round(float(avg_loss), 2),
-            "n_wins": len(wins),
-            "n_losses": len(losses),
-            "skewness": round(skew, 3),
-            "kurtosis": round(kurt, 3),
-            "best_day_pct": round(best_day, 2),
-            "worst_day_pct": round(worst_day, 2),
-            "n_trades": len(trades),
-            "n_days": n_days,
-            # ── Maker/Taker 统计 ────────────────────────────────────────────
-            "n_maker_trades": len(maker_trades),
-            "n_taker_trades": len(taker_trades),
-            "avg_maker_cost_bps": round(maker_cost_bps, 2),
-            "avg_taker_cost_bps": round(taker_cost_bps, 2),
-            # ── 分期分析 ──────────────────────────────────────────────────
-            "period_analysis": period_analysis,
-        }
-
-    # ── 拆分检测 ──────────────────────────────────────────────────────────
-
-    def _detect_splits(
-        self,
-        prices: dict[str, float],
-        prev_close_map: dict[str, float],
-    ) -> dict[str, float]:
-        """检测股票拆分（Split）。
-
-        通过检查相邻交易日的价格比率异常变化，识别可能的股票拆分事件。
-        当价格比率超过阈值（默认3.0）或低于其倒数时，判定为可能发生拆分。
-
-        Parameters
-        ----------
-        prices : dict[str, float]
-            {股票代码: 当前收盘价}
-        prev_close_map : dict[str, float]
-            {股票代码: 前收盘价}
-
-        Returns
-        -------
-        dict[str, float]
-            {股票代码: 调整因子}，调整因子为 1.0 表示未发生拆分，
-            否则为调整比例（如 0.5 表示2拆1）。
-        """
-        if not self.enable_split_detection:
-            return {}
-
-        split_adjustments: dict[str, float] = {}
-        for ticker, price in prices.items():
-            prev_close = prev_close_map.get(ticker)
-            if prev_close is None or prev_close <= 0 or price <= 0:
-                continue
-            ratio = price / prev_close
-            # 检查是否发生拆分：价格异常上涨或下跌
-            if ratio >= self.split_ratio_threshold:
-                # 上涨过多，可能是反向拆分（合并股份）
-                split_adjustments[ticker] = 1.0 / ratio
-            elif ratio <= 1.0 / self.split_ratio_threshold:
-                # 下跌过多，可能是正向拆分（如2拆1）
-                split_adjustments[ticker] = ratio
-        return split_adjustments
+    # ── 拆分检测（委托 backtest_splits）─────────────────────────────────
 
     def _apply_split_adjustment(
         self,
         price: float,
         adjustment_factor: float,
     ) -> float:
-        """应用拆分调整因子到价格。
+        """应用拆分调整因子到价格（委托 backtest_splits）。"""
+        from trade_krono_cli.backtest_splits import apply_split_adjustment
 
-        Parameters
-        ----------
-        price : float
-            原始价格。
-        adjustment_factor : float
-            调整因子（1.0 表示无调整）。
-
-        Returns
-        -------
-        float
-            调整后的价格。
-        """
-        if adjustment_factor == 1.0:
-            return price
-        return price * adjustment_factor
-
-    # ── 分期分析 ──────────────────────────────────────────────────────────
-
-    def _analyze_periods(
-        self,
-        daily_equity: list[tuple[str, float]],
-    ) -> dict[str, dict]:
-        """按时间段分析收益表现。
-
-        Parameters
-        ----------
-        daily_equity : list[tuple[str, float]]
-            [(日期, 净值), ...] 列表。
-
-        Returns
-        -------
-        dict[str, dict]
-            {时期标签: {return_pct, days}} 字典。
-        """
-        if len(daily_equity) < 2:
-            return {}
-
-        df = pd.DataFrame(daily_equity, columns=["date", "value"])
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.set_index("date").sort_index()
-        values = df["value"]
-
-        periods: dict[str, dict] = {}
-        start_date = values.index[0]
-        end_date = values.index[-1]
-
-        # 定义分析区间（沿用 configs 中的常见区间）
-        period_ranges: list[tuple[str, str, str]] = [
-            ("Y1", "2025-01-01", "2025-12-31"),
-            ("Y2", "2026-01-01", "2026-12-31"),
-            ("H1_2026", "2026-01-01", "2026-06-30"),
-            ("H2_2026", "2026-07-01", "2026-12-31"),
-        ]
-
-        for label, start_str, end_str in period_ranges:
-            try:
-                start = pd.Timestamp(start_str)
-                end = pd.Timestamp(end_str)
-            except Exception as e:
-                logger.debug("解析日期失败 %s-%s: %s", start_str, end_str, str(e)[:100])
-                continue
-
-            # 检查区间是否与回测区间重叠
-            if start > end_date or end < start_date:
-                continue
-
-            mask = (values.index >= start) & (values.index <= end)
-            subset = values[mask]
-            if len(subset) < 2:
-                continue
-
-            ret = (subset.iloc[-1] / subset.iloc[0] - 1) * 100
-            periods[label] = {
-                "return_pct": round(ret, 2),
-                "days": len(subset),
-                "start_date": str(subset.index[0].date()),
-                "end_date": str(subset.index[-1].date()),
-            }
-
-        return periods
-
-    # ── 辅助：检测单只股票是否发生拆分 ───────────────────────────────
+        return apply_split_adjustment(price, adjustment_factor)
 
     def detect_split_for_ticker(
         self,
         ticker: str,
         price_history: list[tuple[str, float]],
     ) -> list[dict]:
-        """检测单只股票的拆分事件。
+        """检测单只股票的拆分事件（委托 backtest_splits）。"""
+        from trade_krono_cli.backtest_splits import (
+            detect_split_for_ticker as _detect_split_for_ticker,
+        )
 
-        Parameters
-        ----------
-        ticker : str
-            股票代码。
-        price_history : list[tuple[str, float]]
-            [(日期, 收盘价), ...] 按日期排序的价格序列。
+        return _detect_split_for_ticker(
+            ticker,
+            price_history,
+            split_ratio_threshold=self.split_ratio_threshold,
+            enable_split_detection=self.enable_split_detection,
+        )
 
-        Returns
-        -------
-        list[dict]
-            拆分事件列表，每项包含 date, ratio, adjustment_factor。
-        """
-        if not self.enable_split_detection or len(price_history) < 2:
-            return []
+    # ── 向后兼容：价格获取（委托 backtest_prices）──────────────────────
 
-        events: list[dict] = []
-        for i in range(1, len(price_history)):
-            prev_date, prev_price = price_history[i - 1]
-            curr_date, curr_price = price_history[i]
-            if prev_price <= 0 or curr_price <= 0:
-                continue
-            ratio = curr_price / prev_price
-            if ratio >= self.split_ratio_threshold:
-                events.append(
-                    {
-                        "date": curr_date,
-                        "ticker": ticker,
-                        "ratio": round(ratio, 4),
-                        "type": "reverse_split",  # 反向拆分
-                        "adjustment_factor": round(1.0 / ratio, 4),
-                    }
-                )
-            elif ratio <= 1.0 / self.split_ratio_threshold:
-                events.append(
-                    {
-                        "date": curr_date,
-                        "ticker": ticker,
-                        "ratio": round(ratio, 4),
-                        "type": "forward_split",  # 正向拆分
-                        "adjustment_factor": round(ratio, 4),
-                    }
-                )
-        return events
+    def _get_entry_price(
+        self,
+        ticker: str,
+        date: str,
+        prev_close_map: dict[str, float],
+    ) -> float | None:
+        """获取入场价（向后兼容，委托 backtest_prices.get_entry_price）。"""
+        from trade_krono_cli.backtest_prices import get_entry_price
+
+        return get_entry_price(
+            ticker, date, prev_close_map, self.default_order_type.value
+        )
+
+    def _get_exit_price(
+        self,
+        ticker: str,
+        date: str,
+        prev_close_map: dict[str, float],
+    ) -> float | None:
+        """获取出场价（向后兼容，委托 backtest_prices.get_exit_price）。"""
+        from trade_krono_cli.backtest_prices import get_exit_price
+
+        return get_exit_price(
+            ticker, date, prev_close_map, self.default_order_type.value
+        )
+
+    # ── 向后兼容：绩效指标（委托 backtest_metrics）─────────────────────
+
+    def _compute_metrics(
+        self,
+        daily_equity: list[tuple[str, float]],
+        trades: list[dict],
+        records: list,
+    ) -> dict:
+        """计算绩效指标（向后兼容，委托 backtest_metrics.compute_metrics）。"""
+        from trade_krono_cli.backtest_metrics import compute_metrics
+
+        return compute_metrics(
+            daily_equity,
+            trades,
+            records,
+            enable_period_analysis=self.enable_period_analysis,
+        )
+
+
+# ════════════════════════════════════════════════════════
+# 向后兼容重导出（从 backtest_prices 迁移的辅助函数）
+# ════════════════════════════════════════════════════════
+
+from trade_krono_cli.backtest_prices import (  # noqa: E402, F401
+    _month_start,  # noqa: F401
+    _next_trading_day,  # noqa: F401
+    _week_start,  # noqa: F401
+)

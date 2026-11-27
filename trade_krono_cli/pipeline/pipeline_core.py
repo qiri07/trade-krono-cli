@@ -2,6 +2,11 @@
 
 负责 TA + Kronos 并行执行、结果合并、落盘和数据库写入。
 从原 orchestrator.py 拆出，保持向后兼容的导入路径。
+
+后处理逻辑已拆分至：
+  - pipeline.post_processing.run_post_processing
+  - pipeline.cache_fallback.apply_ta_cache_fallback
+  - pipeline.unified_decisions.attach_unified_decisions
 """
 
 from __future__ import annotations
@@ -12,6 +17,9 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 from trade_krono_cli.abnormal_stock import (
     AbnormalityFlag,
     StockAbnormality,
@@ -19,23 +27,15 @@ from trade_krono_cli.abnormal_stock import (
     precheck_stock_status,
 )
 from trade_krono_cli.config import Settings, get_settings
-from trade_krono_cli.data import fetch_realtime_quote
+from trade_krono_cli.pipeline.cache_fallback import apply_ta_cache_fallback
 from trade_krono_cli.pipeline.data_fetcher import prepare_kline_batch
 from trade_krono_cli.pipeline.factory import PipelineFactory
-from trade_krono_cli.pipeline.merge import filter_pool
 from trade_krono_cli.pipeline.orchestrator import CommitteeOrchestrator, ReportIndexer
-from trade_krono_cli.pipeline.post_processing import (
-    merge_and_boost,
-    run_committee,
-    write_results,
-)
+from trade_krono_cli.pipeline.post_processing import run_post_processing
 from trade_krono_cli.pipeline_config import PipelineConfig
 from trade_krono_cli.research_db import get_research
-from trade_krono_cli.stock_filter import StockFilter, StockMeta
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from trade_krono_cli.backtest_position_manager import DynamicPositionManager
     from trade_krono_cli.backtest_risk_control import MaxDrawdownControl
     from trade_krono_cli.constraints_config import ConstraintConfig
@@ -171,42 +171,6 @@ class QuantPipeline:
             f"constraints={'enabled' if self.constraints_config.enable_limit_check else 'disabled'} "
             f"sample_count={'(default)' if sample_count is None else sample_count}",
         )
-
-    def _apply_ta_cache_fallback(self, ta_results: list) -> None:
-        """TA 失败时，从研究数据库回退到最近一次成功的缓存 TA 结果。"""
-        research = get_research()
-        max_age_days = self._config.ta_cache_max_age_days
-        ta_fallback_count = 0
-        for idx, ta in enumerate(ta_results):
-            if ta.error is None:
-                continue
-            cached = research.get_latest_ta_for_ticker(
-                ta.ticker,
-                max_age_days=max_age_days,
-            )
-            if cached:
-                logger.info(
-                    f"📦 {ta.ticker} TA 失败，回退到 {cached['date']} 的缓存结果 "
-                    f"(signal={cached['signal']}, confidence={cached['confidence']})",
-                )
-                # TAAnalysis 是 frozen dataclass，必须创建新实例替代原地修改
-                # StockAnalysisResult 用 .date，TAAnalysis 用 .eval_date，统一兼容
-                from trade_krono_cli.ta_runner import StockAnalysisResult
-
-                ta_date = getattr(ta, "eval_date", None) or str(getattr(ta, "date", ""))
-                # 下游 merge.py 期望 StockAnalysisResult（有 .date / .reports）
-                ta_results[idx] = StockAnalysisResult(
-                    ticker=ta.ticker,
-                    date=ta_date,
-                    signal=cached["signal"],
-                    confidence=cached["confidence"],
-                    reasoning=cached.get("thesis") or "",
-                    error=None,
-                    elapsed_sec=ta.elapsed_sec,
-                )
-                ta_fallback_count += 1
-        if ta_fallback_count:
-            logger.info(f"📦 TA 缓存回退完成: {ta_fallback_count}/{len(ta_results)} 只股票")
 
     def run_parallel(
         self,
@@ -366,22 +330,54 @@ class QuantPipeline:
             self._config.degrade_mode == "ta_cache_fallback"
             and self._config.ta_cache_fallback_enabled
         ):
-            self._apply_ta_cache_fallback(ta_results)
+            apply_ta_cache_fallback(
+                ta_results=ta_results,
+                max_age_days=self._config.ta_cache_max_age_days,
+                research=research,
+            )
 
-        # ── 元数据过滤 + 合并打分 ─────────────────────────────
-        merged = self._apply_post_processing(
+        # ── 后处理：元数据过滤、合并、风控、落盘、委员会、统一决策 ──
+        merged = run_post_processing(
             ta_results=ta_results,
             kronos_results=kronos_results,
             kline_data=kline_data,
             abnormal_flags_map=abnormal_flags_map,
-            output_json=output_json,
-            output_html=output_html,
-            date=date,
+            config=self._config,
+            constraints_config=self.constraints_config,
+            min_confidence=self.min_confidence,
+            allowed_signals=self.allowed_signals,
             research=research,
             job_id=job_id,
+            date=date,
+            output_json=output_json,
+            output_html=output_html,
+            ta_session=self.ta_session,
+            risk_control=self.risk_control,
+            position_manager=self.position_manager,
+            start_time=self._start_time,
+            progress_cb=progress_cb,
         )
 
         return merged
+
+    def _apply_ta_cache_fallback(self, ta_results: list) -> int:
+        """TA 缓存回退（向后兼容，委托 pipeline.cache_fallback.apply_ta_cache_fallback）。
+
+        Parameters
+        ----------
+        ta_results : list
+            TA 分析结果列表（会被原地修改，替换失败项）。
+
+        Returns
+        -------
+        int
+            回退成功的股票数量。
+        """
+        return apply_ta_cache_fallback(
+            ta_results=ta_results,
+            max_age_days=self._config.ta_cache_max_age_days,
+            research=get_research(),
+        )
 
     def run_ta_only(
         self,
@@ -456,171 +452,6 @@ class QuantPipeline:
             self.kronos.save_results(results, output)
         return results
 
-    def _apply_post_processing(
-        self,
-        *,
-        ta_results: list,
-        kronos_results: list,
-        kline_data: dict,
-        abnormal_flags_map: dict,
-        output_json: str | None,
-        output_html: str | None,
-        date: str,
-        research: Any,
-        job_id: str,
-    ) -> list[dict]:
-        """执行后处理：过滤、合并、风险上调、落盘、DB 写入、委员会审议。"""
-
-        # ── 元数据过滤 ────────────────────────────────────────
-        cfg = self._config
-        filter_engine = StockFilter.from_config(
-            min_confidence=self.min_confidence,
-            allowed_signals=self.allowed_signals,
-            market_cap_range=cfg.market_cap_range,
-            industry_whitelist=cfg.industry_whitelist,
-            industry_blacklist=cfg.industry_blacklist,
-            pe_range=cfg.pe_range,
-            pb_range=cfg.pb_range,
-            max_risk_score=cfg.max_risk_score,
-            min_volume_ratio=cfg.min_volume_ratio,
-            min_turnover_rate=cfg.min_turnover_rate,
-            exclude_st=cfg.exclude_st,
-        )
-
-        filtered_ta = filter_pool(
-            ta_results,
-            min_confidence=self.min_confidence,
-            allowed_signals=self.allowed_signals,
-        )
-
-        live_ta = [r for r in filtered_ta if r.error is None]
-        quote_data: dict[str, dict] = {
-            tk: fetch_realtime_quote(tk) for tk in [r.ticker for r in live_ta]
-        }
-
-        filtered_ta_list: list[StockAnalysisResult] = []
-        for r in filtered_ta:
-            if r.error is not None:
-                continue
-            af = abnormal_flags_map.get(r.ticker)
-            flag_names = af.flag_names() if af else []
-            severity = af.severity if af else 0.0
-            meta = StockMeta(
-                signal=r.signal,
-                confidence=r.confidence,
-                ticker=r.ticker,
-                abnormal_flags=flag_names,
-                abnormality_score=severity,
-                pe_ttm=quote_data.get(r.ticker, {}).get("pe"),
-                pb=quote_data.get(r.ticker, {}).get("pb"),
-            )
-            blocker_flags = {"ST", "SUSPENDED", "DELISTED"}
-            if blocker_flags & set(meta.abnormal_flags):
-                continue
-            filtered_ta_list.append(r)
-
-        meta_list = [
-            StockMeta(
-                signal=r.signal,
-                confidence=r.confidence,
-                ticker=r.ticker,
-                pe_ttm=quote_data.get(r.ticker, {}).get("pe"),
-                pb=quote_data.get(r.ticker, {}).get("pb"),
-            )
-            for r in filtered_ta_list
-        ]
-        passed_metas, _ = filter_engine.apply_batch(meta_list)
-        passed_tickers = {m.ticker for m in passed_metas}
-        filtered_ta_final = [r for r in filtered_ta_list if r.ticker in passed_tickers]
-
-        logger.info(
-            f"📋 元数据过滤完成: 保留 {len(filtered_ta_final)} 只 （原始池 {len(filtered_ta)}）",
-        )
-
-        # ── 合并 + 风险上调 ───────────────────────────────────
-        merged = merge_and_boost(
-            filtered_ta=filtered_ta_final,
-            kronos_results=kronos_results,
-            kline_data=kline_data,
-            quote_data=quote_data,
-            constraints_config=self.constraints_config,
-            config=self._config,
-            abnormal_flags_map=abnormal_flags_map,
-        )
-
-        # ── 风险控制：根据 MaxDrawdownControl 调整敞口（在落盘前截断）──────────────────
-        exposure = 1.0
-        if self.risk_control is not None:
-            exposure = self.risk_control.get_exposure()
-            if exposure < 1.0 - 1e-9:
-                # 按敞口比例截断：只保留前 exposure 比例的股票（按排名顺序）
-                keep_count = max(1, int(len(merged) * exposure))
-                merged = merged[:keep_count]
-                logger.info(
-                    f"🛡️  风控生效: exposure={exposure:.2%}, "
-                    f"保留 {keep_count} 只股票"
-                )
-
-        # ── 动态仓位分配：根据 DynamicPositionManager 计算每只股票的仓位权重 ──
-        if self.position_manager is not None and merged:
-            stock_scores = {
-                item["ticker"]: item.get("expected_value")
-                or item.get("ranking_score")
-                or 0.0
-                for item in merged
-            }
-            allocations = self.position_manager.compute_allocations(
-                stocks=[item["ticker"] for item in merged],
-                scores=stock_scores,
-                exposure=exposure,
-            )
-            for item in merged:
-                item["position_size"] = allocations.get(item["ticker"], 0.0)
-
-        # ── 落盘 + DB 写入 + 委员会审议 ──────────────────────
-        raw_paths = self.ta.save_raw_reports(ta_results, date)
-        write_results(
-            merged=merged,
-            ta_results=ta_results,
-            kronos_results=kronos_results,
-            research=research,
-            job_id=job_id,
-            date=date,
-            output_json=output_json,
-            output_html=output_html,
-            config=self._config,
-        )
-        self._index_ta_raw_reports(research, job_id, ta_results, raw_paths)
-        committee_results = run_committee(
-            research=research,
-            job_id=job_id,
-            date=date,
-            ta_results=ta_results,
-            kronos_results=kronos_results,
-        )
-        self._attach_unified_decisions(
-            merged=merged,
-            ta_results=ta_results,
-            kronos_results=kronos_results,
-            committee_results=committee_results,
-            date=date,
-            job_id=job_id,
-            research=research,
-        )
-
-        elapsed = time.time() - self._start_time
-        n_success = sum(1 for r in ta_results if r.error is None)
-        research.complete_job(job_id, n_success=n_success, elapsed=elapsed)
-        logger.info(
-            f"📊 研究作业完成: job={job_id} "
-            f"| 耗时 {elapsed:.1f}s | 结果 {len(merged)} 条 → 已记录到研究数据库",
-        )
-
-        if self._progress_cb:
-            self._progress_cb("完成", 2, 2)
-
-        return merged
-
     def _run_committee(
         self, research, job_id: str, date: str, ta_results: list, kronos_results: list
     ) -> None:
@@ -634,76 +465,3 @@ class QuantPipeline:
         """索引 TA 原始报告文件到 research database。"""
         indexer = ReportIndexer(research)
         indexer.index(job_id, ta_results, raw_paths)
-
-    def _attach_unified_decisions(
-        self,
-        merged: list,
-        ta_results: list,
-        kronos_results: list,
-        committee_results: list,
-        date: str,
-        job_id: str,
-        research: Any,
-    ) -> None:
-        """为每只合并结果构建并附加统一投资决策。
-
-        从 TA、Kronos、Committee 三源数据构建统一决策，并持久化到 research 数据库。
-        该方法用于在 QuantPipeline.run 中于委员会审议之后、结果持久化之前调用。
-
-        Parameters
-        ----------
-        merged : list
-            合并后的候选股票列表。
-        ta_results : list
-            TA 分析结果列表。
-        kronos_results : list
-            Kronos 预测结果列表。
-        committee_results : list
-            委员会审议结果列表。
-        date : str
-            评估日期。
-        job_id : str
-            研究作业 ID。
-        research : Any
-            研究数据库实例。
-        """
-        # 构建映射：ticker -> result
-        ta_map = {}
-        for r in ta_results:
-            if r is not None and hasattr(r, "ticker"):
-                ta_map[r.ticker] = r
-
-        kronos_map = {}
-        for r in kronos_results:
-            if r is not None and hasattr(r, "ticker"):
-                kronos_map[r.ticker] = r
-
-        committee_map = {}
-        for r in committee_results:
-            if r is not None and hasattr(r, "ticker"):
-                committee_map[r.ticker] = r
-
-        # 为每只合并结果构建统一决策
-        for item in merged:
-            if not isinstance(item, dict):
-                continue
-            tk = item.get("ticker")
-            if not tk or not isinstance(tk, str):
-                continue
-
-            ta_result = ta_map.get(tk)
-            kronos_result = kronos_map.get(tk)
-            committee_result = committee_map.get(tk)
-
-            # 写入统一决策信息到 item
-            item["unified_decision_ticker"] = tk
-            if ta_result is not None:
-                item["ta_analysis_completed"] = True
-            if kronos_result is not None:
-                item["kronos_prediction_completed"] = True
-            if committee_result is not None:
-                item["committee_review_completed"] = True
-
-        # 注：详细的 UnifiedInvestmentDecision 构建将在
-        # 后续版本中通过 build_unified_decision 工厂函数完成，
-        # 以避免循环导入和类型定义问题。

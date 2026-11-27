@@ -8,6 +8,8 @@
 子模块职责：
   - factory_circuit.ProviderCircuitBreaker：健康检查 + 连续失败熔断
   - factory_benchmark：Provider 自适应优先级 Benchmark + 排名缓存
+  - factory_retry.FetchRetryPolicy / fetch_kline_with_retry：带指数退避重试
+  - factory_providers.ProviderInstanceManager：Provider 懒加载与缓存
 """
 
 from __future__ import annotations
@@ -22,11 +24,20 @@ from trade_krono_cli.config import get_settings
 from trade_krono_cli.data_providers.base import StockMetadata
 from trade_krono_cli.data_providers.factory_benchmark import (
     bench_all_providers,
+    get_cached_ranked_chain_factory,
     get_ranked_chain_for_ticker_factory,
     invalidate_rank_cache_factory,
+    write_ranked_chain_factory,
 )
 from trade_krono_cli.data_providers.factory_circuit import (
     ProviderCircuitBreaker,
+)
+from trade_krono_cli.data_providers.factory_providers import (
+    ProviderInstanceManager,
+)
+from trade_krono_cli.data_providers.factory_retry import (
+    FetchRetryPolicy,
+    fetch_kline_with_retry,
 )
 
 if TYPE_CHECKING:
@@ -39,7 +50,7 @@ if TYPE_CHECKING:
 # 向后兼容：_BenchResult 供测试直接 import（运行时可用）
 from trade_krono_cli.data_providers.benchmark import _BenchResult  # noqa: TC001
 
-# 导入限流器和重试装饰器
+# 导入限流器和重试装饰器（向后兼容 re-export）
 from trade_krono_cli.data_providers.rate_limiter import RateLimiter  # noqa: F401
 
 # ════════════════════════════════════════════════════════
@@ -47,7 +58,7 @@ from trade_krono_cli.data_providers.rate_limiter import RateLimiter  # noqa: F40
 # ════════════════════════════════════════════════════════
 
 
-class DataProviderFactory:
+class DataProviderFactory(ProviderInstanceManager):
     """数据源工厂，管理 Provider 实例生命周期并实现自动降级。
 
     设计要点：
@@ -57,10 +68,10 @@ class DataProviderFactory:
       - 维度拆分：K 线 / 行情 / 元数据可来自不同源
     """
 
-    # 支持的 Provider 名称 → 类映射
+    # 支持的 Provider 名称 → 类映射（继承自 ProviderInstanceManager）
     _PROVIDER_REGISTRY: dict[str, type[DataProvider]] = {}
 
-    # 进程级缓存（线程安全）
+    # 进程级缓存（线程安全）（继承自 ProviderInstanceManager）
     _instance_cache: dict[str, DataProvider] = {}
     _cache_lock = threading.Lock()
 
@@ -83,7 +94,9 @@ class DataProviderFactory:
         return _cfg.get_settings().provider_rank_cache_ttl_sec
 
     def __init__(self, primary: str = "baostock", fallbacks: list[str] | None = None) -> None:
-        """Parameters
+        """初始化工厂。
+
+        Parameters
         ----------
         primary : str
             主数据源名称，默认 "baostock"
@@ -94,6 +107,8 @@ class DataProviderFactory:
         self.fallbacks = fallbacks or self._default_fallbacks()
         # 实例级熔断器
         self._circuit = ProviderCircuitBreaker()
+        # 重试策略（可覆盖）
+        self._retry_policy = FetchRetryPolicy()
 
     @staticmethod
     def _default_fallbacks() -> list[str]:
@@ -181,54 +196,10 @@ class DataProviderFactory:
             self._circuit = ProviderCircuitBreaker()
         return self._circuit
 
-    # ── Provider 实例管理 ───────────────────────────────────────────────
+    # ── Provider 实例管理（继承自 ProviderInstanceManager）──────────────
 
-    def get_provider(self, name: str) -> DataProvider | None:
-        """获取指定名称的 Provider 实例（进程级缓存）。
-
-        Returns
-        -------
-        DataProvider | None
-            成功返回实例，失败（未安装依赖 / 未配置 key）返回 None
-        """
-        with self._cache_lock:
-            if name in self._instance_cache:
-                return self._instance_cache[name]
-
-        cls = self._get_provider_class(name)
-        if cls is None:
-            return None
-
-        try:
-            instance = cls()
-        except RuntimeError as e:
-            logger.debug(f"Provider {name} 初始化失败: {e}")
-            return None
-        except ImportError as e:
-            logger.debug(f"Provider {name} 依赖未安装: {e}")
-            return None
-
-        with self._cache_lock:
-            self._instance_cache[name] = instance
-
-        logger.debug(f"✅ Provider {name} 初始化成功")
-        return instance
-
-    def get_providers(self, names: list[str] | None = None) -> list[DataProvider]:
-        """批量获取 Provider 实例，过滤掉不可用的。
-
-        Returns
-        -------
-        list[DataProvider]
-            可用的 Provider 列表（按 names 顺序）
-        """
-        names = names or self.provider_chain
-        result = []
-        for name in names:
-            p = self.get_provider(name)
-            if p is not None:
-                result.append(p)
-        return result
+    # get_provider / get_providers / available_providers / health_check_all
+    # reset_cache / _get_provider_class 均继承自 ProviderInstanceManager
 
     # ── 核心接口：带降级的拉取方法 ─────────────────────────────────────
 
@@ -264,61 +235,29 @@ class DataProviderFactory:
         KlineData | None
             成功返回数据，重试耗尽或空数据返回 None。
         """
-        if max_retries is None:
-            max_retries = get_settings().rate_limit_max_retries
-        if base_delay is None:
-            base_delay = get_settings().rate_limit_base_backoff
-        if max_delay is None:
-            max_delay = get_settings().rate_limit_max_backoff
+        # 允许显式覆盖重试参数；否则使用实例级策略
+        policy = self._retry_policy
+        if max_retries is not None or base_delay is not None or max_delay is not None:
+            policy = FetchRetryPolicy(
+                max_retries=max_retries if max_retries is not None else policy.max_retries,
+                base_delay=base_delay if base_delay is not None else policy.base_delay,
+                max_delay=max_delay if max_delay is not None else policy.max_delay,
+            )
 
-        delay = base_delay
-        last_error = ""
-
-        for attempt in range(max_retries + 1):
-            try:
-                data = provider.fetch_kline(ticker, start_date, end_date, frequency, adjustflag)
-                if data is not None and not data.is_empty:
-                    self._rate_limiter.record_success(name)
-                    self._record_provider_success(name)
-                    logger.info(f"✅ K 线获取成功: {ticker} ← {name} ({len(data.timestamps)} 条)")
-                    return data
-                # 空数据不重试，直接返回 None
-                logger.debug(f"{name} 返回空数据: {ticker}")
-                return None
-            except retry_on as e:
-                # 可重试异常：网络错误、超时等
-                last_error = str(e)[:100]
-                error_msg = str(e)
-                is_429 = "429" in error_msg or "rate limit" in error_msg.lower()
-                if is_429:
-                    self._rate_limiter.record_429(name)
-                    delay = min(delay * 2, max_delay)
-
-                if attempt == max_retries:
-                    self._record_provider_fail(name)
-                    logger.warning(
-                        f"{name} K 线拉取失败 {ticker}: {last_error} (重试{max_retries}次后放弃)"
-                    )
-                    return None
-
-                wait = min(delay, max_delay)
-                logger.warning(
-                    f"⚠️  {name} 第{attempt + 1}次失败: {last_error}, "
-                    f"{wait:.1f}s后重试({attempt + 1}/{max_retries})"
-                )
-                time.sleep(wait)
-                delay = min(delay * 2, max_delay)
-            except Exception as e:
-                # 不可重试异常（如 RuntimeError 等硬故障）：立即放弃，降级到下一个 provider
-                last_error = str(e)[:100]
-                error_msg = str(e)
-                if "429" in error_msg or "rate limit" in error_msg.lower():
-                    self._rate_limiter.record_429(name)
-                self._record_provider_fail(name)
-                logger.warning(f"{name} K 线拉取非重试异常 {ticker}: {last_error}")
-                return None
-
-        return None
+        return fetch_kline_with_retry(
+            provider=provider,
+            name=name,
+            ticker=ticker,
+            start_date=start_date,
+            end_date=end_date,
+            frequency=frequency,
+            adjustflag=adjustflag,
+            policy=policy,
+            rate_limiter=self._rate_limiter,
+            record_fail=self._record_provider_fail,
+            record_success=self._record_provider_success,
+            record_429=self._rate_limiter.record_429,
+        )
 
     def _retry_fetch(
         self,
@@ -350,65 +289,25 @@ class DataProviderFactory:
         Returns:
             Any | None: 成功返回 fetch_fn 的结果，重试耗尽或硬故障返回 None。
         """
-        max_retries = (
-            max_retries if max_retries is not None else get_settings().rate_limit_max_retries
+        policy = self._retry_policy
+        if max_retries is not None or base_delay is not None or max_delay is not None:
+            policy = FetchRetryPolicy(
+                max_retries=max_retries if max_retries is not None else policy.max_retries,
+                base_delay=base_delay if base_delay is not None else policy.base_delay,
+                max_delay=max_delay if max_delay is not None else policy.max_delay,
+            )
+
+        return FetchRetryPolicy.execute(
+            policy,
+            name=name,
+            ticker=ticker,
+            fetch_fn=fetch_fn,
+            op_label=op_label,
+            rate_limiter=self._rate_limiter,
+            record_fail=self._record_provider_fail,
+            record_success=self._record_provider_success,
+            record_429=self._rate_limiter.record_429,
         )
-        base_delay = (
-            base_delay if base_delay is not None else get_settings().rate_limit_base_backoff
-        )
-        max_delay = (
-            max_delay if max_delay is not None else get_settings().rate_limit_max_backoff
-        )
-        retry_on = (ConnectionError, TimeoutError, OSError)
-
-        delay = base_delay
-        last_error = ""
-
-        for attempt in range(max_retries + 1):
-            try:
-                result = fetch_fn()
-                if result is not None:
-                    self._rate_limiter.record_success(name)
-                    self._record_provider_success(name)
-                    logger.debug(f"✅ {op_label}获取成功: {ticker} ← {name}")
-                else:
-                    logger.debug(f"{name} 返回空{op_label}: {ticker}")
-                return result
-            except retry_on as e:
-                # 可重试异常：网络错误、超时等
-                last_error = str(e)[:100]
-                error_msg = str(e)
-                is_429 = "429" in error_msg or "rate limit" in error_msg.lower()
-                if is_429:
-                    self._rate_limiter.record_429(name)
-                    delay = min(delay * 2, max_delay)
-
-                if attempt == max_retries:
-                    self._record_provider_fail(name)
-                    logger.warning(
-                        f"{name} {op_label}拉取失败 {ticker}: {last_error} "
-                        f"(重试{max_retries}次后放弃)"
-                    )
-                    return None
-
-                wait = min(delay, max_delay)
-                logger.warning(
-                    f"⚠️  {name} 第{attempt + 1}次{op_label}失败: {last_error}, "
-                    f"{wait:.1f}s后重试({attempt + 1}/{max_retries})"
-                )
-                time.sleep(wait)
-                delay = min(delay * 2, max_delay)
-            except Exception as e:
-                # 不可重试异常（硬故障）：立即放弃
-                last_error = str(e)[:100]
-                error_msg = str(e)
-                if "429" in error_msg or "rate limit" in error_msg.lower():
-                    self._rate_limiter.record_429(name)
-                self._record_provider_fail(name)
-                logger.warning(f"{name} {op_label}拉取非重试异常 {ticker}: {last_error}")
-                return None
-
-        return None
 
     def fetch_kline(
         self,
@@ -720,50 +619,29 @@ class DataProviderFactory:
 
     # ── 工具方法 ────────────────────────────────────────────────────────
 
-    def available_providers(self) -> list[str]:
-        """返回当前已初始化的可用 Provider 名称列表."""
-        return [name for name in self.provider_chain if self.get_provider(name) is not None]
-
-    def health_check_all(self) -> dict[str, bool]:
-        """检查所有 Provider 的健康状态."""
-        result = {}
-        for name in self.provider_chain:
-            provider = self.get_provider(name)
-            if provider is None:
-                result[name] = False
-            else:
-                try:
-                    result[name] = provider.health_check()
-                except Exception as e:
-                    logger.debug(f"{name} health check 异常: {e}")
-                    result[name] = False
-        return result
+    # available_providers / health_check_all 继承自 ProviderInstanceManager
 
     # ── 自适应优先级：Benchmark（委托 factory_benchmark）─────────────
 
     def _benchmark_provider(self, name: str, ticker: str) -> _BenchResult:
         """Benchmark 单个 Provider（委托 factory_benchmark）。"""
-        from trade_krono_cli.data_providers.factory_benchmark import _bench_factory_provider
+        from trade_krono_cli.data_providers.factory_benchmark import (
+            _bench_factory_provider,
+        )
 
         return _bench_factory_provider(self, name, ticker)
 
     def _get_cached_ranked_chain(self, ticker_type: str) -> tuple[list[str], float] | None:
         """读取排名缓存（委托 factory_benchmark）。"""
-        from trade_krono_cli.data_providers.factory_benchmark import (
-            get_cached_ranked_chain_factory,
-        )
-
         return get_cached_ranked_chain_factory(
             self._rank_cache, self._rank_lock, self._rank_cache_ttl_sec(), ticker_type
         )
 
     def _write_ranked_chain(self, ticker_type: str, ranked_chain: list[str]) -> None:
         """写入排名缓存（委托 factory_benchmark）。"""
-        from trade_krono_cli.data_providers.factory_benchmark import (
-            write_ranked_chain_factory,
+        write_ranked_chain_factory(
+            self._rank_cache, self._rank_lock, ticker_type, ranked_chain
         )
-
-        write_ranked_chain_factory(self._rank_cache, self._rank_lock, ticker_type, ranked_chain)
 
     def bench_all(
         self,
@@ -806,70 +684,6 @@ class DataProviderFactory:
 
     # ── 内部工具 ──────────────────────────────────────────────────────
 
-    @classmethod
-    def _get_provider_class(cls, name: str) -> type[DataProvider] | None:
-        """延迟注册：按需导入 Provider 类."""
-        registry = cls._PROVIDER_REGISTRY
-        if name in registry:
-            return registry[name]
-
-        try:
-            if name == "baostock":
-                from trade_krono_cli.data_providers.baostock_provider import BaostockProvider
-
-                registry[name] = BaostockProvider
-            elif name == "akshare":
-                from trade_krono_cli.data_providers.akshare_provider import AkShareProvider
-
-                registry[name] = AkShareProvider
-            elif name == "mootdx":
-                from trade_krono_cli.data_providers.mootdx_provider import MootDxProvider
-
-                registry[name] = MootDxProvider
-            elif name == "tushare":
-                from trade_krono_cli.data_providers.tushare_provider import TushareProvider
-
-                registry[name] = TushareProvider
-            elif name == "tonghuashun":
-                from trade_krono_cli.data_providers.tonghuashun_provider import (
-                    TongHuaShunProvider,
-                )
-
-                registry[name] = TongHuaShunProvider
-            elif name == "akshare_hk":
-                from trade_krono_cli.data_providers.akshare_hk_provider import (
-                    AkShareHKProvider,
-                )
-
-                registry[name] = AkShareHKProvider
-            elif name == "efinance":
-                from trade_krono_cli.data_providers.efinance_provider import EFinanceProvider
-
-                registry[name] = EFinanceProvider
-            elif name == "easyquotation":
-                from trade_krono_cli.data_providers.easyquotation_provider import (
-                    EasyQuotationProvider,
-                )
-
-                registry[name] = EasyQuotationProvider
-            elif name == "tencent":
-                from trade_krono_cli.data_providers.tencent_provider import TencentProvider
-
-                registry[name] = TencentProvider
-            elif name == "adk":
-                from trade_krono_cli.data_providers.adk_data_provider import (
-                    AdkDataProvider,
-                )
-
-                registry[name] = AdkDataProvider
-            else:
-                logger.warning(f"未知的 Provider 名称: {name}")
-                return None
-            return registry[name]
-        except (ImportError, RuntimeError) as e:
-            logger.debug(f"Provider {name} 加载失败: {e}")
-            return None
-
     def reset_cache(self) -> None:
         """清空进程级缓存（用于测试隔离）."""
         with self._cache_lock:
@@ -877,8 +691,15 @@ class DataProviderFactory:
         if self._circuit is not None:
             self._circuit.reset()
 
+    # ── 向后兼容的类方法（供测试直接调用）─────────────────────────────
 
-# ════════════════════════════════════════════════════════
+    @classmethod
+    def clear_registry(cls) -> None:
+        """清空 Provider 类注册表（用于测试隔离）."""
+        ProviderInstanceManager.clear_registry()
+
+
+# ═══════════════════════════════════════════════════════
 # 模块级单例
 # ════════════════════════════════════════════════════════
 
