@@ -112,6 +112,14 @@ def _fetch_akshare_all_metadata() -> dict[str, dict]:
 
             pe_ttm = row.get("市盈率-动态")
             pb = row.get("市净率")
+            # akshare stock_zh_a_spot_em 通常不直接返回股息率；如接口返回则提取，否则留空
+            # 后续可通过分红数据单独计算：股息率 = 分红总额 / (PE_TTM × 净利润) × 100%
+            dividend_yield_raw = row.get("股息率") or row.get("股息率TTM")
+            dividend_yield = (
+                float(dividend_yield_raw)
+                if dividend_yield_raw not in (None, "", "-", "None")
+                else None
+            )
 
             result[ticker] = {
                 "ticker": ticker,
@@ -119,6 +127,7 @@ def _fetch_akshare_all_metadata() -> dict[str, dict]:
                 "industry": None,
                 "pe_ttm": float(pe_ttm) if pe_ttm not in (None, "", "-") else None,
                 "pb": float(pb) if pb not in (None, "", "-") else None,
+                "dividend_yield": dividend_yield,
                 "ipo_date": None,
                 "out_date": None,
                 "is_st": False,
@@ -225,6 +234,8 @@ def _fetch_metadata_urllib() -> dict[str, dict]:
                     else None
                 ),
                 "pb": float(pb) if pb not in (None, "", "-") else None,
+                # 东财 push2 接口不直接返回股息率，留空；后续可通过分红数据计算
+                "dividend_yield": None,
                 "ipo_date": None,
                 "out_date": None,
                 "is_st": False,
@@ -269,6 +280,7 @@ def _fetch_metadata_one(factory, ticker: str, name_map: dict[str, str] | None = 
                             "industry": meta.industry,
                             "pe_ttm": meta.pe_ttm,
                             "pb": meta.pb,
+                            "dividend_yield": meta.dividend_yield,
                             "ipo_date": meta.ipo_date,
                             "is_st": meta.is_st,
                             "source": meta.source,
@@ -295,6 +307,7 @@ def _fetch_metadata_one(factory, ticker: str, name_map: dict[str, str] | None = 
                 "industry": None,
                 "pe_ttm": None,
                 "pb": None,
+                "dividend_yield": None,
                 "ipo_date": None,
                 "is_st": False,
                 "source": "akshare",
@@ -313,6 +326,7 @@ def _fetch_metadata_one(factory, ticker: str, name_map: dict[str, str] | None = 
                 "industry": None,
                 "pe_ttm": None,
                 "pb": None,
+                "dividend_yield": None,
                 "ipo_date": None,
                 "is_st": False,
                 "source": "akshare",

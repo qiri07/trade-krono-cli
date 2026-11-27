@@ -116,6 +116,7 @@ class StockMetadata:
     industry_code: str | None = None  # 行业代码
     pe_ttm: float | None = None  # 市盈率 TTM
     pb: float | None = None  # 市净率
+    dividend_yield: float | None = None  # 股息率（%），未知时为 None
     ipo_date: str | None = None  # 上市日期 YYYY-MM-DD
     out_date: str | None = None  # 退市日期 YYYY-MM-DD
     is_st: bool = False  # 是否 ST 标的
