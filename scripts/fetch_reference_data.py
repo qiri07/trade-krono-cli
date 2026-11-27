@@ -30,6 +30,7 @@ import time
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -42,6 +43,7 @@ from scripts._utils import (
     get_sqlite_conn,
     is_etf_ticker,
     normalize_ticker_key,
+    ticker_to_thscode,
 )
 from scripts.stock_name_cache import (
     get_missing_name_tickers,
@@ -52,8 +54,16 @@ from trade_krono_cli.cli_commands.core import _load_env
 from trade_krono_cli.data_providers.factory import (
     get_data_factory,  # noqa: F401  # 测试通过 monkeypatch 使用
 )
+from trade_krono_cli.data_providers.rate_limiter import get_rate_limiter
 
 FETCH_PER_TICKER_TIMEOUT = 8  # 单只元数据拉取超时：8s 后快速放弃
+
+# 同花顺 Fuyao API（用于 A 股股息率补计算：分红总额 / (PE_TTM × 净利润) × 100%）
+_FUYAO_BASE = "https://fuyao.aicubes.cn"
+_FUYAO_API_KEY = (
+    os.getenv("HITHINK_FINANCE_API_KEY", "").strip()
+    or os.getenv("FUYAO_API_KEY", "").strip()
+)
 
 
 def _get_metadata_file() -> Path:
@@ -359,6 +369,195 @@ def _fetch_metadata_one_hard(factory, ticker: str, name_map: dict[str, str] | No
 
 
 # ════════════════════════════════════════════════════════════════════════════════
+# 同花顺 Fuyao API：A 股股息率补计算（分红总额 / (PE_TTM × 净利润) × 100%）
+# ════════════════════════════════════════════════════════════════════════════════
+
+
+def _safe_float(v: object) -> float | None:
+    """将任意值安全转换为 float；None/NaN/Inf/非数字均返回 None。
+
+    Args:
+        v: 待转换的值。
+
+    Returns:
+        转换后的浮点数，无法转换时返回 None。
+    """
+    if v is None:
+        return None
+    try:
+        f = float(str(v))
+        if f != f or abs(f) == float("inf"):
+            return None
+        return f
+    except (ValueError, TypeError):
+        return None
+
+
+def _fuyao_api_get(
+    path: str, params: dict[str, str] | None = None, timeout: int = 8
+) -> dict | None:
+    """通过 urllib 向同花顺 Fuyao API 发 GET 请求并返回解析后的 JSON。
+
+    不使用 curl 子进程，避免额外进程开销；所有请求均携带 X-api-key 认证头。
+
+    Args:
+        path: API 路径，如 ``/api/a-share/financials/cash-flow-statements``。
+        params: 查询参数，如 ``{"thscode": "600519.SH", "period": "annual", "limit": "1"}``。
+        timeout: 请求超时秒数。
+
+    Returns:
+        解析后的 JSON dict；未配置 API Key、请求失败或非 200 响应时返回 None。
+    """
+    if not _FUYAO_API_KEY:
+        return None
+    url = _FUYAO_BASE + path
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(  # noqa: S310 - 仅访问配置中的可信 HTTP API
+        url,
+        headers={
+            "X-api-key": _FUYAO_API_KEY,
+            "User-Agent": "trade-krono-cli/1.0",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - URL 来源受控
+            body = resp.read().decode("utf-8")
+        data: object = json.loads(body)
+        if not isinstance(data, dict):
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _calc_dividend_yield_for_ticker(ticker: str) -> float | None:
+    """计算单只 A 股的股息率（%）。
+
+    公式：股息率 = 分红总额 / (PE_TTM × 净利润) × 100%
+    其中 分红总额 来自现金流量表，净利润 来自利润表，PE_TTM 来自估值快照。
+    三接口均需成功返回且数值大于 0，否则返回 None。
+
+    Args:
+        ticker: 带交易所前缀的 A 股 ticker，如 ``sh.600519``。
+
+    Returns:
+        股息率百分比（%），无法计算时返回 None。
+    """
+    thscode = ticker_to_thscode(ticker)
+    if not thscode or "." not in ticker:
+        return None
+
+    # 1. 现金流量表：分红总额
+    cash_flow = _fuyao_api_get(
+        "/api/a-share/financials/cash-flow-statements",
+        {"thscode": thscode, "period": "annual", "limit": "1"},
+    )
+    pay_div: float | None = None
+    if cash_flow is not None and cash_flow.get("code") == 0:
+        items = cash_flow.get("data", {}).get("item", [])
+        if isinstance(items, list) and items:
+            pay_div = _safe_float(items[0].get("pay_dividends_profits_interest_cash"))
+    if pay_div is None or pay_div <= 0:
+        return None
+
+    # 2. 利润表：净利润（parent_holder_net_profit）
+    income = _fuyao_api_get(
+        "/api/a-share/financials/income-statements",
+        {"thscode": thscode, "period": "annual", "limit": "1"},
+    )
+    net_profit: float | None = None
+    if income is not None and income.get("code") == 0:
+        items = income.get("data", {}).get("item", [])
+        if isinstance(items, list) and items:
+            net_profit = _safe_float(items[0].get("parent_holder_net_profit"))
+    if net_profit is None or net_profit <= 0:
+        return None
+
+    # 3. 估值快照：PE_TTM
+    val = _fuyao_api_get(
+        "/api/a-share/valuations/snapshot",
+        {"thscodes": thscode},
+    )
+    pe_ttm: float | None = None
+    if val is not None and val.get("code") == 0:
+        items = val.get("data", {}).get("item", [])
+        if isinstance(items, list) and items:
+            pe_ttm = _safe_float(items[0].get("pe_ttm"))
+    if pe_ttm is None or pe_ttm <= 0:
+        return None
+
+    # 股息率 = 分红总额 / (PE_TTM × 净利润) × 100%
+    # 推导：股价 × 总股本 = PE_TTM × EPS × (净利润 / EPS) = PE_TTM × 净利润
+    return (pay_div / (pe_ttm * net_profit)) * 100
+
+
+def _calc_dividend_yields_batch(
+    results: dict[str, dict | None],
+    tickers: list[str],
+) -> None:
+    """批量计算并填充缺失股息率的 A 股元数据。
+
+    仅对 ``dividend_yield is None`` 的 ticker 调用 Fuyao API 补计算；
+    未配置 API Key 时直接 warning 返回，不做任何网络请求。
+    使用 ThreadPoolExecutor 并发拉取，并通过 RateLimiter 限流（每秒 2 请求）。
+
+    Args:
+        results: {归一化 ticker: metadata dict 或 None}，原位更新 ``dividend_yield`` 字段。
+        tickers: 需要尝试计算股息率的 ticker 列表（已过滤 bj./hk./ETF）。
+    """
+    if not _FUYAO_API_KEY:
+        logger.warning("⚠️  未配置 HITHINK_FINANCE_API_KEY/FUYAO_API_KEY，跳过 A 股股息率补计算")
+        return
+
+    # 只对 dividend_yield 为 None 的 ticker 计算
+    missing: list[str] = []
+    for t in tickers:
+        m = results.get(t)
+        if m is not None and isinstance(m, dict) and m.get("dividend_yield") is None:
+            missing.append(t)
+    if not missing:
+        logger.debug("✅ 所有 ticker 的股息率均已填充，无需补计算")
+        return
+
+    logger.info(f"📊 开始 A 股股息率补计算，共 {len(missing)} 只待计算（Fuyao API）")
+
+    limiter = get_rate_limiter()
+    success = 0
+    failed = 0
+
+    def _calc_one(ticker: str) -> tuple[str, float | None]:
+        try:
+            wait = limiter.acquire(provider="fuyao")
+            if wait > 0:
+                time.sleep(wait)
+            dy = _calc_dividend_yield_for_ticker(ticker)
+            return (ticker, dy)
+        except Exception as e:
+            logger.debug(f"⚠️  {ticker} 股息率计算异常: {e}")
+            return (ticker, None)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(_calc_one, t): t for t in missing}
+        for i, fut in enumerate(as_completed(futures), 1):
+            ticker, dy = fut.result()
+            m = results.get(ticker)
+            if isinstance(m, dict):
+                if dy is not None:
+                    m["dividend_yield"] = dy
+                    success += 1
+                else:
+                    failed += 1
+            if i % 50 == 0 or i == len(missing):
+                logger.info(
+                    f"📈 股息率补计算进度: {i}/{len(missing)}（成功 {success}，失败 {failed}）"
+                )
+
+    logger.info(f"✅ A 股股息率补计算完成: 成功 {success}，失败 {failed}，共 {len(missing)} 只")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
 # 原有工具函数（断点续传、原子写入等）
 # ════════════════════════════════════════════════════════════════════════════════
 
@@ -578,6 +777,22 @@ def main(
     logger.info("✅ 参考数据拉取完成!")
     logger.info(f"  成功: {success}, 失败: {failed}")
     logger.info(f"  耗时: {elapsed:.1f}s ({elapsed / 60:.1f}min)")
+
+    # ── A 股股息率补计算（Fuyao API，仅对 dividend_yield 为 None 的票补算）─────
+    # main() 已过滤 bj. 与 ETF，此处仅额外剔除 hk.；akshare 批量获取的 A 股
+    # dividend_yield 始终为 None，全部进入补计算。
+    dividend_yield_missing: list[str] = []
+    for t in tickers:
+        if t.startswith("hk."):
+            continue
+        meta_val: dict[str, object] | None = results.get(t)
+        if (
+            meta_val is not None
+            and isinstance(meta_val, dict)
+            and meta_val.get("dividend_yield") is None
+        ):
+            dividend_yield_missing.append(t)
+    _calc_dividend_yields_batch(results, dividend_yield_missing)
 
     # 保存元数据到 JSON（原子写，避免备份/读取方读到半截文件）
     # 全量模式写入前清理旧 metadata 中的 key（防止 key 格式不一致的残留数据
