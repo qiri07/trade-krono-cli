@@ -108,7 +108,7 @@ def get_ranked_chain_for_ticker_factory(
     if cached is not None:
         return cached[0]
 
-    results = bench_all_providers(factory, ticker=ticker)
+    results = factory.bench_all(ticker=ticker)
     ranked_chain = [r.name for r in results if r.success]
     failed = [r.name for r in results if not r.success]
     ranked_chain.extend(failed)
