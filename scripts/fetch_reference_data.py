@@ -25,13 +25,13 @@ import json
 import os
 import ssl
 import sys
-import threading
 import time
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import TypedDict, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -42,7 +42,6 @@ from scripts._utils import (
     get_all_tickers,
     get_sqlite_conn,
     is_etf_ticker,
-    normalize_ticker_key,
     ticker_to_thscode,
 )
 from scripts.stock_name_cache import (
@@ -91,7 +90,97 @@ def _get_metadata_file() -> Path:
 METADATA_FILE = _get_metadata_file()
 CHECKPOINT_FILE = Path("outputs/cache/metadata_checkpoint.json")
 
-_load_env()
+
+class _StockMetadata(TypedDict, total=False):
+    """单只股票元数据的字段契约（TypedDict）。
+
+    所有字段均可选（total=False），因为不同数据源/阶段会逐步填充：
+    - akshare 批量接口提供 ticker/name/pe_ttm/pb/dividend_yield
+    - stock_individual_info_em 补全 industry/market_cap/ipo_date/is_st
+    - Fuyao API 补全 dividend_yield + dividend_yield_source
+    """
+
+    ticker: str
+    name: str
+    industry: str | None
+    pe_ttm: float | None
+    pb: float | None
+    dividend_yield: float | None
+    market_cap: float | None
+    ipo_date: str | None
+    out_date: str | None
+    is_st: bool
+    source: str
+    dividend_yield_source: str | None
+
+
+def _normalize_ticker_row(
+    code: str,
+    name: str,
+    pe_ttm_raw: object,
+    pb_raw: object,
+    *,
+    source: str,
+    dividend_yield_raw: object | None = None,
+    industry: str | None = None,
+    market_cap: float | None = None,
+    ipo_date: str | None = None,
+    out_date: str | None = None,
+    is_st: bool = False,
+) -> _StockMetadata | None:
+    """将单只股票的原始行归一化为标准元数据 dict。
+
+    负责添加交易所前缀（sh./sz.）、清洗数值字段、补全默认字段。
+    北交所及非 6/0/3 开头代码将返回 None，调用方应跳过。
+
+    Args:
+        code: 6 位裸股票代码。
+        name: 股票名称。
+        pe_ttm_raw: PE_TTM 原始值。
+        pb_raw: PB 原始值。
+        source: 数据源标识，如 "akshare" / "eastmoney"。
+        dividend_yield_raw: 股息率原始值，未提供时为 None。
+        industry: 行业，未提供时为 None。
+        market_cap: 总市值，未提供时为 None。
+        ipo_date: 上市日期，未提供时为 None。
+        out_date: 退市日期，未提供时为 None。
+        is_st: 是否 ST，默认 False。
+
+    Returns:
+        标准化的元数据 dict；北交所/其他前缀时返回 None。
+    """
+    if not code:
+        return None
+
+    if code.startswith("6"):
+        ticker = f"sh.{code}"
+    elif code.startswith("0") or code.startswith("3"):
+        ticker = f"sz.{code}"
+    else:
+        # 北交所等其他前缀，暂不处理
+        return None
+
+    def _to_float(v: object) -> float | None:
+        if v in (None, "", "-", "None"):
+            return None
+        try:
+            return float(str(v))
+        except (ValueError, TypeError):
+            return None
+
+    return {
+        "ticker": ticker,
+        "name": name,
+        "industry": industry,
+        "pe_ttm": _to_float(pe_ttm_raw),
+        "pb": _to_float(pb_raw),
+        "dividend_yield": _to_float(dividend_yield_raw),
+        "market_cap": market_cap,
+        "ipo_date": ipo_date,
+        "out_date": out_date,
+        "is_st": is_st,
+        "source": source,
+    }
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -99,7 +188,7 @@ _load_env()
 # ════════════════════════════════════════════════════════════════════════════════
 
 
-def _fetch_akshare_all_metadata() -> dict[str, dict]:
+def _fetch_akshare_all_metadata() -> dict[str, _StockMetadata]:
     """用 akshare 批量获取所有 A 股的名称、PE/PB、总市值、行业、上市日期。
 
     单次 HTTP 请求即可获取全量 A 股行情（约 5900 只），耗时约 77 秒，
@@ -116,40 +205,22 @@ def _fetch_akshare_all_metadata() -> dict[str, dict]:
         df = ak.stock_zh_a_spot_em()
         logger.info(f"✅ akshare 批量获取股票行情: {len(df)} 只")
 
-        base_meta: dict[str, dict] = {}
+        base_meta: dict[str, _StockMetadata] = {}
 
         for _, row in df.iterrows():
             code = str(row["代码"]).strip()
             name = str(row["名称"]).strip()
-            if not code:
-                continue
-
-            # akshare 返回的是 6 位裸代码，添加交易所前缀
-            if code.startswith("6"):
-                ticker = f"sh.{code}"
-            elif code.startswith("0") or code.startswith("3"):
-                ticker = f"sz.{code}"
-            else:
-                # 北交所等其他前缀，暂不处理
-                continue
-
-            pe_ttm = row.get("市盈率-动态")
-            pb = row.get("市净率")
-            dividend_yield_raw = row.get("股息率") or row.get("股息率TTM")
-            dividend_yield = (
-                float(dividend_yield_raw)
-                if dividend_yield_raw not in (None, "", "-", "None")
-                else None
+            meta = _normalize_ticker_row(
+                code,
+                name,
+                row.get("市盈率-动态"),
+                row.get("市净率"),
+                source="akshare",
+                dividend_yield_raw=row.get("股息率") or row.get("股息率TTM"),
             )
-
-            base_meta[ticker] = {
-                "ticker": ticker,
-                "name": name,
-                "pe_ttm": float(pe_ttm) if pe_ttm not in (None, "", "-") else None,
-                "pb": float(pb) if pb not in (None, "", "-") else None,
-                "dividend_yield": dividend_yield,
-                "source": "akshare",
-            }
+            if meta is None:
+                continue
+            base_meta[meta["ticker"]] = meta
 
         logger.info(f"✅ akshare 基础元数据映射完成: {len(base_meta)} 只")
 
@@ -165,7 +236,7 @@ def _fetch_akshare_all_metadata() -> dict[str, dict]:
         return _fetch_metadata_urllib()
 
 
-def _enrich_metadata_parallel(base_meta: dict[str, dict]) -> dict[str, dict]:
+def _enrich_metadata_parallel(base_meta: dict[str, _StockMetadata]) -> dict[str, _StockMetadata]:
     """并行调用 stock_individual_info_em 补全行业、总市值、上市日期。
 
     使用 ThreadPoolExecutor 并发，避免串行请求过慢。
@@ -176,9 +247,7 @@ def _enrich_metadata_parallel(base_meta: dict[str, dict]) -> dict[str, dict]:
     Returns:
         补全后的 {ticker: 完整元数据}
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    import akshare as ak  # noqa: PLC0415
+    import akshare as ak  # noqa: PLC0415 - 函数内延迟导入，避免模块 import 时加载重型依赖
 
     tickers = list(base_meta.keys())
     total = len(tickers)
@@ -202,7 +271,7 @@ def _enrich_metadata_parallel(base_meta: dict[str, dict]) -> dict[str, dict]:
             logger.debug(f"{ticker} 详细信息获取失败: {e}")
             return ticker, None
 
-    enriched: dict[str, dict] = {}
+    enriched: dict[str, _StockMetadata] = {}
     completed = 0
     failed = 0
 
@@ -213,7 +282,7 @@ def _enrich_metadata_parallel(base_meta: dict[str, dict]) -> dict[str, dict]:
             base = base_meta.get(ticker, {})
             if detail:
                 # 合并基础字段 + 补全字段
-                merged = {**base, **detail}
+                merged = cast("_StockMetadata", {**base, **detail})
                 # 标记 ST（名称含 ST/*ST/退市）
                 name = base.get("name", "")
                 merged["is_st"] = any(kw in name for kw in ("ST", "*ST", "退市"))
@@ -235,7 +304,7 @@ def _enrich_metadata_parallel(base_meta: dict[str, dict]) -> dict[str, dict]:
     return enriched
 
 
-def _fetch_metadata_urllib() -> dict[str, dict]:
+def _fetch_metadata_urllib() -> dict[str, _StockMetadata]:
     """用 urllib 直连东方财富 push2 接口，获取全量 A 股名称、PE/PB、总市值。
 
     当 akshare 的 requests 客户端被远程服务器拦截（RemoteDisconnected）时，
@@ -270,7 +339,7 @@ def _fetch_metadata_urllib() -> dict[str, dict]:
     }
     ctx = ssl.create_default_context()
 
-    result: dict[str, dict] = {}
+    result: dict[str, _StockMetadata] = {}
     pn = 1
     max_retries = 3
     while True:
@@ -305,36 +374,21 @@ def _fetch_metadata_urllib() -> dict[str, dict]:
         for row in diff:
             code = str(row.get("f12", "")).strip()
             name = str(row.get("f14", "")).strip()
-            if not code:
+            meta = _normalize_ticker_row(
+                code,
+                name,
+                row.get("f9"),
+                row.get("f23"),
+                source="eastmoney",
+                dividend_yield_raw=None,
+                industry=None,
+                ipo_date=None,
+                out_date=None,
+                is_st=False,
+            )
+            if meta is None:
                 continue
-            # akshare 返回的是 6 位裸代码，添加交易所前缀（北交所暂不处理）
-            if code.startswith("6"):
-                ticker = f"sh.{code}"
-            elif code.startswith("0") or code.startswith("3"):
-                ticker = f"sz.{code}"
-            else:
-                continue
-
-            pe_ttm = row.get("f9")
-            pb = row.get("f23")
-
-            result[ticker] = {
-                "ticker": ticker,
-                "name": name,
-                "industry": None,
-                "pe_ttm": (
-                    float(pe_ttm)
-                    if pe_ttm not in (None, "", "-")
-                    else None
-                ),
-                "pb": float(pb) if pb not in (None, "", "-") else None,
-                # 东财 push2 接口不直接返回股息率，留空；后续可通过分红数据计算
-                "dividend_yield": None,
-                "ipo_date": None,
-                "out_date": None,
-                "is_st": False,
-                "source": "eastmoney",
-            }
+            result[meta["ticker"]] = meta
 
         total = data.get("data", {}).get("total", 0)
         if len(result) >= total:
@@ -347,109 +401,6 @@ def _fetch_metadata_urllib() -> dict[str, dict]:
     return result
 
 
-# ════════════════════════════════════════════════════════════════════════════════
-# 向后兼容接口：_fetch_metadata_one / _fetch_metadata_one_hard
-# 注意：主流程已改用 akshare 批量获取，此处保留仅供测试兼容
-# ════════════════════════════════════════════════════════════════════════════════
-
-
-def _fetch_metadata_one(factory, ticker: str, name_map: dict[str, str] | None = None) -> tuple[str, dict | None, str]:
-    """拉取单只股票的元数据（兼容旧接口）。
-
-    优先尝试 factory.fetch_metadata(ticker)；若失败或 factory 为 None，
-    则回退到 akshare 批量名称映射。主流程已改用 _fetch_akshare_all_metadata
-    批量获取，此函数保留仅供测试兼容。
-    """
-    try:
-        # 首先尝试通过 provider 获取元数据（向后兼容旧测试）
-        if factory is not None:
-            try:
-                meta = factory.fetch_metadata(ticker)
-                if meta is not None:
-                    key = normalize_ticker_key(ticker)
-                    return (
-                        key,
-                        {
-                            "ticker": meta.ticker,
-                            "industry": meta.industry,
-                            "pe_ttm": meta.pe_ttm,
-                            "pb": meta.pb,
-                            "dividend_yield": meta.dividend_yield,
-                            "ipo_date": meta.ipo_date,
-                            "is_st": meta.is_st,
-                            "source": meta.source,
-                        },
-                        "ok",
-                    )
-                # factory 返回 None，表示未找到，保持 "none" 状态
-                key = normalize_ticker_key(ticker)
-                return (key, None, "none")
-            except Exception as e:
-                # factory 抛出异常，返回错误状态（兼容旧测试期望）
-                key = normalize_ticker_key(ticker)
-                return (key, None, f"error: {str(e)[:50]}")
-
-        # 回退：使用 akshare 批量名称映射（factory 为 None 时）
-        bare = ticker.split(".")[-1] if "." in ticker else ticker
-        name = (name_map or {}).get(bare, "")
-        key = normalize_ticker_key(ticker)
-        return (
-            key,
-            {
-                "ticker": key,
-                "name": name,
-                "industry": None,
-                "pe_ttm": None,
-                "pb": None,
-                "dividend_yield": None,
-                "ipo_date": None,
-                "is_st": False,
-                "source": "akshare",
-            },
-            "ok",
-        )
-    except Exception as e:
-        key = normalize_ticker_key(ticker)
-        bare = key.split(".")[-1] if "." in key else key
-        logger.warning(f"⚠️  获取 {ticker} 元数据失败: {e}")
-        return (
-            key,
-            {
-                "ticker": key,
-                "name": (name_map or {}).get(bare, ""),
-                "industry": None,
-                "pe_ttm": None,
-                "pb": None,
-                "dividend_yield": None,
-                "ipo_date": None,
-                "is_st": False,
-                "source": "akshare",
-            },
-            "ok",
-        )
-
-
-def _fetch_metadata_one_hard(factory, ticker: str, name_map: dict[str, str] | None = None) -> tuple[str, dict | None, str]:
-    """带硬超时的单只元数据拉取（兼容旧接口）。
-
-    主流程已改用 akshare 批量获取，此处保留仅供测试兼容。
-    """
-    holder: dict = {}
-
-    def _run() -> None:
-        result = _fetch_metadata_one(factory, ticker, name_map)
-        holder["result"] = result
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    t.join(FETCH_PER_TICKER_TIMEOUT)
-
-    if "result" not in holder:
-        # daemon 线程仍在卡着（baostock 会话挂起）；放弃它，标记超时
-        key = normalize_ticker_key(ticker)
-        return (key, None, "timeout")
-
-    return holder["result"]
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -524,6 +475,34 @@ def _fuyao_api_get(
         return None
 
 
+def _fuyao_first_number(
+    path: str, params: dict[str, str] | None, field: str
+) -> float | None:
+    """通过 Fuyao API 获取单数值字段。
+
+    调用指定接口，取返回 ``data.item[0]`` 中的字段并安全转为 float；
+    接口失败、code 非 0、字段缺失或数值非正数均返回 None。
+
+    Args:
+        path: API 路径，如 ``/api/a-share/financials/cash-flow-statements``。
+        params: 查询参数。
+        field: 要提取的字段名，如 ``pay_dividends_profits_interest_cash``。
+
+    Returns:
+        字段的 float 值，获取失败或非正数时返回 None。
+    """
+    data = _fuyao_api_get(path, params)
+    if data is None or data.get("code") != 0:
+        return None
+    items = data.get("data", {}).get("item", [])
+    if not isinstance(items, list) or not items:
+        return None
+    value = _safe_float(items[0].get(field))
+    if value is None or value <= 0:
+        return None
+    return value
+
+
 def _calc_dividend_yield_for_ticker(ticker: str) -> float | None:
     """计算单只 A 股的股息率（%）。
 
@@ -541,43 +520,22 @@ def _calc_dividend_yield_for_ticker(ticker: str) -> float | None:
     if not thscode or "." not in ticker:
         return None
 
-    # 1. 现金流量表：分红总额
-    cash_flow = _fuyao_api_get(
+    pay_div = _fuyao_first_number(
         "/api/a-share/financials/cash-flow-statements",
         {"thscode": thscode, "period": "annual", "limit": "1"},
+        "pay_dividends_profits_interest_cash",
     )
-    pay_div: float | None = None
-    if cash_flow is not None and cash_flow.get("code") == 0:
-        items = cash_flow.get("data", {}).get("item", [])
-        if isinstance(items, list) and items:
-            pay_div = _safe_float(items[0].get("pay_dividends_profits_interest_cash"))
-    if pay_div is None or pay_div <= 0:
-        return None
-
-    # 2. 利润表：净利润（parent_holder_net_profit）
-    income = _fuyao_api_get(
+    net_profit = _fuyao_first_number(
         "/api/a-share/financials/income-statements",
         {"thscode": thscode, "period": "annual", "limit": "1"},
+        "parent_holder_net_profit",
     )
-    net_profit: float | None = None
-    if income is not None and income.get("code") == 0:
-        items = income.get("data", {}).get("item", [])
-        if isinstance(items, list) and items:
-            net_profit = _safe_float(items[0].get("parent_holder_net_profit"))
-    if net_profit is None or net_profit <= 0:
-        return None
-
-    # 3. 估值快照：PE_TTM
-    val = _fuyao_api_get(
+    pe_ttm = _fuyao_first_number(
         "/api/a-share/valuations/snapshot",
         {"thscodes": thscode},
+        "pe_ttm",
     )
-    pe_ttm: float | None = None
-    if val is not None and val.get("code") == 0:
-        items = val.get("data", {}).get("item", [])
-        if isinstance(items, list) and items:
-            pe_ttm = _safe_float(items[0].get("pe_ttm"))
-    if pe_ttm is None or pe_ttm <= 0:
+    if pay_div is None or net_profit is None or pe_ttm is None:
         return None
 
     # 股息率 = 分红总额 / (PE_TTM × 净利润) × 100%
@@ -588,7 +546,7 @@ def _calc_dividend_yield_for_ticker(ticker: str) -> float | None:
 
 
 def _calc_dividend_yields_batch(
-    results: dict[str, dict | None],
+    results: dict[str, _StockMetadata | None],
     tickers: list[str],
 ) -> None:
     """批量计算并填充缺失股息率的 A 股元数据。
@@ -802,18 +760,23 @@ def _query_name_baostock(ticker: str) -> str | None:
         return None
 
 
-def main(
-    tickers_input: list[str] | None = None,
-    resume: bool = False,
-    use_checkpoint: bool = True,
-) -> None:
-    logger.info("📊 启动参考数据（元数据）拉取")
+def _collect_metadata() -> dict[str, _StockMetadata]:
+    """用 akshare 批量获取所有 A 股元数据（名称、PE/PB 等）。
 
-    # ── 第一步：用 akshare 批量获取所有 A 股名称、PE/PB（快速，单次请求）─────
-    name_map = _fetch_akshare_all_metadata()
+    Returns:
+        {ticker: 元数据 dict} 映射
+    """
+    return _fetch_akshare_all_metadata()
 
-    # 将 akshare 批量获取的名称种入本地 SQLite 名称缓存（幂等 upsert），
-    # 作为后续每日查询的本地种子；命中即本地使用，不联网。
+
+def _seed_name_cache(name_map: dict[str, _StockMetadata]) -> None:
+    """将 akshare 批量获取的名称种入本地 SQLite 名称缓存（幂等 upsert）。
+
+    命中即本地使用，不联网；作为后续每日查询的本地种子。
+
+    Args:
+        name_map: {ticker: 元数据 dict} 来自 akshare 的元数据映射
+    """
     try:
         _conn = get_sqlite_conn(CACHE_DB)
         try:
@@ -827,21 +790,40 @@ def main(
     except Exception as e:
         logger.debug(f"种入名称缓存失败（不影响元数据主流程）: {e}")
 
-    tickers = tickers_input or get_all_tickers()
-    # 北交所元数据拉取会硬超时（baostock/tonghuashun 对 bj. 会话挂起），且选股流程已过滤北交所，
-    # 故默认跳过 bj. 开头的 ticker，避免浪费超时时间。
+
+def _filter_tickers(tickers: list[str]) -> list[str]:
+    """过滤掉北交所和 ETF ticker（避免硬超时，选股流程已过滤）。
+
+    北交所元数据拉取会硬超时（baostock/tonghuashun 对 bj. 会话挂起），且选股流程
+    已过滤北交所；ETF 元数据拉取也会硬超时，且 ETF 仅参与纯技术面筛选，
+    不依赖 PE/PB/行业等基本面元数据。
+
+    Args:
+        tickers: 原始 ticker 列表
+
+    Returns:
+        过滤后的 ticker 列表
+    """
     tickers = [t for t in tickers if not t.startswith("bj.")]
-    # ETF 元数据拉取会硬超时（baostock 对 ETF 会话挂起），且选股流程中 ETF
-    # 仅参与纯技术面筛选，不依赖 PE/PB/行业等基本面元数据，故跳过 ETF，
-    # 避免浪费超时时间。如需 ETF 元数据，可后续切换至 akshare/efinance 数据源。
     tickers = [t for t in tickers if not is_etf_ticker(t)]
+    return tickers
 
-    logger.info(
-        f"📋 共 {len(tickers)} 只股票待写入元数据（全量模式）"
-    )
 
-    # ── 构建元数据结果：全部使用 akshare 数据 ─────
-    results: dict[str, dict | None] = {}
+def _build_results(
+    tickers: list[str], name_map: dict[str, _StockMetadata]
+) -> tuple[dict[str, _StockMetadata | None], int, int, float]:
+    """构建元数据结果映射，全部使用 akshare 数据。
+
+    对 akshare 中未找到的 ticker 保留空记录。
+
+    Args:
+        tickers: 待处理的 ticker 列表
+        name_map: akshare 批量获取的元数据映射
+
+    Returns:
+        (results, 成功数, 失败数, 耗时秒)
+    """
+    results: dict[str, _StockMetadata | None] = {}
     success = 0
     failed = 0
     start_time = time.time()
@@ -866,19 +848,40 @@ def main(
             failed += 1
 
     elapsed = time.time() - start_time
+    return results, success, failed, elapsed
+
+
+def _log_collection_result(success: int, failed: int, elapsed: float) -> None:
+    """记录元数据拉取结果日志。
+
+    Args:
+        success: 成功数量
+        failed: 失败数量
+        elapsed: 耗时（秒）
+    """
     logger.info(f"\n{'=' * 60}")
     logger.info("✅ 参考数据拉取完成!")
     logger.info(f"  成功: {success}, 失败: {failed}")
     logger.info(f"  耗时: {elapsed:.1f}s ({elapsed / 60:.1f}min)")
 
-    # ── A 股股息率补计算（Fuyao API，仅对 dividend_yield 为 None 的票补算）─────
-    # main() 已过滤 bj. 与 ETF，此处仅额外剔除 hk.；akshare 批量获取的 A 股
-    # dividend_yield 始终为 None，全部进入补计算。
+
+def _calc_dividend_yields_for_tickers(
+    results: dict[str, _StockMetadata | None], tickers: list[str]
+) -> None:
+    """批量计算并填充缺失股息率的 A 股元数据。
+
+    仅对 ``dividend_yield is None`` 的 ticker 调用 Fuyao API 补计算；
+    未配置 API Key 时直接 warning 返回，不做任何网络请求。
+
+    Args:
+        results: {归一化 ticker: 元数据 dict 或 None}，原位更新 ``dividend_yield`` 字段。
+        tickers: 需要尝试计算股息率的 ticker 列表（已过滤 bj./hk./ETF）。
+    """
     dividend_yield_missing: list[str] = []
     for t in tickers:
         if t.startswith("hk."):
             continue
-        meta_val: dict[str, object] | None = results.get(t)
+        meta_val: _StockMetadata | None = results.get(t)
         if (
             meta_val is not None
             and isinstance(meta_val, dict)
@@ -887,14 +890,25 @@ def main(
             dividend_yield_missing.append(t)
     _calc_dividend_yields_batch(results, dividend_yield_missing)
 
-    # 保存元数据到 JSON（原子写，避免备份/读取方读到半截文件）
-    # 全量模式写入前清理旧 metadata 中的 key（防止 key 格式不一致的残留数据
-    # 被并入新结果，例如旧版无交易所前缀的裸代码 key 混入带前缀的新 key）
+
+def _persist_metadata(
+    results: dict[str, _StockMetadata | None], use_checkpoint: bool = True
+) -> None:
+    """保存元数据到 JSON（原子写，避免读到半截文件）。
+
+    全量模式写入前清理旧 metadata 中的 key（防止 key 格式不一致的残留数据
+    被并入新结果）。
+
+    Args:
+        results: 待持久化的元数据映射
+        use_checkpoint: 是否完成后清除 checkpoint，默认 True
+    """
+    # 清理旧 metadata 中不在当前结果的 key（防止残留数据）
     stale = [k for k in _load_existing_metadata() if k not in results]
     for k in stale:
         results.setdefault(k, None)
 
-    # ── 写入前备份 metadata.json，防止误删除/覆盖 ─────────────────────
+    # 写入前备份 metadata.json，防止误删除/覆盖
     from scripts.backup_cache import backup_all
 
     backup_all(keep=10)
@@ -907,12 +921,14 @@ def main(
         clear_checkpoint()
         logger.info("  🧹 checkpoint 已清除")
 
-    # ── 每日仅补漏：对 kline_cache 中名称缓存尚缺失的 ticker 做逐只名称补漏 ──
-    # akshare 批量已种入 A 股名称种子，此处只补 DB 中仍缺失的（新股/复牌/ETF 等）。
-    # 已命中缓存的 ticker 不联网，符合「命中即本地使用、仅补缺失」的原则。
+
+def _backfill_missing_names() -> None:
+    """每日仅补漏：对 kline_cache 中名称缓存尚缺失的 ticker 做逐只名称补漏。
+
+    已命中缓存的 ticker 不联网，符合「命中即本地使用、仅补缺失」的原则。
+    """
     try:
         _all_tickers = get_all_tickers()
-        # 北交所/港股名称查询易硬超时，选股流程已过滤，此处不补
         _candidates = [
             t for t in _all_tickers if not t.startswith(("bj.", "hk."))
         ]
@@ -932,6 +948,53 @@ def main(
             _conn.close()
     except Exception as e:
         logger.debug(f"名称缓存补漏失败（不影响元数据主流程）: {e}")
+
+
+def main(
+    tickers_input: list[str] | None = None,
+    resume: bool = False,
+    use_checkpoint: bool = True,
+) -> None:
+    """启动参考数据（元数据）拉取主流程。
+
+    流程：
+      1. akshare 批量获取元数据（名称、PE/PB 等）
+      2. 种入本地名称缓存
+      3. 过滤北交所/ETF ticker
+      4. 构建结果映射并记录统计日志
+      5. Fuyao API 补计算股息率
+      6. 持久化到 JSON（原子写 + 备份）
+      7. 补漏缺失名称
+
+    Args:
+        tickers_input: 指定 ticker 列表，None 表示全量
+        resume: 是否断点续传（从 checkpoint 恢复）
+        use_checkpoint: 是否完成后清除 checkpoint
+    """
+    # 调用时加载 .env，避免模块 import 时的顶层副作用
+    _load_env()
+
+    logger.info("📊 启动参考数据（元数据）拉取")
+
+    name_map = _collect_metadata()
+    _seed_name_cache(name_map)
+
+    tickers = tickers_input or get_all_tickers()
+    tickers = _filter_tickers(tickers)
+
+    logger.info(f"📋 共 {len(tickers)} 只股票待写入元数据（全量模式）")
+
+    results, success, failed, elapsed = _build_results(tickers, name_map)
+    _log_collection_result(success, failed, elapsed)
+
+    # A 股股息率补计算（Fuyao API，仅对 dividend_yield 为 None 的票补算）
+    _calc_dividend_yields_for_tickers(results, tickers)
+
+    # 持久化到 JSON
+    _persist_metadata(results, use_checkpoint=use_checkpoint)
+
+    # 每日仅补漏：名称缓存缺失补漏
+    _backfill_missing_names()
 
     logger.info(f"{'=' * 60}")
 
