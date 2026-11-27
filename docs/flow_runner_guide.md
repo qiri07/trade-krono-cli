@@ -263,7 +263,6 @@ fetch:
 | `scripts/full_history_sync.py` | `get_provider_chain(ticker)` |
 | `scripts/full_history_from_2015.py` | `get_provider_chain(ticker)` |
 | `scripts/retry_missing_history.py` | 内部 `get_provider_chain` |
-| `scripts/incremental_sync_latest.py` | `get_provider_chain(ticker)` |
 | `scripts/fill_missing_latest.py` | `get_provider_chain(ticker)` |
 | `scripts/fill_bj_hk.py` | `get_provider_chain(ticker)` |
 

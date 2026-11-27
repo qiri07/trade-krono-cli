@@ -512,7 +512,6 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `check_data_integrity.py` | 数据完整性检查（重复/空数据/解码验证） |
 | `cleanup_duplicates.py` | 清理同一 ticker 的多条记录（保留最长；删除前自动备份） |
 | `backup_cache.py` | 核心数据备份（SQLite 在线快照 + 原子写入；按族保留备份，未变化自动跳过） |
-| `full_sync_v2.py` | 优化版主备降级同步（沪深优先 tonghuashun） |
 | `fill_missing_latest.py` | 补齐缺少最新日期的股票增量数据（tonghuashun 主，baostock 降级） |
 | `etf_history_sync.py` | ETF K 线同步（akshare 同花顺发现全市场 ~1409 只，baostock 拉取；`--full` 全量 / `--codes` 指定；单只拉取 18s 超时兜底防 baostock 挂起，批次级 `wait=False` 不阻塞） |
 | `intraday_scan.py` | 盘中技术信号扫描（akshare 分钟 K 线 + 腾讯实时价；金叉/多头/MACD/三线共振，`--mode` 选类型，`--min-signals` 过滤，`--push` 飞书） |

@@ -95,15 +95,16 @@ _load_env()
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# akshare 批量获取股票元数据（名称 + PE/PB + 总市值）
+# akshare 批量获取股票元数据（名称 + PE/PB + 总市值 + 行业 + 上市日期）
 # ════════════════════════════════════════════════════════════════════════════════
 
 
 def _fetch_akshare_all_metadata() -> dict[str, dict]:
-    """用 akshare 批量获取所有 A 股的名称、PE/PB、总市值。
+    """用 akshare 批量获取所有 A 股的名称、PE/PB、总市值、行业、上市日期。
 
-    单次 HTTP 请求即可获取全量 A 股（约 5900 只），耗时约 77 秒，
+    单次 HTTP 请求即可获取全量 A 股行情（约 5900 只），耗时约 77 秒，
     避免逐个调用 provider 导致 baostock/tonghuashun 会话卡死。
+    行业、总市值、上市日期通过并行调用 stock_individual_info_em 补全。
 
     Returns:
         {归一化 ticker: metadata dict}，失败时返回空 dict。
@@ -111,10 +112,12 @@ def _fetch_akshare_all_metadata() -> dict[str, dict]:
     try:
         import akshare as ak  # noqa: PLC0415
 
+        # 1) 批量获取行情（名称、PE/PB、股息率）
         df = ak.stock_zh_a_spot_em()
         logger.info(f"✅ akshare 批量获取股票行情: {len(df)} 只")
 
-        result: dict[str, dict] = {}
+        base_meta: dict[str, dict] = {}
+
         for _, row in df.iterrows():
             code = str(row["代码"]).strip()
             name = str(row["名称"]).strip()
@@ -132,8 +135,6 @@ def _fetch_akshare_all_metadata() -> dict[str, dict]:
 
             pe_ttm = row.get("市盈率-动态")
             pb = row.get("市净率")
-            # akshare stock_zh_a_spot_em 通常不直接返回股息率；如接口返回则提取，否则留空
-            # 后续可通过分红数据单独计算：股息率 = 分红总额 / (PE_TTM × 净利润) × 100%
             dividend_yield_raw = row.get("股息率") or row.get("股息率TTM")
             dividend_yield = (
                 float(dividend_yield_raw)
@@ -141,24 +142,97 @@ def _fetch_akshare_all_metadata() -> dict[str, dict]:
                 else None
             )
 
-            result[ticker] = {
+            base_meta[ticker] = {
                 "ticker": ticker,
                 "name": name,
-                "industry": None,
                 "pe_ttm": float(pe_ttm) if pe_ttm not in (None, "", "-") else None,
                 "pb": float(pb) if pb not in (None, "", "-") else None,
                 "dividend_yield": dividend_yield,
-                "ipo_date": None,
-                "out_date": None,
-                "is_st": False,
                 "source": "akshare",
             }
 
-        logger.info(f"✅ akshare 元数据映射完成: {len(result)} 只")
-        return result
+        logger.info(f"✅ akshare 基础元数据映射完成: {len(base_meta)} 只")
+
+        # 2) 并行获取行业、总市值、上市日期（stock_individual_info_em）
+        # 仅对 base_meta 中的 ticker 并行补全
+        enriched = _enrich_metadata_parallel(base_meta)
+
+        logger.info(f"✅ akshare 元数据并行补全完成: {len(enriched)} 只")
+        return enriched
+
     except Exception as e:
         logger.warning(f"⚠️  akshare 批量获取元数据失败: {e}，尝试 urllib 降级直连 push2.eastmoney.com")
         return _fetch_metadata_urllib()
+
+
+def _enrich_metadata_parallel(base_meta: dict[str, dict]) -> dict[str, dict]:
+    """并行调用 stock_individual_info_em 补全行业、总市值、上市日期。
+
+    使用 ThreadPoolExecutor 并发，避免串行请求过慢。
+
+    Args:
+        base_meta: {ticker: 基础元数据}
+
+    Returns:
+        补全后的 {ticker: 完整元数据}
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    import akshare as ak  # noqa: PLC0415
+
+    tickers = list(base_meta.keys())
+    total = len(tickers)
+    logger.info(f"🔄 并行补全行业/总市值/上市日期: {total} 只，worker=20...")
+
+    def _fetch_one(ticker: str) -> tuple[str, dict | None]:
+        """获取单只股票的详细信息。"""
+        code = ticker.split(".", 1)[1]  # sh.600519 -> 600519
+        try:
+            df = ak.stock_individual_info_em(symbol=code)
+            if df is None or len(df) == 0:
+                return ticker, None
+            # df 列: item, value
+            info = dict(zip(df["item"], df["value"], strict=True))
+            return ticker, {
+                "industry": str(info.get("行业", "")).strip() or None,
+                "market_cap": float(info.get("总市值", 0)) if info.get("总市值") not in (None, "", "-") else None,
+                "ipo_date": str(info.get("上市时间", "")).strip() or None,
+            }
+        except Exception as e:
+            logger.debug(f"{ticker} 详细信息获取失败: {e}")
+            return ticker, None
+
+    enriched: dict[str, dict] = {}
+    completed = 0
+    failed = 0
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = {executor.submit(_fetch_one, t): t for t in tickers}
+        for fut in as_completed(futures):
+            ticker, detail = fut.result()
+            base = base_meta.get(ticker, {})
+            if detail:
+                # 合并基础字段 + 补全字段
+                merged = {**base, **detail}
+                # 标记 ST（名称含 ST/*ST/退市）
+                name = base.get("name", "")
+                merged["is_st"] = any(kw in name for kw in ("ST", "*ST", "退市"))
+                enriched[ticker] = merged
+            else:
+                # 失败时保留基础字段，补全字段置 None
+                enriched[ticker] = {
+                    **base,
+                    "industry": None,
+                    "market_cap": None,
+                    "ipo_date": None,
+                    "is_st": any(kw in base.get("name", "") for kw in ("ST", "*ST", "退市")),
+                }
+                failed += 1
+            completed += 1
+            if completed % 500 == 0 or completed == total:
+                logger.info(f"  进度: {completed}/{total} (失败 {failed})")
+
+    return enriched
 
 
 def _fetch_metadata_urllib() -> dict[str, dict]:
