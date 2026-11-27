@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import time
+from typing import cast
 
 from loguru import logger
 
@@ -24,37 +25,70 @@ from scripts.stock_name_cache import (
     get_cached_stock_name,
 )
 
-_META_NAMES: dict[str, str] | None = None
-_META_DIVIDEND_YIELDS: dict[str, float | None] | None = None
+_META_CACHE: dict[str, dict[str, object | None]] | None = None
 
 
-def _load_meta_names() -> dict[str, str]:
-    """一次性加载 metadata.json 中所有股票名称，作为 analyze_stock 返回 name 为空时的兜底。
+def _meta_keys(ticker: str) -> list[str]:
+    """构造在 metadata.json 中尝试的 key 列表：原样 + 各交易所前缀。"""
+    keys: list[str] = [ticker]
+    if not ticker.startswith(("sh.", "sz.", "bj.", "hk.")):
+        keys.extend([f"sh.{ticker}", f"sz.{ticker}", f"bj.{ticker}"])
+    return keys
 
-    metadata.json 的 key 为带前缀 ticker（如 sh.600519 / sz.002832 / hk.00700），
-    value 包含 name 字段。同时也索引不带前缀的裸代码（如 002832），
-    避免每次查找都重复读取磁盘文件。
+
+def _load_meta() -> dict[str, dict[str, object | None]]:
+    """一次性加载 metadata.json 中所有需要的字段（name, dividend_yield）。
+
+    返回 {key: {field: value}}，同时索引裸代码，避免每次查找都重复读磁盘。
     """
-    global _META_NAMES
-    if _META_NAMES is not None:
-        return _META_NAMES
+    global _META_CACHE
+    if _META_CACHE is not None:
+        return _META_CACHE
 
-    names: dict[str, str] = {}
+    cache: dict[str, dict[str, object | None]] = {}
     meta_path = get_cache_db_path().parent / "metadata.json"
     if meta_path.exists():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             for k, v in meta.items():
-                if isinstance(v, dict) and v.get("name"):
-                    names[k] = v["name"]
-                    # 同时索引裸代码（如 002832），便于 analyze_stock 返回的无前缀代码查找
-                    bare = k.split(".", 1)[-1] if "." in k else k
-                    names.setdefault(bare, v["name"])
+                if not isinstance(v, dict):
+                    continue
+                raw_name: object | None = v.get("name")
+                raw_dy: object | None = v.get("dividend_yield")
+                entry = cast(
+                    "dict[str, object | None]",
+                    {
+                        "name": raw_name if isinstance(raw_name, str) else None,
+                        "dividend_yield": (
+                            float(raw_dy)
+                            if isinstance(raw_dy, (int, float)) and not isinstance(raw_dy, bool)
+                            else None
+                        ),
+                    },
+                )
+                cache[k] = entry
+                bare = k.split(".", 1)[-1] if "." in k else k
+                cache.setdefault(bare, entry)
         except (json.JSONDecodeError, OSError, ValueError) as e:
             logger.debug(f"读取 metadata.json 失败: {e}")
 
-    _META_NAMES = names
-    return names
+    _META_CACHE = cache
+    return cache
+
+
+def _get_meta_field(ticker: str, field: str) -> object | None:
+    """从 metadata.json 获取指定字段，缺失返回 None。
+
+    同时尝试带前缀（sh./sz.）、裸代码两种 key 格式，确保能命中缓存。
+    """
+    meta = _load_meta()
+    for key in _meta_keys(ticker):
+        entry = meta.get(key)
+        if isinstance(entry, dict):
+            val = entry.get(field)
+            if val is not None:
+                return val
+    return None
 
 
 def _get_stock_name_from_metadata(ticker: str) -> str:
@@ -66,9 +100,7 @@ def _get_stock_name_from_metadata(ticker: str) -> str:
     作为 analyze_stock 返回 name 为空时的兜底。
     """
     # 构造要尝试的 key：原样、加 sh. 前缀、加 sz. 前缀、加 bj. 前缀
-    keys: list[str] = [ticker]
-    if not ticker.startswith(("sh.", "sz.", "bj.", "hk.")):
-        keys.extend([f"sh.{ticker}", f"sz.{ticker}", f"bj.{ticker}"])
+    keys: list[str] = _meta_keys(ticker)
 
     # 1. 优先本地 SQLite 名称缓存（命中不联网，实现「每日仅补漏」）
     try:
@@ -85,45 +117,10 @@ def _get_stock_name_from_metadata(ticker: str) -> str:
         logger.debug(f"{ticker} 从本地名称缓存读取失败: {e}")
 
     # 2. 从 metadata.json 兜底（已同时索引带前缀和裸代码）
-    meta_names = _load_meta_names()
-    for key in keys:
-        name = meta_names.get(key, "")
-        if name:
-            return name
+    meta_name: object | None = _get_meta_field(ticker, "name")
+    if isinstance(meta_name, str):
+        return meta_name
     return ""
-
-
-def _load_meta_dividend_yields() -> dict[str, float | None]:
-    """一次性加载 metadata.json 中所有股票的股息率（%）。
-
-    metadata.json 的 key 为带前缀 ticker（如 sh.600519），value 包含
-    dividend_yield 字段（%，缺失或不可计算时为 None）。同时也索引不带前缀的裸代码，
-    避免每次查找都重复读取磁盘文件。
-    """
-    global _META_DIVIDEND_YIELDS
-    if _META_DIVIDEND_YIELDS is not None:
-        return _META_DIVIDEND_YIELDS
-
-    yields: dict[str, float | None] = {}
-    meta_path = get_cache_db_path().parent / "metadata.json"
-    if meta_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            for k, v in meta.items():
-                if isinstance(v, dict):
-                    dy = v.get("dividend_yield")
-                    if isinstance(dy, (int, float)) and not isinstance(dy, bool):
-                        yields[k] = float(dy)
-                    else:
-                        yields[k] = None
-                    # 同时索引裸代码（如 600519），便于无前缀代码查找
-                    bare = k.split(".", 1)[-1] if "." in k else k
-                    yields.setdefault(bare, yields[k])
-        except (json.JSONDecodeError, OSError, ValueError) as e:
-            logger.debug(f"读取 metadata.json 股息率失败: {e}")
-
-    _META_DIVIDEND_YIELDS = yields
-    return yields
 
 
 def _get_dividend_yield_from_metadata(ticker: str) -> float | None:
@@ -131,17 +128,19 @@ def _get_dividend_yield_from_metadata(ticker: str) -> float | None:
 
     同时尝试带前缀（sh./sz.）、裸代码两种 key 格式，确保能命中缓存。
     """
-    # 构造要尝试的 key：原样、加 sh. 前缀、加 sz. 前缀、加 bj. 前缀
-    keys: list[str] = [ticker]
-    if not ticker.startswith(("sh.", "sz.", "bj.", "hk.")):
-        keys.extend([f"sh.{ticker}", f"sz.{ticker}", f"bj.{ticker}"])
+    val = _get_meta_field(ticker, "dividend_yield")
+    return float(val) if isinstance(val, (int, float)) and not isinstance(val, bool) else None
 
-    meta_yields = _load_meta_dividend_yields()
-    for key in keys:
-        dy = meta_yields.get(key)
-        if isinstance(dy, (int, float)) and not isinstance(dy, bool):
-            return float(dy)
-    return None
+
+def _dividend_yield_line(code: str) -> str:
+    """返回股息率卡片行文本：有数据则显示百分比，否则显示无股息数据。
+
+    调用方按自身缩进拼接到卡片行中。
+    """
+    dy = _get_dividend_yield_from_metadata(code)
+    if dy is not None:
+        return f"股息率: {dy:.2f}%"
+    return "股息率: 无股息数据"
 
 
 def _build_stock_card(cand: StockCandidate, date_str: str, ai_note: str = "") -> str:
@@ -165,11 +164,7 @@ def _build_stock_card(cand: StockCandidate, date_str: str, ai_note: str = "") ->
     lines.append("")
     lines.append("── 基本面 ──")
     lines.append(f"  {fv.summary_line()}")
-    dy = _get_dividend_yield_from_metadata(code)
-    if dy is not None:
-        lines.append(f"  股息率: {dy:.2f}%")
-    else:
-        lines.append("  股息率: 无股息数据")
+    lines.append(f"  {_dividend_yield_line(code)}")
     if kv.available:
         lines.append("")
         lines.append("── Kronos 预测 ──")
@@ -289,11 +284,7 @@ def _build_combined_card(
                 ma5_txt = "✅ 站稳5日线" if tv.close > tv.ma5 else "❌ 未站稳5日线"
             lines.append(f"     站稳5日线: {ma5_txt} (close={tv.close if tv.close is not None else '-'}, MA5={tv.ma5 if tv.ma5 is not None else '-'})")
             lines.append(f"     基本面: {fv.summary_line()}")
-            dy = _get_dividend_yield_from_metadata(code)
-            if dy is not None:
-                lines.append(f"     股息率: {dy:.2f}%")
-            else:
-                lines.append("     股息率: 无股息数据")
+            lines.append(f"     {_dividend_yield_line(code)}")
             kv = detail_cand.kronos_view
             if kv.available:
                 # 部分预测结果只有方向、缺少幅度/置信区间，直接格式化 None 会抛 TypeError，
