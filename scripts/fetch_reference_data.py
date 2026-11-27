@@ -60,10 +60,20 @@ FETCH_PER_TICKER_TIMEOUT = 8  # 单只元数据拉取超时：8s 后快速放弃
 
 # 同花顺 Fuyao API（用于 A 股股息率补计算：分红总额 / (PE_TTM × 净利润) × 100%）
 _FUYAO_BASE = "https://fuyao.aicubes.cn"
-_FUYAO_API_KEY = (
-    os.getenv("HITHINK_FINANCE_API_KEY", "").strip()
-    or os.getenv("FUYAO_API_KEY", "").strip()
-)
+
+
+def _get_fuyao_api_key() -> str:
+    """动态读取 Fuyao API Key（调用时读取，避免模块 import 时 .env 尚未加载）。
+
+    优先读 HITHINK_FINANCE_API_KEY，兼容 FUYAO_API_KEY。
+
+    Returns:
+        非空的 API Key 字符串；未配置时返回空字符串。
+    """
+    return (
+        os.getenv("HITHINK_FINANCE_API_KEY", "").strip()
+        or os.getenv("FUYAO_API_KEY", "").strip()
+    )
 
 
 def _get_metadata_file() -> Path:
@@ -399,6 +409,8 @@ def _fuyao_api_get(
     """通过 urllib 向同花顺 Fuyao API 发 GET 请求并返回解析后的 JSON。
 
     不使用 curl 子进程，避免额外进程开销；所有请求均携带 X-api-key 认证头。
+    每次调用前通过 RateLimiter 限流（provider="fuyao"），避免多 worker 并发
+    时 HTTP 实际频率超过配置值（默认 2 请求/秒）。
 
     Args:
         path: API 路径，如 ``/api/a-share/financials/cash-flow-statements``。
@@ -408,15 +420,21 @@ def _fuyao_api_get(
     Returns:
         解析后的 JSON dict；未配置 API Key、请求失败或非 200 响应时返回 None。
     """
-    if not _FUYAO_API_KEY:
+    api_key = _get_fuyao_api_key()
+    if not api_key:
         return None
+    # 每次 HTTP 请求前限流，保证实际频率不超过 RateLimiter 配置值
+    limiter = get_rate_limiter()
+    wait = limiter.acquire(provider="fuyao")
+    if wait > 0:
+        time.sleep(wait)
     url = _FUYAO_BASE + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(  # noqa: S310 - 仅访问配置中的可信 HTTP API
         url,
         headers={
-            "X-api-key": _FUYAO_API_KEY,
+            "X-api-key": api_key,
             "User-Agent": "trade-krono-cli/1.0",
             "Accept": "application/json",
         },
@@ -490,6 +508,8 @@ def _calc_dividend_yield_for_ticker(ticker: str) -> float | None:
 
     # 股息率 = 分红总额 / (PE_TTM × 净利润) × 100%
     # 推导：股价 × 总股本 = PE_TTM × EPS × (净利润 / EPS) = PE_TTM × 净利润
+    # 注意：净利润取最近一个完整年报，PE_TTM 为滚动 12 个月，
+    # 年报未披露期（如 1–4 月）两者存在最多约一个季度的口径偏差。
     return (pay_div / (pe_ttm * net_profit)) * 100
 
 
@@ -501,13 +521,15 @@ def _calc_dividend_yields_batch(
 
     仅对 ``dividend_yield is None`` 的 ticker 调用 Fuyao API 补计算；
     未配置 API Key 时直接 warning 返回，不做任何网络请求。
-    使用 ThreadPoolExecutor 并发拉取，并通过 RateLimiter 限流（每秒 2 请求）。
+    使用 ThreadPoolExecutor 并发拉取（4 worker），每次 HTTP 请求在
+    ``_fuyao_api_get`` 内部通过 RateLimiter 限流（每秒 2 请求），
+    避免多 worker 并发时实际频率超过配置值。
 
     Args:
         results: {归一化 ticker: metadata dict 或 None}，原位更新 ``dividend_yield`` 字段。
         tickers: 需要尝试计算股息率的 ticker 列表（已过滤 bj./hk./ETF）。
     """
-    if not _FUYAO_API_KEY:
+    if not _get_fuyao_api_key():
         logger.warning("⚠️  未配置 HITHINK_FINANCE_API_KEY/FUYAO_API_KEY，跳过 A 股股息率补计算")
         return
 
@@ -523,15 +545,11 @@ def _calc_dividend_yields_batch(
 
     logger.info(f"📊 开始 A 股股息率补计算，共 {len(missing)} 只待计算（Fuyao API）")
 
-    limiter = get_rate_limiter()
     success = 0
     failed = 0
 
     def _calc_one(ticker: str) -> tuple[str, float | None]:
         try:
-            wait = limiter.acquire(provider="fuyao")
-            if wait > 0:
-                time.sleep(wait)
             dy = _calc_dividend_yield_for_ticker(ticker)
             return (ticker, dy)
         except Exception as e:
@@ -546,6 +564,7 @@ def _calc_dividend_yields_batch(
             if isinstance(m, dict):
                 if dy is not None:
                     m["dividend_yield"] = dy
+                    m["dividend_yield_source"] = "fuyao"  # 标记来源，便于审计口径偏差
                     success += 1
                 else:
                     failed += 1
