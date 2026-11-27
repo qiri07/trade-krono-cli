@@ -32,6 +32,7 @@ _TEMPLATES: dict[str, str] = {
     "double_ma": "double_ma_golden_cross_{dd}.json",
     "macd_ma": "macd_ma_screener_{dc}.json",
     "six_dim": "six_dim_screen_{dc}.json",
+    "launch_signal": "launch_signal_{dc}.json",
     "fivemust": "fivemust_screen_{dc}.csv",
 }
 
@@ -52,6 +53,7 @@ _SOURCE_LABELS: dict[str, str] = {
     "czsc_third_buy": "缠论-三买+笔向上",
     "intraday": "盘中共振",
     "six_dim": "六维选股",
+    "launch_signal": "大行情启动信号",
     "fivemust": "五必筛选",
 }
 
@@ -214,6 +216,28 @@ def _codes_from_six_dim(path: Path) -> set[str]:
     return codes
 
 
+def _codes_from_launch_signal(path: Path) -> set[str]:
+    """从启动信号 JSON 提取触发信号的 6 位代码集合。
+
+    JSON 结构：{"signals": [{"code": "600519", "signal": true, ...}, ...]}，
+    仅提取 signal=True 的条目，code 为 6 位裸代码。
+    """
+    if not path.exists():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return set()
+    codes: set[str] = set()
+    signals = data.get("signals", []) if isinstance(data, dict) else []
+    for item in signals if isinstance(signals, list) else []:
+        if isinstance(item, dict) and item.get("signal") is True and item.get("code"):
+            code6 = str(item["code"]).split(".")[-1].strip()
+            if len(code6) == 6 and code6.isdigit() and not is_bse_code(code6):
+                codes.add(code6)
+    return codes
+
+
 def _codes_from_fivemust(path: Path) -> set[str]:
     """从五必筛选 CSV 提取 code 列的 6 位代码集合。
 
@@ -327,6 +351,9 @@ def collect_source_sets(
     result["double_ma"] = _codes_from_double_ma(results_dir / fmaps["double_ma"])
     result["macd_ma"] = _codes_from_macd_ma(results_dir / fmaps["macd_ma"])
     result["six_dim"] = _codes_from_six_dim(results_dir / fmaps["six_dim"])
+    result["launch_signal"] = _codes_from_launch_signal(
+        results_dir / fmaps["launch_signal"]
+    )
     result["fivemust"] = _codes_from_fivemust(results_dir / fmaps["fivemust"])
 
     # czsc 缠论信号（两个预设，独立于其他选股线计数）

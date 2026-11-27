@@ -251,6 +251,7 @@ def main() -> None:
         "double_ma": results_dir / f"double_ma_golden_cross_{dd}.json",
         "macd_ma": results_dir / f"macd_ma_screener_{dc}.json",
         "six_dim": results_dir / f"six_dim_screen_{dc}.json",
+        "launch_signal": results_dir / f"launch_signal_{dc}.json",
     }
     _czsc_files = [
         (czsc_dir / f"matched_bi_ma_{dc}.csv", "czsc_bi_ma"),
