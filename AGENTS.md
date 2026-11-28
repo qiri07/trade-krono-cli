@@ -33,6 +33,9 @@ uv run python scripts/etf_history_sync.py --codes "510300,159915"  # 指定ETF�
 uv run python scripts/check_data_integrity.py          # 数据完整性检查
 uv run python scripts/intraday_scan.py                 # 盘中技术信号扫描（白名单，全 4 类信号）
 uv run python scripts/intraday_scan.py --mode resonance --min-signals 2  # 指定信号类型 + 命中阈值
+uv run python scripts/launch_signal_scan.py                          # 大行情启动信号扫描（全市场，剔除 ST/北交所/港股/ETF）
+uv run python scripts/launch_signal_scan.py --date 2026-11-27 --tune-mode grid --tune-groups 5 --no-push  # 多组参数网格测试
+uv run python scripts/launch_signal_scan.py --tickers "600519,002749" --min-score 60 --no-push  # 指定股票单只扫描
 uv run python -m scripts.six_dim_screen                # 六维选股（逻辑>估值>位置>趋势>股东人数>量价），推荐 10 只
 uv run python scripts/cleanup_duplicates.py            # 清理重复记录（删除前自动备份）
 uv run python scripts/backup_cache.py                  # 备份 pipeline_cache.db + metadata.json（在线快照，未变化自动跳过）
@@ -262,6 +265,7 @@ scripts/post_sync_export.sh    # 同步后一键导出全部格式到 /run/media
 | 多头排列 | `multi_head` | `multi_head_YYYYMMDD.txt` |
 | 双均线金叉 | `double_ma` | `double_ma_golden_cross_YYYY-MM-DD.json` |
 | MACD+均线 | `macd_ma` | `macd_ma_screener_YYYYMMDD.json` |
+| 大行情启动信号 | `launch_signal` | `launch_signal_YYYYMMDD.json` |
 
 ```bash
 uv run python scripts/combined_stock_analysis.py --date 2026-10-16       # 交集+分析+汇总推送+逐只推送
@@ -330,6 +334,38 @@ uv run python scripts/intraday_scan.py --mode resonance      # 盘中三线共�
 uv run python scripts/intraday_scan.py --min-signals 2       # 至少命中 2 类
 uv run python scripts/intraday_scan.py --tickers "600519,000858,510300" --push 1
 ```
+
+### 大行情启动信号扫描（`scripts/launch_signal_scan.py`）
+
+对全市场（已剔除 ST/北交所/港股/ETF）逐只计算「大行情启动」信号，落盘 JSON 并可选飞书推送。
+
+信号逻辑（四维打分 + Kill-Switch 一票否决）：
+- **蓄势质量（30 分）**：均线粘合、波动率收缩、蓄势缩量
+- **点火强度（25 分）**：突破幅度、VR 倍数、换手率、K 线形态
+- **确认质量（30 分）**：站稳突破位、回踩缩量、量能中枢上移、均线多头
+- **环境与逻辑（15 分）**：板块共振、大盘趋势
+
+**Kill-Switch**（任一触发即 `signal=False`）：
+- 突破后 3 日内跌回突破位
+- 回踩放量而非缩量
+- 突破次日量能萎缩至均量线下
+- 换手率暴增而价格滞涨
+
+**调参模式**：
+- `none`（默认）：单轮计算，使用 `--min-score` / `--vr-min` / `--vr-max`
+- `auto`：首轮无信号时放宽阈值重跑，直至出现信号或达上限（`--auto-tune`）
+- `grid`：多组参数网格测试（5 组：基准/放宽缩量突破/放宽VR确认/放宽均线粘合/综合放宽），汇总去重保留最高分（`--tune-mode grid --tune-groups N`）
+
+**飞书推送**：为一条汇总消息（含各参数组命中数 + Top 信号股），不逐只推送；`--per-stock-push 1` 可开启逐只。
+
+```bash
+uv run python scripts/launch_signal_scan.py                          # 全市场，基准参数，min_score=60
+uv run python scripts/launch_signal_scan.py --date 2026-11-27 --tune-mode grid --tune-groups 5 --no-push  # 5 组参数网格测试
+uv run python scripts/launch_signal_scan.py --tickers "600519,002749" --min-score 50 --no-push  # 指定股票单只扫描
+uv run python scripts/launch_signal_scan.py --push 1 --per-stock-push 0  # 仅汇总推送飞书
+```
+
+结果落盘 `outputs/results/launch_signal_YYYYMMDD.json`。
 
 ### 港股每日筛选（`scripts/hk_screen/` + `scripts/hk_daily_screen.py`）
 
@@ -515,6 +551,7 @@ send_notification(mode="buffett", config=config, result_file="result.txt")
 | `fill_missing_latest.py` | 补齐缺少最新日期的股票增量数据（tonghuashun 主，baostock 降级） |
 | `etf_history_sync.py` | ETF K 线同步（akshare 同花顺发现全市场 ~1409 只，baostock 拉取；`--full` 全量 / `--codes` 指定；单只拉取 18s 超时兜底防 baostock 挂起，批次级 `wait=False` 不阻塞） |
 | `intraday_scan.py` | 盘中技术信号扫描（akshare 分钟 K 线 + 腾讯实时价；金叉/多头/MACD/三线共振，`--mode` 选类型，`--min-signals` 过滤，`--push` 飞书） |
+| `launch_signal_scan.py` | 大行情启动信号扫描（蓄势/点火/确认/环境四维打分 + Kill-Switch；`--tune-mode grid/auto/none` 多组参数网格搜索，`--push` 汇总推送） |
 | `six_dim_screen.py` | 六维选股（逻辑>估值>位置>趋势>股东人数>量价；前两维硬门槛，后四维递减权重打分，输出前 N 只 + JSON/MD 报告） |
 | `czsc_universe_signal_scan.py` | 缠论信号全市场选股（笔向上+均线多头+非跌停；**默认不包括 ETF，只选 A 股（沪深）**；DB→parquet 转换、信号扫描、覆盖度统计均已剔除 ETF） |
 | `combined_stock_report.py` | 综合选股交集重放（复用 collect/intersect/cards，按日期重算交集并生成/推送汇总卡片，`--no-push` 仅落盘） |
